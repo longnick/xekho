@@ -70,6 +70,91 @@ function updateAlertBadge() {
   if(headerBtn) headerBtn.classList.toggle('alert-dot', total > 0);
 }
 
+function openStockAlertPopup() {
+  const { critical, low } = getInventoryAlerts();
+  const total = critical.length + low.length;
+  if(total === 0) { showToast('✅ Tồn kho ổn định, không có cảnh báo!', 'success'); return; }
+  
+  let html = '';
+  
+  if (critical.length > 0) {
+    html += `
+      <div class="alert-card danger" style="margin-bottom:8px; cursor:pointer;" onclick="document.getElementById('stock-alert-critical-list').style.display = document.getElementById('stock-alert-critical-list').style.display === 'none' ? 'flex' : 'none'">
+        <div class="alert-icon">🚨</div>
+        <div class="alert-content">
+          <div class="alert-title">Hàng cần nhập gấp (${critical.length})</div>
+          <div class="alert-desc">Nhấn để xem/ẩn chi tiết</div>
+        </div>
+      </div>
+      <div id="stock-alert-critical-list" style="display:none; flex-direction:column; gap:8px; margin-bottom:16px; padding-left:12px; border-left:2px solid var(--danger)">
+        ${critical.map(i => `<div class="stock-alert-item danger">
+          <div class="stock-alert-info">
+            <div class="stock-alert-name">${i.name}</div>
+            <div class="stock-alert-detail">Còn lại: <b>${i.qty}</b> ${i.unit} | Tối thiểu: ${i.minQty} ${i.unit}</div>
+          </div>
+          <button class="btn btn-xs btn-danger" onclick="quickAddStockFromAlert('${i.id}')">Nhập</button>
+        </div>`).join('')}
+      </div>
+    `;
+  }
+
+  if (low.length > 0) {
+    html += `
+      <div class="alert-card warning" style="margin-bottom:8px; cursor:pointer;" onclick="document.getElementById('stock-alert-low-list').style.display = document.getElementById('stock-alert-low-list').style.display === 'none' ? 'flex' : 'none'">
+        <div class="alert-icon">⚠️</div>
+        <div class="alert-content">
+          <div class="alert-title">Hàng sắp hết (${low.length})</div>
+          <div class="alert-desc">Nhấn để xem/ẩn chi tiết</div>
+        </div>
+      </div>
+      <div id="stock-alert-low-list" style="display:none; flex-direction:column; gap:8px; margin-bottom:16px; padding-left:12px; border-left:2px solid var(--warning)">
+        ${low.map(i => `<div class="stock-alert-item warning">
+          <div class="stock-alert-info">
+            <div class="stock-alert-name">${i.name}</div>
+            <div class="stock-alert-detail">Còn lại: <b>${i.qty}</b> ${i.unit} | Tối thiểu: ${i.minQty} ${i.unit}</div>
+          </div>
+          <button class="btn btn-xs btn-warning" onclick="quickAddStockFromAlert('${i.id}')">Nhập</button>
+        </div>`).join('')}
+      </div>
+    `;
+  }
+  
+  html += `
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('stock-alert-modal').classList.remove('active');navigate('inventory');switchInvTab('purchase',document.querySelector('.tab-btn:nth-child(2)'))">
+          🚚 Nhập hàng đầy đủ
+        </button>
+        <button class="btn btn-secondary" onclick="document.getElementById('stock-alert-modal').classList.remove('active')">❌ Đóng</button>
+      </div>
+  `;
+
+  document.getElementById('stock-alert-count').textContent = `${critical.length} cần nhập gấp, ${low.length} sắp hết`;
+  document.getElementById('stock-alert-body').innerHTML = html;
+  
+  // By default, expand the critical one if it exists
+  if (critical.length > 0) {
+    document.getElementById('stock-alert-critical-list').style.display = 'flex';
+  } else if (low.length > 0) {
+    document.getElementById('stock-alert-low-list').style.display = 'flex';
+  }
+  
+  document.getElementById('stock-alert-modal').classList.add('active');
+}
+
+function quickAddStockFromAlert(invId) {
+  const inv = Store.getInventory();
+  const item = inv.find(i => i.id === invId);
+  if(!item) return;
+  const amt = parseFloat(prompt(`Nhập thêm bao nhiêu ${item.unit} cho "${item.name}"?`, '10'));
+  if(isNaN(amt) || amt <= 0) return;
+  item.qty += amt;
+  Store.setInventory(inv);
+  Store.addPurchase({ id:uid(), name:item.name, qty:amt, unit:item.unit, price:item.costPerUnit*amt, costPerUnit:item.costPerUnit, date:new Date().toISOString(), supplier:'Nhập thủ công' });
+  updateAlertBadge();
+  openStockAlertPopup(); // Refresh popup
+  showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
+}
+
 // ============================================================
 // PAGE: TABLES
 // ============================================================
@@ -90,7 +175,19 @@ function renderTables() {
   document.getElementById('today-revenue').textContent = fmt(todayRev.revenue) + 'đ';
   document.getElementById('today-orders').textContent = todayRev.orders;
 
-  grid.innerHTML = tables.map(t => {
+  // Takeaway order
+  const takeawayOrder = orders['takeaway'];
+  const takeawayTotal = takeawayOrder ? takeawayOrder.reduce((s,i) => s+i.price*i.qty, 0) : 0;
+  const takeawayHtml = `<div class="table-card takeaway ${takeawayOrder && takeawayOrder.length > 0 ? 'occupied' : 'empty'}" onclick="openTakeaway()" id="table-card-takeaway" style="grid-column:1/-1;aspect-ratio:auto;padding:12px;flex-direction:row;justify-content:flex-start;gap:12px">
+    <div style="font-size:28px">🛍️</div>
+    <div style="flex:1;text-align:left">
+      <div style="font-size:13px;font-weight:800">Khách mang về</div>
+      <div style="font-size:11px;color:var(--text2)">Takeaway</div>
+    </div>
+    ${takeawayTotal > 0 ? `<div style="font-size:14px;font-weight:800;color:var(--primary)">${fmt(takeawayTotal)}đ</div>` : '<div style="font-size:11px;color:var(--text3)">Trống</div>'}
+  </div>`;
+
+  grid.innerHTML = takeawayHtml + tables.map(t => {
     const order = orders[t.id];
     const total = order ? order.reduce((s,i) => s+i.price*i.qty, 0) : 0;
     const elapsed = t.openTime ? Math.floor((now - t.openTime)/60000) : 0;
@@ -104,6 +201,16 @@ function renderTables() {
       ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${t.status === 'empty' ? 'Trống' : 'Đang phục vụ'}</div>`}
     </div>`;
   }).join('');
+}
+
+function openTakeaway() {
+  currentTable = 'takeaway';
+  const orders = Store.getOrders();
+  if(!orderItems['takeaway']) {
+    orderItems['takeaway'] = orders['takeaway'] ? [...orders['takeaway']] : [];
+  }
+  document.getElementById('order-table-title').textContent = '🛍️ Mang về';
+  navigate('orders');
 }
 
 function openTable(tableId) {
@@ -260,10 +367,14 @@ function openBillModal() {
   const now = new Date();
   const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
 
-  const desc = `Thanh toan Ban ${currentTable} - ${billNo}`;
+  const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
+  const desc = `Thanh toan ${currentTable === 'takeaway' ? 'Mang ve' : 'Ban ' + currentTable} - ${billNo}`;
   const bank = s.bankAccount || PAYMENT_INFO.account;
   const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
   const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
+
+  // Store bill data for payment confirmation
+  window._pendingBill = { billNo, total, cost, tableLabel };
 
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
@@ -276,7 +387,7 @@ function openBillModal() {
       <hr class="bill-divider">
       <div class="bill-info">
         <div>Bill: <span>${billNo}</span></div>
-        <div>Bàn: <span>Bàn ${currentTable}</span></div>
+        <div>${currentTable === 'takeaway' ? '🛍️' : '🪑'} <span>${tableLabel}</span></div>
         <div>Thời gian: <span>${fmtDateTime(now)}</span></div>
       </div>
       <hr class="bill-divider">
@@ -291,20 +402,31 @@ function openBillModal() {
       <hr class="bill-divider">
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
       <div class="bill-qr">
-        <div class="bill-qr-label">Quét QR thanh toán</div>
-        <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:140px;height:140px;object-fit:contain">
-        <div class="bill-qr-label">${s.bankName||'Vietinbank'} – ${bank}</div>
-        <div class="bill-qr-label" style="font-weight:700">Số tiền: ${fmtFull(total)}</div>
+        <div class="bill-qr-label">Quét QR để thanh toán chuyển khoản</div>
+        <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:200px;height:200px;object-fit:contain;margin:8px auto;display:block">
+        <div class="bill-qr-bank">${s.bankName||'Vietinbank'} – ${bank}</div>
+        <div class="bill-qr-amount">${fmtFull(total)}</div>
       </div>
       <hr class="bill-divider">
       <div class="bill-thanks">Cảm ơn quý khách! Hẹn gặp lại 🙏</div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn btn-secondary" style="flex:1" onclick="printBill()">🖨️ In bill</button>
-      <button class="btn btn-success" style="flex:1" onclick="confirmPayment('${billNo}',${total},${cost})">✅ Đã thanh toán</button>
+      <button class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">✅ Thanh toán</button>
     </div>`;
 
   document.getElementById('bill-modal').classList.add('active');
+}
+
+function openPaymentMethodModal() {
+  if(!window._pendingBill) return;
+  document.getElementById('pay-method-modal').classList.add('active');
+}
+
+function confirmPaymentMethod(method) {
+  document.getElementById('pay-method-modal').classList.remove('active');
+  const { billNo, total, cost } = window._pendingBill;
+  confirmPayment(billNo, total, cost, method);
 }
 
 function closeBillModal() {
@@ -324,17 +446,19 @@ function printBill() {
   }
 }
 
-function confirmPayment(billNo, total, cost) {
+function confirmPayment(billNo, total, cost, payMethod) {
   const items = orderItems[currentTable] || [];
+  const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
   // Save to history
   Store.addHistory({
     id: billNo,
     tableId: currentTable,
-    tableName: `Bàn ${currentTable}`,
+    tableName: tableLabel,
     items: items.map(i => ({...i})),
     total,
     cost,
+    payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
   });
 
@@ -347,14 +471,18 @@ function confirmPayment(billNo, total, cost) {
   delete orders[currentTable];
   Store.setOrders(orders);
 
-  const tables = Store.getTables();
-  const table = tables.find(t => t.id === currentTable);
-  if(table) { table.status = 'empty'; table.openTime = null; }
-  Store.setTables(tables);
+  // Only reset table status for real tables
+  if(currentTable !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => t.id === currentTable);
+    if(table) { table.status = 'empty'; table.openTime = null; }
+    Store.setTables(tables);
+  }
 
   closeBillModal();
   updateAlertBadge();
-  showToast('✅ Thanh toán thành công!', 'success');
+  const methodLabel = payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+  showToast(`✅ Thanh toán ${methodLabel} thành công!`, 'success');
   currentTable = null;
   navigate('tables');
 }
@@ -404,8 +532,8 @@ function renderStockList() {
   // Alert summary
   const alertDiv = document.getElementById('inv-alerts');
   let alertHtml = '';
-  if(critical.length > 0) alertHtml += `<div class="alert-card danger"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cần nhập gấp (${critical.length})</div><div class="alert-desc">${critical.map(i=>i.name).join(', ')}</div></div></div>`;
-  if(low.length > 0) alertHtml += `<div class="alert-card warning"><div class="alert-icon">⚠️</div><div class="alert-content"><div class="alert-title">Sắp hết (${low.length})</div><div class="alert-desc">${low.map(i=>i.name).join(', ')}</div></div></div>`;
+  if(critical.length > 0) alertHtml += `<div class="alert-card danger" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cần nhập gấp (${critical.length})</div><div class="alert-desc">${critical.map(i=>i.name).join(', ')}</div></div></div>`;
+  if(low.length > 0) alertHtml += `<div class="alert-card warning" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">⚠️</div><div class="alert-content"><div class="alert-title">Sắp hết (${low.length})</div><div class="alert-desc">${low.map(i=>i.name).join(', ')}</div></div></div>`;
   alertDiv.innerHTML = alertHtml;
 }
 
@@ -462,7 +590,7 @@ function submitInvEdit(e) {
 function renderPurchaseList() {
   const purchases = Store.getPurchases().slice(0, 50);
   document.getElementById('purchase-list').innerHTML = purchases.length ? purchases.map(p => {
-    let subInfo = `${p.qty} ${p.unit} · ${p.supplier} · ${fmtDate(p.date)}`;
+    let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
     if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
     return `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📦</div>
@@ -472,9 +600,39 @@ function renderPurchaseList() {
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">-${fmt(p.price)}đ</div>
+        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
+          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="deletePurchase('${p.id}')">🗑️</button>
+        </div>
       </div>
     </div>`;
   }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
+}
+
+function editPurchase(purchaseId) {
+  const purchases = Store.getPurchases();
+  const p = purchases.find(x => x.id === purchaseId);
+  if(!p) return;
+  // Fill form and open modal
+  document.getElementById('pur-name').value = p.name;
+  document.getElementById('pur-qty').value = p.qty;
+  document.getElementById('pur-price').value = p.price;
+  document.getElementById('pur-supplier').value = p.supplier || '';
+  document.getElementById('pur-supplier-phone').value = p.supplierPhone || '';
+  document.getElementById('pur-supplier-addr').value = p.supplierAddress || '';
+  // Store editing id
+  const form = document.getElementById('purchase-form');
+  form.dataset.editId = purchaseId;
+  document.getElementById('purchase-modal-title').textContent = '✏️ Sửa nhập hàng';
+  document.getElementById('purchase-modal').classList.add('active');
+}
+
+function deletePurchase(purchaseId) {
+  if(!confirm('Xoá bản ghi nhập hàng này?')) return;
+  const purchases = Store.getPurchases().filter(p => p.id !== purchaseId);
+  Store.setPurchases(purchases);
+  renderInventory();
+  showToast('🗑️ Đã xoá bản ghi nhập hàng');
 }
 
 function renderForecast() {
@@ -491,6 +649,10 @@ function renderForecast() {
 }
 
 function openPurchaseModal() {
+  const form = document.getElementById('purchase-form');
+  delete form.dataset.editId;
+  form.reset();
+  document.getElementById('purchase-modal-title').textContent = '🚚 Nhập hàng mới';
   document.getElementById('purchase-modal').classList.add('active');
 }
 
@@ -506,25 +668,57 @@ function submitPurchase(e) {
 
   if(!name || isNaN(qty) || isNaN(price)) return;
 
+  const form = document.getElementById('purchase-form');
+  const editId = form.dataset.editId;
+
   // Find or create inventory item
   let item = inv.find(i => i.name.toLowerCase() === name.toLowerCase());
-  if(item) {
-    item.qty += qty;
-    item.costPerUnit = price/qty;
-  } else {
-    item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
-    inv.push(item);
-  }
-  Store.setInventory(inv);
 
-  Store.addPurchase({ id:uid(), name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr });
-  Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
+  if(editId) {
+    // EDIT MODE: update purchase record
+    const purchases = Store.getPurchases();
+    const pIdx = purchases.findIndex(p => p.id === editId);
+    if(pIdx >= 0) {
+      const oldQty = purchases[pIdx].qty;
+      const oldName = purchases[pIdx].name;
+      // Reverse old inventory change, apply new one
+      let oldItem = inv.find(i => i.name.toLowerCase() === oldName.toLowerCase());
+      if(oldItem) oldItem.qty = Math.max(0, oldItem.qty - oldQty);
+
+      if(item && item.name.toLowerCase() === name.toLowerCase()) {
+        item.qty += qty;
+        item.costPerUnit = price/qty;
+      } else if(!item) {
+        item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
+        inv.push(item);
+      }
+
+      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierPhone, supplierAddress:supplierAddr };
+      Store.setPurchases(purchases);
+      Store.setInventory(inv);
+      delete form.dataset.editId;
+      document.getElementById('purchase-modal-title').textContent = '🚚 Nhập hàng mới';
+    }
+    showToast('✅ Đã cập nhật nhập hàng!');
+  } else {
+    // ADD MODE
+    if(item) {
+      item.qty += qty;
+      item.costPerUnit = price/qty;
+    } else {
+      item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
+      inv.push(item);
+    }
+    Store.setInventory(inv);
+    Store.addPurchase({ id:uid(), name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr });
+    Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
+    showToast('✅ Đã nhập hàng thành công!');
+  }
 
   document.getElementById('purchase-modal').classList.remove('active');
   document.getElementById('purchase-form').reset();
   renderInventory();
   updateAlertBadge();
-  showToast('✅ Đã nhập hàng thành công!');
 }
 
 // ============================================================
@@ -709,18 +903,49 @@ function renderHourlyChart() {
 
 function renderOrderHistoryList() {
   const orders = filterHistory(reportPeriod).slice(0, 30);
-  document.getElementById('order-history-list').innerHTML = orders.length ? orders.map(o =>
-    `<div class="list-item">
+  document.getElementById('order-history-list').innerHTML = orders.length ? orders.map(o => {
+    const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
+    const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+    return `<div class="list-item" onclick="viewOrderDetail('${o.id}')" style="cursor:pointer">
       <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
       <div class="list-item-content">
         <div class="list-item-title">${o.tableName} – ${o.id}</div>
-        <div class="list-item-sub">${fmtDateTime(o.paidAt)} · ${o.items?.length||0} món</div>
+        <div class="list-item-sub">${fmtDateTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">${fmt(o.total)}đ</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">Tap xem chi tiết</div>
       </div>
+    </div>`;
+  }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử</div></div>';
+}
+
+function viewOrderDetail(orderId) {
+  const h = Store.getHistory();
+  const o = h.find(x => x.id === orderId);
+  if(!o) return;
+  const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
+  const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+  const itemsHtml = (o.items||[]).map(i =>
+    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px">${i.name} <span style="color:var(--text3)">x${i.qty}</span></span>
+      <span style="font-size:13px;font-weight:700;color:var(--primary)">${fmt(i.price*i.qty)}đ</span>
     </div>`
-  ).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử</div></div>';
+  ).join('');
+  document.getElementById('order-detail-content').innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">${o.tableName}</div>
+      <div style="font-size:12px;color:var(--text2)">${o.id} · ${fmtDateTime(o.paidAt)}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">${payIcon} Thanh toán: ${payLabel}</div>
+    </div>
+    <div style="margin-bottom:12px">${itemsHtml}</div>
+    <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
+      <span style="font-weight:700">TỔNG CỘNG</span>
+      <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
+    </div>
+    ${o.cost > 0 ? `<div style="font-size:11px;color:var(--text3);text-align:right">Giá vốn: ${fmtFull(o.cost)} · Lãi gộp: ${fmtFull(o.total - o.cost)}</div>` : ''}
+  `;
+  document.getElementById('order-detail-modal').classList.add('active');
 }
 
 // ============================================================
