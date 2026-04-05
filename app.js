@@ -240,7 +240,23 @@ function openBillModal() {
   if(items.length === 0) return;
   const s = Store.getSettings();
   const total = items.reduce((s,i) => s + i.price*i.qty, 0);
-  const cost  = items.reduce((s,i) => s + (i.cost||0)*i.qty, 0);
+  // Dynamically calculate cost based on current inventory
+  const inv = Store.getInventory();
+  const menu = Store.getMenu();
+  let cost = 0;
+  items.forEach(item => {
+    const dish = menu.find(m => m.id === item.id);
+    let dishCost = dish?.cost || 0;
+    if (dish && dish.ingredients && dish.ingredients.length > 0) {
+      let calcCost = 0;
+      dish.ingredients.forEach(ing => {
+        const stock = inv.find(i => i.name === ing.name);
+        if (stock) calcCost += stock.costPerUnit * ing.qty;
+      });
+      dishCost = calcCost;
+    }
+    cost += dishCost * item.qty;
+  });
   const now = new Date();
   const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
 
@@ -374,7 +390,8 @@ function renderStockList() {
       </div>
       <div style="text-align:right">
         <div class="inv-qty ${level}">${i.qty}</div>
-        <div style="display:flex;gap:4px;margin-top:4px">
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">Giá vốn: ${fmt(i.costPerUnit||0)}đ</div>
+        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
           <button class="btn btn-xs btn-outline" onclick="quickAddStock('${i.id}')">+</button>
           <button class="btn btn-xs btn-secondary" onclick="editInvItem('${i.id}')">✏️</button>
         </div>
@@ -411,28 +428,53 @@ function editInvItem(invId) {
   const inv = Store.getInventory();
   const item = inv.find(i => i.id === invId);
   if(!item) return;
-  const newQty = parseFloat(prompt(`Sửa tồn kho "${item.name}" (hiện: ${item.qty} ${item.unit})`, item.qty));
-  if(isNaN(newQty) || newQty < 0) return;
-  item.qty = newQty;
-  Store.setInventory(inv);
-  renderInventory();
-  showToast('✅ Đã cập nhật tồn kho');
+  document.getElementById('inv-edit-id').value = item.id;
+  document.getElementById('inv-edit-name').value = item.name;
+  document.getElementById('inv-edit-unit').value = item.unit;
+  document.getElementById('inv-edit-qty').value = item.qty;
+  document.getElementById('inv-edit-min').value = item.minQty;
+  document.getElementById('inv-edit-cost').value = item.costPerUnit || 0;
+  document.getElementById('inv-edit-modal').classList.add('active');
+}
+
+function submitInvEdit(e) {
+  e.preventDefault();
+  const id = document.getElementById('inv-edit-id').value;
+  const name = document.getElementById('inv-edit-name').value.trim();
+  const unit = document.getElementById('inv-edit-unit').value.trim();
+  const qty = parseFloat(document.getElementById('inv-edit-qty').value);
+  const minQty = parseFloat(document.getElementById('inv-edit-min').value);
+  const cost = parseFloat(document.getElementById('inv-edit-cost').value);
+
+  if(!name || !unit || isNaN(qty) || isNaN(minQty) || isNaN(cost)) return;
+
+  const inv = Store.getInventory();
+  const idx = inv.findIndex(i => i.id === id);
+  if(idx >= 0) {
+    inv[idx] = { ...inv[idx], name, unit, qty, minQty, costPerUnit: cost };
+    Store.setInventory(inv);
+    renderInventory();
+    document.getElementById('inv-edit-modal').classList.remove('active');
+    showToast('✅ Đã cập nhật kho');
+  }
 }
 
 function renderPurchaseList() {
   const purchases = Store.getPurchases().slice(0, 50);
-  document.getElementById('purchase-list').innerHTML = purchases.length ? purchases.map(p =>
-    `<div class="list-item">
+  document.getElementById('purchase-list').innerHTML = purchases.length ? purchases.map(p => {
+    let subInfo = `${p.qty} ${p.unit} · ${p.supplier} · ${fmtDate(p.date)}`;
+    if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
+    return `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📦</div>
       <div class="list-item-content">
         <div class="list-item-title">${p.name}</div>
-        <div class="list-item-sub">${p.qty} ${p.unit} · ${p.supplier} · ${fmtDate(p.date)}</div>
+        <div class="list-item-sub">${subInfo}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">-${fmt(p.price)}đ</div>
       </div>
-    </div>`
-  ).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
+    </div>`;
+  }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
 }
 
 function renderForecast() {
@@ -458,7 +500,9 @@ function submitPurchase(e) {
   const name = document.getElementById('pur-name').value.trim();
   const qty = parseFloat(document.getElementById('pur-qty').value);
   const price = parseFloat(document.getElementById('pur-price').value);
-  const supplier = document.getElementById('pur-supplier').value.trim() || 'Không rõ';
+  const supplierName = document.getElementById('pur-supplier').value.trim() || 'Không rõ';
+  const supplierPhone = document.getElementById('pur-supplier-phone').value.trim() || '';
+  const supplierAddr = document.getElementById('pur-supplier-addr').value.trim() || '';
 
   if(!name || isNaN(qty) || isNaN(price)) return;
 
@@ -468,11 +512,12 @@ function submitPurchase(e) {
     item.qty += qty;
     item.costPerUnit = price/qty;
   } else {
-    inv.push({ id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty });
+    item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
+    inv.push(item);
   }
   Store.setInventory(inv);
 
-  Store.addPurchase({ id:uid(), name, qty, unit:item?.unit||'phần', price, costPerUnit:price/qty, date:new Date().toISOString(), supplier });
+  Store.addPurchase({ id:uid(), name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr });
   Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
 
   document.getElementById('purchase-modal').classList.remove('active');
@@ -710,15 +755,23 @@ function renderInsights() {
 // ============================================================
 function renderMenuAdmin() {
   const menu = Store.getMenu();
+  const inv = Store.getInventory();
   const search = (document.getElementById('menu-admin-search')||{}).value || '';
   const filtered = menu.filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()));
 
-  document.getElementById('menu-admin-list').innerHTML = filtered.map(m =>
-    `<div class="list-item">
+  document.getElementById('menu-admin-list').innerHTML = filtered.map(m => {
+    let computedCost = m.cost || 0;
+    if (m.ingredients && m.ingredients.length > 0) {
+      computedCost = m.ingredients.reduce((s, ing) => {
+        const stock = inv.find(i => i.name === ing.name);
+        return s + (ing.qty * (stock ? stock.costPerUnit : 0));
+      }, 0);
+    }
+    return `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(255,107,53,0.1)">🍽️</div>
       <div class="list-item-content">
-        <div class="list-item-title">${m.name}</div>
-        <div class="list-item-sub">${m.category} · Giá vốn: ${fmt(m.cost||0)}đ</div>
+        <div class="list-item-title">${m.name} <span style="font-size:11px;color:var(--text3);font-weight:normal">(${m.unit || 'phần'})</span></div>
+        <div class="list-item-sub">${m.category} · Giá vốn NL: ${fmt(computedCost)}đ ${m.ingredients?.length ? `· 🧪 ${m.ingredients.length} NL` : ''}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">${fmt(m.price)}đ</div>
@@ -727,8 +780,8 @@ function renderMenuAdmin() {
           <button class="btn btn-xs btn-danger" onclick="deleteMenuItem('${m.id}')">🗑️</button>
         </div>
       </div>
-    </div>`
-  ).join('') || '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>';
+    </div>`;
+  }).join('') || '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>';
 }
 
 function openAddMenuModal(id) {
@@ -737,9 +790,18 @@ function openAddMenuModal(id) {
   document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
   document.getElementById('menu-item-id').value = dish?.id || '';
   document.getElementById('menu-item-name').value = dish?.name || '';
+  document.getElementById('menu-item-unit').value = dish?.unit || 'phần';
   document.getElementById('menu-item-price').value = dish?.price || '';
-  document.getElementById('menu-item-cost').value = dish?.cost || '';
   document.getElementById('menu-item-category').value = dish?.category || CATEGORIES[0];
+  
+  const list = document.getElementById('menu-ingredients-list');
+  list.innerHTML = '';
+  if (dish && dish.ingredients && dish.ingredients.length > 0) {
+    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty));
+  } else {
+    // addIngredientRow(); // Add an empty row by default
+  }
+  
   document.getElementById('menu-modal').classList.add('active');
 }
 
@@ -759,15 +821,26 @@ function submitMenuItem(e) {
   const id = document.getElementById('menu-item-id').value;
   const name = document.getElementById('menu-item-name').value.trim();
   const price = parseFloat(document.getElementById('menu-item-price').value);
-  const cost = parseFloat(document.getElementById('menu-item-cost').value) || 0;
   const category = document.getElementById('menu-item-category').value;
+  const unit = document.getElementById('menu-item-unit').value.trim() || 'phần';
   if(!name || isNaN(price)) return;
+
+  const ingredients = [];
+  const inv = Store.getInventory();
+  document.querySelectorAll('#menu-ingredients-list > div').forEach(row => {
+    const ingName = row.querySelector('.ing-name-sel').value;
+    const qty = parseFloat(row.querySelector('.ing-qty-val').value);
+    if (ingName && qty > 0) {
+      const stock = inv.find(i => i.name === ingName);
+      ingredients.push({ name: ingName, qty, unit: stock ? stock.unit : '' });
+    }
+  });
 
   if(id) {
     const idx = menu.findIndex(m => m.id === id);
-    if(idx >= 0) { menu[idx] = {...menu[idx], name, price, cost, category}; }
+    if(idx >= 0) { menu[idx] = {...menu[idx], name, unit, price, cost: menu[idx].cost || 0, category, ingredients}; }
   } else {
-    menu.push({ id:uid(), name, price, cost, category, unit:'phần', ingredients:[] });
+    menu.push({ id:uid(), name, unit, price, cost: 0, category, ingredients });
   }
   Store.setMenu(menu);
   document.getElementById('menu-modal').classList.remove('active');
@@ -775,8 +848,35 @@ function submitMenuItem(e) {
   showToast('✅ Đã lưu món ăn!');
 }
 
+
+function addIngredientRow(name='', qty='') {
+  const inv = Store.getInventory();
+  // Filter inventory list to generate options
+  const options = inv.map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})</option>`).join('');
+  
+  const div = document.createElement('div');
+  div.style.display = 'flex';
+  div.style.gap = '8px';
+  div.innerHTML = `
+    <select class="select ing-name-sel" style="flex:2">
+      <option value="">-- Chọn NL --</option>
+      ${options}
+    </select>
+    <input type="number" class="input ing-qty-val" placeholder="SL" value="${qty}" style="flex:1" step="0.01">
+    <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove();">✕</button>
+  `;
+  document.getElementById('menu-ingredients-list').appendChild(div);
+  
+  if (name) {
+    const sel = div.querySelector('.ing-name-sel');
+    sel.value = name;
+  }
+}
+
+
 // ============================================================
 // TOAST
+
 // ============================================================
 function showToast(msg, type) {
   let toast = document.getElementById('toast');
