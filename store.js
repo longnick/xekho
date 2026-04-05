@@ -245,6 +245,8 @@ function filterHistory(period) {
 function getRevenueSummary(period) {
   const orders = filterHistory(period);
   const revenue = orders.reduce((s,o) => s + o.total, 0);
+  const revenueBank = orders.filter(o => o.payMethod === 'bank').reduce((s,o) => s + o.total, 0);
+  const revenueCash = orders.filter(o => o.payMethod !== 'bank').reduce((s,o) => s + o.total, 0);
   const cost = orders.reduce((s,o) => s + (o.cost || 0), 0);
   const gross = revenue - cost;
   const expenses = Store.getExpenses().filter(e => {
@@ -257,7 +259,7 @@ function getRevenueSummary(period) {
   });
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   const profit = gross - expenseTotal;
-  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length };
+  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash };
 }
 
 // Top selling items
