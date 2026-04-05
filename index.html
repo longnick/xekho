@@ -471,8 +471,18 @@
           </div>
         </div>
         <div class="input-group">
-          <label class="input-label">Nhà cung cấp</label>
-          <input class="input" id="pur-supplier" placeholder="Chợ, Đại lý...">
+          <label class="input-label">Tên Nhà cung cấp</label>
+          <input class="input" id="pur-supplier" placeholder="Chợ, Đại lý, Công ty...">
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">Số ĐT liên hệ</label>
+            <input class="input" id="pur-supplier-phone" type="tel" placeholder="09xxxxxxx">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Địa chỉ</label>
+            <input class="input" id="pur-supplier-addr" placeholder="Địa chỉ...">
+          </div>
         </div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Nhập hàng</button>
       </form>
@@ -517,6 +527,47 @@
   </div>
 </div>
 
+<!-- Inventory Edit Modal -->
+<div class="modal-overlay" id="inv-edit-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Cập nhật Kho</div>
+      <button class="modal-close" onclick="document.getElementById('inv-edit-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="inv-edit-form" onsubmit="submitInvEdit(event)">
+        <input type="hidden" id="inv-edit-id">
+        <div class="form-row">
+          <div class="input-group" style="flex:2">
+            <label class="input-label">Tên Nguyên liệu *</label>
+            <input class="input" id="inv-edit-name" required>
+          </div>
+          <div class="input-group" style="flex:1">
+            <label class="input-label">Đơn vị *</label>
+            <input class="input" id="inv-edit-unit" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">SL Tồn *</label>
+            <input class="input" id="inv-edit-qty" type="number" step="0.01" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Số lượng Min *</label>
+            <input class="input" id="inv-edit-min" type="number" step="0.01" required>
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Giá vốn (Cost/Unit) *</label>
+          <input class="input" id="inv-edit-cost" type="number" step="0.01" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu thay đổi</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Menu Item Modal -->
 <div class="modal-overlay" id="menu-modal" onclick="if(event.target===this)this.classList.remove('active')">
   <div class="modal-sheet">
@@ -528,9 +579,15 @@
     <div class="modal-body">
       <form id="menu-form" onsubmit="submitMenuItem(event)">
         <input type="hidden" id="menu-item-id">
-        <div class="input-group">
-          <label class="input-label">Tên món *</label>
-          <input class="input" id="menu-item-name" placeholder="Tên món ăn..." required>
+        <div class="form-row">
+          <div class="input-group" style="flex: 2">
+            <label class="input-label">Tên món *</label>
+            <input class="input" id="menu-item-name" placeholder="Tên món ăn..." required>
+          </div>
+          <div class="input-group" style="flex: 1">
+            <label class="input-label">Đơn vị *</label>
+            <input class="input" id="menu-item-unit" placeholder="phần" value="phần" required>
+          </div>
         </div>
         <div class="form-row">
           <div class="input-group">
@@ -538,22 +595,23 @@
             <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
           </div>
           <div class="input-group">
-            <label class="input-label">Giá vốn (đ)</label>
-            <input class="input" id="menu-item-cost" type="number" min="0" placeholder="20000">
+            <label class="input-label">Danh mục</label>
+            <select class="select" id="menu-item-category">
+              <option>Khô Nướng</option>
+              <option>Đặc Biệt</option>
+              <option>Phần Combo</option>
+              <option>Món Ăn Kèm</option>
+              <option>Giải Khát</option>
+              <option>Rượu</option>
+              <option>Beer</option>
+            </select>
           </div>
         </div>
-        <div class="input-group">
-          <label class="input-label">Danh mục</label>
-          <select class="select" id="menu-item-category">
-            <option>Khô Nướng</option>
-            <option>Đặc Biệt</option>
-            <option>Phần Combo</option>
-            <option>Món Ăn Kèm</option>
-            <option>Giải Khát</option>
-            <option>Rượu</option>
-            <option>Beer</option>
-          </select>
+        <div class="section-header" style="margin-top:16px; margin-bottom:8px;">
+          <div class="card-title" style="font-size:14px;">Công thức (Nguyên liệu)</div>
+          <button type="button" class="btn btn-sm btn-outline" onclick="addIngredientRow()">+ Thêm</button>
         </div>
+        <div id="menu-ingredients-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu món</button>
       </form>
     </div>
