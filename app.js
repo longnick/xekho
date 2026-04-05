@@ -741,6 +741,8 @@ function setFinancePeriod(p) {
   document.getElementById('fin-expense').textContent = fmtFull(s.expenseTotal);
   document.getElementById('fin-profit').textContent = fmtFull(s.profit);
   document.getElementById('fin-orders').textContent = s.orders;
+  document.getElementById('fin-bank').textContent = fmtFull(s.revenueBank || 0);
+  document.getElementById('fin-cash').textContent = fmtFull(s.revenueCash || 0);
 
   const margin = s.revenue > 0 ? (s.gross/s.revenue*100).toFixed(1) : 0;
   document.getElementById('fin-margin').textContent = margin + '%';
