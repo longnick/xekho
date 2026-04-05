@@ -11,9 +11,28 @@ let chartInstances = {};
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
+  applyStoreSettings();
   navigate('tables');
   updateAlertBadge();
+  // Auto backup mỗi ngày
+  setTimeout(() => {
+    if(Store.autoBackupIfNeeded()) {
+      console.log('[POS] Auto backup done');
+    }
+  }, 3000);
 });
+
+// Áp dụng tên quán vào giao diện
+function applyStoreSettings() {
+  const s = Store.getSettings();
+  // Update PAYMENT_INFO từ settings
+  if(s.bankAccount) PAYMENT_INFO.account = s.bankAccount;
+  if(s.bankName)    PAYMENT_INFO.bank    = s.bankName;
+  if(s.bankOwner)   PAYMENT_INFO.name    = s.bankOwner;
+  // Cập nhật tiêu đề header
+  const logoText = document.querySelector('.logo-text');
+  if(logoText) logoText.textContent = s.storeName || 'Gánh Khô Chữa Lành';
+}
 
 // ---- Navigation ----
 function initNav() {
@@ -38,6 +57,7 @@ function renderPage(page) {
     case 'reports':  renderReports(); break;
     case 'insights': renderInsights(); break;
     case 'menu':     renderMenuAdmin(); break;
+    case 'settings': renderSettings(); break;
   }
 }
 
@@ -218,46 +238,46 @@ function renderCart() {
 function openBillModal() {
   const items = orderItems[currentTable] || [];
   if(items.length === 0) return;
+  const s = Store.getSettings();
   const total = items.reduce((s,i) => s + i.price*i.qty, 0);
-  const cost = items.reduce((s,i) => s + (i.cost||0)*i.qty, 0);
+  const cost  = items.reduce((s,i) => s + (i.cost||0)*i.qty, 0);
   const now = new Date();
   const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
 
   const desc = `Thanh toan Ban ${currentTable} - ${billNo}`;
-  const qrUrl = getVietQR(total, desc);
+  const bank = s.bankAccount || PAYMENT_INFO.account;
+  const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
+  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
 
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
       <div class="bill-header">
-        <div class="bill-logo">🍢 Gánh Khô Chữa Lành</div>
-        <div class="bill-sub">Ăn là nhớ, nhớ là ghiền!</div>
-        <div class="bill-sub" style="margin-top:4px">ĐT: 0937707900</div>
+        <div class="bill-logo">🍢 ${s.storeName||'Gánh Khô Chữa Lành'}</div>
+        ${s.storeSlogan ? `<div class="bill-sub">${s.storeSlogan}</div>` : ''}
+        ${s.storePhone ? `<div class="bill-sub" style="margin-top:4px">ĐT: ${s.storePhone}</div>` : ''}
+        ${s.storeAddress ? `<div class="bill-sub">${s.storeAddress}</div>` : ''}
       </div>
       <hr class="bill-divider">
       <div class="bill-info">
         <div>Bill: <span>${billNo}</span></div>
         <div>Bàn: <span>Bàn ${currentTable}</span></div>
         <div>Thời gian: <span>${fmtDateTime(now)}</span></div>
-        <div>Thu ngân: <span>Admin</span></div>
       </div>
       <hr class="bill-divider">
       <table class="bill-items">
         <thead><tr><th>Món</th><th style="text-align:center">SL</th><th style="text-align:right">Đ.Giá</th><th style="text-align:right">T.Tiền</th></tr></thead>
-        <tbody>
-          ${items.map(i=>`<tr>
-            <td>${i.name}</td>
-            <td style="text-align:center">${i.qty}</td>
-            <td style="text-align:right">${fmt(i.price)}</td>
-            <td class="amount">${fmt(i.price*i.qty)}</td>
-          </tr>`).join('')}
+        <tbody>${items.map(i=>`<tr>
+          <td>${i.name}</td><td style="text-align:center">${i.qty}</td>
+          <td style="text-align:right">${fmt(i.price)}</td>
+          <td class="amount">${fmt(i.price*i.qty)}</td></tr>`).join('')}
         </tbody>
       </table>
       <hr class="bill-divider">
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
       <div class="bill-qr">
         <div class="bill-qr-label">Quét QR thanh toán</div>
-        <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'">
-        <div class="bill-qr-label">Vietinbank – ${PAYMENT_INFO.account}</div>
+        <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:140px;height:140px;object-fit:contain">
+        <div class="bill-qr-label">${s.bankName||'Vietinbank'} – ${bank}</div>
         <div class="bill-qr-label" style="font-weight:700">Số tiền: ${fmtFull(total)}</div>
       </div>
       <hr class="bill-divider">
@@ -276,7 +296,16 @@ function closeBillModal() {
 }
 
 function printBill() {
-  window.print();
+  // Đợi QR image load xong rồi mới in
+  const qrImg = document.querySelector('#bill-print-area img');
+  if(qrImg && !qrImg.complete) {
+    qrImg.onload  = () => window.print();
+    qrImg.onerror = () => window.print(); // In dù không có QR
+    // Timeout fallback 3 giây
+    setTimeout(() => window.print(), 3000);
+  } else {
+    window.print();
+  }
 }
 
 function confirmPayment(billNo, total, cost) {
@@ -796,4 +825,194 @@ function addDemoOrders() {
   showToast('✅ Đã tạo dữ liệu demo!', 'success');
   renderPage(currentPage);
   updateAlertBadge();
+}
+
+// ============================================================
+// RESET DATA
+// ============================================================
+function resetAllData() {
+  document.getElementById('reset-modal').classList.add('active');
+}
+
+function confirmResetData(keepMenu, keepInventory) {
+  Store.resetAll(keepMenu, keepInventory);
+  orderItems = {};
+  document.getElementById('reset-modal').classList.remove('active');
+  applyStoreSettings();
+  navigate('tables');
+  updateAlertBadge();
+  showToast('🔄 Đã reset dữ liệu! Sẵn sàng hoạt động.', 'success');
+}
+
+// ============================================================
+// SETTINGS PAGE
+// ============================================================
+function renderSettings() {
+  const s = Store.getSettings();
+  const fields = [
+    ['set-storeName',    s.storeName   || ''],
+    ['set-storeSlogan',  s.storeSlogan || ''],
+    ['set-storePhone',   s.storePhone  || ''],
+    ['set-storeAddress', s.storeAddress|| ''],
+    ['set-bankName',     s.bankName    || 'Vietinbank'],
+    ['set-bankAccount',  s.bankAccount || ''],
+    ['set-bankOwner',    s.bankOwner   || ''],
+    ['set-tableCount',   s.tableCount  || 20],
+  ];
+  fields.forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if(el) el.value = val;
+  });
+  const autoEl = document.getElementById('set-autoBackup');
+  if(autoEl) autoEl.checked = s.autoBackup !== false;
+
+  renderBackupList();
+
+  // Last backup info
+  const last = Store.getLastBackupTime();
+  const lastEl = document.getElementById('last-backup-time');
+  if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
+}
+
+function submitSettings(e) {
+  if(e && e.preventDefault) e.preventDefault();
+  const s = Store.getSettings();
+  const oldTableCount = s.tableCount || 20;
+
+  const nameEl        = document.getElementById('set-storeName');
+  const sloganEl      = document.getElementById('set-storeSlogan');
+  const phoneEl       = document.getElementById('set-storePhone');
+  const addressEl     = document.getElementById('set-storeAddress');
+  const bankNameEl    = document.getElementById('set-bankName');
+  const bankAccountEl = document.getElementById('set-bankAccount');
+  const bankOwnerEl   = document.getElementById('set-bankOwner');
+  const tableCountEl  = document.getElementById('set-tableCount');
+  const autoBackupEl  = document.getElementById('set-autoBackup');
+
+  const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
+
+  const updated = {
+    ...s,
+    storeName:    (nameEl    && nameEl.value.trim())    || s.storeName,
+    storeSlogan:  (sloganEl  && sloganEl.value.trim())  || '',
+    storePhone:   (phoneEl   && phoneEl.value.trim())   || '',
+    storeAddress: (addressEl && addressEl.value.trim()) || '',
+    bankName:     (bankNameEl    && bankNameEl.value.trim())    || 'Vietinbank',
+    bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
+    bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
+    tableCount:   newTableCount,
+    autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
+  };
+  Store.setSettings(updated);
+
+  // Nếu số bàn thay đổi → rebuild danh sách bàn và reset active orders
+  if(newTableCount !== oldTableCount) {
+    Store.rebuildTables(newTableCount);
+    // Xoá các order của bàn vượt số lượng mới
+    const orders = Store.getOrders();
+    Object.keys(orders).forEach(tid => {
+      if(parseInt(tid) > newTableCount) delete orders[tid];
+    });
+    Store.setOrders(orders);
+    // Xoá cached order items
+    Object.keys(orderItems).forEach(tid => {
+      if(parseInt(tid) > newTableCount) delete orderItems[tid];
+    });
+  }
+
+  applyStoreSettings();
+  showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+}
+
+// ============================================================
+// BACKUP
+// ============================================================
+function manualBackup() {
+  try {
+    const snapshot = Store.saveLocalBackup();
+    renderBackupList();
+    const last = Store.getLastBackupTime();
+    const lastEl = document.getElementById('last-backup-time');
+    if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : '';
+    showToast('💾 Đã backup thành công!', 'success');
+  } catch(err) {
+    showToast('❌ Backup thất bại: ' + err.message, 'danger');
+  }
+}
+
+function exportBackup() {
+  try {
+    const snapshot = Store.getFullBackup();
+    const json = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const date = new Date().toISOString().slice(0,10);
+    a.href     = url;
+    a.download = `pos_backup_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📥 Đã xuất file backup!', 'success');
+  } catch(err) {
+    showToast('❌ Xuất thất bại: ' + err.message, 'danger');
+  }
+}
+
+function importBackup() {
+  const input = document.createElement('input');
+  input.type  = 'file';
+  input.accept= '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        Store.restoreFromBackup(backup);
+        orderItems = {};
+        applyStoreSettings();
+        renderPage(currentPage);
+        updateAlertBadge();
+        showToast(`✅ Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
+      } catch(err) {
+        showToast('❌ File không hợp lệ: ' + err.message, 'danger');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function renderBackupList() {
+  const backups = Store.getLocalBackups();
+  const el = document.getElementById('backup-list');
+  if(!el) return;
+  el.innerHTML = backups.length ? backups.map((b, i) =>
+    `<div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">💾</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${i === 0 ? '⭐ ' : ''}Backup ${i+1}</div>
+        <div class="list-item-sub">${b.label || fmtDate(b.date)} · ${(b.size/1024).toFixed(1)} KB</div>
+      </div>
+      ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">↩️ Khôi phục</button>` : ''}
+    </div>`
+  ).join('') : '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">Chưa có backup nào</div>';
+}
+
+function restoreLatestBackup() {
+  if(!confirm('Khôi phục backup gần nhất? Dữ liệu hiện tại sẽ bị ghi đè.')) return;
+  const raw = localStorage.getItem('gkhl_backup_latest');
+  if(!raw) { showToast('❌ Không tìm thấy backup', 'danger'); return; }
+  try {
+    const backup = JSON.parse(raw);
+    Store.restoreFromBackup(backup);
+    orderItems = {};
+    applyStoreSettings();
+    renderPage(currentPage);
+    updateAlertBadge();
+    showToast('✅ Đã khôi phục backup!', 'success');
+  } catch(err) {
+    showToast('❌ Khôi phục thất bại', 'danger');
+  }
 }
