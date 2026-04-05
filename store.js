@@ -101,6 +101,7 @@ const Store = {
     pur.unshift(p);
     this.set(KEYS.purchases, pur);
   },
+  setPurchases(arr) { this.set(KEYS.purchases, arr); },
 
   // SETTINGS
   getSettings() {
