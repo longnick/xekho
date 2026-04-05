@@ -394,10 +394,181 @@ body {
 
 /* ---- PRINT ---- */
 @media print {
-  body * { visibility:hidden; }
-  .bill-print-area, .bill-print-area * { visibility:visible; }
-  .bill-print-area { position:fixed; top:0; left:0; width:100%; background:#fff; }
+  /* Page setup – 80mm thermal width */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  /* Ẩn toàn bộ UI app */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 12px !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Ẩn mọi thứ trừ bill */
+  #app,
+  .app-header,
+  .bottom-nav,
+  .fab,
+  .modal-overlay > .modal-sheet > .modal-handle,
+  .modal-overlay > .modal-sheet > .modal-header,
+  .modal-body > div[style*="display:flex"],
+  .modal-body > div[style*="display: flex"] {
+    display: none !important;
+  }
+
+  /* Hiện modal overlay bình thường */
+  .modal-overlay {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+  }
+
+  .modal-sheet {
+    position: static !important;
+    background: #fff !important;
+    border-radius: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    animation: none !important;
+    box-shadow: none !important;
+    width: 100% !important;
+  }
+
+  .modal-body {
+    padding: 0 !important;
+  }
+
+  /* Bill container */
+  .bill-container {
+    background: #fff !important;
+    color: #000 !important;
+    padding: 6px 8px !important;
+    border-radius: 0 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .bill-header {
+    text-align: center !important;
+    margin-bottom: 8px !important;
+  }
+
+  .bill-logo {
+    font-size: 14px !important;
+    font-weight: 900 !important;
+    color: #000 !important;
+    display: block;
+  }
+
+  .bill-sub {
+    font-size: 10px !important;
+    color: #333 !important;
+    margin-top: 2px !important;
+  }
+
+  .bill-divider {
+    border: none !important;
+    border-top: 1px dashed #000 !important;
+    margin: 6px 0 !important;
+  }
+
+  .bill-info {
+    font-size: 10px !important;
+    margin-bottom: 6px !important;
+    line-height: 1.6 !important;
+  }
+
+  .bill-info span {
+    font-weight: 700 !important;
+  }
+
+  .bill-items {
+    width: 100% !important;
+    font-size: 10px !important;
+    border-collapse: collapse !important;
+  }
+
+  .bill-items th {
+    text-align: left !important;
+    border-bottom: 1px solid #000 !important;
+    padding: 3px 0 !important;
+    font-size: 10px !important;
+    color: #000 !important;
+  }
+
+  .bill-items td {
+    padding: 3px 0 !important;
+    vertical-align: top !important;
+    color: #000 !important;
+  }
+
+  .bill-items .amount {
+    text-align: right !important;
+    font-weight: 700 !important;
+  }
+
+  .bill-total {
+    display: flex !important;
+    justify-content: space-between !important;
+    font-size: 13px !important;
+    font-weight: 900 !important;
+    margin-top: 6px !important;
+    border-top: 2px solid #000 !important;
+    padding-top: 6px !important;
+    color: #000 !important;
+  }
+
+  .bill-qr {
+    text-align: center !important;
+    margin-top: 10px !important;
+    page-break-inside: avoid;
+  }
+
+  .bill-qr img {
+    width: 120px !important;
+    height: 120px !important;
+    object-fit: contain !important;
+    display: block !important;
+    margin: 0 auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .bill-qr-label {
+    font-size: 10px !important;
+    color: #333 !important;
+    margin-top: 3px !important;
+  }
+
+  .bill-thanks {
+    text-align: center !important;
+    font-size: 11px !important;
+    color: #333 !important;
+    margin-top: 8px !important;
+    padding-bottom: 4px !important;
+  }
+
+  /* Ẩn nút in/thanh toán khi in */
+  .bill-container + div,
+  button {
+    display: none !important;
+  }
 }
+
 
 /* ---- RESPONSIVE ---- */
 @media (max-width: 360px) {
