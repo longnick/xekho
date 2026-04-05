@@ -11,6 +11,8 @@ const KEYS = {
   expenses: 'gkhl_expenses',
   purchases: 'gkhl_purchases',
   settings: 'gkhl_settings',
+  backups: 'gkhl_backups',
+  lastBackup: 'gkhl_last_backup',
 };
 
 const Store = {
@@ -31,12 +33,45 @@ const Store = {
 
   // TABLES
   getTables() {
-    return this.get(KEYS.tables) || Array.from({length:20},(_,i)=>({
-      id: i+1, name:`Bàn ${i+1}`, status:'empty', orderId:null,
-      openTime:null, note:''
+    const saved = this.get(KEYS.tables);
+    const settings = this.getSettings();
+    const count = (settings && settings.tableCount) ? settings.tableCount : 20;
+
+    if(saved) {
+      // Adjust saved list to match tableCount
+      if(saved.length === count) return saved;
+      if(saved.length > count) return saved.slice(0, count);
+      // Add missing tables
+      const extra = Array.from({length: count - saved.length}, (_, i) => ({
+        id: saved.length + i + 1,
+        name: `Bàn ${saved.length + i + 1}`,
+        status: 'empty', orderId: null, openTime: null, note: ''
+      }));
+      return [...saved, ...extra];
+    }
+    // No saved data – generate fresh list
+    return Array.from({length: count}, (_, i) => ({
+      id: i + 1, name: `Bàn ${i + 1}`,
+      status: 'empty', orderId: null, openTime: null, note: ''
     }));
   },
   setTables(t) { this.set(KEYS.tables, t); },
+
+  // Rebuild tables list when tableCount setting changes
+  rebuildTables(newCount) {
+    const current = this.get(KEYS.tables) || [];
+    if(current.length === newCount) return;
+    if(newCount < current.length) {
+      this.setTables(current.slice(0, newCount));
+    } else {
+      const extra = Array.from({length: newCount - current.length}, (_, i) => ({
+        id: current.length + i + 1,
+        name: `Bàn ${current.length + i + 1}`,
+        status: 'empty', orderId: null, openTime: null, note: ''
+      }));
+      this.setTables([...current, ...extra]);
+    }
+  },
 
   // ORDERS (active orders per table)
   getOrders() { return this.get(KEYS.orders) || {}; },
@@ -74,9 +109,89 @@ const Store = {
       currency: 'đ',
       taxRate: 0,
       storeName: 'Gánh Khô Chữa Lành',
+      storeAddress: '',
+      storePhone: '0937707900',
+      storeSlogan: 'Ăn là nhớ, nhớ là ghiền!',
+      bankName: 'Vietinbank',
+      bankAccount: '0937707900',
+      bankOwner: 'Gánh Khô Chữa Lành',
+      autoBackup: true,
     };
   },
   setSettings(s) { this.set(KEYS.settings, s); },
+
+  // RESET ALL DATA (giữ lại menu và cài đặt)
+  resetAll(keepMenu = true, keepInventory = true) {
+    const menu = keepMenu ? this.getMenu() : null;
+    const inv = keepInventory ? this.getInventory() : null;
+    const settings = this.getSettings();
+    Object.values(KEYS).forEach(k => localStorage.removeItem(k));
+    this.setSettings(settings);
+    if(menu) this.setMenu(menu);
+    if(inv) this.setInventory(inv);
+  },
+
+  // BACKUP
+  getFullBackup() {
+    // Chỉ backup dữ liệu kinh doanh, bỏ qua các key meta
+    const SKIP_KEYS = new Set(['backups', 'lastBackup']);
+    const data = {};
+    Object.entries(KEYS).forEach(([k, storageKey]) => {
+      if(SKIP_KEYS.has(k)) return;
+      const raw = localStorage.getItem(storageKey);
+      if(!raw) return;
+      try {
+        data[k] = JSON.parse(raw);
+      } catch(e) {
+        // Skip keys that aren't valid JSON (e.g. raw ISO strings)
+        console.warn('[Backup] Skipped key:', k, e.message);
+      }
+    });
+    return {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      storeName: this.getSettings().storeName,
+      data,
+    };
+  },
+
+  restoreFromBackup(backup) {
+    if(!backup || !backup.data) throw new Error('File backup không hợp lệ');
+    Object.entries(backup.data).forEach(([k, v]) => {
+      if(KEYS[k]) localStorage.setItem(KEYS[k], JSON.stringify(v));
+    });
+  },
+
+  // Lưu backup vào localStorage (lưu tối đa 7 bản)
+  saveLocalBackup() {
+    const snapshot = this.getFullBackup();
+    const backups = this.get(KEYS.backups) || [];
+    const label = new Date(snapshot.exportedAt).toLocaleString('vi-VN', {
+      day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit'
+    });
+    backups.unshift({ date: snapshot.exportedAt, label, size: JSON.stringify(snapshot).length });
+    // Trim trước khi lưu
+    while(backups.length > 7) backups.pop();
+    this.set(KEYS.backups, backups);
+    localStorage.setItem('gkhl_backup_latest', JSON.stringify(snapshot));
+    localStorage.setItem(KEYS.lastBackup, new Date().toISOString());
+    return snapshot;
+  },
+
+  getLocalBackups() { return this.get(KEYS.backups) || []; },
+  getLastBackupTime() { return localStorage.getItem(KEYS.lastBackup); },
+
+  // Auto backup - chạy 1 lần mỗi ngày
+  autoBackupIfNeeded() {
+    const settings = this.getSettings();
+    if(!settings.autoBackup) return false;
+    const last = this.getLastBackupTime();
+    if(!last) { this.saveLocalBackup(); return true; }
+    const diff = (Date.now() - new Date(last)) / 3600000; // hours
+    if(diff >= 24) { this.saveLocalBackup(); return true; }
+    return false;
+  },
 
   // DEDUCT inventory when order is paid
   deductInventory(items) {
