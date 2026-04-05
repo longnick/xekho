@@ -24,6 +24,7 @@
     </div>
     <div class="header-actions">
       <button class="header-btn alert-dot" id="header-alert-btn" onclick="navigate('inventory')" title="Cảnh báo tồn kho">🔔</button>
+      <button class="header-btn" onclick="resetAllData()" title="Reset sạch dữ liệu" style="color:var(--danger)">🔄</button>
       <button class="header-btn" onclick="addDemoOrders()" title="Tạo dữ liệu demo">🎲</button>
     </div>
   </header>
@@ -278,6 +279,89 @@
       <div id="menu-admin-list"></div>
     </div>
 
+    <!-- ========== PAGE: SETTINGS ========== -->
+    <div id="page-settings" class="page">
+      <!-- Store Info -->
+      <form id="settings-form" onsubmit="submitSettings(event)">
+        <div class="card">
+          <div class="card-header"><div class="card-title">🏪 Thông tin quán</div></div>
+          <div class="input-group">
+            <label class="input-label">Tên quán *</label>
+            <input class="input" id="set-storeName" placeholder="Gánh Khô Chữa Lành" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Slogan / Khẩu hiệu</label>
+            <input class="input" id="set-storeSlogan" placeholder="Ăn là nhớ, nhớ là ghiền!">
+          </div>
+          <div class="form-row">
+            <div class="input-group">
+              <label class="input-label">Số điện thoại</label>
+              <input class="input" id="set-storePhone" placeholder="0937707900" type="tel">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Số bàn</label>
+              <input class="input" id="set-tableCount" placeholder="20" type="number" min="1" max="100">
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">📍 Địa chỉ quán</label>
+            <input class="input" id="set-storeAddress" placeholder="Số nhà, đường, phường, quận...">
+          </div>
+        </div>
+
+        <!-- Bank Info -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">🏦 Thông tin thanh toán</div></div>
+          <div class="input-group">
+            <label class="input-label">Tên ngân hàng</label>
+            <input class="input" id="set-bankName" placeholder="Vietinbank">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Số tài khoản</label>
+            <input class="input" id="set-bankAccount" placeholder="0937707900" type="tel">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Tên chủ tài khoản</label>
+            <input class="input" id="set-bankOwner" placeholder="Tên chủ TK">
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
+      </form>
+
+      <!-- Backup Section -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">💾 Backup dữ liệu</div>
+        </div>
+        <div class="toggle-wrap">
+          <div class="toggle-label">Tự động backup mỗi ngày</div>
+          <label class="toggle"><input type="checkbox" id="set-autoBackup" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
+          Lần backup cuối: <span id="last-backup-time" style="color:var(--success)">Chưa có</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <button class="btn btn-info btn-block" onclick="manualBackup()">💾 Backup ngay</button>
+          <button class="btn btn-secondary btn-block" onclick="exportBackup()">📥 Xuất file</button>
+        </div>
+        <button class="btn btn-secondary btn-block" onclick="importBackup()">📤 Nhập file backup</button>
+        <div class="section-header" style="margin-top:12px">
+          <div class="card-title">Lịch sử backup</div>
+        </div>
+        <div id="backup-list" class="card" style="padding:0"></div>
+      </div>
+
+      <!-- Danger Zone -->
+      <div class="card" style="border-color:var(--danger);">
+        <div class="card-header">
+          <div class="card-title" style="color:var(--danger)">⚠️ Vùng nguy hiểm</div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Xoá toàn bộ dữ liệu giao dịch, lịch sử, tồn kho để bắt đầu hoạt động chính thức.</div>
+        <button class="btn btn-danger btn-block" onclick="resetAllData()">🔄 Reset sạch dữ liệu</button>
+      </div>
+    </div>
+
   </main><!-- end main -->
 
   <!-- ===== BOTTOM NAV ===== -->
@@ -307,6 +391,10 @@
       <div class="nav-icon">📝</div>
       <div>Menu</div>
     </div>
+    <div class="nav-item" data-page="settings">
+      <div class="nav-icon">⚙️</div>
+      <div>Cài đặt</div>
+    </div>
   </nav>
 
 </div><!-- end app -->
@@ -326,6 +414,36 @@
     <div class="modal-body" id="bill-content"></div>
   </div>
 </div>
+
+<!-- Reset Confirmation Modal -->
+<div class="modal-overlay" id="reset-modal" style="align-items:center;padding:20px" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet-center" style="padding:24px;display:flex;flex-direction:column;gap:12px;align-items:stretch;">
+    <div style="text-align:center;font-size:36px">⚠️</div>
+    <div style="text-align:center">
+      <div style="font-size:16px;font-weight:800;color:var(--danger)">Xác nhận Reset dữ liệu</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5">Hành động này KHÔNG THỂ hoàn tác.<br>Hãy backup trước khi tiếp tục.</div>
+    </div>
+    <div style="background:var(--bg3);border-radius:12px;padding:12px;font-size:12px;color:var(--text2)">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px">Chọn mức reset:</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-warning btn-block" onclick="confirmResetData(true,true)">
+          🔄 Reset giao dịch &amp; lịch sử<br><span style="font-size:10px;font-weight:400;opacity:0.8">Giữ lại menu + tồn kho</span>
+        </button>
+        <button class="btn btn-danger btn-block" onclick="confirmResetData(true,false)">
+          🗑️ Reset toàn bộ (trừ menu)<br><span style="font-size:10px;font-weight:400;opacity:0.8">Xoá lịch sử + tồn kho, giữ menu</span>
+        </button>
+        <button class="btn btn-danger btn-block" onclick="confirmResetData(false,false)">
+          🚨 Reset sạch hoàn toàn<br><span style="font-size:10px;font-weight:400;opacity:0.8">Xoá TẤT CẢ, khôi phục mặc định</span>
+        </button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" style="flex:1" onclick="exportBackup();showToast('📥 Đã backup trước khi reset','success')">💾 Backup trước</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('reset-modal').classList.remove('active')">❌ Huỷ</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Purchase Modal -->
 <div class="modal-overlay" id="purchase-modal" onclick="if(event.target===this)this.classList.remove('active')">
