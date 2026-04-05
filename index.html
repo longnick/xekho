@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gánh Khô">
+<meta name="theme-color" content="#0F0F14">
+<title>Gánh Khô Chữa Lành – POS</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-logo">
+      <div class="logo-icon">🍢</div>
+      <div>
+        <div class="logo-text">Gánh Khô Chữa Lành</div>
+        <div class="logo-sub">POS System</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn alert-dot" id="header-alert-btn" onclick="navigate('inventory')" title="Cảnh báo tồn kho">🔔</button>
+      <button class="header-btn" onclick="addDemoOrders()" title="Tạo dữ liệu demo">🎲</button>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main-content">
+
+    <!-- ========== PAGE: TABLES ========== -->
+    <div id="page-tables" class="page">
+      <!-- Quick Stats -->
+      <div class="stats-grid">
+        <div class="stat-card orange">
+          <div class="stat-icon">💰</div>
+          <div class="stat-value" id="today-revenue">0đ</div>
+          <div class="stat-label">Doanh thu hôm nay</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-icon">🧾</div>
+          <div class="stat-value" id="today-orders">0</div>
+          <div class="stat-label">Đơn hàng hôm nay</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-icon">🔴</div>
+          <div class="stat-value" id="tables-occupied">0</div>
+          <div class="stat-label">Bàn đang phục vụ</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-icon">🟢</div>
+          <div class="stat-value" id="tables-empty">0</div>
+          <div class="stat-label">Bàn trống</div>
+        </div>
+      </div>
+
+      <!-- Table Grid -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🪑 Sơ đồ bàn</div>
+          <button class="btn btn-sm btn-secondary" onclick="renderTables()">🔄 Làm mới</button>
+        </div>
+        <div class="table-grid" id="table-grid"></div>
+      </div>
+    </div>
+
+    <!-- ========== PAGE: ORDERS ========== -->
+    <div id="page-orders" class="page">
+      <div class="order-header">
+        <button class="back-btn" onclick="navigate('tables')">←</button>
+        <div class="order-table-name" id="order-table-title">Bàn –</div>
+        <button class="btn btn-sm btn-secondary" onclick="clearTable()" style="margin-left:auto">🗑️ Huỷ bàn</button>
+      </div>
+
+      <!-- Search & Cats -->
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="input" id="order-search" placeholder="Tìm món..." oninput="menuSearch=this.value;renderMenuItems()">
+      </div>
+      <div class="cat-tabs" id="cat-tabs"></div>
+
+      <!-- Menu Grid -->
+      <div class="menu-grid" id="menu-grid"></div>
+
+      <!-- Cart -->
+      <div class="order-cart">
+        <div class="card-header" style="padding:12px 12px 0">
+          <div class="card-title">🛒 Order</div>
+          <span class="badge badge-primary" id="cart-count">0 món</span>
+        </div>
+        <div class="cart-items" id="cart-items"></div>
+        <div class="cart-total">
+          <span class="cart-total-label">Tổng cộng</span>
+          <span class="cart-total-amount" id="cart-total">0đ</span>
+        </div>
+        <div class="cart-actions">
+          <button class="btn btn-secondary" style="flex:1" onclick="saveAndBack()">💾 Lưu bàn</button>
+          <button class="btn btn-success" style="flex:2" id="pay-btn" onclick="openBillModal()" disabled>🧾 Xuất bill</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== PAGE: INVENTORY ========== -->
+    <div id="page-inventory" class="page">
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 Tồn kho</button>
+        <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập hàng</button>
+        <button class="tab-btn" onclick="switchInvTab('forecast',this)">🔮 Dự báo</button>
+      </div>
+
+      <!-- STOCK TAB -->
+      <div id="inv-tab-stock">
+        <div id="inv-alerts"></div>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input class="input" id="inv-search" placeholder="Tìm nguyên liệu..." oninput="renderStockList()">
+        </div>
+        <div class="card" style="padding:0 16px">
+          <div id="stock-list"></div>
+        </div>
+      </div>
+
+      <!-- PURCHASE TAB -->
+      <div id="inv-tab-purchase" style="display:none">
+        <div id="purchase-list"></div>
+      </div>
+
+      <!-- FORECAST TAB -->
+      <div id="inv-tab-forecast" style="display:none">
+        <div class="alert-card info" style="margin-bottom:12px">
+          <div class="alert-icon">🔮</div>
+          <div class="alert-content">
+            <div class="alert-title">Dự báo tự động</div>
+            <div class="alert-desc">Dựa trên lịch sử tiêu thụ 7 ngày qua, hệ thống dự báo nhu cầu nhập hàng cho 3 ngày tới.</div>
+          </div>
+        </div>
+        <div id="forecast-list"></div>
+      </div>
+    </div>
+
+    <!-- ========== PAGE: FINANCE ========== -->
+    <div id="page-finance" class="page">
+      <!-- Period Filter -->
+      <div class="date-filter">
+        <button class="date-btn finance-period-btn active" data-period="today" onclick="setFinancePeriod('today')">Hôm nay</button>
+        <button class="date-btn finance-period-btn" data-period="week" onclick="setFinancePeriod('week')">7 ngày</button>
+        <button class="date-btn finance-period-btn" data-period="month" onclick="setFinancePeriod('month')">Tháng này</button>
+        <button class="date-btn finance-period-btn" data-period="all" onclick="setFinancePeriod('all')">Tất cả</button>
+      </div>
+
+      <!-- Finance Stats -->
+      <div class="stats-grid">
+        <div class="stat-card orange">
+          <div class="stat-icon">💰</div>
+          <div class="stat-value" id="fin-revenue">0đ</div>
+          <div class="stat-label">Doanh thu</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-icon">📈</div>
+          <div class="stat-value" id="fin-gross">0đ</div>
+          <div class="stat-label">Lãi gộp</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-icon">💸</div>
+          <div class="stat-value" id="fin-expense">0đ</div>
+          <div class="stat-label">Chi phí</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-icon">🏆</div>
+          <div class="stat-value" id="fin-profit">0đ</div>
+          <div class="stat-label">Lợi nhuận</div>
+        </div>
+      </div>
+
+      <!-- Extra Stats Row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+        <div class="card card-sm" style="text-align:center">
+          <div style="font-size:12px;color:var(--text2)">Giá vốn</div>
+          <div style="font-size:13px;font-weight:800" id="fin-cost">0đ</div>
+        </div>
+        <div class="card card-sm" style="text-align:center">
+          <div style="font-size:12px;color:var(--text2)">Biên LN</div>
+          <div style="font-size:13px;font-weight:800;color:var(--success)" id="fin-margin">0%</div>
+        </div>
+        <div class="card card-sm" style="text-align:center">
+          <div style="font-size:12px;color:var(--text2)">Đơn hàng</div>
+          <div style="font-size:13px;font-weight:800" id="fin-orders">0</div>
+        </div>
+      </div>
+
+      <!-- Revenue Chart -->
+      <div class="chart-wrap">
+        <div class="card-title" style="margin-bottom:10px">📊 Doanh thu 7 ngày</div>
+        <canvas id="revenue-chart"></canvas>
+      </div>
+
+      <!-- Expenses -->
+      <div class="section-header">
+        <div class="section-title">💸 Chi phí</div>
+        <button class="btn btn-sm btn-primary" onclick="openExpenseModal()">+ Thêm</button>
+      </div>
+      <div id="expense-list"></div>
+    </div>
+
+    <!-- ========== PAGE: REPORTS ========== -->
+    <div id="page-reports" class="page">
+      <div class="date-filter">
+        <button class="date-btn report-period-btn active" data-period="today" onclick="setReportPeriod('today')">Hôm nay</button>
+        <button class="date-btn report-period-btn" data-period="week" onclick="setReportPeriod('week')">7 ngày</button>
+        <button class="date-btn report-period-btn" data-period="month" onclick="setReportPeriod('month')">Tháng</button>
+        <button class="date-btn report-period-btn" data-period="all" onclick="setReportPeriod('all')">Tổng</button>
+      </div>
+
+      <!-- Charts -->
+      <div class="chart-wrap">
+        <div class="card-title" style="margin-bottom:10px">🍽️ Doanh thu theo danh mục</div>
+        <canvas id="category-chart"></canvas>
+      </div>
+      <div class="chart-wrap">
+        <div class="card-title" style="margin-bottom:10px">⏰ Doanh thu theo giờ</div>
+        <canvas id="hourly-chart"></canvas>
+      </div>
+
+      <!-- Top Items -->
+      <div class="section-header"><div class="section-title">🔥 Món bán chạy</div></div>
+      <div id="top-items"></div>
+
+      <!-- History -->
+      <div class="section-header"><div class="section-title">🧾 Lịch sử đơn hàng</div></div>
+      <div id="order-history-list"></div>
+    </div>
+
+    <!-- ========== PAGE: INSIGHTS ========== -->
+    <div id="page-insights" class="page">
+      <div class="section-header">
+        <div>
+          <div class="section-title">🤖 AI Phân tích</div>
+          <div class="section-sub">Gợi ý thông minh cho cửa hàng</div>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="renderInsights()">🔄</button>
+      </div>
+
+      <!-- Revenue Warning -->
+      <div id="revenue-warning"></div>
+
+      <!-- Insights -->
+      <div id="insights-list"></div>
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-title" style="margin-bottom:10px">⚡ Thao tác nhanh</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn btn-secondary btn-block" onclick="navigate('inventory')">📦 Kiểm tồn kho</button>
+          <button class="btn btn-secondary btn-block" onclick="navigate('finance')">💰 Xem tài chính</button>
+          <button class="btn btn-secondary btn-block" onclick="navigate('reports')">📊 Báo cáo</button>
+          <button class="btn btn-secondary btn-block" onclick="openPurchaseModal()">🚚 Nhập hàng</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== PAGE: MENU ADMIN ========== -->
+    <div id="page-menu" class="page">
+      <div class="section-header">
+        <div>
+          <div class="section-title">📝 Quản lý Menu</div>
+          <div class="section-sub">Thêm, sửa, xoá món ăn</div>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="openAddMenuModal()">+ Thêm</button>
+      </div>
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="input" id="menu-admin-search" placeholder="Tìm món..." oninput="renderMenuAdmin()">
+      </div>
+      <div id="menu-admin-list"></div>
+    </div>
+
+  </main><!-- end main -->
+
+  <!-- ===== BOTTOM NAV ===== -->
+  <nav class="bottom-nav">
+    <div class="nav-item active" data-page="tables">
+      <div class="nav-icon">🪑</div>
+      <div>Bàn</div>
+    </div>
+    <div class="nav-item" data-page="inventory">
+      <div class="nav-icon">📦</div>
+      <div>Tồn kho</div>
+      <div class="nav-badge" id="alert-badge" style="display:none">0</div>
+    </div>
+    <div class="nav-item" data-page="finance">
+      <div class="nav-icon">💰</div>
+      <div>Tài chính</div>
+    </div>
+    <div class="nav-item" data-page="reports">
+      <div class="nav-icon">📊</div>
+      <div>Báo cáo</div>
+    </div>
+    <div class="nav-item" data-page="insights">
+      <div class="nav-icon">🤖</div>
+      <div>AI</div>
+    </div>
+    <div class="nav-item" data-page="menu">
+      <div class="nav-icon">📝</div>
+      <div>Menu</div>
+    </div>
+  </nav>
+
+</div><!-- end app -->
+
+<!-- ============================================================
+     MODALS
+============================================================ -->
+
+<!-- Bill Modal -->
+<div class="modal-overlay" id="bill-modal" onclick="if(event.target===this)closeBillModal()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">🧾 Hoá đơn thanh toán</div>
+      <button class="modal-close" onclick="closeBillModal()">✕</button>
+    </div>
+    <div class="modal-body" id="bill-content"></div>
+  </div>
+</div>
+
+<!-- Purchase Modal -->
+<div class="modal-overlay" id="purchase-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">🚚 Nhập hàng mới</div>
+      <button class="modal-close" onclick="document.getElementById('purchase-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="purchase-form" onsubmit="submitPurchase(event)">
+        <div class="input-group">
+          <label class="input-label">Tên nguyên liệu *</label>
+          <input class="input" id="pur-name" placeholder="Khô cá mối, Mực khô..." required list="inv-names">
+          <datalist id="inv-names"></datalist>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">Số lượng *</label>
+            <input class="input" id="pur-qty" type="number" min="0.01" step="0.01" placeholder="10" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Tổng tiền (đ) *</label>
+            <input class="input" id="pur-price" type="number" min="0" placeholder="150000" required>
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Nhà cung cấp</label>
+          <input class="input" id="pur-supplier" placeholder="Chợ, Đại lý...">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Nhập hàng</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Expense Modal -->
+<div class="modal-overlay" id="expense-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">💸 Thêm chi phí</div>
+      <button class="modal-close" onclick="document.getElementById('expense-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="expense-form" onsubmit="submitExpense(event)">
+        <div class="input-group">
+          <label class="input-label">Tên chi phí *</label>
+          <input class="input" id="exp-name" placeholder="Tiền điện, thuê mặt bằng..." required>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">Số tiền (đ) *</label>
+            <input class="input" id="exp-amount" type="number" min="0" placeholder="500000" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Danh mục</label>
+            <select class="select" id="exp-category">
+              <option>Điện/Nước</option>
+              <option>Thuê mặt bằng</option>
+              <option>Nhân công</option>
+              <option>Marketing</option>
+              <option>Vận chuyển</option>
+              <option>Khác</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu chi phí</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Menu Item Modal -->
+<div class="modal-overlay" id="menu-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="menu-modal-title">Thêm món mới</div>
+      <button class="modal-close" onclick="document.getElementById('menu-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="menu-form" onsubmit="submitMenuItem(event)">
+        <input type="hidden" id="menu-item-id">
+        <div class="input-group">
+          <label class="input-label">Tên món *</label>
+          <input class="input" id="menu-item-name" placeholder="Tên món ăn..." required>
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">Giá bán (đ) *</label>
+            <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Giá vốn (đ)</label>
+            <input class="input" id="menu-item-cost" type="number" min="0" placeholder="20000">
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Danh mục</label>
+          <select class="select" id="menu-item-category">
+            <option>Khô Nướng</option>
+            <option>Đặc Biệt</option>
+            <option>Phần Combo</option>
+            <option>Món Ăn Kèm</option>
+            <option>Giải Khát</option>
+            <option>Rượu</option>
+            <option>Beer</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu món</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- FAB for inventory purchase -->
+<button class="fab" id="main-fab" onclick="onFabClick()" title="Thêm nhanh">+</button>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+<script>
+// Extra helpers that reference DOM
+
+function saveAndBack() {
+  saveOrder();
+  showToast('💾 Đã lưu bàn ' + currentTable);
+  navigate('tables');
+}
+
+function clearTable() {
+  if(!confirm('Huỷ tất cả món ở bàn này?')) return;
+  delete orderItems[currentTable];
+  const orders = Store.getOrders();
+  delete orders[currentTable];
+  Store.setOrders(orders);
+  const tables = Store.getTables();
+  const t = tables.find(t => t.id === currentTable);
+  if(t) { t.status='empty'; t.openTime=null; }
+  Store.setTables(tables);
+  navigate('tables');
+  showToast('🗑️ Đã huỷ bàn ' + currentTable);
+}
+
+function switchInvTab(tab, el) {
+  invTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  document.getElementById('inv-tab-stock').style.display = tab === 'stock' ? '' : 'none';
+  document.getElementById('inv-tab-purchase').style.display = tab === 'purchase' ? '' : 'none';
+  document.getElementById('inv-tab-forecast').style.display = tab === 'forecast' ? '' : 'none';
+  renderInventory();
+
+  // Populate datalist for purchase
+  if(tab === 'purchase' || tab === 'stock') {
+    const dl = document.getElementById('inv-names');
+    if(dl) {
+      const inv = Store.getInventory();
+      dl.innerHTML = inv.map(i=>`<option value="${i.name}">`).join('');
+    }
+  }
+}
+
+function onFabClick() {
+  if(currentPage === 'inventory') openPurchaseModal();
+  else if(currentPage === 'finance') openExpenseModal();
+  else if(currentPage === 'menu') openAddMenuModal();
+  else navigate('tables');
+}
+
+// Update FAB icon based on page
+const _origNavigate = navigate;
+// Patch navigate to update FAB
+const origNavigate = navigate;
+window.navigate = function(page) {
+  origNavigate(page);
+  const fab = document.getElementById('main-fab');
+  if(!fab) return;
+  const icons = { inventory:'+', finance:'+', menu:'+', tables:'🪑', reports:'📊', insights:'🔄', orders:'🛒' };
+  fab.textContent = icons[page] || '+';
+};
+
+// Category chart select colors fill
+Chart.defaults.color = '#A0A0B5';
+</script>
+</body>
+</html>
