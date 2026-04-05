@@ -23,7 +23,9 @@
       </div>
     </div>
     <div class="header-actions">
-      <button class="header-btn alert-dot" id="header-alert-btn" onclick="navigate('inventory')" title="Cảnh báo tồn kho">🔔</button>
+      <button class="header-btn alert-dot" id="header-alert-btn" onclick="openStockAlertPopup()" title="Cảnh báo tồn kho">🔔
+        <span id="alert-badge-header" style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
+      </button>
       <button class="header-btn" onclick="resetAllData()" title="Reset sạch dữ liệu" style="color:var(--danger)">🔄</button>
       <button class="header-btn" onclick="addDemoOrders()" title="Tạo dữ liệu demo">🎲</button>
     </div>
@@ -450,7 +452,7 @@
   <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-header">
-      <div class="modal-title">🚚 Nhập hàng mới</div>
+    <div class="modal-title" id="purchase-modal-title">🚚 Nhập hàng mới</div>
       <button class="modal-close" onclick="document.getElementById('purchase-modal').classList.remove('active')">✕</button>
     </div>
     <div class="modal-body">
@@ -620,6 +622,53 @@
 
 <!-- FAB for inventory purchase -->
 <button class="fab" id="main-fab" onclick="onFabClick()" title="Thêm nhanh">+</button>
+
+<!-- Payment Method Modal -->
+<div class="modal-overlay" id="pay-method-modal" style="align-items:center;padding:20px" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet-center" style="padding:0;overflow:hidden">
+    <div class="modal-header" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
+      <div class="modal-title">💳 Chọn phương thức thanh toán</div>
+      <button class="modal-close" onclick="document.getElementById('pay-method-modal').classList.remove('active')">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+      <button class="btn btn-block" style="height:60px;background:linear-gradient(135deg,#0095FF,#006ED8);color:#fff;font-size:16px" onclick="confirmPaymentMethod('bank')">
+        🏦 Chuyển khoản ngân hàng
+      </button>
+      <button class="btn btn-block" style="height:60px;background:linear-gradient(135deg,#00D68F,#00B574);color:#fff;font-size:16px" onclick="confirmPaymentMethod('cash')">
+        💵 Thanh toán tiền mặt
+      </button>
+      <button class="btn btn-secondary btn-block" onclick="document.getElementById('pay-method-modal').classList.remove('active')">❌ Huỷ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div class="modal-overlay" id="order-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">🧾 Chi tiết đơn hàng</div>
+      <button class="modal-close" onclick="document.getElementById('order-detail-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body" id="order-detail-content"></div>
+  </div>
+</div>
+
+<!-- Stock Alert Modal -->
+<div class="modal-overlay" id="stock-alert-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">🔔 Cảnh báo hàng tồn kho</div>
+        <div id="stock-alert-count" style="font-size:12px;color:var(--danger);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('stock-alert-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body" id="stock-alert-body">
+    </div>
+  </div>
+</div>
 
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
