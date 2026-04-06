@@ -6,6 +6,7 @@
 let currentPage = 'tables';
 let currentTable = null;
 let orderItems = {};  // tableId -> [{id,name,price,qty,cost}]
+let orderExtras = {}; // tableId -> {discount, shipping}
 let chartInstances = {};
 
 // ---- Init ----
@@ -285,6 +286,17 @@ function addToOrder(itemId) {
   if(navigator.vibrate) navigator.vibrate(30);
 }
 
+function removeCartItem(itemId) {
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => i.id === itemId);
+  if(idx < 0) return;
+  items.splice(idx, 1);
+  saveOrder();
+  renderMenuItems();
+  renderCart();
+}
+
 function changeQty(itemId, delta) {
   const items = orderItems[currentTable];
   if(!items) return;
@@ -320,7 +332,21 @@ function saveOrder() {
 
 function renderCart() {
   const items = orderItems[currentTable] || [];
-  const total = items.reduce((s,i) => s + i.price*i.qty, 0);
+  const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
+  
+  const dInp = document.getElementById('cart-discount');
+  const sInp = document.getElementById('cart-shipping');
+  
+  if (dInp && document.activeElement === dInp) extras.discount = parseFloat(dInp.value) || 0;
+  else if (dInp) dInp.value = extras.discount || '';
+
+  if (sInp && document.activeElement === sInp) extras.shipping = parseFloat(sInp.value) || 0;
+  else if (sInp) sInp.value = extras.shipping || '';
+
+  orderExtras[currentTable] = extras;
+
+  const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
+  const total = Math.max(0, itemsTotal - extras.discount + extras.shipping);
 
   if(items.length === 0) {
     document.getElementById('cart-items').innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:32px">🛒</div><div class="empty-text">Chưa có món</div></div>`;
@@ -333,7 +359,10 @@ function renderCart() {
           <span class="cart-qty">${item.qty}</span>
           <button class="qty-btn" onclick="changeQty('${item.id}',1)">+</button>
         </div>
-        <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
+        <div style="display:flex; align-items:center; gap:6px">
+          <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
+          <button class="qty-btn" style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${item.id}')">✕</button>
+        </div>
       </div>`
     ).join('');
   }
@@ -345,8 +374,10 @@ function renderCart() {
 function openBillModal() {
   const items = orderItems[currentTable] || [];
   if(items.length === 0) return;
+  const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
   const s = Store.getSettings();
-  const total = items.reduce((s,i) => s + i.price*i.qty, 0);
+  const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
+  const total = Math.max(0, itemsTotal - extras.discount + extras.shipping);
   // Dynamically calculate cost based on current inventory
   const inv = Store.getInventory();
   const menu = Store.getMenu();
@@ -374,7 +405,7 @@ function openBillModal() {
   const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
 
   // Store bill data for payment confirmation
-  window._pendingBill = { billNo, total, cost, tableLabel };
+  window._pendingBill = { billNo, total, cost, extras, tableLabel };
 
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
@@ -400,6 +431,8 @@ function openBillModal() {
         </tbody>
       </table>
       <hr class="bill-divider">
+      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Giảm giá</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
+      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
       <div class="bill-qr">
         <div class="bill-qr-label">Quét QR để thanh toán chuyển khoản</div>
@@ -425,8 +458,8 @@ function openPaymentMethodModal() {
 
 function confirmPaymentMethod(method) {
   document.getElementById('pay-method-modal').classList.remove('active');
-  const { billNo, total, cost } = window._pendingBill;
-  confirmPayment(billNo, total, cost, method);
+  const { billNo, total, cost, extras } = window._pendingBill;
+  confirmPayment(billNo, total, cost, extras, method);
 }
 
 function closeBillModal() {
@@ -446,7 +479,7 @@ function printBill() {
   }
 }
 
-function confirmPayment(billNo, total, cost, payMethod) {
+function confirmPayment(billNo, total, cost, extras, payMethod) {
   const items = orderItems[currentTable] || [];
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
@@ -458,6 +491,8 @@ function confirmPayment(billNo, total, cost, payMethod) {
     items: items.map(i => ({...i})),
     total,
     cost,
+    discount: extras?.discount || 0,
+    shipping: extras?.shipping || 0,
     payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
   });
@@ -467,6 +502,7 @@ function confirmPayment(billNo, total, cost, payMethod) {
 
   // Clear table
   delete orderItems[currentTable];
+  delete orderExtras[currentTable];
   const orders = Store.getOrders();
   delete orders[currentTable];
   Store.setOrders(orders);
@@ -743,6 +779,10 @@ function setFinancePeriod(p) {
   document.getElementById('fin-orders').textContent = s.orders;
   document.getElementById('fin-bank').textContent = fmtFull(s.revenueBank || 0);
   document.getElementById('fin-cash').textContent = fmtFull(s.revenueCash || 0);
+  const finDiscount = document.getElementById('fin-discount');
+  if(finDiscount) finDiscount.textContent = fmtFull(s.discountTotal || 0);
+  const finShipping = document.getElementById('fin-shipping');
+  if(finShipping) finShipping.textContent = fmtFull(s.shippingTotal || 0);
 
   const margin = s.revenue > 0 ? (s.gross/s.revenue*100).toFixed(1) : 0;
   document.getElementById('fin-margin').textContent = margin + '%';
@@ -789,6 +829,29 @@ function submitExpense(e) {
   document.getElementById('expense-form').reset();
   renderFinance();
   showToast('✅ Đã thêm chi phí!');
+}
+
+function openDiscountDetails() {
+  const orders = filterHistory(financePeriod).filter(o => o.discount && o.discount > 0);
+  if (orders.length === 0) {
+    showToast('Chưa có đơn nào được giảm giá trong thời gian này', 'warning');
+    return;
+  }
+  
+  document.getElementById('discount-detail-content').innerHTML = orders.map(o => `
+    <div class="list-item" onclick="document.getElementById('discount-detail-modal').classList.remove('active'); viewOrderDetail('${o.id}')" style="cursor:pointer">
+      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">📉</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${o.tableName} – ${o.id}</div>
+        <div class="list-item-sub">${fmtDateTime(o.paidAt)}</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount" style="color:var(--danger)">-${fmt(o.discount)}đ</div>
+      </div>
+    </div>
+  `).join('');
+  
+  document.getElementById('discount-detail-modal').classList.add('active');
 }
 
 function renderRevenueChart() {
@@ -908,11 +971,12 @@ function renderOrderHistoryList() {
   document.getElementById('order-history-list').innerHTML = orders.length ? orders.map(o => {
     const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
     const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+    const discountLabel = o.discount > 0 ? `<br>📉 Giảm: -${fmt(o.discount)}đ` : '';
     return `<div class="list-item" onclick="viewOrderDetail('${o.id}')" style="cursor:pointer">
       <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
       <div class="list-item-content">
         <div class="list-item-title">${o.tableName} – ${o.id}</div>
-        <div class="list-item-sub">${fmtDateTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}</div>
+        <div class="list-item-sub">${fmtDateTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}${discountLabel}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">${fmt(o.total)}đ</div>
@@ -941,6 +1005,8 @@ function viewOrderDetail(orderId) {
       <div style="font-size:12px;color:var(--text2);margin-top:4px">${payIcon} Thanh toán: ${payLabel}</div>
     </div>
     <div style="margin-bottom:12px">${itemsHtml}</div>
+    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>📉 Giảm giá</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
+    ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🛵 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
     <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
       <span style="font-weight:700">TỔNG CỘNG</span>
       <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
@@ -1126,35 +1192,6 @@ function showToast(msg, type) {
 }
 
 // ============================================================
-// ADD DEMO DATA (for testing)
-// ============================================================
-function addDemoOrders() {
-  const menu = Store.getMenu();
-  for(let d = 6; d >= 0; d--) {
-    const orders = Math.floor(Math.random()*8)+3;
-    for(let o = 0; o < orders; o++) {
-      const nItems = Math.floor(Math.random()*4)+1;
-      const items = [];
-      for(let i = 0; i < nItems; i++) {
-        const dish = menu[Math.floor(Math.random()*menu.length)];
-        const ex = items.find(x=>x.id===dish.id);
-        if(ex) ex.qty++;
-        else items.push({id:dish.id,name:dish.name,price:dish.price,cost:dish.cost||0,qty:1+Math.floor(Math.random()*2)});
-      }
-      const total = items.reduce((s,i)=>s+i.price*i.qty,0);
-      const cost = items.reduce((s,i)=>s+(i.cost||0)*i.qty,0);
-      const date = new Date();
-      date.setDate(date.getDate()-d);
-      date.setHours(11+Math.floor(Math.random()*10));
-      Store.addHistory({ id:uid(), tableId:Math.floor(Math.random()*10)+1, tableName:`Bàn ${Math.floor(Math.random()*10)+1}`, items, total, cost, paidAt:date.toISOString() });
-    }
-  }
-  showToast('✅ Đã tạo dữ liệu demo!', 'success');
-  renderPage(currentPage);
-  updateAlertBadge();
-}
-
-// ============================================================
 // RESET DATA
 // ============================================================
 function resetAllData() {
@@ -1184,6 +1221,7 @@ function renderSettings() {
     ['set-bankName',     s.bankName    || 'Vietinbank'],
     ['set-bankAccount',  s.bankAccount || ''],
     ['set-bankOwner',    s.bankOwner   || ''],
+    ['set-geminiApiKey', s.geminiApiKey|| ''],
     ['set-tableCount',   s.tableCount  || 20],
   ];
   fields.forEach(([id, val]) => {
@@ -1213,6 +1251,7 @@ function submitSettings(e) {
   const bankNameEl    = document.getElementById('set-bankName');
   const bankAccountEl = document.getElementById('set-bankAccount');
   const bankOwnerEl   = document.getElementById('set-bankOwner');
+  const geminiEl      = document.getElementById('set-geminiApiKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
 
@@ -1227,6 +1266,7 @@ function submitSettings(e) {
     bankName:     (bankNameEl    && bankNameEl.value.trim())    || 'Vietinbank',
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
+    geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
     tableCount:   newTableCount,
     autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
   };
@@ -1343,3 +1383,550 @@ function restoreLatestBackup() {
     showToast('❌ Khôi phục thất bại', 'danger');
   }
 }
+
+// ============================================================
+// AI ASSISTANT – STANDALONE (iPhone / Safari only, no server)
+// Uses: Web Speech API (mic) + Gemini REST API + SpeechSynthesis (TTS)
+// ============================================================
+let aiRecognition = null;
+let aiIsListening  = false;
+
+// ------ UI helpers ------
+let aiChatHistoryLoaded = false;
+
+function openAIAssistant() {
+  document.getElementById('ai-modal').classList.add('active');
+  updateAIModeUI();
+
+  if (!aiChatHistoryLoaded) {
+    const history = Store.getAIHistory();
+    if (history.length > 0) {
+      const container = document.getElementById('ai-chat-messages');
+      const welcomeMsg = document.getElementById('ai-welcome-msg');
+      container.innerHTML = '';
+      if (welcomeMsg) container.appendChild(welcomeMsg);
+      history.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `ai-bubble ai-bubble-${msg.role}`;
+        div.innerHTML = msg.content;
+        container.appendChild(div);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+    aiChatHistoryLoaded = true;
+  }
+}
+
+function closeAIAssistant() {
+  document.getElementById('ai-modal').classList.remove('active');
+  stopAIListening();
+}
+
+function toggleAIMode() {
+  const s = Store.getSettings();
+  s.forceOffline = !s.forceOffline;
+  Store.setSettings(s);
+  updateAIModeUI();
+}
+
+function updateAIModeUI() {
+  const s = Store.getSettings();
+  const el = document.getElementById('ai-status-text');
+  if(!el) return;
+  if (s.forceOffline) {
+    el.innerHTML = '📴 Chế độ Offline (Nhanh)';
+    el.style.background = 'var(--bg2)';
+    el.style.color = 'var(--text2)';
+    el.style.border = '1px solid var(--border)';
+  } else {
+    const hasKey = !!s.geminiApiKey;
+    el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
+    el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+    el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
+    el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+  }
+}
+
+function clearAIAssistantHistory() {
+  if(!confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện AI?')) return;
+  Store.setAIHistory([]);
+  const container = document.getElementById('ai-chat-messages');
+  const welcomeMsg = document.getElementById('ai-welcome-msg');
+  if (container) {
+    container.innerHTML = '';
+    if (welcomeMsg) container.appendChild(welcomeMsg);
+  }
+}
+
+function addAIBubble(text, role = 'bot') {
+  const container = document.getElementById('ai-chat-messages');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = `ai-bubble ai-bubble-${role}`;
+  div.innerHTML = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  
+  if (role !== 'thinking') {
+    const history = Store.getAIHistory();
+    history.push({ role, content: text });
+    if (history.length > 50) history.shift(); // Giới hạn lưu 50 tin
+    Store.setAIHistory(history);
+  }
+  
+  return div;
+}
+
+function removeThinkingBubble() {
+  const t = document.getElementById('ai-thinking-bubble');
+  if (t) t.remove();
+}
+
+// ------ Voice Input (Web Speech API) ------
+function toggleAIVoice() {
+  if (aiIsListening) {
+    stopAIListening();
+  } else {
+    startAIListening();
+  }
+}
+
+function startAIListening() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    addAIBubble('⚠️ Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Safari trên iPhone.', 'error');
+    return;
+  }
+
+  aiRecognition = new SpeechRecognition();
+  aiRecognition.lang = 'vi-VN';
+  aiRecognition.continuous = false;
+  aiRecognition.interimResults = false;
+
+  aiRecognition.onstart = () => {
+    aiIsListening = true;
+    const btn = document.getElementById('ai-voice-btn');
+    const ind = document.getElementById('ai-listening-indicator');
+    if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
+    if (ind) ind.style.display = 'block';
+  };
+
+  aiRecognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    stopAIListening();
+    document.getElementById('ai-text-input').value = text;
+    sendAIText(true);
+  };
+
+  aiRecognition.onerror = (e) => {
+    stopAIListening();
+    const msgs = {
+      'not-allowed': '🔒 Bạn chưa cho phép truy cập micro. Vào Cài đặt iPhone → Safari → Micro.',
+      'no-speech'  : '🎙️ Không nghe thấy gì. Thử lại nhé!',
+      'network'    : '🌐 Lỗi mạng khi nhận giọng nói.',
+    };
+    addAIBubble(msgs[e.error] || `Lỗi ghi âm: ${e.error}`, 'error');
+  };
+
+  aiRecognition.onend = () => stopAIListening();
+  aiRecognition.start();
+}
+
+function stopAIListening() {
+  aiIsListening = false;
+  if (aiRecognition) { try { aiRecognition.stop(); } catch(_){} aiRecognition = null; }
+  const btn = document.getElementById('ai-voice-btn');
+  const ind = document.getElementById('ai-listening-indicator');
+  if (btn) { btn.textContent = '🎤'; btn.classList.remove('recording'); }
+  if (ind) ind.style.display = 'none';
+}
+
+// ------ Text send ------
+function sendAIText(isVoice = false) {
+  const inp  = document.getElementById('ai-text-input');
+  const text = inp ? inp.value.trim() : '';
+  if (!text) return;
+  inp.value = '';
+  addAIBubble(text, 'user');
+
+  const isOnline = navigator.onLine;
+  const s = Store.getSettings();
+  const hasKey = s && s.geminiApiKey;
+
+  // Status badge
+  const modeLabel = (!s.forceOffline && isOnline && hasKey)
+    ? '🌐 Gemini AI'
+    : '📱 Offline Engine';
+  const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
+  if (thinking) thinking.id = 'ai-thinking-bubble';
+
+  processAICommand(text).then(reply => {
+    removeThinkingBubble();
+    addAIBubble(reply, 'bot');
+    if (isVoice) speakText(reply);
+  }).catch(err => {
+    removeThinkingBubble();
+    addAIBubble(`❌ ${err.message || 'Lỗi không xác định'}`, 'error');
+  });
+}
+
+// ------ TTS ------
+function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const plain = (text || '').replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵]/gu, '');
+  const msg   = new SpeechSynthesisUtterance(plain);
+  msg.lang    = 'vi-VN';
+  msg.rate    = 1.05;
+
+  const voices = window.speechSynthesis.getVoices();
+  const viVoice = voices.find(v => v.lang.startsWith('vi'));
+  if (viVoice) msg.voice = viVoice;
+
+  window.speechSynthesis.speak(msg);
+}
+
+if (window.speechSynthesis) window.speechSynthesis.getVoices();
+
+// ============================================================
+// HYBRID AI ENGINE: Gemini (online) + Local NLP (offline)
+// ============================================================
+
+// --- Model list: Try newer models first, auto-fallback ---
+const GEMINI_MODELS = [
+  'gemini-2.5-flash-preview-04-17',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+];
+
+async function callGemini(apiKey, systemPrompt) {
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
+          }),
+          signal: AbortSignal.timeout(8000)  // 8s timeout
+        }
+      );
+      const data = await res.json();
+      if (data.error) {
+        // Model not available → try next
+        if (data.error.code === 404 || data.error.code === 400 ||
+            (data.error.message || '').includes('no longer available') ||
+            (data.error.message || '').includes('deprecated')) {
+          lastError = new Error(data.error.message);
+          continue;
+        }
+        throw new Error(data.error.message);
+      }
+      if (!data.candidates?.length) throw new Error('Gemini không trả về kết quả.');
+      return data.candidates[0].content.parts[0].text;
+    } catch(e) {
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('Tất cả Gemini models đều không khả dụng.');
+}
+
+// --- Main processor: Hybrid Failover ---
+async function processAICommand(text) {
+  const s = Store.getSettings();
+  const menu       = Store.getMenu();
+  const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
+
+  // Route: Online + has key + not forced offline → Gemini; otherwise → Local NLP
+  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey;
+
+  let parsed;
+
+  if (canUseGemini) {
+    try {
+      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
+      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
+      let raw = await callGemini(s.geminiApiKey, prompt);
+      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try { parsed = JSON.parse(raw); }
+      catch(_) { return raw; }
+    } catch(e) {
+      // Network fail or all models fail → fallback to local NLP
+      console.warn('Gemini failed, switching to Local NLP:', e.message);
+      const offlineResult = localNLPEngine(text, menu, tablesInfo);
+      if (offlineResult) {
+        parsed = offlineResult;
+        // Annotate that it used offline mode
+        parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+      } else {
+        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
+      }
+    }
+  } else {
+    // No key or offline → local NLP
+    if (!s.geminiApiKey) {
+      // Thử local NLP trước
+      parsed = localNLPEngine(text, menu, tablesInfo);
+      if (!parsed) {
+        return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
+      }
+      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline Engine]</span>';
+    } else {
+      // Has key but offline
+      parsed = localNLPEngine(text, menu, tablesInfo);
+      if (!parsed) {
+        return '📵 Đang mất mạng và không nhận ra lệnh. Thử: "bàn 1 đặt 3 bia"';
+      }
+      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+    }
+  }
+
+  // Execute parsed actions
+  return executeAIActions(parsed, menu);
+}
+
+function buildGeminiPrompt(text, tablesInfo, menu) {
+  return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
+Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
+
+Danh sách bàn: ${JSON.stringify(tablesInfo)}
+Danh sách thực đơn: ${JSON.stringify(menu)}
+
+ACTION hỗ trợ:
+1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
+2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
+3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
+4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
+
+Quy tắc:
+- Khớp tên món gần đúng (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger).
+- reply: ngắn gọn, thân thiện, xưng "em".
+
+Câu lệnh: "${text}"
+
+Trí tuệ nhân tạo CHỈ trả về một chuỗi JSON hợp lệ với format:
+{ "actions": [...], "reply": "..." }`;
+}
+
+// ============================================================
+// LOCAL NLP ENGINE (Offline Fallback)
+// Pattern matching for Vietnamese POS commands
+// ============================================================
+function localNLPEngine(text, menu, tables) {
+  const t = text.toLowerCase()
+    .replace(/[.,!?]/g, '')
+    .normalize('NFC');
+
+  // --- Extract table number ---
+  let tableId = null;
+  const tableMatch = t.match(/b[àa]n\s*(\d+|mang v[eề]|takeaway)/i);
+  if (tableMatch) {
+    const raw = tableMatch[1].toLowerCase();
+    tableId = (raw === 'mang về' || raw === 'mang ve' || raw === 'takeaway') ? 'takeaway' : raw;
+  }
+
+  // --- Detect intent ---
+  const isOrder  = /đặt|gọi|th[eê]m|lên|cho|order/i.test(t);
+  const isRemove = /b[oó]t|x[oó]a|hủy|cancel|bỏ/i.test(t);
+  const isPay    = /t[íi]nh ti[eề]n|thanh to[aá]n|check|bill|xu[aâ]t bill/i.test(t);
+  const isView   = /m[oở] b[aà]n|xem b[aà]n|qu[aả]n l[yý] b[aà]n|v[aà]o b[aà]n/i.test(t);
+  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o/i.test(t);
+
+  // --- View / Manage Table ---
+  if (isView && tableId) {
+    return {
+      actions: [{ type: 'view', tableId }],
+      reply: `Dạ em mở bàn ${tableId} rồi ạ!`
+    };
+  }
+
+  // --- Pay / Bill ---
+  if (isPay && tableId) {
+    return {
+      actions: [{ type: 'pay', tableId }],
+      reply: `Dạ em mở bill bàn ${tableId} cho anh chị ạ!`
+    };
+  }
+
+  // --- Query ---
+  if (isQuery) {
+    if (/b[aà]n n[aà]o.*tr[oố]ng|tr[oố]ng.*b[aà]n/i.test(t)) {
+      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `Bàn ${tb.id}`);
+      return {
+        actions: [],
+        reply: emptyTables.length
+          ? `Hiện đang trống: ${emptyTables.join(', ')} ạ!`
+          : 'Hiện tại tất cả các bàn đều đang có khách ạ!'
+      };
+    }
+    if (/menu|th[uú]c đ[oơ]n|c[oò]n m[oó]n/i.test(t)) {
+      const names = menu.slice(0, 8).map(m => m.name).join(', ');
+      return {
+        actions: [],
+        reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
+      };
+    }
+    return null;
+  }
+
+  // --- Order / Remove: need tableId ---
+  if (!tableId) return null;
+  if (!isOrder && !isRemove) return null;
+
+  // --- Match menu items using fuzzy matching ---
+  const matchedItems = extractMenuItems(t, menu);
+  if (matchedItems.length === 0) return null;
+
+  if (isRemove) {
+    const actions = matchedItems.map(it => ({
+      type: 'remove', tableId, itemId: it.id, qty: it.qty
+    }));
+    const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+    return {
+      actions,
+      reply: `Dạ em bớt ${names} ở bàn ${tableId} rồi ạ!`
+    };
+  }
+
+  // Order
+  const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
+  const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+  return {
+    actions,
+    reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ!`
+  };
+}
+
+// Fuzzy menu matcher: tìm món trong text + số lượng
+function extractMenuItems(text, menu) {
+  const results = [];
+
+  // Normalize text for matching
+  const norm = s => s.toLowerCase()
+    .replace(/[àáạảãăắặẳẵặâấầẩẫậ]/g, 'a')
+    .replace(/[èéẹẻẽêếềểễệ]/g, 'e')
+    .replace(/[ìíịỉĩ]/g, 'i')
+    .replace(/[òóọỏõôốồổỗộơớờởỡợ]/g, 'o')
+    .replace(/[ùúụủũưứừựửữ]/g, 'u')
+    .replace(/[ỳýỵỷỹ]/g, 'y')
+    .replace(/[đ]/g, 'd')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+  const normText = norm(text);
+
+  // Sort menu by name length DESC so longer names match first
+  const sortedMenu = [...menu].sort((a, b) => b.name.length - a.name.length);
+
+  let remaining = normText;
+
+  for (const item of sortedMenu) {
+    const normName = norm(item.name);
+    // Also try keywords (first word, last word)
+    const keywords = [...new Set([
+      normName,
+      ...normName.split(' ').filter(w => w.length > 2)
+    ])];
+
+    let found = false;
+    for (const kw of keywords) {
+      const idx = remaining.indexOf(kw);
+      if (idx === -1) continue;
+
+      // Extract quantity: look for number before or after keyword
+      const beforeStr = remaining.slice(0, idx);
+      const afterStr  = remaining.slice(idx + kw.length);
+
+      const numBefore = beforeStr.match(/(\d+)\s*$/);
+      const numAfter  = afterStr.match(/^\s*(\d+)/);
+      const wordNum   = /(?:hai|ba|b[óo]n|năm|s[aá]u|bảy|tám|ch[íi]n|mười)\s*$/i.exec(beforeStr);
+
+      const wordNumMap = { hai:2, ba:3, bon:4, bón:4, bốn:4, nam:5, năm:5, sau:6, sáu:6, bay:7, bảy:7, tam:8, tám:8, chin:9, chín:9, muoi:10, mười:10 };
+
+      let qty = 1;
+      if (numBefore) qty = parseInt(numBefore[1]);
+      else if (numAfter) qty = parseInt(numAfter[1]);
+      else if (wordNum) qty = wordNumMap[norm(wordNum[0].trim())] || 1;
+
+      results.push({ id: item.id, name: item.name, qty: Math.max(1, qty) });
+      remaining = remaining.replace(kw, '   ');
+      found = true;
+      break;
+    }
+  }
+
+  return results;
+}
+
+// --- Execute parsed actions (shared between Gemini and Local NLP) ---
+function executeAIActions(parsed, menuFull) {
+  if (!parsed) return 'Không nhận ra lệnh này ạ.';
+
+  if (parsed.actions?.length) {
+    for (const a of parsed.actions) {
+      if (a.type === 'order') {
+        const tid = String(a.tableId);
+        if (!orderItems[tid]) {
+          const saved = Store.getOrders()[tid];
+          orderItems[tid] = saved ? [...saved] : [];
+        }
+        for (const it of (a.items || [])) {
+          const m = menuFull.find(x => x.id === it.id);
+          if (!m) continue;
+          const ex = orderItems[tid].find(x => x.id === m.id);
+          if (ex) ex.qty += it.qty;
+          else    orderItems[tid].push({ id: m.id, name: m.name, price: m.price, cost: m.cost || 0, qty: it.qty });
+        }
+
+        // Tự động mở bàn để xác nhận thay vì lưu ngay
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 300);
+
+      } else if (a.type === 'remove') {
+        const tid = String(a.tableId);
+        if (orderItems[tid]) {
+          const ex = orderItems[tid].find(x => x.id === a.itemId);
+          if (ex) {
+            ex.qty -= (a.qty || 1);
+            if (ex.qty <= 0) orderItems[tid] = orderItems[tid].filter(x => x.id !== a.itemId);
+          }
+        }
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 300);
+
+      } else if (a.type === 'pay') {
+        const tid = String(a.tableId);
+        closeAIAssistant();
+        setTimeout(() => {
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 200);
+
+      } else if (a.type === 'view') {
+        const tid = String(a.tableId);
+        closeAIAssistant();
+        setTimeout(() => {
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 200);
+      }
+    }
+    if (currentPage === 'orders') renderCart();
+    if (currentPage === 'tables') renderTables();
+  }
+
+  return parsed.reply || 'Xong rồi ạ!';
+}
+
