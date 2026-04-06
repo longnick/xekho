@@ -656,3 +656,38 @@ body {
   .table-grid { grid-template-columns: repeat(5, 1fr); }
   .menu-grid { grid-template-columns: 1fr 1fr 1fr; }
 }
+
+/* ---- MINIMALIST ICONS ---- */
+.minimal-icon { opacity: 0.8; transition: opacity 0.2s; }
+.nav-item.active .minimal-icon { opacity: 1; }
+.nav-item .nav-icon svg { display: block; }
+
+/* ---- AI HISTORY MODAL ---- */
+#ai-history-list .history-item {
+  padding: 12px;
+  background: var(--bg3);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+#ai-history-list .history-role {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#ai-history-list .history-role.user { color: var(--primary); }
+#ai-history-list .history-role.bot { color: var(--success); }
+#ai-history-list .history-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+#ai-history-list .history-time {
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 4px;
+  text-align: right;
+}
