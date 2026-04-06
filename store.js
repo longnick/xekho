@@ -13,6 +13,7 @@ const KEYS = {
   settings: 'gkhl_settings',
   backups: 'gkhl_backups',
   lastBackup: 'gkhl_last_backup',
+  aiHistory: 'gkhl_ai_history',
 };
 
 const Store = {
@@ -120,6 +121,10 @@ const Store = {
     };
   },
   setSettings(s) { this.set(KEYS.settings, s); },
+
+  // AI HISTORY
+  getAIHistory() { return this.get(KEYS.aiHistory) || []; },
+  setAIHistory(h) { this.set(KEYS.aiHistory, h); },
 
   // RESET ALL DATA (giữ lại menu và cài đặt)
   resetAll(keepMenu = true, keepInventory = true) {
@@ -249,6 +254,8 @@ function getRevenueSummary(period) {
   const revenueCash = orders.filter(o => o.payMethod !== 'bank').reduce((s,o) => s + o.total, 0);
   const cost = orders.reduce((s,o) => s + (o.cost || 0), 0);
   const gross = revenue - cost;
+  const discountTotal = orders.reduce((s,o) => s + (o.discount || 0), 0);
+  const shippingTotal = orders.reduce((s,o) => s + (o.shipping || 0), 0);
   const expenses = Store.getExpenses().filter(e => {
     const d = new Date(e.date);
     const now = new Date();
@@ -259,7 +266,7 @@ function getRevenueSummary(period) {
   });
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   const profit = gross - expenseTotal;
-  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash };
+  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash, discountTotal, shippingTotal };
 }
 
 // Top selling items

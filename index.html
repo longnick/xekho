@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#0F0F14">
 <title>Gánh Khô Chữa Lành – POS</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <div id="app">
@@ -23,11 +24,14 @@
       </div>
     </div>
     <div class="header-actions">
+      <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI" style="font-size:20px;position:relative">
+        🎤
+        <span id="ai-active-dot" style="position:absolute;top:4px;right:4px;width:7px;height:7px;background:var(--success);border-radius:50%;display:none"></span>
+      </button>
       <button class="header-btn alert-dot" id="header-alert-btn" onclick="openStockAlertPopup()" title="Cảnh báo tồn kho">🔔
         <span id="alert-badge-header" style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
       </button>
       <button class="header-btn" onclick="resetAllData()" title="Reset sạch dữ liệu" style="color:var(--danger)">🔄</button>
-      <button class="header-btn" onclick="addDemoOrders()" title="Tạo dữ liệu demo">🎲</button>
     </div>
   </header>
 
@@ -95,6 +99,10 @@
           <span class="badge badge-primary" id="cart-count">0 món</span>
         </div>
         <div class="cart-items" id="cart-items"></div>
+        <div style="padding:10px 12px;display:flex;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
+          <input type="number" class="input input-sm" id="cart-discount" placeholder="Giảm giá (đ)" oninput="renderCart()" min="0">
+          <input type="number" class="input input-sm" id="cart-shipping" placeholder="Phí ship (đ)" oninput="renderCart()" min="0">
+        </div>
         <div class="cart-total">
           <span class="cart-total-label">Tổng cộng</span>
           <span class="cart-total-amount" id="cart-total">0đ</span>
@@ -203,11 +211,21 @@
           <div style="font-size:12px;color:var(--text2)">Giá vốn</div>
           <div style="font-size:13px;font-weight:800" id="fin-cost">0đ</div>
         </div>
+        <div class="card card-sm" style="text-align:center; cursor:pointer;" onclick="openDiscountDetails()" title="Xem chi tiết">
+          <div style="font-size:12px;color:var(--text2)">Giảm giá</div>
+          <div style="font-size:13px;font-weight:800;color:var(--danger)" id="fin-discount">0đ</div>
+        </div>
         <div class="card card-sm" style="text-align:center">
+          <div style="font-size:12px;color:var(--text2)">Phí ship</div>
+          <div style="font-size:13px;font-weight:800;color:var(--info)" id="fin-shipping">0đ</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:12px">
+        <div class="card card-sm" style="flex:1;text-align:center">
           <div style="font-size:12px;color:var(--text2)">Biên LN</div>
           <div style="font-size:13px;font-weight:800;color:var(--success)" id="fin-margin">0%</div>
         </div>
-        <div class="card card-sm" style="text-align:center">
+        <div class="card card-sm" style="flex:1;text-align:center">
           <div style="font-size:12px;color:var(--text2)">Đơn hàng</div>
           <div style="font-size:13px;font-weight:800" id="fin-orders">0</div>
         </div>
@@ -343,6 +361,17 @@
           <div class="input-group">
             <label class="input-label">Tên chủ tài khoản</label>
             <input class="input" id="set-bankOwner" placeholder="Tên chủ TK">
+          </div>
+        </div>
+
+        <!-- GEMINI AI -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">🤖 Thông minh (Gemini API)</div></div>
+          <div class="input-group">
+            <label class="input-label">Gemini API Key</label>
+            <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán API Key vào đây...">
+            <div style="font-size:11px;color:var(--text3);margin-top:6px">Lấy Key tại <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--primary)">Google AI Studio</a> (miễn phí).</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Sau khi dán key, bấm nút 🎤 trên thanh tiêu đề để mở trợ lý AI.</div>
           </div>
         </div>
 
@@ -641,6 +670,45 @@
 <!-- FAB for inventory purchase -->
 <button class="fab" id="main-fab" onclick="onFabClick()" title="Thêm nhanh">+</button>
 
+<!-- AI ASSISTANT MODAL -->
+<div class="modal-overlay" id="ai-modal" onclick="if(event.target===this)closeAIAssistant()">
+  <div class="modal-sheet" style="max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-handle"></div>
+    <div class="modal-header" style="flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;background:linear-gradient(135deg,#7C3AED,#EC4899);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🤖</div>
+        <div>
+          <div class="modal-title" style="margin:0">Trợ lý Gánh Khô</div>
+          <div style="font-size:11px; font-weight:600; cursor:pointer; display:inline-block; margin-top:4px; padding:2px 6px; border-radius:4px; user-select:none; transition:all 0.2s" id="ai-status-text" onclick="toggleAIMode()" title="Bấm để chuyển chế độ Online/Offline">Đang tải...</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="modal-close" style="background:var(--bg2)" onclick="clearAIAssistantHistory()" title="Xóa lịch sử chat">🗑</button>
+        <button class="modal-close" onclick="closeAIAssistant()">✕</button>
+      </div>
+    </div>
+
+    <!-- Chat Messages -->
+    <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:160px;max-height:40vh">
+      <div class="ai-bubble ai-bubble-bot" id="ai-welcome-msg">
+        👋 Xin chào! Tôi là trợ lý Gánh Khô. Bạn có thể nói hoặc gõ lệnh bằng tiếng Việt. Ví dụ: <em>"”bàn 2 gọi 3 bia sài gòn”</em>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div style="flex-shrink:0;padding:12px;border-top:1px solid var(--border);background:var(--bg2)">
+      <div id="ai-listening-indicator" style="display:none;text-align:center;padding:8px;color:var(--danger);font-weight:600;font-size:13px;animation:pulse 1.2s infinite">
+        🔴 Đang lắng nghe...
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="ai-text-input" class="input" placeholder="Hoặc gõ lệnh tại đây..." style="flex:1" onkeydown="if(event.key==='Enter')sendAIText(false)">
+        <button id="ai-send-btn" class="btn btn-secondary" onclick="sendAIText(false)" style="padding:10px 14px;flex-shrink:0">➞</button>
+        <button id="ai-voice-btn" onclick="toggleAIVoice()" style="width:48px;height:48px;border-radius:50%;border:none;background:linear-gradient(135deg,#7C3AED,#EC4899);color:#fff;font-size:22px;cursor:pointer;flex-shrink:0;box-shadow:0 4px 15px rgba(124,58,237,0.4)" title="Nói lệnh">🎤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Payment Method Modal -->
 <div class="modal-overlay" id="pay-method-modal" style="align-items:center;padding:20px" onclick="if(event.target===this)this.classList.remove('active')">
   <div class="modal-sheet-center" style="padding:0;overflow:hidden">
@@ -657,6 +725,18 @@
       </button>
       <button class="btn btn-secondary btn-block" onclick="document.getElementById('pay-method-modal').classList.remove('active')">❌ Huỷ</button>
     </div>
+  </div>
+</div>
+
+<!-- Discount Detail Modal -->
+<div class="modal-overlay" id="discount-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">📉 Chi tiết đơn có giảm giá</div>
+      <button class="modal-close" onclick="document.getElementById('discount-detail-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body" id="discount-detail-content"></div>
   </div>
 </div>
 
@@ -705,6 +785,7 @@ function saveAndBack() {
 function clearTable() {
   if(!confirm('Huỷ tất cả món ở bàn này?')) return;
   delete orderItems[currentTable];
+  if(typeof orderExtras !== 'undefined') delete orderExtras[currentTable];
   const orders = Store.getOrders();
   delete orders[currentTable];
   Store.setOrders(orders);

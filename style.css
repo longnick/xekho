@@ -407,7 +407,67 @@ body {
 .insight-actions { display:flex; gap:6px; margin-top:10px; }
 
 /* ---- PRINT ---- */
+/* ============================================================
+   AI CHAT BUBBLES
+   ============================================================ */
+.ai-bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+  animation: fadeInUp 0.25s ease;
+}
+.ai-bubble-user {
+  background: linear-gradient(135deg, #7C3AED, #EC4899);
+  color: #fff;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+.ai-bubble-bot {
+  background: var(--bg3);
+  color: var(--text1);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+.ai-bubble-thinking {
+  background: var(--bg3);
+  color: var(--text2);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  font-style: italic;
+}
+.ai-bubble-error {
+  background: rgba(255, 61, 113, 0.12);
+  color: var(--danger);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* Mic button recording state */
+#ai-voice-btn.recording {
+  background: linear-gradient(135deg, #FF3D71, #FF6B35) !important;
+  box-shadow: 0 0 0 0 rgba(255, 61, 113, 0.4);
+  animation: mic-pulse 1s infinite !important;
+}
+@keyframes mic-pulse {
+  0%  { box-shadow: 0 0 0 0 rgba(255, 61, 113, 0.6); }
+  70% { box-shadow: 0 0 0 14px rgba(255, 61, 113, 0); }
+  100%{ box-shadow: 0 0 0 0 rgba(255, 61, 113, 0); }
+}
+
 @media print {
+
   /* Page setup – 80mm thermal width */
   @page {
     size: 80mm auto;
@@ -420,6 +480,9 @@ body {
     color: #000 !important;
     font-size: 12px !important;
     width: 80mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
   }
