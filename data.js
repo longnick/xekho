@@ -23,9 +23,9 @@ const DEFAULT_MENU = [
   { id: 'm38', name: 'Tôm 1 nắng nướng muối ớt', category: 'Đặc Biệt', price: 180000, unit: 'phần', cost: 110000, ingredients: [{name:'Tôm 1 nắng',qty:1,unit:'phần'},{name:'Muối ớt',qty:1,unit:'gói'}] },
 
   // COMBO
-  { id: 'm15', name: 'Combo 1', category: 'Phần Combo', price: 149000, unit: 'phần', cost: 90000, ingredients: [{name:'Mực khô',qty:0.5,unit:'phần'},{name:'Khô cá chỉ vàng',qty:1,unit:'phần'},{name:'Khô cá thiều',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'}] },
-  { id: 'm16', name: 'Combo 2', category: 'Phần Combo', price: 199000, unit: 'phần', cost: 125000, ingredients: [{name:'Mực khô',qty:1,unit:'phần'},{name:'Khô cá chỉ vàng',qty:1,unit:'phần'},{name:'Khô cá đuối',qty:1,unit:'phần'},{name:'Khô cá bò',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'}] },
-  { id: 'm17', name: 'Combo 3', category: 'Phần Combo', price: 249000, unit: 'phần', cost: 160000, ingredients: [{name:'Mực khô',qty:1,unit:'phần'},{name:'Khô cá đuối',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'},{name:'Khô cá đao',qty:1,unit:'phần'},{name:'Gỏi xoài',qty:1,unit:'phần'},{name:'Vịt lộn',qty:2,unit:'trứng'}] },
+  { id: 'm15', name: 'Hoàng hôn trên biển', category: 'Phần Combo', price: 149000, unit: 'phần', cost: 90000, ingredients: [{name:'Mực khô',qty:0.5,unit:'phần'},{name:'Khô cá chỉ vàng',qty:1,unit:'phần'},{name:'Khô cá thiều',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'}] },
+  { id: 'm16', name: 'Đêm huyền diệu', category: 'Phần Combo', price: 199000, unit: 'phần', cost: 125000, ingredients: [{name:'Mực khô',qty:1,unit:'phần'},{name:'Khô cá chỉ vàng',qty:1,unit:'phần'},{name:'Khô cá đuối',qty:1,unit:'phần'},{name:'Khô cá bò',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'}] },
+  { id: 'm17', name: 'Không say không về', category: 'Phần Combo', price: 249000, unit: 'phần', cost: 160000, ingredients: [{name:'Mực khô',qty:1,unit:'phần'},{name:'Khô cá đuối',qty:1,unit:'phần'},{name:'Lạp vịt',qty:1,unit:'phần'},{name:'Khô cá đao',qty:1,unit:'phần'},{name:'Gỏi xoài',qty:1,unit:'phần'},{name:'Vịt lộn',qty:2,unit:'trứng'}] },
 
   // MÓN ĂN KÈM
   { id: 'm18', name: 'Khô cá chỉ vàng chiên bơ', category: 'Món Ăn Kèm', price: 35000, unit: 'phần', cost: 20000, ingredients: [{name:'Khô cá chỉ vàng',qty:1,unit:'phần'},{name:'Bơ',qty:20,unit:'g'}] },

@@ -1512,17 +1512,22 @@ let aiIsListening  = false;
 let aiChatHistoryLoaded = false;
 
 function openAIAssistant() {
-  document.getElementById('ai-modal').classList.add('active');
+  const modal = document.getElementById('ai-modal');
+  if(!modal) return;
+  modal.classList.add('active');
   updateAIModeUI();
 
   if (!aiChatHistoryLoaded) {
     const history = Store.getAIHistory();
-    if (history.length > 0) {
-      const container = document.getElementById('ai-chat-messages');
-      const welcomeMsg = document.getElementById('ai-welcome-msg');
+    const container = document.getElementById('ai-chat-messages');
+    const welcomeMsg = document.getElementById('ai-welcome-msg');
+    
+    if (history.length > 0 && container) {
       container.innerHTML = '';
       if (welcomeMsg) container.appendChild(welcomeMsg);
-      history.forEach(msg => {
+      // Chỉ hiển thị 10 tin nhắn gần nhất trong khung chat nhanh
+      const recentHistory = history.slice(-10);
+      recentHistory.forEach(msg => {
         const div = document.createElement('div');
         div.className = `ai-bubble ai-bubble-${msg.role}`;
         div.innerHTML = msg.content;
@@ -1575,6 +1580,46 @@ function clearAIAssistantHistory() {
   }
 }
 
+function openFullAIHistory() {
+  const history = Store.getAIHistory();
+  const list = document.getElementById('ai-history-list');
+  if(!list) return;
+  
+  list.innerHTML = history.length ? history.map(msg => `
+    <div class="history-item">
+      <div class="history-role ${msg.role}">${msg.role === 'user' ? '👤 Bạn' : '🤖 Trợ lý'}</div>
+      <div class="history-content">${msg.content}</div>
+      <div class="history-time">${msg.time ? fmtDateTime(msg.time) : ''}</div>
+    </div>
+  `).reverse().join('') : '<div style="text-align:center;color:var(--text3);padding:20px">Chưa có lịch sử trò chuyện</div>';
+  
+  document.getElementById('ai-history-modal').classList.add('active');
+}
+
+function preprocessAIText(text) {
+  let t = text.toLowerCase().trim();
+  // Map từ lóng / biệt danh sang tên món chuẩn trong hệ thống
+  const aliases = {
+    'cọp trắng': 'tiger bạc',
+    'cọp nâu': 'tiger nâu',
+    'đào': 'trà đào',
+    'tắc': 'trà tắc',
+    'set 1': 'hoàng hôn trên biển',
+    'set 2': 'đêm huyền diệu',
+    'set 3': 'không say không về',
+    'cút': 'trứng cút thảo mộc',
+    'trứng cút': 'trứng cút thảo mộc',
+    'ngọt': 'sting'
+  };
+  
+  for (const [alias, realName] of Object.entries(aliases)) {
+    // Sử dụng regex hỗ trợ tiếng Việt thay cho \b
+    const regex = new RegExp(`(^|\\s)${alias}(?=\\s|$)`, 'gi');
+    t = t.replace(regex, `$1${realName}`);
+  }
+  return t;
+}
+
 function addAIBubble(text, role = 'bot') {
   const container = document.getElementById('ai-chat-messages');
   if (!container) return;
@@ -1586,8 +1631,8 @@ function addAIBubble(text, role = 'bot') {
   
   if (role !== 'thinking') {
     const history = Store.getAIHistory();
-    history.push({ role, content: text });
-    if (history.length > 50) history.shift(); // Giới hạn lưu 50 tin
+    history.push({ role, content: text, time: new Date().toISOString() });
+    if (history.length > 200) history.shift(); // Lưu nhiều hơn trong bộ nhớ (200 tin)
     Store.setAIHistory(history);
   }
   
@@ -1608,6 +1653,9 @@ function toggleAIVoice() {
   }
 }
 
+const ICON_MIC = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
+const ICON_STOP = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>`;
+
 function startAIListening() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -1624,7 +1672,7 @@ function startAIListening() {
     aiIsListening = true;
     const btn = document.getElementById('ai-voice-btn');
     const ind = document.getElementById('ai-listening-indicator');
-    if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
+    if (btn) { btn.innerHTML = ICON_STOP; btn.classList.add('recording'); }
     if (ind) ind.style.display = 'block';
   };
 
@@ -1654,21 +1702,26 @@ function stopAIListening() {
   if (aiRecognition) { try { aiRecognition.stop(); } catch(_){} aiRecognition = null; }
   const btn = document.getElementById('ai-voice-btn');
   const ind = document.getElementById('ai-listening-indicator');
-  if (btn) { btn.textContent = '🎤'; btn.classList.remove('recording'); }
+  if (btn) { btn.innerHTML = ICON_MIC; btn.classList.remove('recording'); }
   if (ind) ind.style.display = 'none';
 }
 
 // ------ Text send ------
 function sendAIText(isVoice = false) {
-  const inp  = document.getElementById('ai-text-input');
-  const text = inp ? inp.value.trim() : '';
-  if (!text) return;
-  inp.value = '';
-  addAIBubble(text, 'user');
+  const inp = document.getElementById('ai-text-input');
+  const rawText = inp ? inp.value.trim() : '';
+  if (!rawText) return;
+  if(inp) inp.value = '';
+  
+  // Hiển thị text gốc của user
+  addAIBubble(rawText, 'user');
+
+  // Xử lý tiền xử lý (từ lóng) trước khi gửi cho engine
+  const text = preprocessAIText(rawText);
 
   const isOnline = navigator.onLine;
   const s = Store.getSettings();
-  const hasKey = s && s.geminiApiKey;
+  const hasKey = !!s.geminiApiKey;
 
   // Status badge
   const modeLabel = (!s.forceOffline && isOnline && hasKey)
@@ -1711,10 +1764,9 @@ if (window.speechSynthesis) window.speechSynthesis.getVoices();
 
 // --- Model list: Try newer models first, auto-fallback ---
 const GEMINI_MODELS = [
-  'gemini-2.5-flash-preview-04-17',
-  'gemini-2.5-flash',
   'gemini-1.5-flash',
   'gemini-1.5-flash-latest',
+  'gemini-1.5-pro',
 ];
 
 async function callGemini(apiKey, systemPrompt) {
@@ -1823,10 +1875,12 @@ ACTION hỗ trợ:
 3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
 4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
 5. "report" – Báo cáo doanh thu và tổng kết: { type:"report" }
-6. "restock"– Nhập thêm/mua thêm tài sản vào kho: { type:"restock", items:[{id:"<id>", qty:5}] }
+6. "restock"– Nhập thêm/mua thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
+7. "unknown" - Sử dụng khi người dùng nhắc món không có trong thực đơn hoặc không rõ: { type:"unknown", tableId:"1" }
 
 Quy tắc:
 - Khớp tên món/nguyên liệu gần đúng (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger).
+- Nếu người dùng gọi món KHÔNG CÓ hoặc KHÔNG RÕ trong thực đơn, hãy dùng action "unknown" và phản hồi lịch sự mời họ chọn thủ công.
 - Hành động "report" dùng để hỏi xem hôm nay bán được bao nhiêu, báo cáo thế nào.
 - Hành động "restock" dùng để nhập thêm đồ vào kho.
 - reply: ngắn gọn, thân thiện, xưng "em".
@@ -1916,7 +1970,7 @@ function localNLPEngine(text, menu, tables) {
     const matchedInv = extractMenuItems(t, Store.getInventory());
     if (matchedInv.length > 0) {
       return {
-        actions: matchedInv.map(it => ({ type: 'restock', itemId: it.id, qty: it.qty })),
+        actions: [{ type: 'restock', items: matchedInv.map(it => ({ name: it.name, qty: it.qty })) }],
         reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
       };
     }
@@ -1925,30 +1979,24 @@ function localNLPEngine(text, menu, tables) {
 
   // --- Order / Remove: need tableId ---
   if (!tableId) return null;
-  if (!isOrder && !isRemove) return null;
-
+  
   // --- Match menu items using fuzzy matching ---
   const matchedItems = extractMenuItems(t, menu);
-  if (matchedItems.length === 0) return null;
-
-  if (isRemove) {
-    const actions = matchedItems.map(it => ({
-      type: 'remove', tableId, itemId: it.id, qty: it.qty
-    }));
-    const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+  
+  if (isOrder) {
+    if (matchedItems.length === 0) {
+      return {
+        actions: [{ type: 'unknown', tableId }],
+        reply: `Dạ em chưa nghe rõ tên món, mời anh chị chọn món thủ công cho bàn ${tableId} ạ!`
+      };
+    }
+    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
+    const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
     return {
       actions,
-      reply: `Dạ em bớt ${names} ở bàn ${tableId} rồi ạ!`
+      reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ! Nếu thiếu món nào anh chị chọn thêm trong menu nhé.`
     };
   }
-
-  // Order
-  const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
-  const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
-  return {
-    actions,
-    reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ!`
-  };
 }
 
 // Fuzzy menu matcher: tìm món trong text + số lượng
@@ -2091,6 +2139,13 @@ function executeAIActions(parsed, menuFull) {
         const alerts = getInventoryAlerts();
         const needRestock = alerts.critical.length + alerts.low.length;
         parsed.reply = `Hôm nay bán được ${todayRev.orders} đơn, doanh thu ${fmt(todayRev.revenue)}đ, chi phí ${fmt(todayRev.expenseTotal)}đ. Hiện có ${needRestock} nguyên liệu cần nhập ạ!`;
+        
+        // Tự động chuyển trang báo cáo
+        setTimeout(() => {
+          closeAIAssistant();
+          navigate('finance');
+        }, 500);
+
       } else if (a.type === 'restock') {
         const inv = Store.getInventory();
         let addedNames = [];
@@ -2098,7 +2153,16 @@ function executeAIActions(parsed, menuFull) {
           const stock = inv.find(x => x.id === it.id || x.name === it.name);
           if (!stock) continue;
           stock.qty += it.qty;
-          Store.addPurchase({ id: uid(), name: stock.name, qty: it.qty, unit: stock.unit, price: stock.costPerUnit * it.qty, costPerUnit: stock.costPerUnit, date: new Date().toISOString(), supplier: 'AI Assistant' });
+          Store.addPurchase({ 
+            id: uid(), 
+            name: stock.name, 
+            qty: it.qty, 
+            unit: stock.unit, 
+            price: (stock.costPerUnit || 0) * it.qty, 
+            costPerUnit: stock.costPerUnit || 0, 
+            date: new Date().toISOString(), 
+            supplier: 'AI Assistant' 
+          });
           addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
         }
         if (addedNames.length) {
@@ -2108,7 +2172,21 @@ function executeAIActions(parsed, menuFull) {
           if (!parsed.reply || parsed.reply.length < 10) {
             parsed.reply = `Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`;
           }
+          
+          // Tự động chuyển sang trang kho -> Tab Nhập hàng
+          setTimeout(() => {
+            closeAIAssistant();
+            navigate('inventory');
+            switchInvTab('purchase', document.querySelectorAll('.tab-btn')[1]);
+          }, 500);
         }
+      } else if (a.type === 'unknown') {
+        const tid = String(a.tableId);
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 500);
       }
     }
     if (currentPage === 'orders') renderCart();
