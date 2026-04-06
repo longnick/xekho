@@ -24,7 +24,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI" style="font-size:20px;position:relative">
+      <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI" style="font-size:20px;position:relative; display:none;">
         🎤
         <span id="ai-active-dot" style="position:absolute;top:4px;right:4px;width:7px;height:7px;background:var(--success);border-radius:50%;display:none"></span>
       </button>
@@ -323,6 +323,21 @@
       <form id="settings-form" onsubmit="submitSettings(event)">
         <div class="card">
           <div class="card-header"><div class="card-title">🏪 Thông tin quán</div></div>
+          
+          <div class="input-group" style="display:flex; align-items:center; gap:12px;">
+            <div id="set-logo-preview" style="width:50px; height:50px; border-radius:50%; background:var(--bg3); display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid var(--border); flex-shrink:0;">
+              <span style="font-size:20px;">🍢</span>
+            </div>
+            <div style="flex:1">
+              <label class="btn btn-sm btn-outline" style="cursor:pointer; display:inline-flex; margin-bottom:4px">
+                Tải Logo Lên
+                <input type="file" id="set-storeLogo" accept="image/*" style="display:none;" onchange="handleLogoUpload(event)">
+              </label>
+              <button type="button" class="btn btn-xs btn-danger" id="set-logo-remove" style="display:none; margin-top:4px;" onclick="removeLogo()">Xóa logo</button>
+              <div style="font-size:10px; color:var(--text2)">Nên chọn ảnh vuông / tròn (Tối đa 2MB)</div>
+            </div>
+          </div>
+
           <div class="input-group">
             <label class="input-label">Tên quán *</label>
             <input class="input" id="set-storeName" placeholder="Gánh Khô Chữa Lành" required>
@@ -669,6 +684,9 @@
 
 <!-- FAB for inventory purchase -->
 <button class="fab" id="main-fab" onclick="onFabClick()" title="Thêm nhanh">+</button>
+
+<!-- FAB for AI Chatbot -->
+<button id="ai-fab" onclick="openAIAssistant()" style="position:fixed; bottom:calc(var(--nav-height) + var(--safe-bottom) + 80px); right:16px; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg, #7C3AED, #EC4899); border:none; color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 15px rgba(124,58,237,0.4); z-index:90; cursor:pointer; transition:all 0.2s;" title="Trợ lý AI">🤖</button>
 
 <!-- AI ASSISTANT MODAL -->
 <div class="modal-overlay" id="ai-modal" onclick="if(event.target===this)closeAIAssistant()">

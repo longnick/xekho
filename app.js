@@ -13,6 +13,7 @@ let chartInstances = {};
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
   applyStoreSettings();
+  runMigrations(); // Patch data spelling differences
   navigate('tables');
   updateAlertBadge();
   // Auto backup mỗi ngày
@@ -23,7 +24,71 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 3000);
 });
 
-// Áp dụng tên quán vào giao diện
+// Chạy một lần lúc load để tự động sửa lỗi chính tả dữ liệu cũ mà không làm mất trạng thái của người dùng
+function runMigrations() {
+  const s = Store.getSettings();
+  if (s.migratedV2) return; // Prevent multiple runs just in case, or run once
+
+  const patchKeys = {
+    'Khô cá thiều tâm': 'Khô cá thiều',
+    'Khô cá đuôi': 'Khô cá đuối',
+    'Lạp xít': 'Lạp vịt',
+    'Cá sun sin': 'Cá sụn xịn',
+    'Lá dói': 'Lá dổi'
+  };
+
+  const patchMap = (name) => patchKeys[name] || name;
+
+  // Patch inventory
+  let mappedInv = false;
+  const inv = Store.getInventory();
+  inv.forEach(i => {
+    if (patchKeys[i.name]) { mappedInv = true; i.name = patchKeys[i.name]; }
+  });
+  
+  // Thêm nguyên liệu mới (Tôm 1 nắng)
+  if (!inv.find(i => i.name === 'Tôm 1 nắng')) {
+    mappedInv = true;
+    inv.push({ id:'i42', name:'Tôm 1 nắng', qty:10, unit:'phần', minQty:2, costPerUnit:100000 });
+  }
+  if (mappedInv) Store.setInventory(inv);
+
+  // Patch menu & ingredients
+  let mappedMenu = false;
+  const menu = Store.getMenu();
+  menu.forEach(m => {
+    if (m.name === 'Khô cá chỉ vàng') { mappedMenu = true; m.name = 'Cá chỉ vàng nướng'; }
+    else if (m.name === 'Khô cá thiều tâm') { mappedMenu = true; m.name = 'Khô cá thiều nướng'; }
+    else if (m.name === 'Khô cá đuôi') { mappedMenu = true; m.name = 'Khô cá đuối nướng'; }
+    else if (m.name === 'Lạp xít') { mappedMenu = true; m.name = 'Lạp vịt nướng'; }
+    else if (m.name === 'Khô cá bống') { mappedMenu = true; m.name = 'Khô cá bống nướng'; }
+    else if (m.name === 'Khô cá đao') { mappedMenu = true; m.name = 'Khô cá đao nướng'; }
+    else if (m.name === 'Khô cá bò') { mappedMenu = true; m.name = 'Khô cá bò Nướng'; }
+    else if (m.name === 'Mực khô') { mappedMenu = true; m.name = 'Mực khô nướng'; }
+    else if (m.name === 'Cá sun sin chiên giòn') { mappedMenu = true; m.name = 'Cá sụn xịn chiên giòn'; }
+    else if (m.name === 'Ba chỉ nướng lá dói') { mappedMenu = true; m.name = 'Ba chỉ nướng lá dổi'; }
+    else if (m.name === 'Trứng bắc thảo củ kiệu tôm khô') { mappedMenu = true; m.name = 'Trứng bắc thảo tôm khô'; }
+    else if (m.name === 'Khoai tây lắc phô mai') { mappedMenu = true; m.name = 'Khoai tây chiên lắc phô mai'; }
+
+    m.ingredients.forEach(ig => {
+      if (patchKeys[ig.name]) {
+        mappedMenu = true;
+        ig.name = patchKeys[ig.name];
+      }
+    });
+  });
+  
+  if (!menu.find(m => m.name === 'Tôm 1 nắng nướng muối ớt')) {
+    mappedMenu = true;
+    menu.push({ id: 'm38', name: 'Tôm 1 nắng nướng muối ớt', category: 'Đặc Biệt', price: 180000, unit: 'phần', cost: 110000, ingredients: [{name:'Tôm 1 nắng',qty:1,unit:'phần'},{name:'Muối ớt',qty:1,unit:'gói'}] });
+  }
+  
+  if (mappedMenu) Store.setMenu(menu);
+
+  s.migratedV2 = true;
+  Store.setSettings(s);
+}
+
 function applyStoreSettings() {
   const s = Store.getSettings();
   // Update PAYMENT_INFO từ settings
@@ -33,6 +98,17 @@ function applyStoreSettings() {
   // Cập nhật tiêu đề header
   const logoText = document.querySelector('.logo-text');
   if(logoText) logoText.textContent = s.storeName || 'Gánh Khô Chữa Lành';
+  
+  const logoIcon = document.querySelector('.logo-icon');
+  if(logoIcon) {
+    if(s.storeLogo) {
+      logoIcon.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+      logoIcon.style.background = 'transparent';
+    } else {
+      logoIcon.innerHTML = '🍢';
+      logoIcon.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
+    }
+  }
 }
 
 // ---- Navigation ----
@@ -1231,6 +1307,18 @@ function renderSettings() {
   const autoEl = document.getElementById('set-autoBackup');
   if(autoEl) autoEl.checked = s.autoBackup !== false;
 
+  const logoPreview = document.getElementById('set-logo-preview');
+  const removeBtn = document.getElementById('set-logo-remove');
+  if (logoPreview) {
+    if (s.storeLogo) {
+      logoPreview.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;">`;
+      if(removeBtn) removeBtn.style.display = 'inline-block';
+    } else {
+      logoPreview.innerHTML = '<span style="font-size:20px;">🍢</span>';
+      if(removeBtn) removeBtn.style.display = 'none';
+    }
+  }
+
   renderBackupList();
 
   // Last backup info
@@ -1289,6 +1377,35 @@ function submitSettings(e) {
 
   applyStoreSettings();
   showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+}
+
+function handleLogoUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('❌ Ảnh quá lớn. Chọn ảnh < 2MB', 'danger');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    const s = Store.getSettings();
+    s.storeLogo = dataUrl;
+    Store.setSettings(s);
+    applyStoreSettings();
+    renderSettings();
+    showToast('✅ Đã cập nhật logo!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeLogo() {
+  const s = Store.getSettings();
+  s.storeLogo = null;
+  Store.setSettings(s);
+  applyStoreSettings();
+  renderSettings();
+  showToast('🗑️ Đã xoá logo!', 'success');
 }
 
 // ============================================================
@@ -1692,20 +1809,26 @@ async function processAICommand(text) {
 }
 
 function buildGeminiPrompt(text, tablesInfo, menu) {
+  const inventoryInfo = Store.getInventory().map(i => ({ id: i.id, name: i.name, unit: i.unit }));
   return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
 Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
 
 Danh sách bàn: ${JSON.stringify(tablesInfo)}
 Danh sách thực đơn: ${JSON.stringify(menu)}
+Kho hàng hóa: ${JSON.stringify(inventoryInfo)}
 
 ACTION hỗ trợ:
 1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
 2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
 3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
 4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
+5. "report" – Báo cáo doanh thu và tổng kết: { type:"report" }
+6. "restock"– Nhập thêm/mua thêm tài sản vào kho: { type:"restock", items:[{id:"<id>", qty:5}] }
 
 Quy tắc:
-- Khớp tên món gần đúng (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger).
+- Khớp tên món/nguyên liệu gần đúng (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger).
+- Hành động "report" dùng để hỏi xem hôm nay bán được bao nhiêu, báo cáo thế nào.
+- Hành động "restock" dùng để nhập thêm đồ vào kho.
 - reply: ngắn gọn, thân thiện, xưng "em".
 
 Câu lệnh: "${text}"
@@ -1725,10 +1848,13 @@ function localNLPEngine(text, menu, tables) {
 
   // --- Extract table number ---
   let tableId = null;
-  const tableMatch = t.match(/b[àa]n\s*(\d+|mang v[eề]|takeaway)/i);
+  const tableMatch = t.match(/(?:b[àa]n\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
   if (tableMatch) {
-    const raw = tableMatch[1].toLowerCase();
-    tableId = (raw === 'mang về' || raw === 'mang ve' || raw === 'takeaway') ? 'takeaway' : raw;
+    if (tableMatch[1]) {
+      tableId = tableMatch[1];
+    } else {
+      tableId = 'takeaway';
+    }
   }
 
   // --- Detect intent ---
@@ -1736,7 +1862,8 @@ function localNLPEngine(text, menu, tables) {
   const isRemove = /b[oó]t|x[oó]a|hủy|cancel|bỏ/i.test(t);
   const isPay    = /t[íi]nh ti[eề]n|thanh to[aá]n|check|bill|xu[aâ]t bill/i.test(t);
   const isView   = /m[oở] b[aà]n|xem b[aà]n|qu[aả]n l[yý] b[aà]n|v[aà]o b[aà]n/i.test(t);
-  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o/i.test(t);
+  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c/i.test(t);
+  const isRestock = /nh[aậ]p (?:h[aà]ng|th[eê]m)|nh[aậ]p|m[uụ]c nh[aậ]p/i.test(t);
 
   // --- View / Manage Table ---
   if (isView && tableId) {
@@ -1770,6 +1897,27 @@ function localNLPEngine(text, menu, tables) {
       return {
         actions: [],
         reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
+      };
+    }
+    if (/doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c/i.test(t)) {
+      const todayRev = getRevenueSummary('today');
+      const alerts = getInventoryAlerts();
+      const needRestock = alerts.critical.length + alerts.low.length;
+      return {
+        actions: [{ type: 'report' }],
+        reply: `Hôm nay bán được ${todayRev.orders} đơn, doanh thu ${fmt(todayRev.revenue)}đ, chi phí ${fmt(todayRev.expenseTotal)}đ. Hiện có ${needRestock} nguyên liệu cần nhập ạ!`
+      };
+    }
+    return null;
+  }
+
+  // --- Restock ---
+  if (isRestock) {
+    const matchedInv = extractMenuItems(t, Store.getInventory());
+    if (matchedInv.length > 0) {
+      return {
+        actions: matchedInv.map(it => ({ type: 'restock', itemId: it.id, qty: it.qty })),
+        reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
       };
     }
     return null;
@@ -1828,14 +1976,31 @@ function extractMenuItems(text, menu) {
 
   for (const item of sortedMenu) {
     const normName = norm(item.name);
-    // Also try keywords (first word, last word)
-    const keywords = [...new Set([
-      normName,
-      ...normName.split(' ').filter(w => w.length > 2)
-    ])];
+    const keywords = [normName];
+    
+    // Add safe subset keywords by stripping common generic words
+    let stripped = normName.replace(/^(kho |bia |tra |ruou |combo )/i, '').trim();
+    if (stripped !== normName && stripped.length > 2) {
+      keywords.push(stripped);
+    }
+    
+    // Also strip generic suffixes like " nuong", " chien gion"
+    const noSuffix = stripped.replace(/( nuong| chien gion| chien bo toi| chien bo| om bau)$/i, '').trim();
+    if (noSuffix !== stripped && noSuffix.length > 2) {
+      keywords.push(noSuffix);
+    }
+    
+    // Common mappings
+    if (normName.includes('tiger nau')) keywords.push('tiger nau', 'tiger');
+    if (normName.includes('tiger bac')) keywords.push('tiger bac');
+    if (normName.includes('sai gon')) keywords.push('sai gon');
+    if (normName.includes('ken lon')) keywords.push('ken', 'heineken');
+
+    // Remove duplicates and sort by length DESC
+    const finalKeywords = [...new Set(keywords)].sort((a,b) => b.length - a.length);
 
     let found = false;
-    for (const kw of keywords) {
+    for (const kw of finalKeywords) {
       const idx = remaining.indexOf(kw);
       if (idx === -1) continue;
 
@@ -1921,6 +2086,29 @@ function executeAIActions(parsed, menuFull) {
           if (tid === 'takeaway') openTakeaway();
           else openTable(tid);
         }, 200);
+      } else if (a.type === 'report') {
+        const todayRev = getRevenueSummary('today');
+        const alerts = getInventoryAlerts();
+        const needRestock = alerts.critical.length + alerts.low.length;
+        parsed.reply = `Hôm nay bán được ${todayRev.orders} đơn, doanh thu ${fmt(todayRev.revenue)}đ, chi phí ${fmt(todayRev.expenseTotal)}đ. Hiện có ${needRestock} nguyên liệu cần nhập ạ!`;
+      } else if (a.type === 'restock') {
+        const inv = Store.getInventory();
+        let addedNames = [];
+        for (const it of (a.items || [])) {
+          const stock = inv.find(x => x.id === it.id || x.name === it.name);
+          if (!stock) continue;
+          stock.qty += it.qty;
+          Store.addPurchase({ id: uid(), name: stock.name, qty: it.qty, unit: stock.unit, price: stock.costPerUnit * it.qty, costPerUnit: stock.costPerUnit, date: new Date().toISOString(), supplier: 'AI Assistant' });
+          addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
+        }
+        if (addedNames.length) {
+          Store.setInventory(inv);
+          updateAlertBadge();
+          if (currentPage === 'inventory') renderInventory();
+          if (!parsed.reply || parsed.reply.length < 10) {
+            parsed.reply = `Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`;
+          }
+        }
       }
     }
     if (currentPage === 'orders') renderCart();

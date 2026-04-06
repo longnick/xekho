@@ -201,7 +201,7 @@ body {
 .table-card:active { transform: scale(0.93); }
 .table-card.empty { border-color: var(--border); }
 .table-card.empty:hover { border-color: var(--success); }
-.table-card.occupied { border-color: var(--primary); background: rgba(255,107,53,0.1); }
+.table-card.occupied { border-color: var(--danger); background: rgba(255,61,113,0.1); }
 .table-card.waiting { border-color: var(--warning); background: rgba(255,170,0,0.1); animation: pulse-border 2s infinite; }
 .table-card.selected { border-color: var(--info); background: rgba(0,149,255,0.1); }
 @keyframes pulse-border { 0%,100%{opacity:1} 50%{opacity:0.6} }
