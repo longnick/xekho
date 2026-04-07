@@ -837,6 +837,7 @@ function submitPurchase(e) {
 // PAGE: FINANCE
 // ============================================================
 let financePeriod = 'today';
+let financeDateOpts = {};
 
 function renderFinance() {
   setFinancePeriod(financePeriod);
@@ -845,8 +846,24 @@ function renderFinance() {
 function setFinancePeriod(p) {
   financePeriod = p;
   document.querySelectorAll('.finance-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
-  const s = getRevenueSummary(p);
+  
+  // Show/hide date picker
+  const picker = document.getElementById('finance-date-picker');
+  if(picker) picker.style.display = p === 'day' ? '' : 'none';
+  
+  if(p === 'day') {
+    // If no date selected yet, default to today
+    const singleInput = document.getElementById('finance-single-date');
+    if(singleInput && !singleInput.value) singleInput.value = new Date().toISOString().split('T')[0];
+    applyDateFilter('finance');
+    return;
+  }
+  financeDateOpts = {};
+  const s = getRevenueSummary(p, financeDateOpts);
+  updateFinanceUI(s);
+}
 
+function updateFinanceUI(s) {
   document.getElementById('fin-revenue').textContent = fmtFull(s.revenue);
   document.getElementById('fin-cost').textContent = fmtFull(s.cost);
   document.getElementById('fin-gross').textContent = fmtFull(s.gross);
@@ -859,35 +876,44 @@ function setFinancePeriod(p) {
   if(finDiscount) finDiscount.textContent = fmtFull(s.discountTotal || 0);
   const finShipping = document.getElementById('fin-shipping');
   if(finShipping) finShipping.textContent = fmtFull(s.shippingTotal || 0);
-
   const margin = s.revenue > 0 ? (s.gross/s.revenue*100).toFixed(1) : 0;
   document.getElementById('fin-margin').textContent = margin + '%';
-
   renderExpenseList();
   renderRevenueChart();
 }
 
 function renderExpenseList() {
-  const expenses = Store.getExpenses().filter(e => {
-    const d = new Date(e.date), now = new Date();
-    if(financePeriod === 'today') return d.toDateString() === now.toDateString();
-    if(financePeriod === 'week') return (now-d)/86400000 <= 7;
-    if(financePeriod === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
+  const expenses = filterExpenses(financePeriod, financeDateOpts);
+  
+  if(!expenses.length) {
+    document.getElementById('expense-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-text">Chưa có chi phí</div></div>';
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  expenses.forEach(e => {
+    const key = fmtDate(e.date);
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(e);
   });
 
-  document.getElementById('expense-list').innerHTML = expenses.length ? expenses.map(e =>
-    `<div class="list-item">
+  let html = '';
+  for(const [date, items] of Object.entries(groups)) {
+    const dayTotal = items.reduce((s,e) => s + e.amount, 0);
+    html += `<div class="history-group-header"><span>📅 ${date}</span><span class="history-group-total">-${fmt(dayTotal)}đ</span></div>`;
+    html += items.map(e => `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">💸</div>
       <div class="list-item-content">
         <div class="list-item-title">${e.name}</div>
-        <div class="list-item-sub">${e.category} · ${fmtDate(e.date)}</div>
+        <div class="list-item-sub">${e.category} · ${fmtTime(e.date)}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.amount)}đ</div>
       </div>
-    </div>`
-  ).join('') : '<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-text">Chưa có chi phí</div></div>';
+    </div>`).join('');
+  }
+  document.getElementById('expense-list').innerHTML = html;
 }
 
 function openExpenseModal() {
@@ -961,7 +987,8 @@ function renderRevenueChart() {
 // ============================================================
 // PAGE: REPORTS
 // ============================================================
-let reportPeriod = 'week';
+let reportPeriod = 'today';
+let reportDateOpts = {};
 
 function renderReports() {
   setReportPeriod(reportPeriod);
@@ -970,6 +997,18 @@ function renderReports() {
 function setReportPeriod(p) {
   reportPeriod = p;
   document.querySelectorAll('.report-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  
+  // Show/hide date picker
+  const picker = document.getElementById('report-date-picker');
+  if(picker) picker.style.display = p === 'day' ? '' : 'none';
+  
+  if(p === 'day') {
+    const singleInput = document.getElementById('report-single-date');
+    if(singleInput && !singleInput.value) singleInput.value = new Date().toISOString().split('T')[0];
+    applyDateFilter('report');
+    return;
+  }
+  reportDateOpts = {};
   renderTopItems();
   renderCategoryChart();
   renderHourlyChart();
@@ -1043,23 +1082,45 @@ function renderHourlyChart() {
 }
 
 function renderOrderHistoryList() {
-  const orders = filterHistory(reportPeriod).slice(0, 30);
-  document.getElementById('order-history-list').innerHTML = orders.length ? orders.map(o => {
-    const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
-    const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
-    const discountLabel = o.discount > 0 ? `<br>📉 Giảm: -${fmt(o.discount)}đ` : '';
-    return `<div class="list-item" onclick="viewOrderDetail('${o.id}')" style="cursor:pointer">
-      <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
-      <div class="list-item-content">
-        <div class="list-item-title">${o.tableName} – ${o.id}</div>
-        <div class="list-item-sub">${fmtDateTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}${discountLabel}</div>
-      </div>
-      <div class="list-item-right">
-        <div class="list-item-amount">${fmt(o.total)}đ</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">Tap xem chi tiết</div>
-      </div>
+  const orders = filterHistory(reportPeriod, reportDateOpts).slice(0, 50);
+  
+  if(!orders.length) {
+    document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử</div></div>';
+    return;
+  }
+
+  // Group orders by date
+  const groups = {};
+  orders.forEach(o => {
+    const key = fmtDate(o.paidAt);
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+
+  let html = '';
+  for(const [date, items] of Object.entries(groups)) {
+    const dayRevenue = items.reduce((s,o) => s + o.total, 0);
+    html += `<div class="history-group-header">
+      <span>📅 ${date} <span class="history-group-count">${items.length} đơn</span></span>
+      <span class="history-group-total">${fmt(dayRevenue)}đ</span>
     </div>`;
-  }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử</div></div>';
+    html += items.map(o => {
+      const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
+      const payLabel = o.payMethod === 'bank' ? 'CK' : 'TM';
+      const discountLabel = o.discount > 0 ? ` · 📉-${fmt(o.discount)}đ` : '';
+      return `<div class="list-item" onclick="viewOrderDetail('${o.id}')" style="cursor:pointer">
+        <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${o.tableName} – ${o.id}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}${discountLabel}</div>
+        </div>
+        <div class="list-item-right">
+          <div class="list-item-amount">${fmt(o.total)}đ</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('order-history-list').innerHTML = html;
 }
 
 function viewOrderDetail(orderId) {
@@ -1244,6 +1305,71 @@ function addIngredientRow(name='', qty='') {
 
 
 // ============================================================
+// DATE PICKER HELPERS (Finance & Reports)
+// ============================================================
+let datePickerModes = { finance: 'single', report: 'single' };
+
+function setDateMode(page, mode, btn) {
+  datePickerModes[page] = mode;
+  const container = document.getElementById(`${page}-date-picker`);
+  if(!container) return;
+  container.querySelectorAll('.date-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  
+  const inputsDiv = document.getElementById(`${page}-date-inputs`);
+  if(mode === 'single') {
+    inputsDiv.innerHTML = `<input type="date" class="input input-sm date-input" id="${page}-single-date" onchange="applyDateFilter('${page}')">`;
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById(`${page}-single-date`).value = today;
+  } else {
+    inputsDiv.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" class="input input-sm date-input" id="${page}-from-date" onchange="applyDateFilter('${page}')">
+        <span style="color:var(--text2);font-size:12px;white-space:nowrap">→</span>
+        <input type="date" class="input input-sm date-input" id="${page}-to-date" onchange="applyDateFilter('${page}')">
+      </div>`;
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().split('T')[0];
+    document.getElementById(`${page}-from-date`).value = weekAgo;
+    document.getElementById(`${page}-to-date`).value = today;
+  }
+  applyDateFilter(page);
+}
+
+function applyDateFilter(page) {
+  const mode = datePickerModes[page];
+  let opts = {};
+  
+  if(mode === 'single') {
+    const dateEl = document.getElementById(`${page}-single-date`);
+    if(dateEl && dateEl.value) {
+      opts = { date: dateEl.value };
+    }
+  } else {
+    const fromEl = document.getElementById(`${page}-from-date`);
+    const toEl = document.getElementById(`${page}-to-date`);
+    if(fromEl && toEl && fromEl.value && toEl.value) {
+      opts = { fromDate: fromEl.value, toDate: toEl.value };
+    }
+  }
+  
+  const period = mode === 'range' ? 'range' : 'day';
+  
+  if(page === 'finance') {
+    financeDateOpts = opts;
+    const s = getRevenueSummary(period, opts);
+    updateFinanceUI(s);
+  } else {
+    reportDateOpts = opts;
+    reportPeriod = period;
+    renderTopItems();
+    renderCategoryChart();
+    renderHourlyChart();
+    renderOrderHistoryList();
+  }
+}
+
+
+// ============================================================
 // TOAST
 
 // ============================================================
@@ -1298,6 +1424,7 @@ function renderSettings() {
     ['set-bankAccount',  s.bankAccount || ''],
     ['set-bankOwner',    s.bankOwner   || ''],
     ['set-geminiApiKey', s.geminiApiKey|| ''],
+    ['set-googleTTSKey', s.googleTTSKey|| ''],
     ['set-tableCount',   s.tableCount  || 20],
   ];
   fields.forEach(([id, val]) => {
@@ -1340,6 +1467,7 @@ function submitSettings(e) {
   const bankAccountEl = document.getElementById('set-bankAccount');
   const bankOwnerEl   = document.getElementById('set-bankOwner');
   const geminiEl      = document.getElementById('set-geminiApiKey');
+  const ttsKeyEl      = document.getElementById('set-googleTTSKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
 
@@ -1355,6 +1483,7 @@ function submitSettings(e) {
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
     geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
+    googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     tableCount:   newTableCount,
     autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
   };
@@ -1502,11 +1631,12 @@ function restoreLatestBackup() {
 }
 
 // ============================================================
-// AI ASSISTANT – STANDALONE (iPhone / Safari only, no server)
-// Uses: Web Speech API (mic) + Gemini REST API + SpeechSynthesis (TTS)
+// AI ASSISTANT – Full-featured Chatbot
+// Voice + Camera + Gemini + Google Cloud TTS
 // ============================================================
 let aiRecognition = null;
 let aiIsListening  = false;
+let aiOutputMode = 'voice'; // 'voice' or 'text'
 
 // ------ UI helpers ------
 let aiChatHistoryLoaded = false;
@@ -1516,6 +1646,7 @@ function openAIAssistant() {
   if(!modal) return;
   modal.classList.add('active');
   updateAIModeUI();
+  updateAIOutputToggleUI();
 
   if (!aiChatHistoryLoaded) {
     const history = Store.getAIHistory();
@@ -1525,7 +1656,895 @@ function openAIAssistant() {
     if (history.length > 0 && container) {
       container.innerHTML = '';
       if (welcomeMsg) container.appendChild(welcomeMsg);
-      // Chỉ hiển thị 10 tin nhắn gần nhất trong khung chat nhanh
+      const recentHistory = history.slice(-10);
+      recentHistory.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `ai-bubble ai-bubble-${msg.role}`;
+        div.innerHTML = msg.content;
+        container.appendChild(div);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+    aiChatHistoryLoaded = true;
+  }
+}
+
+function closeAIAssistant() {
+  document.getElementById('ai-modal').classList.remove('active');
+  stopAIListening();
+}
+
+function toggleAIMode() {
+  const s = Store.getSettings();
+  s.forceOffline = !s.forceOffline;
+  Store.setSettings(s);
+  updateAIModeUI();
+}
+
+function updateAIModeUI() {
+  const s = Store.getSettings();
+  const el = document.getElementById('ai-status-text');
+  if(!el) return;
+  if (s.forceOffline) {
+    el.innerHTML = '📴 Chế độ Offline (Nhanh)';
+    el.style.background = 'var(--bg2)';
+    el.style.color = 'var(--text2)';
+    el.style.border = '1px solid var(--border)';
+  } else {
+    const hasKey = !!s.geminiApiKey;
+    el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
+    el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+    el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
+    el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+  }
+}
+
+// ------ Audio/Text Output Toggle ------
+function toggleAIOutput() {
+  aiOutputMode = aiOutputMode === 'voice' ? 'text' : 'voice';
+  updateAIOutputToggleUI();
+  showToast(aiOutputMode === 'voice' ? '🔊 Đã bật phát âm thanh' : '📝 Chỉ hiển thị văn bản');
+}
+
+function updateAIOutputToggleUI() {
+  const icon = document.getElementById('ai-output-icon');
+  const label = document.getElementById('ai-output-label');
+  if(icon) icon.textContent = aiOutputMode === 'voice' ? '🔊' : '📝';
+  if(label) label.textContent = aiOutputMode === 'voice' ? 'Phát âm thanh' : 'Chỉ văn bản';
+  const btn = document.getElementById('ai-output-toggle');
+  if(btn) btn.classList.toggle('active', aiOutputMode === 'voice');
+}
+
+function clearAIAssistantHistory() {
+  if(!confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện AI?')) return;
+  Store.setAIHistory([]);
+  const container = document.getElementById('ai-chat-messages');
+  const welcomeMsg = document.getElementById('ai-welcome-msg');
+  if (container) {
+    container.innerHTML = '';
+    if (welcomeMsg) container.appendChild(welcomeMsg);
+  }
+}
+
+function openFullAIHistory() {
+  const history = Store.getAIHistory();
+  const list = document.getElementById('ai-history-list');
+  if(!list) return;
+  
+  list.innerHTML = history.length ? history.map(msg => `
+    <div class="history-item">
+      <div class="history-role ${msg.role}">${msg.role === 'user' ? '👤 Bạn' : '🤖 Trợ lý'}</div>
+      <div class="history-content">${msg.content}</div>
+      <div class="history-time">${msg.time ? fmtDateTime(msg.time) : ''}</div>
+    </div>
+  `).reverse().join('') : '<div style="text-align:center;color:var(--text3);padding:20px">Chưa có lịch sử trò chuyện</div>';
+  
+  document.getElementById('ai-history-modal').classList.add('active');
+}
+
+function preprocessAIText(text) {
+  let t = text.toLowerCase().trim();
+  const aliases = {
+    'cọp trắng': 'tiger bạc',
+    'cọp nâu': 'tiger nâu',
+    'đào': 'trà đào',
+    'tắc': 'trà tắc',
+    'set 1': 'hoàng hôn trên biển',
+    'set 2': 'đêm huyền diệu',
+    'set 3': 'không say không về',
+    'cút': 'trứng cút thảo mộc',
+    'trứng cút': 'trứng cút thảo mộc',
+    'ngọt': 'sting'
+  };
+  
+  for (const [alias, realName] of Object.entries(aliases)) {
+    const regex = new RegExp(`(^|\\s)${alias}(?=\\s|$)`, 'gi');
+    t = t.replace(regex, `$1${realName}`);
+  }
+  return t;
+}
+
+function addAIBubble(text, role = 'bot') {
+  const container = document.getElementById('ai-chat-messages');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = `ai-bubble ai-bubble-${role}`;
+  div.innerHTML = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  
+  if (role !== 'thinking') {
+    const history = Store.getAIHistory();
+    history.push({ role, content: text, time: new Date().toISOString() });
+    if (history.length > 200) history.shift();
+    Store.setAIHistory(history);
+  }
+  
+  return div;
+}
+
+function removeThinkingBubble() {
+  const t = document.getElementById('ai-thinking-bubble');
+  if (t) t.remove();
+}
+
+// ------ Voice Input (Web Speech API) ------
+function toggleAIVoice() {
+  if (aiIsListening) {
+    stopAIListening();
+  } else {
+    startAIListening();
+  }
+}
+
+const ICON_MIC = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
+const ICON_STOP = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>`;
+
+function startAIListening() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    addAIBubble('⚠️ Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Safari trên iPhone.', 'error');
+    return;
+  }
+
+  aiRecognition = new SpeechRecognition();
+  aiRecognition.lang = 'vi-VN';
+  aiRecognition.continuous = false;
+  aiRecognition.interimResults = false;
+
+  aiRecognition.onstart = () => {
+    aiIsListening = true;
+    const btn = document.getElementById('ai-voice-btn');
+    const ind = document.getElementById('ai-listening-indicator');
+    if (btn) { btn.innerHTML = ICON_STOP; btn.classList.add('recording'); }
+    if (ind) ind.style.display = 'block';
+  };
+
+  aiRecognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    stopAIListening();
+    document.getElementById('ai-text-input').value = text;
+    sendAIText(true);
+  };
+
+  aiRecognition.onerror = (e) => {
+    stopAIListening();
+    const msgs = {
+      'not-allowed': '🔒 Bạn chưa cho phép truy cập micro. Vào Cài đặt iPhone → Safari → Micro.',
+      'no-speech'  : '🎙️ Không nghe thấy gì. Thử lại nhé!',
+      'network'    : '🌐 Lỗi mạng khi nhận giọng nói.',
+    };
+    addAIBubble(msgs[e.error] || `Lỗi ghi âm: ${e.error}`, 'error');
+  };
+
+  aiRecognition.onend = () => stopAIListening();
+  aiRecognition.start();
+}
+
+function stopAIListening() {
+  aiIsListening = false;
+  if (aiRecognition) { try { aiRecognition.stop(); } catch(_){} aiRecognition = null; }
+  const btn = document.getElementById('ai-voice-btn');
+  const ind = document.getElementById('ai-listening-indicator');
+  if (btn) { btn.innerHTML = ICON_MIC; btn.classList.remove('recording'); }
+  if (ind) ind.style.display = 'none';
+}
+
+// ------ Camera Capture → Gemini Vision ------
+async function handleAICameraCapture(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  
+  const s = Store.getSettings();
+  if(!s.geminiApiKey) {
+    addAIBubble('⚠️ Cần có Gemini API Key để sử dụng chức năng nhận diện ảnh. Vào <strong>Cài đặt</strong> để cấu hình.', 'error');
+    event.target.value = '';
+    return;
+  }
+
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    const mimeType = file.type || 'image/jpeg';
+    
+    addAIBubble(`📷 <img src="${e.target.result}" style="max-width:200px;max-height:150px;border-radius:8px;margin-top:6px;display:block">`, 'user');
+    
+    const thinking = addAIBubble('⏳ Đang nhận diện ảnh...', 'thinking');
+    if(thinking) thinking.id = 'ai-thinking-bubble';
+
+    try {
+      const menu = Store.getMenu();
+      const menuNames = menu.map(m => `${m.name} (${m.price}đ)`).join(', ');
+      
+      const prompt = `Bạn là trợ lý AI của quán ăn "Gánh Khô Chữa Lành". Hãy phân tích ảnh này:
+- Nếu là hình ảnh thực đơn/menu: liệt kê các món nhìn thấy
+- Nếu là hình ảnh hóa đơn/bill: đọc các món + số lượng + giá
+- Nếu là hình ảnh món ăn: nhận diện tên món
+
+Thực đơn quán: ${menuNames}
+
+Trả về JSON: { "actions": [{ "type": "order", "tableId": "1", "items": [{"id":"<id>","qty":1}] }], "reply": "..." }
+Nếu không liên quan đến đặt hàng, trả: { "actions": [], "reply": "Mô tả ảnh..." }
+CHỈ trả JSON, không markdown.`;
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${s.geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: base64 } }
+              ]
+            }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
+          }),
+          signal: AbortSignal.timeout(15000)
+        }
+      );
+      
+      const data = await res.json();
+      removeThinkingBubble();
+      
+      if(data.error) {
+        addAIBubble(`❌ Lỗi Gemini: ${data.error.message}`, 'error');
+        return;
+      }
+      
+      let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      
+      try {
+        const parsed = JSON.parse(raw);
+        const reply = executeAIActions(parsed, menu);
+        addAIBubble(reply, 'bot');
+        if(aiOutputMode === 'voice') speakText(reply);
+      } catch(_) {
+        addAIBubble(raw || 'Không nhận diện được ảnh.', 'bot');
+      }
+    } catch(err) {
+      removeThinkingBubble();
+      addAIBubble(`❌ Lỗi xử lý ảnh: ${err.message}`, 'error');
+    }
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+// ------ Text send ------
+function sendAIText(isVoice = false) {
+  const inp = document.getElementById('ai-text-input');
+  const rawText = inp ? inp.value.trim() : '';
+  if (!rawText) return;
+  if(inp) inp.value = '';
+  
+  addAIBubble(rawText, 'user');
+  const text = preprocessAIText(rawText);
+
+  const isOnline = navigator.onLine;
+  const s = Store.getSettings();
+  const hasKey = !!s.geminiApiKey;
+
+  const modeLabel = (!s.forceOffline && isOnline && hasKey)
+    ? '🌐 Gemini AI'
+    : '📱 Offline Engine';
+  const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
+  if (thinking) thinking.id = 'ai-thinking-bubble';
+
+  processAICommand(text).then(reply => {
+    removeThinkingBubble();
+    addAIBubble(reply, 'bot');
+    // Auto speak if voice input OR output mode is voice
+    if (isVoice || aiOutputMode === 'voice') speakText(reply);
+  }).catch(err => {
+    removeThinkingBubble();
+    addAIBubble(`❌ ${err.message || 'Lỗi không xác định'}`, 'error');
+  });
+}
+
+// ------ TTS: Google Cloud TTS (premium) + SpeechSynthesis (fallback) ------
+async function speakText(text) {
+  if (!text) return;
+  const plain = (text || '').replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵📷📅📆🔊📝]/gu, '').trim();
+  if (!plain) return;
+
+  const s = Store.getSettings();
+  
+  // Try Google Cloud TTS first (natural voice)
+  if (s.googleTTSKey && navigator.onLine) {
+    try {
+      const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${s.googleTTSKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { text: plain.slice(0, 500) }, // Limit to 500 chars
+          voice: {
+            languageCode: 'vi-VN',
+            name: 'vi-VN-Neural2-A', // Premium neural voice
+            ssmlGender: 'FEMALE'
+          },
+          audioConfig: {
+            audioEncoding: 'MP3',
+            speakingRate: 1.05,
+            pitch: 1.0
+          }
+        }),
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      const data = await response.json();
+      if (data.audioContent) {
+        const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
+        audio.playbackRate = 1.0;
+        await audio.play();
+        return; // Success, no need for fallback
+      }
+    } catch(e) {
+      console.warn('Google TTS failed, falling back to browser TTS:', e.message);
+    }
+  }
+  
+  // Fallback: Browser SpeechSynthesis
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const msg = new SpeechSynthesisUtterance(plain);
+  msg.lang = 'vi-VN';
+  msg.rate = 1.05;
+
+  const voices = window.speechSynthesis.getVoices();
+  // Prefer Google Vietnamese voice if available
+  const viVoice = voices.find(v => v.lang.startsWith('vi') && v.name.includes('Google'))
+    || voices.find(v => v.lang.startsWith('vi'))
+    || voices.find(v => v.lang.includes('vi'));
+  if (viVoice) msg.voice = viVoice;
+
+  window.speechSynthesis.speak(msg);
+}
+
+if (window.speechSynthesis) window.speechSynthesis.getVoices();
+
+// ============================================================
+// HYBRID AI ENGINE: Gemini (online) + Local NLP (offline)
+// ============================================================
+
+const GEMINI_MODELS = [
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-pro',
+];
+
+async function callGemini(apiKey, systemPrompt) {
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
+          }),
+          signal: AbortSignal.timeout(8000)
+        }
+      );
+      const data = await res.json();
+      if (data.error) {
+        if (data.error.code === 404 || data.error.code === 400 ||
+            (data.error.message || '').includes('no longer available') ||
+            (data.error.message || '').includes('deprecated')) {
+          lastError = new Error(data.error.message);
+          continue;
+        }
+        throw new Error(data.error.message);
+      }
+      if (!data.candidates?.length) throw new Error('Gemini không trả về kết quả.');
+      return data.candidates[0].content.parts[0].text;
+    } catch(e) {
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('Tất cả Gemini models đều không khả dụng.');
+}
+
+// --- Main processor: Hybrid Failover ---
+async function processAICommand(text) {
+  const s = Store.getSettings();
+  const menu       = Store.getMenu();
+  const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
+
+  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey;
+
+  let parsed;
+
+  if (canUseGemini) {
+    try {
+      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
+      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
+      let raw = await callGemini(s.geminiApiKey, prompt);
+      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try { parsed = JSON.parse(raw); }
+      catch(_) { return raw; }
+    } catch(e) {
+      console.warn('Gemini failed, switching to Local NLP:', e.message);
+      const offlineResult = localNLPEngine(text, menu, tablesInfo);
+      if (offlineResult) {
+        parsed = offlineResult;
+        parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+      } else {
+        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
+      }
+    }
+  } else {
+    if (!s.geminiApiKey) {
+      parsed = localNLPEngine(text, menu, tablesInfo);
+      if (!parsed) {
+        return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
+      }
+      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline Engine]</span>';
+    } else {
+      parsed = localNLPEngine(text, menu, tablesInfo);
+      if (!parsed) {
+        return '📵 Đang mất mạng và không nhận ra lệnh. Thử: "bàn 1 đặt 3 bia"';
+      }
+      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+    }
+  }
+
+  return executeAIActions(parsed, menu);
+}
+
+function buildGeminiPrompt(text, tablesInfo, menu) {
+  const inventoryInfo = Store.getInventory().map(i => ({ id: i.id, name: i.name, qty: i.qty, unit: i.unit }));
+  
+  // Add current orders context
+  const currentOrders = {};
+  const orders = Store.getOrders();
+  Object.keys(orders).forEach(tid => {
+    if(orders[tid] && orders[tid].length > 0) {
+      currentOrders[tid] = orders[tid].map(i => `${i.qty}x ${i.name}`);
+    }
+  });
+
+  // Add today's summary
+  const todayRev = getRevenueSummary('today');
+  
+  return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
+Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
+
+Danh sách bàn: ${JSON.stringify(tablesInfo)}
+Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
+Danh sách thực đơn: ${JSON.stringify(menu)}
+Kho hàng hóa: ${JSON.stringify(inventoryInfo)}
+Doanh thu hôm nay: ${todayRev.orders} đơn, ${todayRev.revenue}đ doanh thu, ${todayRev.expenseTotal}đ chi phí, lãi gộp ${todayRev.gross}đ
+
+ACTION hỗ trợ:
+1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
+2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
+3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
+4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
+5. "report" – Báo cáo doanh thu tóm tắt: { type:"report" }
+6. "restock"– Nhập thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
+7. "unknown" - Khi không rõ hoặc món không có: { type:"unknown", tableId:"1" }
+
+Quy tắc:
+- Khớp tên món/nguyên liệu GẦN ĐÚNG (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger, mực ≈ Mực khô nướng).
+- Nếu người dùng gọi món KHÔNG CÓ trong thực đơn, dùng "unknown".
+- "report" cho câu hỏi: doanh thu, bán được bao nhiêu, báo cáo, tổng kết, tồn kho thế nào, v.v.
+- "restock" cho: nhập thêm đồ, mua thêm hàng vào kho.
+- reply: ngắn gọn, thân thiện, xưng "em". Nếu report, tóm tắt: doanh thu, lãi, chi phí, đơn, tồn kho cần nhập.
+
+Câu lệnh: "${text}"
+
+CHỈ trả về JSON: { "actions": [...], "reply": "..." }`;
+}
+
+// ============================================================
+// LOCAL NLP ENGINE (Offline Fallback)
+// Pattern matching for Vietnamese POS commands
+// ============================================================
+function localNLPEngine(text, menu, tables) {
+  const t = text.toLowerCase()
+    .replace(/[.,!?]/g, '')
+    .normalize('NFC');
+
+  // --- Extract table number ---
+  let tableId = null;
+  const tableMatch = t.match(/(?:b[àa]n\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
+  if (tableMatch) {
+    if (tableMatch[1]) {
+      tableId = tableMatch[1];
+    } else {
+      tableId = 'takeaway';
+    }
+  }
+
+  // --- Detect intent ---
+  const isOrder  = /đặt|gọi|th[eê]m|lên|cho|order/i.test(t);
+  const isRemove = /b[oó]t|x[oó]a|hủy|cancel|bỏ/i.test(t);
+  const isPay    = /t[íi]nh ti[eề]n|thanh to[aá]n|check|bill|xu[aâ]t bill/i.test(t);
+  const isView   = /m[oở] b[aà]n|xem b[aà]n|qu[aả]n l[yý] b[aà]n|v[aà]o b[aà]n/i.test(t);
+  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c|tồn kho|nhập hàng gần đây/i.test(t);
+  const isRestock = /nh[aậ]p (?:h[aà]ng|th[eê]m)|nh[aậ]p|m[uụ]c nh[aậ]p/i.test(t);
+
+  // --- View / Manage Table ---
+  if (isView && tableId) {
+    return {
+      actions: [{ type: 'view', tableId }],
+      reply: `Dạ em mở bàn ${tableId} rồi ạ!`
+    };
+  }
+
+  // --- Pay / Bill ---
+  if (isPay) {
+    if (tableId) {
+      return {
+        actions: [{ type: 'pay', tableId }],
+        reply: `Dạ em mở bill bàn ${tableId} cho anh chị ạ!`
+      };
+    } else {
+      // No table specified → ask
+      return {
+        actions: [],
+        reply: `Dạ anh chị muốn tính tiền bàn nào ạ? Ví dụ: "Tính tiền bàn 5"`
+      };
+    }
+  }
+
+  // --- Query ---
+  if (isQuery) {
+    if (/b[aà]n n[aà]o.*tr[oố]ng|tr[oố]ng.*b[aà]n/i.test(t)) {
+      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `Bàn ${tb.id}`);
+      return {
+        actions: [],
+        reply: emptyTables.length
+          ? `Hiện đang trống: ${emptyTables.join(', ')} ạ!`
+          : 'Hiện tại tất cả các bàn đều đang có khách ạ!'
+      };
+    }
+    if (/menu|th[uú]c đ[oơ]n|c[oò]n m[oó]n/i.test(t)) {
+      const names = menu.slice(0, 8).map(m => m.name).join(', ');
+      return {
+        actions: [],
+        reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
+      };
+    }
+    if (/doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c|tồn kho/i.test(t)) {
+      return buildReportReply();
+    }
+    return null;
+  }
+
+  // --- Restock ---
+  if (isRestock) {
+    const matchedInv = extractMenuItems(t, Store.getInventory());
+    if (matchedInv.length > 0) {
+      return {
+        actions: [{ type: 'restock', items: matchedInv.map(it => ({ name: it.name, qty: it.qty })) }],
+        reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
+      };
+    }
+    return null;
+  }
+
+  // --- Remove items: handle even without tableId feedback ---
+  if (isRemove) {
+    if (!tableId) {
+      return {
+        actions: [],
+        reply: `Dạ anh chị muốn bớt món ở bàn nào ạ? Ví dụ: "Bớt 1 bia bàn 2"`
+      };
+    }
+    const matchedItems = extractMenuItems(t, menu);
+    if (matchedItems.length > 0) {
+      const actions = matchedItems.map(it => ({ type: 'remove', tableId, itemId: it.id, qty: it.qty }));
+      const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+      return {
+        actions,
+        reply: `Dạ em đã bớt ${names} ở bàn ${tableId} ạ!`
+      };
+    }
+    return {
+      actions: [{ type: 'view', tableId }],
+      reply: `Dạ em chưa xác định được món cần bớt, mở bàn ${tableId} để anh chị chỉnh thủ công ạ!`
+    };
+  }
+
+  // --- Order: need tableId ---
+  if (!tableId) return null;
+  
+  const matchedItems = extractMenuItems(t, menu);
+  
+  if (isOrder) {
+    if (matchedItems.length === 0) {
+      return {
+        actions: [{ type: 'unknown', tableId }],
+        reply: `Dạ em chưa nghe rõ tên món, mời anh chị chọn món thủ công cho bàn ${tableId} ạ!`
+      };
+    }
+    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
+    const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+    return {
+      actions,
+      reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ! Nếu thiếu món nào anh chị chọn thêm trong menu nhé.`
+    };
+  }
+
+  // If we have tableId but no clear intent, try matching items as an order
+  if (matchedItems.length > 0) {
+    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
+    const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
+    return {
+      actions,
+      reply: `Dạ em lên ${names} cho bàn ${tableId} ạ!`
+    };
+  }
+}
+
+// Build detailed report reply
+function buildReportReply() {
+  const todayRev = getRevenueSummary('today');
+  const weekRev = getRevenueSummary('week');
+  const alerts = getInventoryAlerts();
+  const needRestock = alerts.critical.length + alerts.low.length;
+  const purchases = Store.getPurchases().slice(0, 3);
+  
+  let reply = `📊 <b>Báo cáo hôm nay:</b><br>`;
+  reply += `• Doanh thu: <b>${fmtFull(todayRev.revenue)}</b> (${todayRev.orders} đơn)<br>`;
+  reply += `• Lãi gộp: <b>${fmtFull(todayRev.gross)}</b><br>`;
+  reply += `• Chi phí: ${fmtFull(todayRev.expenseTotal)}<br>`;
+  reply += `• Lợi nhuận: <b>${fmtFull(todayRev.profit)}</b><br>`;
+  reply += `• 💵 Tiền mặt: ${fmtFull(todayRev.revenueCash)} | 🏦 CK: ${fmtFull(todayRev.revenueBank)}<br>`;
+  
+  if(weekRev.orders > 0) {
+    const avgDaily = Math.round(weekRev.revenue / 7);
+    reply += `<br>📈 <b>7 ngày qua:</b> ${fmtFull(weekRev.revenue)} (TB: ${fmtFull(avgDaily)}/ngày)<br>`;
+  }
+  
+  if(needRestock > 0) {
+    reply += `<br>⚠️ <b>Tồn kho:</b> ${alerts.critical.length} cần nhập gấp, ${alerts.low.length} sắp hết`;
+    if(alerts.critical.length > 0) {
+      reply += `<br>🚨 ${alerts.critical.slice(0,3).map(i => i.name).join(', ')}`;
+    }
+  } else {
+    reply += `<br>✅ Tồn kho ổn định`;
+  }
+  
+  return {
+    actions: [{ type: 'report' }],
+    reply
+  };
+}
+
+// Fuzzy menu matcher: tìm món trong text + số lượng
+function extractMenuItems(text, menu) {
+  const results = [];
+
+  const norm = s => s.toLowerCase()
+    .replace(/[àáạảãăắặẳẵặâấầẩẫậ]/g, 'a')
+    .replace(/[èéẹẻẽêếềểễệ]/g, 'e')
+    .replace(/[ìíịỉĩ]/g, 'i')
+    .replace(/[òóọỏõôốồổỗộơớờởỡợ]/g, 'o')
+    .replace(/[ùúụủũưứừựửữ]/g, 'u')
+    .replace(/[ỳýỵỷỹ]/g, 'y')
+    .replace(/[đ]/g, 'd')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+  const normText = norm(text);
+
+  const sortedMenu = [...menu].sort((a, b) => b.name.length - a.name.length);
+
+  let remaining = normText;
+
+  for (const item of sortedMenu) {
+    const normName = norm(item.name);
+    const keywords = [normName];
+    
+    let stripped = normName.replace(/^(kho |bia |tra |ruou |combo )/i, '').trim();
+    if (stripped !== normName && stripped.length > 2) {
+      keywords.push(stripped);
+    }
+    
+    const noSuffix = stripped.replace(/( nuong| chien gion| chien bo toi| chien bo| om bau)$/i, '').trim();
+    if (noSuffix !== stripped && noSuffix.length > 2) {
+      keywords.push(noSuffix);
+    }
+    
+    if (normName.includes('tiger nau')) keywords.push('tiger nau', 'tiger');
+    if (normName.includes('tiger bac')) keywords.push('tiger bac');
+    if (normName.includes('sai gon')) keywords.push('sai gon');
+    if (normName.includes('ken lon')) keywords.push('ken', 'heineken');
+
+    const finalKeywords = [...new Set(keywords)].sort((a,b) => b.length - a.length);
+
+    let found = false;
+    for (const kw of finalKeywords) {
+      const idx = remaining.indexOf(kw);
+      if (idx === -1) continue;
+
+      const beforeStr = remaining.slice(0, idx);
+      const afterStr  = remaining.slice(idx + kw.length);
+
+      const numBefore = beforeStr.match(/(\d+)\s*$/);
+      const numAfter  = afterStr.match(/^\s*(\d+)/);
+      const wordNum   = /(?:hai|ba|b[óo]n|năm|s[aá]u|bảy|tám|ch[íi]n|mười)\s*$/i.exec(beforeStr);
+
+      const wordNumMap = { hai:2, ba:3, bon:4, bón:4, bốn:4, nam:5, năm:5, sau:6, sáu:6, bay:7, bảy:7, tam:8, tám:8, chin:9, chín:9, muoi:10, mười:10 };
+
+      let qty = 1;
+      if (numBefore) qty = parseInt(numBefore[1]);
+      else if (numAfter) qty = parseInt(numAfter[1]);
+      else if (wordNum) qty = wordNumMap[norm(wordNum[0].trim())] || 1;
+
+      results.push({ id: item.id, name: item.name, qty: Math.max(1, qty) });
+      remaining = remaining.replace(kw, '   ');
+      found = true;
+      break;
+    }
+  }
+
+  return results;
+}
+
+// --- Execute parsed actions (shared between Gemini and Local NLP) ---
+function executeAIActions(parsed, menuFull) {
+  if (!parsed) return 'Không nhận ra lệnh này ạ.';
+
+  if (parsed.actions?.length) {
+    for (const a of parsed.actions) {
+      if (a.type === 'order') {
+        const tid = String(a.tableId);
+        if (!orderItems[tid]) {
+          const saved = Store.getOrders()[tid];
+          orderItems[tid] = saved ? [...saved] : [];
+        }
+        for (const it of (a.items || [])) {
+          const m = menuFull.find(x => x.id === it.id);
+          if (!m) continue;
+          const ex = orderItems[tid].find(x => x.id === m.id);
+          if (ex) ex.qty += it.qty;
+          else    orderItems[tid].push({ id: m.id, name: m.name, price: m.price, cost: m.cost || 0, qty: it.qty });
+        }
+
+        // Tự động mở bàn để xác nhận
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 300);
+
+      } else if (a.type === 'remove') {
+        const tid = String(a.tableId);
+        if (!orderItems[tid]) {
+          const saved = Store.getOrders()[tid];
+          orderItems[tid] = saved ? [...saved] : [];
+        }
+        if (orderItems[tid]) {
+          const ex = orderItems[tid].find(x => x.id === a.itemId);
+          if (ex) {
+            ex.qty -= (a.qty || 1);
+            if (ex.qty <= 0) orderItems[tid] = orderItems[tid].filter(x => x.id !== a.itemId);
+          }
+        }
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 300);
+
+      } else if (a.type === 'pay') {
+        const tid = String(a.tableId);
+        // Mở bàn trước rồi mở bill modal
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+          // Mở bill sau khi bàn đã mở
+          setTimeout(() => {
+            if ((orderItems[tid] || []).length > 0) {
+              openBillModal();
+            }
+          }, 400);
+        }, 200);
+
+      } else if (a.type === 'view') {
+        const tid = String(a.tableId);
+        closeAIAssistant();
+        setTimeout(() => {
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 200);
+      } else if (a.type === 'report') {
+        // Build full report if reply is short
+        if (!parsed.reply || parsed.reply.length < 30) {
+          const report = buildReportReply();
+          parsed.reply = report.reply;
+        }
+        
+        setTimeout(() => {
+          closeAIAssistant();
+          navigate('finance');
+        }, 500);
+
+      } else if (a.type === 'restock') {
+        const inv = Store.getInventory();
+        let addedNames = [];
+        for (const it of (a.items || [])) {
+          const stock = inv.find(x => x.id === it.id || x.name === it.name);
+          if (!stock) continue;
+          stock.qty += it.qty;
+          Store.addPurchase({ 
+            id: uid(), 
+            name: stock.name, 
+            qty: it.qty, 
+            unit: stock.unit, 
+            price: (stock.costPerUnit || 0) * it.qty, 
+            costPerUnit: stock.costPerUnit || 0, 
+            date: new Date().toISOString(), 
+            supplier: 'AI Assistant' 
+          });
+          addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
+        }
+        if (addedNames.length) {
+          Store.setInventory(inv);
+          updateAlertBadge();
+          if (currentPage === 'inventory') renderInventory();
+          if (!parsed.reply || parsed.reply.length < 10) {
+            parsed.reply = `Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`;
+          }
+          
+          setTimeout(() => {
+            closeAIAssistant();
+            navigate('inventory');
+            switchInvTab('purchase', document.querySelectorAll('.tab-btn')[1]);
+          }, 500);
+        }
+      } else if (a.type === 'unknown') {
+        const tid = String(a.tableId);
+        setTimeout(() => {
+          closeAIAssistant();
+          if (tid === 'takeaway') openTakeaway();
+          else openTable(tid);
+        }, 500);
+      }
+    }
+    if (currentPage === 'orders') renderCart();
+    if (currentPage === 'tables') renderTables();
+  }
+
+  return parsed.reply || 'Xong rồi ạ!';
+}
+
+/* --- ORPHANED DUPLICATE CODE COMMENTED OUT ---
+
+
       const recentHistory = history.slice(-10);
       recentHistory.forEach(msg => {
         const div = document.createElement('div');
@@ -2195,4 +3214,4 @@ function executeAIActions(parsed, menuFull) {
 
   return parsed.reply || 'Xong rồi ạ!';
 }
-
+*/

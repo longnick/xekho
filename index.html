@@ -161,9 +161,20 @@
       <!-- Period Filter -->
       <div class="date-filter">
         <button class="date-btn finance-period-btn active" data-period="today" onclick="setFinancePeriod('today')">Hôm nay</button>
-        <button class="date-btn finance-period-btn" data-period="week" onclick="setFinancePeriod('week')">7 ngày</button>
-        <button class="date-btn finance-period-btn" data-period="month" onclick="setFinancePeriod('month')">Tháng này</button>
+        <button class="date-btn finance-period-btn" data-period="day" onclick="setFinancePeriod('day')">Ngày</button>
+        <button class="date-btn finance-period-btn" data-period="week" onclick="setFinancePeriod('week')">Tuần</button>
+        <button class="date-btn finance-period-btn" data-period="month" onclick="setFinancePeriod('month')">Tháng</button>
         <button class="date-btn finance-period-btn" data-period="all" onclick="setFinancePeriod('all')">Tất cả</button>
+      </div>
+      <!-- Date Picker Row -->
+      <div class="date-picker-row" id="finance-date-picker" style="display:none">
+        <div class="date-picker-mode">
+          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('finance','single',this)">📅 Chọn ngày</button>
+          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('finance','range',this)">📆 Khoảng thời gian</button>
+        </div>
+        <div class="date-inputs" id="finance-date-inputs">
+          <input type="date" class="input input-sm date-input" id="finance-single-date" onchange="applyDateFilter('finance')">
+        </div>
       </div>
 
       <!-- Finance Stats -->
@@ -252,9 +263,20 @@
     <div id="page-reports" class="page">
       <div class="date-filter">
         <button class="date-btn report-period-btn active" data-period="today" onclick="setReportPeriod('today')">Hôm nay</button>
-        <button class="date-btn report-period-btn" data-period="week" onclick="setReportPeriod('week')">7 ngày</button>
+        <button class="date-btn report-period-btn" data-period="day" onclick="setReportPeriod('day')">Ngày</button>
+        <button class="date-btn report-period-btn" data-period="week" onclick="setReportPeriod('week')">Tuần</button>
         <button class="date-btn report-period-btn" data-period="month" onclick="setReportPeriod('month')">Tháng</button>
-        <button class="date-btn report-period-btn" data-period="all" onclick="setReportPeriod('all')">Tổng</button>
+        <button class="date-btn report-period-btn" data-period="all" onclick="setReportPeriod('all')">Tất cả</button>
+      </div>
+      <!-- Date Picker Row -->
+      <div class="date-picker-row" id="report-date-picker" style="display:none">
+        <div class="date-picker-mode">
+          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('report','single',this)">📅 Chọn ngày</button>
+          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('report','range',this)">📆 Khoảng thời gian</button>
+        </div>
+        <div class="date-inputs" id="report-date-inputs">
+          <input type="date" class="input input-sm date-input" id="report-single-date" onchange="applyDateFilter('report')">
+        </div>
       </div>
 
       <!-- Charts -->
@@ -390,6 +412,12 @@
             <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán API Key vào đây...">
             <div style="font-size:11px;color:var(--text3);margin-top:6px">Lấy Key tại <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--primary)">Google AI Studio</a> (miễn phí).</div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Sau khi dán key, bấm nút 🎤 trên thanh tiêu đề để mở trợ lý AI.</div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Google Cloud TTS API Key (Giọng nói tự nhiên)</label>
+            <input type="password" id="set-googleTTSKey" class="input" placeholder="Dán Google Cloud TTS API Key...">
+            <div style="font-size:11px;color:var(--text3);margin-top:6px">Lấy Key tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--primary)">Google Cloud Console</a>. Bật Text-to-Speech API.</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Nếu không có key, hệ thống sẽ dùng giọng mặc định của trình duyệt.</div>
           </div>
         </div>
 
@@ -734,6 +762,17 @@
     <div style="flex-shrink:0;padding:12px;border-top:1px solid var(--border);background:var(--bg2)">
       <div id="ai-listening-indicator" style="display:none;text-align:center;padding:8px;color:var(--danger);font-weight:600;font-size:13px;animation:pulse 1.2s infinite">
         🔴 Đang lắng nghe...
+      </div>
+      <!-- Audio/Text toggle -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <button id="ai-output-toggle" class="ai-toggle-btn" onclick="toggleAIOutput()" title="Chuyển đổi đầu ra">
+          <span id="ai-output-icon">🔊</span>
+          <span id="ai-output-label">Phát âm thanh</span>
+        </button>
+        <input type="file" id="ai-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handleAICameraCapture(event)">
+        <button class="ai-camera-btn" onclick="document.getElementById('ai-camera-input').click()" title="Chụp ảnh nhận diện">
+          📷 Scan ảnh
+        </button>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="text" id="ai-text-input" class="input" placeholder="Lệnh: Bàn 5 gọi 3 cọp trắng..." style="flex:1" onkeydown="if(event.key==='Enter')sendAIText(false)">
