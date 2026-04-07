@@ -102,9 +102,15 @@
           <span class="badge badge-primary" id="cart-count">0 món</span>
         </div>
         <div class="cart-items" id="cart-items"></div>
-        <div style="padding:10px 12px;display:flex;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
-          <input type="number" class="input input-sm" id="cart-discount" placeholder="Giảm giá (đ)" oninput="renderCart()" min="0">
-          <input type="number" class="input input-sm" id="cart-shipping" placeholder="Phí ship (đ)" oninput="renderCart()" min="0">
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
+          <div style="display:flex;gap:10px">
+            <input type="number" class="input input-sm" id="cart-discount" placeholder="Giảm giá (đ)" oninput="renderCart()" min="0">
+            <input type="text" class="input input-sm" id="cart-discount-note" placeholder="Lý do giảm giá..." oninput="renderCart()">
+          </div>
+          <div style="display:flex;gap:10px">
+            <input type="number" class="input input-sm" id="cart-shipping" placeholder="Phí ship (đ)" oninput="renderCart()" min="0">
+            <input type="text" class="input input-sm" id="cart-note" placeholder="Ghi chú bàn (VD: mang về...)" oninput="renderCart()">
+          </div>
         </div>
         <div class="cart-total">
           <span class="cart-total-label">Tổng cộng</span>
@@ -123,6 +129,7 @@
       <div class="tab-bar">
         <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 Tồn kho</button>
         <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập hàng</button>
+        <button class="tab-btn" onclick="switchInvTab('ledger',this)">📓 Thẻ kho</button>
         <button class="tab-btn" onclick="switchInvTab('forecast',this)">🔮 Dự báo</button>
       </div>
 
@@ -153,6 +160,17 @@
           </div>
         </div>
         <div id="forecast-list"></div>
+      </div>
+
+      <!-- LEDGER TAB -->
+      <div id="inv-tab-ledger" style="display:none">
+        <div class="date-filter mb-2" style="margin-bottom:12px; display:flex; gap:8px;">
+          <input type="month" id="ledger-month" class="input input-sm" style="flex:1" onchange="renderLedger()">
+          <select id="ledger-item-select" class="select select-sm" style="flex:2" onchange="renderLedger()">
+            <option value="">-- Chọn Nguyên Liệu --</option>
+          </select>
+        </div>
+        <div id="ledger-list"></div>
       </div>
     </div>
 
@@ -669,6 +687,21 @@
           <label class="input-label">Giá vốn (Cost/Unit) *</label>
           <input class="input" id="inv-edit-cost" type="number" step="0.01" required>
         </div>
+        <div class="section-header" style="margin-top:12px;margin-bottom:8px"><div class="card-title" style="font-size:13px">Thông tin Nhà Cung Cấp</div></div>
+        <div class="input-group">
+          <label class="input-label">Tên Nhà cung cấp</label>
+          <input class="input" id="inv-edit-supplier" placeholder="Tên NCC...">
+        </div>
+        <div class="form-row">
+          <div class="input-group">
+            <label class="input-label">Số ĐT</label>
+            <input class="input" id="inv-edit-supplier-phone" type="tel" placeholder="09xxxxxxx">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Địa chỉ</label>
+            <input class="input" id="inv-edit-supplier-addr" placeholder="Địa chỉ...">
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu thay đổi</button>
       </form>
     </div>
@@ -909,14 +942,20 @@ function switchInvTab(tab, el) {
   document.getElementById('inv-tab-stock').style.display = tab === 'stock' ? '' : 'none';
   document.getElementById('inv-tab-purchase').style.display = tab === 'purchase' ? '' : 'none';
   document.getElementById('inv-tab-forecast').style.display = tab === 'forecast' ? '' : 'none';
+  document.getElementById('inv-tab-ledger').style.display = tab === 'ledger' ? '' : 'none';
   renderInventory();
 
-  // Populate datalist for purchase
-  if(tab === 'purchase' || tab === 'stock') {
+  // Populate datalist for purchase and ledger
+  if(tab === 'purchase' || tab === 'stock' || tab === 'ledger') {
+    const inv = Store.getInventory();
     const dl = document.getElementById('inv-names');
     if(dl) {
-      const inv = Store.getInventory();
       dl.innerHTML = inv.map(i=>`<option value="${i.name}">`).join('');
+    }
+    const select = document.getElementById('ledger-item-select');
+    if(select && select.children.length <= 1) {
+      select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + inv.map(i=>`<option value="${i.name}">${i.name} (${i.unit})</option>`).join('');
+      document.getElementById('ledger-month').value = new Date().toISOString().slice(0, 7);
     }
   }
 }

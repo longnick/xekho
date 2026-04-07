@@ -411,13 +411,21 @@ function renderCart() {
   const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
   
   const dInp = document.getElementById('cart-discount');
+  const dNoteInp = document.getElementById('cart-discount-note');
   const sInp = document.getElementById('cart-shipping');
+  const noteInp = document.getElementById('cart-note');
   
   if (dInp && document.activeElement === dInp) extras.discount = parseFloat(dInp.value) || 0;
   else if (dInp) dInp.value = extras.discount || '';
 
+  if (dNoteInp && document.activeElement === dNoteInp) extras.discountNote = dNoteInp.value || '';
+  else if (dNoteInp) dNoteInp.value = extras.discountNote || '';
+
   if (sInp && document.activeElement === sInp) extras.shipping = parseFloat(sInp.value) || 0;
   else if (sInp) sInp.value = extras.shipping || '';
+
+  if (noteInp && document.activeElement === noteInp) extras.note = noteInp.value || '';
+  else if (noteInp) noteInp.value = extras.note || '';
 
   orderExtras[currentTable] = extras;
 
@@ -507,7 +515,8 @@ function openBillModal() {
         </tbody>
       </table>
       <hr class="bill-divider">
-      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Giảm giá</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
+      ${extras.note ? `<div style="font-size:12px;margin-bottom:8px"><em>Ghi chú: ${extras.note}</em></div>` : ''}
+      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
       ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
       <div class="bill-qr">
@@ -564,10 +573,12 @@ function confirmPayment(billNo, total, cost, extras, payMethod) {
     id: billNo,
     tableId: currentTable,
     tableName: tableLabel,
+    note: extras?.note || '',
     items: items.map(i => ({...i})),
     total,
     cost,
     discount: extras?.discount || 0,
+    discountNote: extras?.discountNote || '',
     shipping: extras?.shipping || 0,
     payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
@@ -607,6 +618,7 @@ let invTab = 'stock'; // stock | purchase | forecast
 function renderInventory() {
   if(invTab === 'stock') renderStockList();
   else if(invTab === 'purchase') renderPurchaseList();
+  else if(invTab === 'ledger') renderLedger();
   else renderForecast();
 }
 
@@ -631,6 +643,7 @@ function renderStockList() {
       <div style="text-align:right">
         <div class="inv-qty ${level}">${i.qty}</div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px">Giá vốn: ${fmt(i.costPerUnit||0)}đ</div>
+        ${i.supplierName ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">NCC: ${i.supplierName}</div>` : ''}
         <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
           <button class="btn btn-xs btn-outline" onclick="quickAddStock('${i.id}')">+</button>
           <button class="btn btn-xs btn-secondary" onclick="editInvItem('${i.id}')">✏️</button>
@@ -674,6 +687,9 @@ function editInvItem(invId) {
   document.getElementById('inv-edit-qty').value = item.qty;
   document.getElementById('inv-edit-min').value = item.minQty;
   document.getElementById('inv-edit-cost').value = item.costPerUnit || 0;
+  document.getElementById('inv-edit-supplier').value = item.supplierName || '';
+  document.getElementById('inv-edit-supplier-phone').value = item.supplierPhone || '';
+  document.getElementById('inv-edit-supplier-addr').value = item.supplierAddress || '';
   document.getElementById('inv-edit-modal').classList.add('active');
 }
 
@@ -685,13 +701,16 @@ function submitInvEdit(e) {
   const qty = parseFloat(document.getElementById('inv-edit-qty').value);
   const minQty = parseFloat(document.getElementById('inv-edit-min').value);
   const cost = parseFloat(document.getElementById('inv-edit-cost').value);
+  const supplierName = document.getElementById('inv-edit-supplier').value.trim();
+  const supplierPhone = document.getElementById('inv-edit-supplier-phone').value.trim();
+  const supplierAddress = document.getElementById('inv-edit-supplier-addr').value.trim();
 
   if(!name || !unit || isNaN(qty) || isNaN(minQty) || isNaN(cost)) return;
 
   const inv = Store.getInventory();
   const idx = inv.findIndex(i => i.id === id);
   if(idx >= 0) {
-    inv[idx] = { ...inv[idx], name, unit, qty, minQty, costPerUnit: cost };
+    inv[idx] = { ...inv[idx], name, unit, qty, minQty, costPerUnit: cost, supplierName, supplierPhone, supplierAddress };
     Store.setInventory(inv);
     renderInventory();
     document.getElementById('inv-edit-modal').classList.remove('active');
@@ -758,6 +777,131 @@ function renderForecast() {
       </div>
     </div>`
   ).join('') : '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Tồn kho đủ dùng!</div></div>';
+}
+
+function renderLedger() {
+  const monthStr = document.getElementById('ledger-month').value; // YYYY-MM
+  const itemName = document.getElementById('ledger-item-select').value;
+  if (!monthStr || !itemName) {
+    document.getElementById('ledger-list').innerHTML = '<div class="empty-state"><div class="empty-icon">📓</div><div class="empty-text">Vui lòng chọn tháng và nguyên liệu</div></div>';
+    return;
+  }
+
+  const [year, month] = monthStr.split('-').map(Number);
+  const startDate = new Date(year, month - 1, 1).getTime();
+  const endDate = new Date(year, month, 1).getTime();
+
+  const inv = Store.getInventory().find(i => i.name === itemName);
+  if (!inv) return;
+
+  const allPurchases = Store.getPurchases().filter(p => p.name === itemName);
+  const allHistory = Store.getHistory();
+  const menu = Store.getMenu();
+
+  let events = [];
+  
+  allPurchases.forEach(p => {
+    const t = new Date(p.date).getTime();
+    events.push({ time: t, type: 'purchase', qty: p.qty, desc: 'Nhập hàng', label: p.supplier || '' });
+  });
+
+  allHistory.forEach(h => {
+    const t = new Date(h.paidAt).getTime();
+    let usedQty = 0;
+    (h.items||[]).forEach(i => {
+       const dish = menu.find(m => m.id === i.id);
+       if (dish && dish.ingredients) {
+         const ing = dish.ingredients.find(ing => ing.name === itemName);
+         if (ing) {
+            usedQty += ing.qty * i.qty;
+         }
+       }
+    });
+    if (usedQty > 0) {
+      events.push({ time: t, type: 'sale', qty: usedQty, desc: 'Bán ra', label: h.id });
+    }
+  });
+
+  events.sort((a,b) => a.time - b.time);
+
+  let totalPurchasesAfterStart = 0;
+  let totalSalesAfterStart = 0;
+  let totalPurchasesAfterEnd = 0;
+  let totalSalesAfterEnd = 0;
+
+  events.forEach(e => {
+    if (e.time >= startDate) {
+      if (e.type === 'purchase') totalPurchasesAfterStart += e.qty;
+      else if (e.type === 'sale') totalSalesAfterStart += e.qty;
+    }
+    if (e.time >= endDate) {
+      if (e.type === 'purchase') totalPurchasesAfterEnd += e.qty;
+      else if (e.type === 'sale') totalSalesAfterEnd += e.qty;
+    }
+  });
+
+  // Calculate back from present
+  let openingStock = inv.qty - totalPurchasesAfterStart + totalSalesAfterStart;
+  
+  let monthEvents = events.filter(e => e.time >= startDate && e.time < endDate);
+
+  let periodPurchases = 0;
+  let periodSales = 0;
+  let currentRunningStock = openingStock;
+
+  let html = `<div class="card" style="margin-bottom:12px;background:var(--bg3)">
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Tồn đầu kỳ:</span><span style="font-weight:700">${fmt(openingStock)} ${inv.unit}</span>
+    </div>
+  `;
+
+  let detailsHtml = '';
+  monthEvents.forEach(e => {
+    if (e.type === 'purchase') {
+      currentRunningStock += e.qty;
+      periodPurchases += e.qty;
+      detailsHtml += `<div class="list-item">
+        <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📥</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${e.desc} <span style="font-weight:normal;color:var(--text2);font-size:11px">(${e.label})</span></div>
+          <div class="list-item-sub">${fmtTime(new Date(e.time))} · ${fmtDate(new Date(e.time))}</div>
+        </div>
+        <div class="list-item-right" style="text-align:right">
+          <div class="list-item-amount" style="color:var(--info)">+${fmt(e.qty)} ${inv.unit}</div>
+          <div style="font-size:11px;color:var(--text3)">Tồn: ${fmt(currentRunningStock)}</div>
+        </div>
+      </div>`;
+    } else {
+      currentRunningStock -= e.qty;
+      periodSales += e.qty;
+      detailsHtml += `<div class="list-item">
+        <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">📤</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${e.desc} <span style="font-weight:normal;color:var(--text2);font-size:11px">(${e.label})</span></div>
+          <div class="list-item-sub">${fmtTime(new Date(e.time))} · ${fmtDate(new Date(e.time))}</div>
+        </div>
+        <div class="list-item-right" style="text-align:right">
+          <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.qty)} ${inv.unit}</div>
+          <div style="font-size:11px;color:var(--text3)">Tồn: ${fmt(currentRunningStock)}</div>
+        </div>
+      </div>`;
+    }
+  });
+
+  html += `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Nhập trong kỳ:</span><span style="font-weight:700;color:var(--info)">+${fmt(periodPurchases)} ${inv.unit}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Xuất trong kỳ:</span><span style="font-weight:700;color:var(--danger)">-${fmt(periodSales)} ${inv.unit}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <span>Tồn cuối kỳ:</span><span style="font-weight:800;color:var(--primary)">${fmt(currentRunningStock)} ${inv.unit}</span>
+    </div>
+  </div>`;
+
+  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">Không có giao dịch trong tháng</div></div>';
+
+  document.getElementById('ledger-list').innerHTML = html;
 }
 
 function openPurchaseModal() {
@@ -1112,7 +1256,7 @@ function renderOrderHistoryList() {
         <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
         <div class="list-item-content">
           <div class="list-item-title">${o.tableName} – ${o.id}</div>
-          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.length||0} món · ${payIcon} ${payLabel}${discountLabel}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.reduce((s,i)=>s+i.qty,0)||0} phần · ${payIcon} ${payLabel}${discountLabel}</div>
         </div>
         <div class="list-item-right">
           <div class="list-item-amount">${fmt(o.total)}đ</div>
@@ -1135,14 +1279,17 @@ function viewOrderDetail(orderId) {
       <span style="font-size:13px;font-weight:700;color:var(--primary)">${fmt(i.price*i.qty)}đ</span>
     </div>`
   ).join('');
+  const subTotal = (o.items||[]).reduce((s, i) => s + i.price * i.qty, 0);
   document.getElementById('order-detail-content').innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">${o.tableName}</div>
       <div style="font-size:12px;color:var(--text2)">${o.id} · ${fmtDateTime(o.paidAt)}</div>
       <div style="font-size:12px;color:var(--text2);margin-top:4px">${payIcon} Thanh toán: ${payLabel}</div>
+      ${o.note ? `<div style="font-size:12px;color:var(--text);margin-top:4px;border-left:2px solid var(--primary);padding-left:6px"><em>Ghi chú: ${o.note}</em></div>` : ''}
     </div>
     <div style="margin-bottom:12px">${itemsHtml}</div>
-    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>📉 Giảm giá</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
+    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--text3)"><span>Tổng tiền món</span><span>${fmtFull(subTotal)}</span></div>
+    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>📉 Giảm giá ${o.discountNote ? `(${o.discountNote})` : ''}</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
     ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🛵 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
     <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
       <span style="font-weight:700">TỔNG CỘNG</span>
@@ -2182,7 +2329,7 @@ ACTION hỗ trợ:
 2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
 3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
 4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
-5. "report" – Báo cáo doanh thu tóm tắt: { type:"report" }
+5. "report" – Báo cáo doanh thu: { type:"report", date:"YYYY-MM-DD" } (nếu người dùng hỏi ngày khác. VD: "báo cáo hôm qua" trả về date của hôm qua. Hôm nay là: ${new Date().toISOString().split('T')[0]})
 6. "restock"– Nhập thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
 7. "unknown" - Khi không rõ hoặc món không có: { type:"unknown", tableId:"1" }
 
@@ -2516,15 +2663,25 @@ function executeAIActions(parsed, menuFull) {
           else openTable(tid);
         }, 200);
       } else if (a.type === 'report') {
-        // Build full report if reply is short
         if (!parsed.reply || parsed.reply.length < 30) {
-          const report = buildReportReply();
+          let reqDate = a.date ? new Date(a.date) : new Date();
+          let dateObj = a.date ? { label:`Ngày ${reqDate.getDate()}/${reqDate.getMonth()+1}`, date:a.date } : null;
+          const report = buildReportReply(dateObj);
           parsed.reply = report.reply;
         }
         
         setTimeout(() => {
           closeAIAssistant();
           navigate('finance');
+          if (a.date) {
+            const dateInput = document.getElementById('finance-single-date');
+            if (dateInput) {
+              dateInput.value = a.date;
+              setFinancePeriod('day');
+            }
+          } else {
+            setFinancePeriod('today');
+          }
         }, 500);
 
       } else if (a.type === 'restock') {
