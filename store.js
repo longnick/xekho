@@ -168,7 +168,7 @@ const Store = {
     });
   },
 
-  // Lưu backup vào localStorage (lưu tối đa 7 bản)
+  // Lưu backup vào localStorage (lưu tối đa 2 bản, tránh đầy bộ nhớ)
   saveLocalBackup() {
     const snapshot = this.getFullBackup();
     const backups = this.get(KEYS.backups) || [];
@@ -176,11 +176,22 @@ const Store = {
       day:'2-digit', month:'2-digit', year:'numeric',
       hour:'2-digit', minute:'2-digit'
     });
-    backups.unshift({ date: snapshot.exportedAt, label, size: JSON.stringify(snapshot).length });
+    
+    const size = JSON.stringify(snapshot).length;
+    
+    try {
+      localStorage.setItem('gkhl_backup_latest', JSON.stringify(snapshot));
+    } catch(e) {
+      // Báo lỗi đầy dung lượng và không lưu local
+      console.warn('Backup failed due to quota exceeded', e);
+      if(window.showToast) window.showToast('⚠️ Dung lượng dữ liệu quá lớn! Hãy Tải file bằng tay.', 'danger');
+      throw new Error('QUOTA_EXCEEDED');
+    }
+    
+    backups.unshift({ date: snapshot.exportedAt, label, size });
     // Trim trước khi lưu
-    while(backups.length > 7) backups.pop();
+    while(backups.length > 2) backups.pop();
     this.set(KEYS.backups, backups);
-    localStorage.setItem('gkhl_backup_latest', JSON.stringify(snapshot));
     localStorage.setItem(KEYS.lastBackup, new Date().toISOString());
     return snapshot;
   },
