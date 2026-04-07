@@ -234,21 +234,54 @@ const today = () => new Date().toISOString().split('T')[0];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
 // Filter history by period
-function filterHistory(period) {
+// period: 'today'|'day'|'week'|'month'|'all'|'range'
+// opts: { date: 'YYYY-MM-DD', fromDate: 'YYYY-MM-DD', toDate: 'YYYY-MM-DD' }
+function filterHistory(period, opts) {
   const h = Store.getHistory();
   const now = new Date();
   return h.filter(o => {
     const d = new Date(o.paidAt);
     if(period === 'today') return d.toDateString() === now.toDateString();
+    if(period === 'day' && opts && opts.date) {
+      const target = new Date(opts.date);
+      return d.toDateString() === target.toDateString();
+    }
+    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
+      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
+      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
+      return d >= from && d <= to;
+    }
     if(period === 'week') { const diff = (now - d) / 86400000; return diff <= 7; }
     if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     return true;
   });
 }
 
+// Filter expenses by period (same logic)
+function filterExpenses(period, opts) {
+  const expenses = Store.getExpenses();
+  const now = new Date();
+  return expenses.filter(e => {
+    const d = new Date(e.date);
+    if(period === 'today') return d.toDateString() === now.toDateString();
+    if(period === 'day' && opts && opts.date) {
+      const target = new Date(opts.date);
+      return d.toDateString() === target.toDateString();
+    }
+    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
+      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
+      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
+      return d >= from && d <= to;
+    }
+    if(period === 'week') return (now - d) / 86400000 <= 7;
+    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return true;
+  });
+}
+
 // Revenue summary
-function getRevenueSummary(period) {
-  const orders = filterHistory(period);
+function getRevenueSummary(period, opts) {
+  const orders = filterHistory(period, opts);
   const revenue = orders.reduce((s,o) => s + o.total, 0);
   const revenueBank = orders.filter(o => o.payMethod === 'bank').reduce((s,o) => s + o.total, 0);
   const revenueCash = orders.filter(o => o.payMethod !== 'bank').reduce((s,o) => s + o.total, 0);
@@ -256,14 +289,7 @@ function getRevenueSummary(period) {
   const gross = revenue - cost;
   const discountTotal = orders.reduce((s,o) => s + (o.discount || 0), 0);
   const shippingTotal = orders.reduce((s,o) => s + (o.shipping || 0), 0);
-  const expenses = Store.getExpenses().filter(e => {
-    const d = new Date(e.date);
-    const now = new Date();
-    if(period === 'today') return d.toDateString() === now.toDateString();
-    if(period === 'week') return (now - d) / 86400000 <= 7;
-    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
-  });
+  const expenses = filterExpenses(period, opts);
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   const profit = gross - expenseTotal;
   return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash, discountTotal, shippingTotal };
