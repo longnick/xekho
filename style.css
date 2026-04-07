@@ -691,3 +691,123 @@ body {
   margin-top: 4px;
   text-align: right;
 }
+
+/* ---- DATE PICKER ---- */
+.date-picker-row {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.date-picker-mode {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.date-mode-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1.5px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.date-mode-btn:active { transform: scale(0.95); }
+.date-mode-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.date-mode-btn svg { flex-shrink: 0; }
+.date-inputs { display: flex; gap: 8px; }
+.date-input {
+  flex: 1;
+  height: 36px;
+  font-size: 13px;
+  color-scheme: dark;
+}
+.input-sm { height: 36px; font-size: 13px; }
+
+/* ---- HISTORY GROUP HEADERS ---- */
+.history-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(255,215,0,0.04));
+  border-radius: 10px;
+  margin-bottom: 6px;
+  margin-top: 4px;
+  border: 1px solid rgba(255,107,53,0.15);
+}
+.history-group-header span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.history-group-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text2);
+  margin-left: 6px;
+}
+.history-group-total {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+/* ---- AI TOGGLE & CAMERA BUTTONS ---- */
+.ai-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ai-toggle-btn:active { transform: scale(0.95); }
+.ai-toggle-btn.active {
+  background: rgba(124,58,237,0.15);
+  border-color: rgba(124,58,237,0.4);
+  color: #C084FC;
+}
+.ai-toggle-btn svg { flex-shrink: 0; }
+
+.ai-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ai-camera-btn:active { transform: scale(0.95); background: rgba(0,149,255,0.15); border-color: var(--info); color: var(--info); }
+.ai-camera-btn svg { flex-shrink: 0; }

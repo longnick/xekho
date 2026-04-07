@@ -169,8 +169,14 @@
       <!-- Date Picker Row -->
       <div class="date-picker-row" id="finance-date-picker" style="display:none">
         <div class="date-picker-mode">
-          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('finance','single',this)">📅 Chọn ngày</button>
-          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('finance','range',this)">📆 Khoảng thời gian</button>
+          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('finance','single',this)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            Chọn ngày
+          </button>
+          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('finance','range',this)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h8"></path></svg>
+            Khoảng thời gian
+          </button>
         </div>
         <div class="date-inputs" id="finance-date-inputs">
           <input type="date" class="input input-sm date-input" id="finance-single-date" onchange="applyDateFilter('finance')">
@@ -271,8 +277,14 @@
       <!-- Date Picker Row -->
       <div class="date-picker-row" id="report-date-picker" style="display:none">
         <div class="date-picker-mode">
-          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('report','single',this)">📅 Chọn ngày</button>
-          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('report','range',this)">📆 Khoảng thời gian</button>
+          <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('report','single',this)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            Chọn ngày
+          </button>
+          <button class="date-mode-btn" data-mode="range" onclick="setDateMode('report','range',this)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h8"></path></svg>
+            Khoảng thời gian
+          </button>
         </div>
         <div class="date-inputs" id="report-date-inputs">
           <input type="date" class="input input-sm date-input" id="report-single-date" onchange="applyDateFilter('report')">
@@ -766,12 +778,13 @@
       <!-- Audio/Text toggle -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <button id="ai-output-toggle" class="ai-toggle-btn" onclick="toggleAIOutput()" title="Chuyển đổi đầu ra">
-          <span id="ai-output-icon">🔊</span>
+          <svg id="ai-output-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
           <span id="ai-output-label">Phát âm thanh</span>
         </button>
         <input type="file" id="ai-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handleAICameraCapture(event)">
         <button class="ai-camera-btn" onclick="document.getElementById('ai-camera-input').click()" title="Chụp ảnh nhận diện">
-          📷 Scan ảnh
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          Scan ảnh
         </button>
       </div>
       <div style="display:flex;gap:8px;align-items:center">

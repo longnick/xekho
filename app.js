@@ -1707,9 +1707,15 @@ function toggleAIOutput() {
 }
 
 function updateAIOutputToggleUI() {
-  const icon = document.getElementById('ai-output-icon');
+  const iconSvg = document.getElementById('ai-output-icon-svg');
   const label = document.getElementById('ai-output-label');
-  if(icon) icon.textContent = aiOutputMode === 'voice' ? '🔊' : '📝';
+  if(iconSvg) {
+    if(aiOutputMode === 'voice') {
+      iconSvg.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+    } else {
+      iconSvg.innerHTML = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>';
+    }
+  }
   if(label) label.textContent = aiOutputMode === 'voice' ? 'Phát âm thanh' : 'Chỉ văn bản';
   const btn = document.getElementById('ai-output-toggle');
   if(btn) btn.classList.toggle('active', aiOutputMode === 'voice');
@@ -1744,9 +1750,29 @@ function openFullAIHistory() {
 
 function preprocessAIText(text) {
   let t = text.toLowerCase().trim();
+  
+  // === Fix Vietnamese speech recognition errors ===
+  // "bàn" is frequently misrecognized as bà, bàng, bằng, bản, bặn, bạn, ban
+  // Pattern: misheard-word + number → "bàn" + number
+  t = t.replace(/\b(?:bà|bàng|bằng|bản|bặn|bạn|ban)\s*((?:số\s*)?\d+)/gi, 'bàn $1');
+  // "bà năm" → "bàn 5", "bà ba" → "bàn 3" etc.
+  const wordToNum = {'một':1,'hai':2,'ba':3,'bốn':4,'bón':4,'năm':5,'sáu':6,'bảy':7,'bẩy':7,'tám':8,'chín':9,'mười':10,
+    'mươi':10,'mười một':11,'mười hai':12,'mười ba':13,'mười bốn':14,'mười lăm':15,'mười sáu':16,'mười bảy':17,'mười tám':18,'mười chín':19,'hai mươi':20};
+  for (const [word, num] of Object.entries(wordToNum)) {
+    // "bà năm" → "bàn 5"
+    t = t.replace(new RegExp(`\\b(?:bà|bàng|bằng|bản|bạn|ban)\\s+${word}\\b`, 'gi'), `bàn ${num}`);
+  }
+  // "bàn số năm" → "bàn số 5" (after the above fix)
+  for (const [word, num] of Object.entries(wordToNum)) {
+    t = t.replace(new RegExp(`\\bbàn\\s+số\\s+${word}\\b`, 'gi'), `bàn số ${num}`);
+    t = t.replace(new RegExp(`\\bbàn\\s+${word}\\b`, 'gi'), `bàn ${num}`);
+  }
+
+  // Menu aliases
   const aliases = {
     'cọp trắng': 'tiger bạc',
     'cọp nâu': 'tiger nâu',
+    'ken lùn': 'ken lớn',
     'đào': 'trà đào',
     'tắc': 'trà tắc',
     'set 1': 'hoàng hôn trên biển',
@@ -1889,7 +1915,7 @@ Nếu không liên quan đến đặt hàng, trả: { "actions": [], "reply": "M
 CHỈ trả JSON, không markdown.`;
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${s.geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${s.geminiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2032,9 +2058,9 @@ if (window.speechSynthesis) window.speechSynthesis.getVoices();
 // ============================================================
 
 const GEMINI_MODELS = [
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-latest',
-  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-preview-04-17',
+  'gemini-2.0-flash-lite',
 ];
 
 async function callGemini(apiKey, systemPrompt) {
@@ -2082,6 +2108,7 @@ async function processAICommand(text) {
   const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey;
 
   let parsed;
+  let modeColor = '';
 
   if (canUseGemini) {
     try {
@@ -2091,12 +2118,13 @@ async function processAICommand(text) {
       raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
       try { parsed = JSON.parse(raw); }
       catch(_) { return raw; }
+      modeColor = 'var(--success)';
     } catch(e) {
       console.warn('Gemini failed, switching to Local NLP:', e.message);
       const offlineResult = localNLPEngine(text, menu, tablesInfo);
       if (offlineResult) {
         parsed = offlineResult;
-        parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+        modeColor = 'var(--warning)';
       } else {
         return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
       }
@@ -2107,17 +2135,22 @@ async function processAICommand(text) {
       if (!parsed) {
         return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
       }
-      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline Engine]</span>';
+      modeColor = 'var(--warning)';
     } else {
       parsed = localNLPEngine(text, menu, tablesInfo);
       if (!parsed) {
         return '📵 Đang mất mạng và không nhận ra lệnh. Thử: "bàn 1 đặt 3 bia"';
       }
-      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
+      modeColor = 'var(--warning)';
     }
   }
 
-  return executeAIActions(parsed, menu);
+  let finalReply = executeAIActions(parsed, menu);
+  if (typeof finalReply === 'string' && modeColor) {
+    finalReply = `<span style="color:${modeColor}">${finalReply}</span>`;
+  }
+  
+  return finalReply;
 }
 
 function buildGeminiPrompt(text, tablesInfo, menu) {
@@ -2175,12 +2208,13 @@ function localNLPEngine(text, menu, tables) {
     .normalize('NFC');
 
   // --- Extract table number ---
+  // Handles: bàn 5, bàn số 5, ban 5, bà 5 (speech errors already fixed in preprocessor)
   let tableId = null;
-  const tableMatch = t.match(/(?:b[àa]n\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
+  const tableMatch = t.match(/(?:b[àaằảãạăắặẳẵâấầẩẫậ]n?g?\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
   if (tableMatch) {
     if (tableMatch[1]) {
       tableId = tableMatch[1];
-    } else {
+    } else if (tableMatch[2]) {
       tableId = 'takeaway';
     }
   }
