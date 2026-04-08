@@ -7,14 +7,18 @@ const KEYS = {
   inventory: 'gkhl_inventory',
   tables: 'gkhl_tables',
   orders: 'gkhl_orders',
+  orderPhotos: 'gkhl_order_photos',
   history: 'gkhl_history',
   expenses: 'gkhl_expenses',
   purchases: 'gkhl_purchases',
+  purchasePhotos: 'gkhl_purchase_photos',
   settings: 'gkhl_settings',
   backups: 'gkhl_backups',
   lastBackup: 'gkhl_last_backup',
   aiHistory: 'gkhl_ai_history',
   suppliers: 'gkhl_suppliers',
+  lastReportExportWeekly: 'gkhl_last_report_export_weekly',
+  lastReportExportMonthly: 'gkhl_last_report_export_monthly',
 };
 
 const Store = {
@@ -79,6 +83,10 @@ const Store = {
   getOrders() { return this.get(KEYS.orders) || {}; },
   setOrders(o) { this.set(KEYS.orders, o); },
 
+  // ORDER PHOTOS (max ~5 per table – enforced at UI)
+  getOrderPhotos() { return this.get(KEYS.orderPhotos) || {}; },
+  setOrderPhotos(map) { this.set(KEYS.orderPhotos, map); },
+
   // HISTORY (completed orders)
   getHistory() { return this.get(KEYS.history) || []; },
   addHistory(order) {
@@ -105,6 +113,10 @@ const Store = {
   },
   setPurchases(arr) { this.set(KEYS.purchases, arr); },
 
+  // PURCHASE PHOTOS (many per purchase)
+  getPurchasePhotos() { return this.get(KEYS.purchasePhotos) || {}; },
+  setPurchasePhotos(map) { this.set(KEYS.purchasePhotos, map); },
+
   // SETTINGS
   getSettings() {
     return this.get(KEYS.settings) || {
@@ -119,9 +131,24 @@ const Store = {
       bankAccount: '0937707900',
       bankOwner: 'Gánh Khô Chữa Lành',
       autoBackup: true,
+      ocrMode: 'auto',           // 'auto' | 'offline' | 'online'
+      photoRetentionDays: 0,     // 0 = không tự xoá
+      autoExportWeekly: false,
+      autoExportMonthly: false,
+      reportExportType: 'revenue',   // revenue | expense | purchase | all
+      reportExportPeriod: 'today',   // today | day | week | month | all
+      reportExportDate: '',          // YYYY-MM-DD (only for day)
+      autoUploadToGoogleDrive: false,
+      googleDriveUploadUrl: '',
+      googleDriveFolderId: '',
     };
   },
   setSettings(s) { this.set(KEYS.settings, s); },
+
+  getLastReportExportWeeklyKey() { return localStorage.getItem(KEYS.lastReportExportWeekly); },
+  setLastReportExportWeeklyKey(k) { localStorage.setItem(KEYS.lastReportExportWeekly, k); },
+  getLastReportExportMonthlyKey() { return localStorage.getItem(KEYS.lastReportExportMonthly); },
+  setLastReportExportMonthlyKey(k) { localStorage.setItem(KEYS.lastReportExportMonthly, k); },
 
   // AI HISTORY
   getAIHistory() { return this.get(KEYS.aiHistory) || []; },
@@ -139,9 +166,15 @@ const Store = {
   },
 
   // BACKUP
-  getFullBackup() {
+  getFullBackup(opts = {}) {
     // Chỉ backup dữ liệu kinh doanh, bỏ qua các key meta
+    // Ảnh (orderPhotos/purchasePhotos) thường rất nặng (base64) nên mặc định KHÔNG include để tránh quota localStorage.
+    const includePhotos = !!opts.includePhotos;
     const SKIP_KEYS = new Set(['backups', 'lastBackup']);
+    if(!includePhotos) {
+      SKIP_KEYS.add('orderPhotos');
+      SKIP_KEYS.add('purchasePhotos');
+    }
     const data = {};
     Object.entries(KEYS).forEach(([k, storageKey]) => {
       if(SKIP_KEYS.has(k)) return;
@@ -171,7 +204,7 @@ const Store = {
 
   // Lưu backup vào localStorage (lưu tối đa 2 bản, tránh đầy bộ nhớ)
   saveLocalBackup() {
-    const snapshot = this.getFullBackup();
+    const snapshot = this.getFullBackup({ includePhotos: false });
     const backups = this.get(KEYS.backups) || [];
     const label = new Date(snapshot.exportedAt).toLocaleString('vi-VN', {
       day:'2-digit', month:'2-digit', year:'numeric',
@@ -183,10 +216,10 @@ const Store = {
     try {
       localStorage.setItem('gkhl_backup_latest', JSON.stringify(snapshot));
     } catch(e) {
-      // Báo lỗi đầy dung lượng và không lưu local
+      // Không crash app khi backup bị quota exceeded
       console.warn('Backup failed due to quota exceeded', e);
-      if(window.showToast) window.showToast('⚠️ Dung lượng dữ liệu quá lớn! Hãy Tải file bằng tay.', 'danger');
-      throw new Error('QUOTA_EXCEEDED');
+      if(window.showToast) window.showToast('⚠️ Dung lượng quá lớn, auto-backup bị bỏ qua. Dữ liệu vẫn an toàn.', 'danger');
+      return null;
     }
     
     backups.unshift({ date: snapshot.exportedAt, label, size });

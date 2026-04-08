@@ -85,21 +85,34 @@
         <button class="btn btn-sm btn-secondary" onclick="clearTable()" style="margin-left:auto">🗑️ Huỷ bàn</button>
       </div>
 
-      <!-- Search & Cats -->
-      <div class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input class="input" id="order-search" placeholder="Tìm món..." oninput="menuSearch=this.value;renderMenuItems()">
-      </div>
-      <div class="cat-tabs" id="cat-tabs"></div>
+      <div class="order-split">
+        <!-- Pane 1: Menu -->
+        <div class="order-pane order-pane-menu">
+          <div class="search-wrap" style="margin-bottom:10px">
+            <span class="search-icon">🔍</span>
+            <input class="input" id="order-search" placeholder="Tìm món..." oninput="menuSearch=this.value;renderMenuItems()">
+          </div>
+          <div class="cat-tabs" id="cat-tabs"></div>
+          <div class="menu-grid" id="menu-grid"></div>
+        </div>
 
-      <!-- Menu Grid -->
-      <div class="menu-grid" id="menu-grid"></div>
-
-      <!-- Cart -->
-      <div class="order-cart">
+        <!-- Pane 2: Selected items -->
+        <div class="order-pane order-pane-cart">
+          <div class="order-cart">
         <div class="card-header" style="padding:12px 12px 0">
           <div class="card-title">🛒 Order</div>
           <span class="badge badge-primary" id="cart-count">0 món</span>
+        </div>
+        <!-- Order Photos (per table) -->
+        <div style="padding:8px 12px 0;display:flex;flex-direction:column;gap:6px;background:var(--bg3);border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div style="font-size:12px;color:var(--text2)">📷 Ảnh ghi nhận bàn <span id="order-photo-count" style="font-weight:700;color:var(--text)">(0/5)</span></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="file" id="order-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleOrderPhotoCapture(event)">
+              <button class="btn btn-xs btn-outline" id="order-photo-btn" type="button" onclick="triggerOrderPhotoCapture()">Chụp ảnh</button>
+            </div>
+          </div>
+          <div id="order-photo-thumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;"></div>
         </div>
         <div class="cart-items" id="cart-items"></div>
         <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
@@ -119,6 +132,8 @@
         <div class="cart-actions">
           <button class="btn btn-secondary" style="flex:1" onclick="saveAndBack()">💾 Lưu bàn</button>
           <button class="btn btn-success" style="flex:2" id="pay-btn" onclick="openBillModal()" disabled>🧾 Xuất bill</button>
+        </div>
+      </div>
         </div>
       </div>
     </div>
@@ -461,6 +476,92 @@
           </div>
         </div>
 
+        <!-- OCR & Ảnh nhập hàng -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">🧾 OCR & Ảnh nhập hàng</div></div>
+          <div class="input-group">
+            <label class="input-label">Chế độ OCR khi quét chứng từ</label>
+            <select id="set-ocrMode" class="select">
+              <option value="auto">Tự động (ưu tiên Offline, fallback Online)</option>
+              <option value="offline">Chỉ Offline (on-device)</option>
+              <option value="online">Chỉ Online (Gemini API)</option>
+            </select>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">
+              Offline dùng OCR chạy ngay trên thiết bị, Online dùng Gemini API (nếu có mạng và có key).
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Tự động xoá ảnh nhập hàng sau</label>
+            <select id="set-photoRetentionDays" class="select">
+              <option value="0">Không tự xoá</option>
+              <option value="7">7 ngày</option>
+              <option value="30">30 ngày</option>
+              <option value="90">90 ngày</option>
+              <option value="365">365 ngày</option>
+            </select>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">
+              Ảnh chứng từ nhập hàng cũ sẽ được xoá tự động để tiết kiệm dung lượng lưu trữ.
+            </div>
+          </div>
+        </div>
+
+        <!-- Xuất báo cáo Excel -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">📊 Xuất báo cáo (Excel)</div></div>
+          <div class="input-group">
+            <label class="input-label">Loại báo cáo cần xuất</label>
+            <select id="set-reportExportType" class="select">
+              <option value="revenue">Doanh thu (lịch sử đơn hàng)</option>
+              <option value="expense">Chi phí</option>
+              <option value="purchase">Nhập hàng</option>
+              <option value="all">Tổng hợp (nhiều sheet)</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Kỳ báo cáo</label>
+            <select id="set-reportExportPeriod" class="select" onchange="toggleReportExportDate()">
+              <option value="today">Hôm nay</option>
+              <option value="day">Chọn ngày cụ thể</option>
+              <option value="week">7 ngày gần nhất</option>
+              <option value="month">Tháng này</option>
+              <option value="all">Tất cả</option>
+            </select>
+          </div>
+          <div class="input-group" id="report-export-date-wrap" style="display:none">
+            <label class="input-label">Ngày báo cáo</label>
+            <input type="date" id="set-reportExportDate" class="input">
+          </div>
+          <div class="toggle-wrap">
+            <div class="toggle-label">Tự động xuất hàng tuần</div>
+            <label class="toggle"><input type="checkbox" id="set-autoExportWeekly"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-wrap">
+            <div class="toggle-label">Tự động xuất hàng tháng</div>
+            <label class="toggle"><input type="checkbox" id="set-autoExportMonthly"><span class="toggle-slider"></span></label>
+          </div>
+          <button type="button" class="btn btn-secondary btn-block" onclick="exportReportExcel()">📥 Xuất file Excel (.csv)</button>
+        </div>
+
+        <!-- Google Drive Upload -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">☁️ Tự động upload lên Google Drive</div></div>
+          <div class="toggle-wrap" style="margin-bottom:8px">
+            <div class="toggle-label">Tự động upload sau khi xuất báo cáo</div>
+            <label class="toggle"><input type="checkbox" id="set-autoUploadToGoogleDrive"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Upload URL (Google Apps Script)</label>
+            <input class="input" id="set-googleDriveUploadUrl" placeholder="https://script.google.com/macros/s/.../exec">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Folder ID (tuỳ chọn)</label>
+            <input class="input" id="set-googleDriveFolderId" placeholder="Gán folder để lưu tự động (tuỳ chọn)">
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5">
+            Dùng Google Apps Script web app để nhận JSON: `filename`, `mimeType`, `base64Data`, `folderId` rồi upload lên Drive.
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
       </form>
 
@@ -588,8 +689,34 @@
     <div class="modal-title" id="purchase-modal-title">🚚 Nhập hàng mới</div>
       <button class="modal-close" onclick="document.getElementById('purchase-modal').classList.remove('active')">✕</button>
     </div>
-    <div class="modal-body">
-      <form id="purchase-form" onsubmit="submitPurchase(event)">
+    <div class="modal-body purchase-modal-body">
+      <div class="purchase-split">
+        <!-- Pane 1: chứng từ -->
+        <div class="purchase-pane purchase-pane-media">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+            <div style="font-weight:700;font-size:13px">📷 Chứng từ</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="file" id="pur-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePurchasePhotoCapture(event)">
+              <button type="button" class="btn btn-xs btn-outline" onclick="triggerPurchasePhotoCapture()">Chụp</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+            <div id="pur-ocr-mode-label" style="font-size:11px;color:var(--text2)">OCR: Tự động</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button type="button" class="btn btn-xs btn-secondary" onclick="togglePurchaseOcrMode()" title="Chuyển chế độ OCR Offline/Online/Tự động">Chế độ</button>
+              <button type="button" class="btn btn-xs btn-primary" onclick="runPurchaseOcrFromLatestPhoto()">🧾 Quét</button>
+            </div>
+          </div>
+          <div id="pur-photo-viewer" style="display:none;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);max-height:32vh;">
+            <img id="pur-photo-viewer-img" src="" alt="Chứng từ nhập hàng" style="width:100%;height:100%;object-fit:contain;">
+          </div>
+          <div id="pur-photo-thumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;"></div>
+          <div id="pur-ocr-status" style="font-size:11px;color:var(--text3);"></div>
+        </div>
+
+        <!-- Pane 2: nhập liệu -->
+        <div class="purchase-pane purchase-pane-form">
+          <form id="purchase-form" onsubmit="submitPurchase(event)">
         <div class="input-group">
           <label class="input-label">Tên nguyên liệu *</label>
           <input class="input" id="pur-name" placeholder="Khô cá mối, Mực khô..." required list="inv-names">
@@ -625,8 +752,44 @@
             <input class="input" id="pur-supplier-addr" placeholder="Địa chỉ...">
           </div>
         </div>
-        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Nhập hàng</button>
-      </form>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Nhập hàng &amp; tiếp tục</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Purchase Photo Batch Modal -->
+<div class="modal-overlay" id="purchase-photo-batch-modal" onclick="if(event.target===this)document.getElementById('purchase-photo-batch-modal').classList.remove('active')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">📷 Ảnh chứng từ (Batch)</div>
+      <button class="modal-close" onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="purchase-photo-batch-meta" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
+      <div id="purchase-photo-batch-gallery" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-danger" style="flex:1" onclick="deletePurchasePhotoBatch(window._activePurchasePhotoBatchId || '')">🗑️ Xóa batch</button>
+        <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Purchase Photo Full Modal -->
+<div class="modal-overlay" id="purchase-photo-full-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet" style="max-height:92vh;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">📷 Ảnh full</div>
+      <button class="modal-close" onclick="document.getElementById('purchase-photo-full-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:10px 16px;">
+      <img id="purchase-photo-full-img" src="" alt="Ảnh full" style="width:100%;max-height:70vh;object-fit:contain;border-radius:12px;">
+      <div id="purchase-photo-full-meta" style="font-size:11px;color:var(--text3);margin-top:8px;"></div>
     </div>
   </div>
 </div>
@@ -892,6 +1055,21 @@
   </div>
 </div>
 
+<!-- Order Detail Photo Full Modal -->
+<div class="modal-overlay" id="order-detail-photo-full-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet" style="max-height:92vh;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">📷 Ảnh full</div>
+      <button class="modal-close" onclick="document.getElementById('order-detail-photo-full-modal').classList.remove('active')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:10px 16px;">
+      <img id="order-detail-photo-full-img" src="" alt="Ảnh full" style="width:100%;max-height:70vh;object-fit:contain;border-radius:12px;">
+      <div id="order-detail-photo-full-meta" style="font-size:11px;color:var(--text3);margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Stock Alert Modal -->
 <div class="modal-overlay" id="stock-alert-modal" onclick="if(event.target===this)this.classList.remove('active')">
   <div class="modal-sheet">
@@ -940,6 +1118,14 @@ function clearTable() {
   if(!confirm('Huỷ tất cả món ở bàn này?')) return;
   delete orderItems[currentTable];
   if(typeof orderExtras !== 'undefined') delete orderExtras[currentTable];
+  // Xoá ảnh ghi nhận bàn trong Store
+  try {
+    const photoMap = Store.getOrderPhotos();
+    if (photoMap && currentTable && photoMap[currentTable]) {
+      delete photoMap[currentTable];
+      Store.setOrderPhotos(photoMap);
+    }
+  } catch(_) {}
   const orders = Store.getOrders();
   delete orders[currentTable];
   Store.setOrders(orders);
@@ -974,6 +1160,21 @@ function switchInvTab(tab, el) {
       select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + inv.map(i=>`<option value="${i.name}">${i.name} (${i.unit})</option>`).join('');
       document.getElementById('ledger-month').value = new Date().toISOString().slice(0, 7);
     }
+  }
+
+  // Khi chuyển sang tab Nhập hàng, reset UI ảnh & OCR
+  if (tab === 'purchase') {
+    try {
+      currentPurchasePhotos = [];
+      if (document.getElementById('pur-photo-thumbs')) {
+        document.getElementById('pur-photo-thumbs').innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+      }
+      const viewer = document.getElementById('pur-photo-viewer');
+      if (viewer) viewer.style.display = 'none';
+      const status = document.getElementById('pur-ocr-status');
+      if (status) status.textContent = '';
+      if (typeof updatePurOcrModeLabel === 'function') updatePurOcrModeLabel();
+    } catch(_) {}
   }
 }
 
