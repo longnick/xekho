@@ -217,6 +217,45 @@ body {
 .order-header .back-btn { width: 36px; height: 36px; background: var(--bg3); border-radius: 10px; border: none; color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .order-table-name { font-size: 18px; font-weight: 800; }
 
+/* Two fixed panes in order page */
+#page-orders {
+  height: calc(100vh - var(--header-height) - var(--nav-height) - var(--safe-bottom));
+  overflow: hidden;
+}
+#page-orders.page.active {
+  display: flex; /* override .page.active { display:block } */
+  flex-direction: column;
+}
+.order-split {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.order-pane { min-height: 0; }
+.order-pane-menu {
+  flex: 1;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+}
+.order-pane-cart {
+  flex: 0 0 44%;
+  min-height: 220px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.order-pane-cart .order-cart {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.order-pane-cart .cart-items {
+  max-height: none;
+  flex: 1;
+}
+
 /* Category Tabs */
 .cat-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .cat-tabs::-webkit-scrollbar { display: none; }
@@ -379,6 +418,29 @@ body {
 
 /* ---- FORM MODAL ---- */
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+/* ---- PURCHASE MODAL 2-PANE ---- */
+.purchase-modal-body { padding: 0; }
+.purchase-split {
+  display: flex;
+  flex-direction: column;
+  height: calc(92vh - 64px); /* modal max height minus modal header area */
+  min-height: 0;
+}
+.purchase-pane { min-height: 0; }
+.purchase-pane-media {
+  flex: 0 0 38%;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.purchase-pane-form {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* ---- FLOATING BTN ---- */
 .fab { position:fixed; bottom:calc(var(--nav-height) + var(--safe-bottom) + 16px); right:16px; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); border:none; color:#fff; font-size:26px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 20px rgba(255,107,53,0.4); cursor:pointer; z-index:90; transition:all 0.2s; }

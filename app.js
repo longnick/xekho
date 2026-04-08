@@ -9,11 +9,19 @@ let orderItems = {};  // tableId -> [{id,name,price,qty,cost}]
 let orderExtras = {}; // tableId -> {discount, shipping}
 let chartInstances = {};
 
+// Photos & OCR state
+let orderPhotoCache = null;           // lazy: Store.getOrderPhotos()
+let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng đang mở
+let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
+let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
+let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
   applyStoreSettings();
   runMigrations(); // Patch data spelling differences
+  cleanupOldPurchasePhotos(); // dọn ảnh nhập hàng cũ theo cấu hình
   navigate('tables');
   updateAlertBadge();
   // Auto backup mỗi ngày
@@ -22,7 +30,22 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('[POS] Auto backup done');
     }
   }, 3000);
+  // Cập nhật label chế độ OCR nhập hàng
+  try { updatePurOcrModeLabel(); } catch(_) {}
+  // Auto export report theo tuần/tháng (và upload Google Drive nếu bật)
+  setTimeout(() => {
+    try {
+      autoExportReportsIfNeeded();
+    } catch(_) {}
+  }, 4500);
 });
+
+function toggleReportExportDate() {
+  const sel = document.getElementById('set-reportExportPeriod');
+  const wrap = document.getElementById('report-export-date-wrap');
+  if(!sel || !wrap) return;
+  wrap.style.display = sel.value === 'day' ? '' : 'none';
+}
 
 // Chạy một lần lúc load để tự động sửa lỗi chính tả dữ liệu cũ mà không làm mất trạng thái của người dùng
 function runMigrations() {
@@ -108,6 +131,43 @@ function applyStoreSettings() {
       logoIcon.innerHTML = '🍢';
       logoIcon.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
     }
+  }
+}
+
+// Dọn ảnh nhập hàng cũ theo photoRetentionDays
+function cleanupOldPurchasePhotos() {
+  try {
+    const s = Store.getSettings();
+    const days = Number(s.photoRetentionDays || 0);
+    if(!days || isNaN(days) || days <= 0) return;
+    const map = Store.getPurchasePhotos();
+    if(!map || typeof map !== 'object') return;
+    const now = Date.now();
+    const maxAgeMs = days * 86400000;
+    let changed = false;
+    Object.keys(map).forEach(pid => {
+      const entry = map[pid];
+      const list = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+      if(!Array.isArray(list)) return;
+      const filtered = list.filter(ph => {
+        if(!ph || !ph.takenAt) return false;
+        const t = new Date(ph.takenAt).getTime();
+        if(!t || isNaN(t)) return false;
+        return (now - t) <= maxAgeMs;
+      });
+      if(filtered.length !== list.length) {
+        changed = true;
+        if(filtered.length) {
+          if(Array.isArray(entry)) map[pid] = filtered;
+          else map[pid] = { ...(entry || {}), photos: filtered };
+        } else {
+          delete map[pid];
+        }
+      }
+    });
+    if(changed) Store.setPurchasePhotos(map);
+  } catch(e) {
+    console.warn('cleanupOldPurchasePhotos error', e);
   }
 }
 
@@ -291,18 +351,45 @@ function openTakeaway() {
 }
 
 function openTable(tableId) {
-  currentTable = tableId;
+  // Coerce to number so table lookup/status updates work
+  const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
+  currentTable = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? tableId : tid);
   const tables = Store.getTables();
-  const table = tables.find(t => t.id === tableId);
+  const table = tables.find(t => t.id === currentTable);
 
   // Load existing order
   const orders = Store.getOrders();
-  if(!orderItems[tableId]) {
-    orderItems[tableId] = orders[tableId] ? [...orders[tableId]] : [];
+  if(!orderItems[currentTable]) {
+    orderItems[currentTable] = orders[currentTable] ? [...orders[currentTable]] : [];
   }
 
-  document.getElementById('order-table-title').textContent = `Bàn ${tableId}`;
+  document.getElementById('order-table-title').textContent = `Bàn ${currentTable}`;
   navigate('orders');
+}
+
+// Lưu order cho một bàn cụ thể (dùng cho AI actions)
+function saveOrderForTable(tableId) {
+  const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
+  const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
+  const orders = Store.getOrders();
+  orders[key] = orderItems[key] || [];
+  Store.setOrders(orders);
+
+  if(key === 'takeaway') return;
+
+  const tables = Store.getTables();
+  const table = tables.find(t => t.id === key);
+  if(table) {
+    const hasItems = (orderItems[key] || []).length > 0;
+    if(hasItems && table.status === 'empty') {
+      table.status = 'occupied';
+      table.openTime = Date.now();
+    } else if(!hasItems) {
+      table.status = 'empty';
+      table.openTime = null;
+    }
+    Store.setTables(tables);
+  }
 }
 
 // ============================================================
@@ -316,6 +403,8 @@ function renderOrderPage() {
   renderCatTabs();
   renderMenuItems();
   renderCart();
+  // Khi mở trang order, đồng bộ UI ảnh bàn
+  try { updateOrderPhotoUI(); } catch(_) {}
 }
 
 function renderCatTabs() {
@@ -468,6 +557,11 @@ function renderCart() {
 
   document.getElementById('cart-total').textContent = fmtFull(total);
   document.getElementById('pay-btn').disabled = items.length === 0;
+
+  // Cập nhật UI ảnh bàn (nếu đang ở đúng trang)
+  try {
+    updateOrderPhotoUI();
+  } catch(_) {}
 }
 
 function openBillModal() {
@@ -506,6 +600,28 @@ function openBillModal() {
   // Store bill data for payment confirmation
   window._pendingBill = { billNo, total, cost, extras, tableLabel };
 
+  // Lấy ảnh của bàn (tối đa 5 ảnh) để in kèm bill
+  let orderPhotosHtml = '';
+  try {
+    if(!orderPhotoCache) orderPhotoCache = Store.getOrderPhotos();
+    const list = (orderPhotoCache && currentTable && orderPhotoCache[currentTable]) ? orderPhotoCache[currentTable] : [];
+    const limited = Array.isArray(list) ? list.slice(0, 5) : [];
+    if(limited.length) {
+      orderPhotosHtml = `
+      <div class="bill-photo-page">
+        <h3 style="font-size:14px;margin:12px 0 6px;">📷 Ảnh ghi nhận bàn</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${limited.map(ph => `
+            <div style="flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);">
+              <div style="font-size:9px;color:#666;margin-bottom:2px;">${ph.takenAt ? fmtDateTime(ph.takenAt) : ''}</div>
+              <img src="${ph.dataUrl}" alt="Ảnh bàn" style="width:100%;max-height:220px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    }
+  } catch(_) {}
+
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
       <div class="bill-header">
@@ -543,6 +659,7 @@ function openBillModal() {
       <hr class="bill-divider">
       <div class="bill-thanks">Cảm ơn quý khách! Hẹn gặp lại 🙏</div>
     </div>
+    ${orderPhotosHtml}
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn btn-secondary" style="flex:1" onclick="printBill()">🖨️ In bill</button>
       <button class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">✅ Thanh toán</button>
@@ -583,6 +700,18 @@ function confirmPayment(billNo, total, cost, extras, payMethod) {
   const items = orderItems[currentTable] || [];
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
+  // Attach order photos for this bill (then clear them from bàn)
+  let orderPhotosForBill = [];
+  try {
+    if(orderPhotoCache == null) orderPhotoCache = Store.getOrderPhotos();
+    const list = orderPhotoCache && orderPhotoCache[currentTable] ? orderPhotoCache[currentTable] : [];
+    if(Array.isArray(list) && list.length) {
+      orderPhotosForBill = list.map(p => ({ id:p.id, dataUrl:p.dataUrl, takenAt:p.takenAt || null }));
+      delete orderPhotoCache[currentTable];
+      Store.setOrderPhotos(orderPhotoCache);
+    }
+  } catch(_) {}
+
   // Save to history
   Store.addHistory({
     id: billNo,
@@ -597,6 +726,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod) {
     shipping: extras?.shipping || 0,
     payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
+    photos: orderPhotosForBill,
   });
 
   // Deduct inventory
@@ -636,6 +766,412 @@ function renderInventory() {
   else if(invTab === 'ledger') renderLedger();
   else if(invTab === 'ncc') renderNCC();
   else renderForecast();
+}
+
+// ============================================================
+// ORDER PHOTOS (per table)
+// ============================================================
+
+function ensureOrderPhotoCache() {
+  if(!orderPhotoCache) {
+    orderPhotoCache = Store.getOrderPhotos() || {};
+  }
+}
+
+function triggerOrderPhotoCapture() {
+  const input = document.getElementById('order-photo-input');
+  if(input) input.click();
+}
+
+async function handleOrderPhotoCapture(event) {
+  const file = event.target.files && event.target.files[0];
+  if(!file || !currentTable) {
+    if(event.target) event.target.value = '';
+    return;
+  }
+  try {
+    ensureOrderPhotoCache();
+    const list = orderPhotoCache[currentTable] || [];
+    if(list.length >= 5) {
+      showToast('⚠️ Mỗi bàn chỉ lưu tối đa 5 ảnh.', 'danger');
+      event.target.value = '';
+      return;
+    }
+    const dataUrl = await resizeImageToDataUrl(file, 1080, 0.6);
+    const photo = {
+      id: uid(),
+      tableId: currentTable,
+      dataUrl,
+      takenAt: new Date().toISOString(),
+    };
+    list.push(photo);
+    orderPhotoCache[currentTable] = list;
+    Store.setOrderPhotos(orderPhotoCache);
+    updateOrderPhotoUI();
+    showToast('📷 Đã lưu ảnh cho bàn ' + currentTable);
+  } catch(e) {
+    console.warn('handleOrderPhotoCapture error', e);
+    showToast('❌ Không chụp được ảnh. Thử lại.', 'danger');
+  } finally {
+    if(event.target) event.target.value = '';
+  }
+}
+
+function updateOrderPhotoUI() {
+  try {
+    if(!currentTable) return;
+    const wrap = document.getElementById('order-photo-thumbs');
+    const countEl = document.getElementById('order-photo-count');
+    const btn = document.getElementById('order-photo-btn');
+    if(!wrap || !countEl) return;
+    ensureOrderPhotoCache();
+    const list = orderPhotoCache[currentTable] || [];
+    const limited = list.slice(0, 5);
+    countEl.textContent = `(${limited.length}/5)`;
+    if(btn) btn.disabled = limited.length >= 5;
+    if(!limited.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh nào.</div>';
+      return;
+    }
+    wrap.innerHTML = limited.map(ph => `
+      <div style="position:relative;flex:0 0 auto;width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
+        <img src="${ph.dataUrl}" alt="Ảnh bàn" style="width:100%;height:100%;object-fit:cover;">
+      </div>
+    `).join('');
+  } catch(e) {
+    console.warn('updateOrderPhotoUI error', e);
+  }
+}
+
+// ============================================================
+// PURCHASE PHOTOS + HYBRID OCR
+// ============================================================
+
+function triggerPurchasePhotoCapture() {
+  const input = document.getElementById('pur-photo-input');
+  if(input) input.click();
+}
+
+async function handlePurchasePhotoCapture(event) {
+  const file = event.target.files && event.target.files[0];
+  if(!file) {
+    if(event.target) event.target.value = '';
+    return;
+  }
+  try {
+    const dataUrl = await resizeImageToDataUrl(file, 1280, 0.7);
+    if(!currentPurchasePhotosBatchId) {
+      currentPurchasePhotosBatchId = uid(); // Gom tất cả ảnh theo "lần nhập/chứng từ" trong phiên modal
+    }
+    const photo = {
+      id: uid(),
+      dataUrl,
+      takenAt: new Date().toISOString(),
+    };
+    currentPurchasePhotos.push(photo);
+    renderPurchasePhotoThumbs();
+    setPurchasePhotoViewer(photo);
+    setPurOcrStatus('📷 Đã thêm ảnh chứng từ. Có thể bấm "🧾 Quét hình ảnh" để đọc dữ liệu.');
+  } catch(e) {
+    console.warn('handlePurchasePhotoCapture error', e);
+    showToast('❌ Không chụp được ảnh chứng từ.', 'danger');
+  } finally {
+    if(event.target) event.target.value = '';
+  }
+}
+
+function renderPurchasePhotoThumbs() {
+  const wrap = document.getElementById('pur-photo-thumbs');
+  if(!wrap) return;
+  if(!currentPurchasePhotos.length) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+    const viewer = document.getElementById('pur-photo-viewer');
+    if(viewer) viewer.style.display = 'none';
+    return;
+  }
+  wrap.innerHTML = currentPurchasePhotos.map(ph => `
+    <div style="position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:6px;overflow:hidden;border:1px solid var(--border);cursor:pointer;"
+         onclick="setPurchasePhotoViewerById('${ph.id}')">
+      <img src="${ph.dataUrl}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+    </div>
+  `).join('');
+}
+
+function setPurchasePhotoViewerById(id) {
+  const ph = currentPurchasePhotos.find(p => p.id === id);
+  if(ph) setPurchasePhotoViewer(ph);
+}
+
+function setPurchasePhotoViewer(photo) {
+  const box = document.getElementById('pur-photo-viewer');
+  const img = document.getElementById('pur-photo-viewer-img');
+  if(!box || !img || !photo) return;
+  img.src = photo.dataUrl;
+  box.style.display = 'block';
+}
+
+function persistCurrentPurchasePhotosBatch() {
+  if(!currentPurchasePhotosBatchId) return;
+  if(!currentPurchasePhotos || !currentPurchasePhotos.length) return;
+  try {
+    const map = Store.getPurchasePhotos() || {};
+    const batchId = currentPurchasePhotosBatchId;
+    const existing = map[batchId];
+
+    const entry = (existing && existing.photos && Array.isArray(existing.photos))
+      ? existing
+      : { batchId, createdAt: (existing && existing.createdAt) || new Date().toISOString(), photos: [] };
+
+    const photoById = new Map((entry.photos || []).map(p => [p.id, p]));
+    currentPurchasePhotos.forEach(p => {
+      if(!photoById.has(p.id)) entry.photos.push(p);
+    });
+    entry.photos = entry.photos || [];
+    map[batchId] = entry;
+    Store.setPurchasePhotos(map);
+  } catch(e) {
+    console.warn('persistCurrentPurchasePhotosBatch error', e);
+    showToast('⚠️ Lưu ảnh bị lỗi (có thể đầy dung lượng).', 'danger');
+  }
+}
+
+function getEffectiveOcrMode() {
+  if(currentPurchaseOcrMode) return currentPurchaseOcrMode;
+  const s = Store.getSettings();
+  return s.ocrMode || 'auto';
+}
+
+function updatePurOcrModeLabel() {
+  const el = document.getElementById('pur-ocr-mode-label');
+  if(!el) return;
+  const mode = getEffectiveOcrMode();
+  let text = 'OCR: Tự động';
+  if(mode === 'offline') text = 'OCR: Offline (on-device)';
+  else if(mode === 'online') text = 'OCR: Online (Gemini)';
+  el.textContent = text;
+}
+
+function togglePurchaseOcrMode() {
+  const current = getEffectiveOcrMode();
+  const next = current === 'auto' ? 'offline' : current === 'offline' ? 'online' : 'auto';
+  currentPurchaseOcrMode = next;
+  updatePurOcrModeLabel();
+}
+
+function setPurOcrStatus(msg) {
+  const el = document.getElementById('pur-ocr-status');
+  if(el) el.innerHTML = msg || '';
+}
+
+async function runPurchaseOcrFromLatestPhoto() {
+  if(!currentPurchasePhotos.length) {
+    showToast('⚠️ Chưa có ảnh chứng từ để quét.', 'warning');
+    return;
+  }
+  const photo = currentPurchasePhotos[currentPurchasePhotos.length - 1];
+  const mode = getEffectiveOcrMode();
+  updatePurOcrModeLabel();
+  setPurOcrStatus('⏳ Đang quét ảnh...');
+  try {
+    let result = null;
+    if(mode === 'offline') {
+      result = await runOfflineOcr(photo.dataUrl);
+    } else if(mode === 'online') {
+      result = await runOnlinePurchaseOcr(photo.dataUrl);
+    } else { // auto
+      try {
+        result = await runOfflineOcr(photo.dataUrl);
+      } catch(e) {
+        console.warn('Offline OCR failed, considering online fallback', e);
+        const s = Store.getSettings();
+        const canOnline = navigator.onLine && !!s.geminiApiKey;
+        if(canOnline) {
+          if(confirm('OCR Offline không đọc rõ. Dùng OCR Online (Gemini) để quét ảnh này?')) {
+            result = await runOnlinePurchaseOcr(photo.dataUrl);
+          } else {
+            throw new Error('Người dùng không muốn dùng OCR Online');
+          }
+        } else {
+          throw e;
+        }
+      }
+    }
+    if(result) {
+      applyPurchaseOcrResult(result);
+    } else {
+      setPurOcrStatus('⚠️ Không đọc được nhiều thông tin từ ảnh. Vui lòng nhập tay.');
+    }
+  } catch(e) {
+    console.warn('runPurchaseOcrFromLatestPhoto error', e);
+    setPurOcrStatus('❌ Lỗi OCR: ' + (e.message || e));
+  }
+}
+
+async function loadTesseractWorker() {
+  if(tesseractWorker) return tesseractWorker;
+  if(typeof Tesseract === 'undefined') {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Không tải được thư viện OCR offline'));
+      document.head.appendChild(s);
+    });
+  }
+  tesseractWorker = await Tesseract.createWorker('vie', 1);
+  return tesseractWorker;
+}
+
+async function runOfflineOcr(dataUrl) {
+  const worker = await loadTesseractWorker();
+  const res = await worker.recognize(dataUrl);
+  const text = (res && res.data && res.data.text) ? res.data.text : '';
+  if(!text.trim()) throw new Error('OCR Offline không đọc được nội dung.');
+  return parsePurchaseText(text, 'offline');
+}
+
+async function runOnlinePurchaseOcr(dataUrl) {
+  const s = Store.getSettings();
+  if(!s.geminiApiKey) throw new Error('Chưa cấu hình Gemini API Key cho OCR Online.');
+  const base64 = dataUrl.split(',')[1];
+  const prompt = `Bạn là trợ lý nhập hàng cho quán ăn "Gánh Khô Chữa Lành".
+Đây là ảnh hóa đơn / phiếu nhập nguyên liệu. Hãy cố gắng trích xuất:
+- Tên nguyên liệu chính (name)
+- Số lượng (qty)
+- Tổng tiền (price, đơn vị VND)
+
+Trả về JSON dạng:
+{ "name": "<tên hoặc rỗng nếu không chắc>", "qty": <số hoặc null>, "price": <số hoặc null>, "rawText": "<toàn bộ nội dung đọc được>" }
+
+Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Không dùng markdown.`;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${s.geminiApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+          ]
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 256, response_mime_type: 'application/json' }
+      })
+    }
+  );
+  const data = await res.json();
+  if(data.error) throw new Error(data.error.message || 'Gemini API error');
+  let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch(e) { throw new Error('Không parse được JSON từ Gemini'); }
+  return parsePurchaseJson(parsed, 'online');
+}
+
+function parsePurchaseText(text, source) {
+  // Heuristic đơn giản: tìm số lớn nhất làm price, số còn lại làm qty
+  const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
+  let price = null;
+  let qty = null;
+  if(numbers.length) {
+    price = Math.max(...numbers);
+    const others = numbers.filter(n => n !== price);
+    if(others.length) qty = others[0];
+  }
+  // Tên: lấy dòng có chữ cái nhiều nhất
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let bestLine = '';
+  lines.forEach(l => {
+    if(/[A-Za-zÀ-ỹ]/.test(l) && l.length > bestLine.length) bestLine = l;
+  });
+  return {
+    name: bestLine || '',
+    qty,
+    price,
+    rawText: text,
+    source,
+  };
+}
+
+function parsePurchaseJson(obj, source) {
+  return {
+    name: obj.name || '',
+    qty: typeof obj.qty === 'number' ? obj.qty : null,
+    price: typeof obj.price === 'number' ? obj.price : null,
+    rawText: obj.rawText || '',
+    source,
+  };
+}
+
+function applyPurchaseOcrResult(result) {
+  const nameInp = document.getElementById('pur-name');
+  const qtyInp = document.getElementById('pur-qty');
+  const priceInp = document.getElementById('pur-price');
+  if(!nameInp || !qtyInp || !priceInp) return;
+
+  let filled = [];
+  if(result.name && !nameInp.value.trim()) {
+    nameInp.value = result.name;
+    filled.push('tên nguyên liệu');
+  }
+  if(typeof result.qty === 'number' && !qtyInp.value) {
+    qtyInp.value = result.qty;
+    filled.push('số lượng');
+  }
+  if(typeof result.price === 'number' && !priceInp.value) {
+    priceInp.value = result.price;
+    filled.push('tổng tiền');
+  }
+
+  if(filled.length) {
+    setPurOcrStatus(`✅ OCR ${result.source === 'online' ? 'Online' : 'Offline'} đã điền: ${filled.join(', ')}. Phần còn lại vui lòng nhập tay nếu cần.`);
+  } else {
+    setPurOcrStatus('⚠️ OCR không điền thêm được trường nào. Vui lòng nhập thủ công dựa trên ảnh.');
+  }
+}
+
+// ============================================================
+// IMAGE RESIZE HELPER
+// ============================================================
+
+function resizeImageToDataUrl(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const max = maxSize || 1080;
+        if(width > height && width > max) {
+          height = Math.round(height * max / width);
+          width = max;
+        } else if(height > width && height > max) {
+          width = Math.round(width * max / height);
+          height = max;
+        } else if(width > max) {
+          const ratio = max / width;
+          width = max;
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const q = typeof quality === 'number' ? quality : 0.7;
+        const dataUrl = canvas.toDataURL('image/jpeg', q);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Không đọc được ảnh.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Không tải được file ảnh.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function renderStockList() {
@@ -734,10 +1270,183 @@ function submitInvEdit(e) {
   }
 }
 
+function getPurchasePhotoBatchEntries() {
+  const map = Store.getPurchasePhotos() || {};
+  const purchases = Store.getPurchases();
+  const entries = [];
+
+  Object.keys(map).forEach(batchId => {
+    const entry = map[batchId];
+    const createdAt = entry && entry.createdAt ? entry.createdAt : null;
+    const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+    if(!photos || !photos.length) return;
+    const usedCount = purchases.filter(p => String(p.photoBatchId || '') === String(batchId)).length;
+
+    entries.push({
+      batchId,
+      createdAt: createdAt || (photos[0] && photos[0].takenAt) || null,
+      photos,
+      count: photos.length,
+      usedCount,
+    });
+  });
+
+  entries.sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  return entries;
+}
+
+function renderPurchasePhotoManager() {
+  const entries = getPurchasePhotoBatchEntries();
+  if(!entries.length) {
+    return '<div class="card" style="padding:12px;margin-bottom:12px;"><div class="card-title" style="margin-bottom:6px">📷 Quản lý hình ảnh đã chụp</div><div class="card-sub" style="font-size:12px;color:var(--text3)">Chưa có ảnh chứng từ đã lưu</div></div>';
+  }
+
+  const html = entries.slice(0, 10).map(e => `
+    <div class="list-item" style="flex-direction:row;align-items:flex-start;gap:10px;">
+      <div class="list-item-icon" style="width:56px;height:56px;background:rgba(0,149,255,0.1);border-radius:14px;overflow:hidden;padding:0;">
+        <img src="${e.photos[0].dataUrl}" alt="Ảnh" style="width:100%;height:100%;object-fit:cover;cursor:pointer;"
+             onclick="openPurchasePhotoFullFromBatch('${e.batchId}', 0)">
+      </div>
+      <div class="list-item-content">
+        <div class="list-item-title">📷 Batch chứng từ</div>
+        <div class="list-item-sub" style="margin-top:4px">
+          <div>Thời gian: ${e.createdAt ? fmtDateTime(e.createdAt) : ''}</div>
+          <div>Số ảnh: ${e.count}</div>
+          <div>Sử dụng cho: ${e.usedCount} lần nhập</div>
+        </div>
+      </div>
+      <div class="list-item-right" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-xs btn-outline" onclick="viewPurchasePhotoBatch('${e.batchId}')">👁️ Xem</button>
+          <button class="btn btn-xs btn-danger" onclick="deletePurchasePhotoBatch('${e.batchId}')">🗑️</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="card" style="padding:12px;margin-bottom:12px;">
+      <div class="card-header" style="margin-bottom:8px">
+        <div class="card-title">📷 Quản lý hình ảnh đã chụp</div>
+        <div class="card-sub" style="margin-left:auto;font-size:11px;color:var(--text3)">Xem lại & xóa thủ công</div>
+      </div>
+      ${html}
+    </div>
+  `;
+}
+
+function viewPurchasePhotoBatch(batchId) {
+  const map = Store.getPurchasePhotos() || {};
+  const entry = map[batchId];
+  const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+  if(!photos.length) {
+    showToast('Không tìm thấy batch ảnh.', 'warning');
+    return;
+  }
+
+  window._activePurchasePhotoBatchId = batchId;
+  window._activePurchasePhotoBatchPhotos = photos;
+  const purchases = Store.getPurchases();
+  const used = purchases.filter(p => String(p.photoBatchId || '') === String(batchId));
+  const meta = document.getElementById('purchase-photo-batch-meta');
+  const gallery = document.getElementById('purchase-photo-batch-gallery');
+  if(meta) {
+    const names = used.slice(0, 3).map(p => p.name).join(', ');
+    const more = used.length > 3 ? ` +${used.length - 3} món` : '';
+    meta.textContent = `Batch: ${batchId} · Ảnh: ${photos.length} · Thời gian: ${fmtDateTime(entry.createdAt || photos[0].takenAt)} · Dùng cho: ${used.length} lần nhập${used.length ? ` (${names}${more})` : ''}`;
+  }
+  if(gallery) {
+    gallery.innerHTML = photos.map((ph, idx) => `
+      <div style="flex:0 0 auto;width:96px;height:96px;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;"
+           onclick="openPurchasePhotoBatchFull(${idx})">
+        <img src="${ph.dataUrl}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('purchase-photo-batch-modal')?.classList.add('active');
+}
+
+function openPurchasePhotoFullFromBatch(batchId, photoIdx) {
+  const map = Store.getPurchasePhotos() || {};
+  const entry = map[batchId];
+  const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+  const p = photos && photos.length ? photos[photoIdx] : null;
+  if(!p) return;
+
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  img.src = p.dataUrl;
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : `Batch: ${batchId}`;
+  modal.classList.add('active');
+}
+
+function openPurchasePhotoBatchFull(photoIdx) {
+  const photos = window._activePurchasePhotoBatchPhotos || [];
+  const p = photos[photoIdx];
+  if(!p) return;
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  img.src = p.dataUrl;
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
+}
+
+function deletePurchasePhotoBatch(batchId) {
+  const map = Store.getPurchasePhotos() || {};
+  if(!map[batchId]) {
+    showToast('Không tìm thấy batch ảnh.', 'warning');
+    return;
+  }
+  if(!confirm('Xóa toàn bộ ảnh chứng từ của batch này? Hành động này không thể hoàn tác.')) return;
+
+  delete map[batchId];
+  Store.setPurchasePhotos(map);
+
+  // Gỡ liên kết khỏi các lần nhập
+  const purchases = Store.getPurchases();
+  let changed = false;
+  purchases.forEach(p => {
+    if(String(p.photoBatchId || '') === String(batchId)) {
+      p.photoBatchId = null;
+      changed = true;
+    }
+  });
+  if(changed) Store.setPurchases(purchases);
+
+  // Nếu modal đang mở batch đó thì reset
+  if(String(currentPurchasePhotosBatchId || '') === String(batchId)) {
+    currentPurchasePhotosBatchId = null;
+    currentPurchasePhotos = [];
+    if(document.getElementById('pur-photo-thumbs')) {
+      document.getElementById('pur-photo-thumbs').innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+    }
+    if(document.getElementById('pur-photo-viewer')) document.getElementById('pur-photo-viewer').style.display = 'none';
+    setPurOcrStatus('');
+  }
+
+  document.getElementById('purchase-photo-batch-modal')?.classList.remove('active');
+  renderInventory();
+  showToast('🗑️ Đã xóa batch ảnh.', 'success');
+}
+
 function renderPurchaseList() {
   const purchases = Store.getPurchases().slice(0, 50);
-  document.getElementById('purchase-list').innerHTML = purchases.length ? purchases.map(p => {
+
+  const purchasesHtml = purchases.length ? purchases.map(p => {
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
+    if (p.photoBatchId) subInfo += `<br><small style="color:var(--text3)">📷 Batch: ${String(p.photoBatchId).slice(0,8)}...</small>`;
     if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
     return `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📦</div>
@@ -754,6 +1463,10 @@ function renderPurchaseList() {
       </div>
     </div>`;
   }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
+
+  const wrap = document.getElementById('purchase-list');
+  if(!wrap) return;
+  wrap.innerHTML = renderPurchasePhotoManager() + purchasesHtml;
 }
 
 function editPurchase(purchaseId) {
@@ -924,6 +1637,14 @@ function openPurchaseModal() {
   const form = document.getElementById('purchase-form');
   delete form.dataset.editId;
   form.reset();
+  // Reset session ảnh chứng từ cho lần nhập hiện tại
+  currentPurchasePhotos = [];
+  currentPurchasePhotosBatchId = null;
+  const thumbs = document.getElementById('pur-photo-thumbs');
+  if(thumbs) thumbs.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+  const viewer = document.getElementById('pur-photo-viewer');
+  if(viewer) viewer.style.display = 'none';
+  setPurOcrStatus('');
   document.getElementById('purchase-modal-title').textContent = '🚚 Nhập hàng mới';
   renderPurchaseSupplierDropdown(); // Load danh sách NCC
   document.getElementById('purchase-modal').classList.add('active');
@@ -966,7 +1687,11 @@ function submitPurchase(e) {
         inv.push(item);
       }
 
-      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierPhone, supplierAddress:supplierAddr };
+      // Gắn batch ảnh chứng từ (nếu có) cho lần chỉnh sửa này
+      if(currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
+        persistCurrentPurchasePhotosBatch();
+      }
+      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierPhone, supplierAddress:supplierAddr, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
       Store.setPurchases(purchases);
       Store.setInventory(inv);
       delete form.dataset.editId;
@@ -975,6 +1700,9 @@ function submitPurchase(e) {
     showToast('✅ Đã cập nhật nhập hàng!');
   } else {
     // ADD MODE
+    // Lưu batch ảnh chứng từ (nếu có) - chỉ lưu theo batch id để tránh trùng lặp
+    persistCurrentPurchasePhotosBatch();
+    const purchaseId = uid();
     if(item) {
       item.qty += qty;
       item.costPerUnit = price/qty;
@@ -983,13 +1711,27 @@ function submitPurchase(e) {
       inv.push(item);
     }
     Store.setInventory(inv);
-    Store.addPurchase({ id:uid(), name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr });
+    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr, photoBatchId: currentPurchasePhotosBatchId || null });
     Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
-    showToast('✅ Đã nhập hàng thành công!');
+    showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
   }
 
-  document.getElementById('purchase-modal').classList.remove('active');
-  document.getElementById('purchase-form').reset();
+  // Sau khi bấm "Nhập hàng": giữ modal mở để tiếp tục nhập nguyên liệu mới
+  // - Reset các field nhập nguyên liệu, giữ lại NCC + ảnh chứng từ
+  if(editId) {
+    document.getElementById('purchase-modal').classList.remove('active');
+    document.getElementById('purchase-form').reset();
+    renderInventory();
+    updateAlertBadge();
+    return;
+  }
+
+  // Clear only item fields
+  document.getElementById('pur-name').value = '';
+  document.getElementById('pur-qty').value = '';
+  document.getElementById('pur-price').value = '';
+  const nameInp = document.getElementById('pur-name');
+  if(nameInp) nameInp.focus();
   renderInventory();
   updateAlertBadge();
 }
@@ -1288,6 +2030,7 @@ function viewOrderDetail(orderId) {
   const h = Store.getHistory();
   const o = h.find(x => x.id === orderId);
   if(!o) return;
+  window._activeOrderDetailPhotos = o.photos || [];
   const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
   const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
   const itemsHtml = (o.items||[]).map(i =>
@@ -1297,6 +2040,19 @@ function viewOrderDetail(orderId) {
     </div>`
   ).join('');
   const subTotal = (o.items||[]).reduce((s, i) => s + i.price * i.qty, 0);
+  const photosHtml = (o.photos && o.photos.length)
+    ? `<div style="margin-top:12px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">📷 Ảnh ghi nhận đơn</div>
+        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+          ${o.photos.map((p, idx) => `
+            <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
+                 onclick="openOrderDetailPhotoFull(${idx})" title="Xem ảnh full">
+              <img src="${p.dataUrl}" alt="Ảnh đơn" style="width:100%;height:100%;object-fit:cover;">
+            </div>
+          `).join('')}
+        </div>
+      </div>`
+    : '';
   document.getElementById('order-detail-content').innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">${o.tableName}</div>
@@ -1313,8 +2069,23 @@ function viewOrderDetail(orderId) {
       <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
     </div>
     ${o.cost > 0 ? `<div style="font-size:11px;color:var(--text3);text-align:right">Giá vốn: ${fmtFull(o.cost)} · Lãi gộp: ${fmtFull(o.total - o.cost)}</div>` : ''}
+    ${photosHtml}
   `;
   document.getElementById('order-detail-modal').classList.add('active');
+}
+
+function openOrderDetailPhotoFull(idx) {
+  const photos = window._activeOrderDetailPhotos || [];
+  if(!photos.length) return;
+  const p = photos[idx];
+  if(!p) return;
+  const modal = document.getElementById('order-detail-photo-full-modal');
+  const img = document.getElementById('order-detail-photo-full-img');
+  if(!modal || !img) return;
+  img.src = p.dataUrl;
+  const meta = document.getElementById('order-detail-photo-full-meta');
+  if(meta) meta.textContent = p.takenAt ? `Thời gian: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
 }
 
 // ============================================================
@@ -1598,6 +2369,28 @@ function renderSettings() {
   const autoEl = document.getElementById('set-autoBackup');
   if(autoEl) autoEl.checked = s.autoBackup !== false;
 
+  const autoWeeklyEl  = document.getElementById('set-autoExportWeekly');
+  const autoMonthlyEl = document.getElementById('set-autoExportMonthly');
+  if(autoWeeklyEl)  autoWeeklyEl.checked  = !!s.autoExportWeekly;
+  if(autoMonthlyEl) autoMonthlyEl.checked = !!s.autoExportMonthly;
+
+  const reportTypeEl = document.getElementById('set-reportExportType');
+  if(reportTypeEl && s.reportExportType) reportTypeEl.value = s.reportExportType;
+  const reportPeriodEl = document.getElementById('set-reportExportPeriod');
+  if(reportPeriodEl && s.reportExportPeriod) reportPeriodEl.value = s.reportExportPeriod;
+  const reportDateEl = document.getElementById('set-reportExportDate');
+  if(reportDateEl && s.reportExportDate) reportDateEl.value = s.reportExportDate;
+
+  const autoUploadDriveEl = document.getElementById('set-autoUploadToGoogleDrive');
+  if(autoUploadDriveEl) autoUploadDriveEl.checked = !!s.autoUploadToGoogleDrive;
+  const gdriveUrlEl = document.getElementById('set-googleDriveUploadUrl');
+  if(gdriveUrlEl) gdriveUrlEl.value = s.googleDriveUploadUrl || '';
+  const gdriveFolderEl = document.getElementById('set-googleDriveFolderId');
+  if(gdriveFolderEl) gdriveFolderEl.value = s.googleDriveFolderId || '';
+
+  // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
+  try { toggleReportExportDate(); } catch(_) {}
+
   const logoPreview = document.getElementById('set-logo-preview');
   const removeBtn = document.getElementById('set-logo-remove');
   if (logoPreview) {
@@ -1634,6 +2427,14 @@ function submitSettings(e) {
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
+  const autoExportWeeklyEl  = document.getElementById('set-autoExportWeekly');
+  const autoExportMonthlyEl = document.getElementById('set-autoExportMonthly');
+  const reportExportTypeEl   = document.getElementById('set-reportExportType');
+  const reportExportPeriodEl = document.getElementById('set-reportExportPeriod');
+  const reportExportDateEl   = document.getElementById('set-reportExportDate');
+  const autoUploadDriveEl    = document.getElementById('set-autoUploadToGoogleDrive');
+  const gdriveUrlEl          = document.getElementById('set-googleDriveUploadUrl');
+  const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
 
   const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
 
@@ -1650,6 +2451,14 @@ function submitSettings(e) {
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     tableCount:   newTableCount,
     autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
+    autoExportWeekly:  autoExportWeeklyEl  ? autoExportWeeklyEl.checked  : (s.autoExportWeekly  || false),
+    autoExportMonthly: autoExportMonthlyEl ? autoExportMonthlyEl.checked : (s.autoExportMonthly || false),
+    reportExportType: reportExportTypeEl ? reportExportTypeEl.value : (s.reportExportType || 'revenue'),
+    reportExportPeriod: reportExportPeriodEl ? reportExportPeriodEl.value : (s.reportExportPeriod || 'today'),
+    reportExportDate: reportExportDateEl ? reportExportDateEl.value : (s.reportExportDate || ''),
+    autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
+    googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
+    googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
   };
   Store.setSettings(updated);
 
@@ -1711,6 +2520,10 @@ function manualBackup() {
     const last = Store.getLastBackupTime();
     const lastEl = document.getElementById('last-backup-time');
     if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : '';
+    if(!snapshot) {
+      showToast('⚠️ Auto-backup bị bỏ qua do đầy dung lượng. Vui lòng xuất file backup bằng tay.', 'warning');
+      return;
+    }
     showToast('💾 Đã backup thành công!', 'success');
   } catch(err) {
     showToast('❌ Backup thất bại: ' + err.message, 'danger');
@@ -1732,6 +2545,176 @@ function exportBackup() {
     showToast('📥 Đã xuất file backup!', 'success');
   } catch(err) {
     showToast('❌ Xuất thất bại: ' + err.message, 'danger');
+  }
+}
+
+async function exportReportExcel(override) {
+  const typeEl   = document.getElementById('set-reportExportType');
+  const periodEl = document.getElementById('set-reportExportPeriod');
+  const dateEl   = document.getElementById('set-reportExportDate');
+
+  const type   = override?.type   || (typeEl   ? typeEl.value   : 'revenue');
+  const period = override?.period || (periodEl ? periodEl.value : 'today');
+  const date   = override?.date   || (dateEl   ? dateEl.value   : '');
+
+  const opts = {};
+  if(period === 'day' && date) opts.date = date;
+
+  let rows = [];
+  let filename = 'report';
+
+  if(type === 'revenue' || type === 'all') {
+    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
+    const revRows = [['Bill ID','Bàn','Thời gian','Tổng','Giảm giá','Phí ship','Phương thức']];
+    orders.forEach(o => {
+      revRows.push([
+        o.id,
+        o.tableName || o.tableId || '',
+        o.paidAt || '',
+        o.total,
+        o.discount || 0,
+        o.shipping || 0,
+        o.payMethod || '',
+      ]);
+    });
+    if(type === 'revenue') {
+      rows = revRows;
+      filename = 'revenue_report';
+    } else {
+      rows = revRows;
+      filename = 'full_report_revenue';
+    }
+  } else if(type === 'expense') {
+    const expenses = filterExpenses(period === 'day' ? 'day' : period, opts);
+    rows = [['ID','Tên chi phí','Số tiền','Danh mục','Ngày']];
+    expenses.forEach(e => {
+      rows.push([e.id, e.name, e.amount, e.category || '', e.date || '']);
+    });
+    filename = 'expense_report';
+  } else if(type === 'purchase') {
+    const purchases = Store.getPurchases();
+    const now = new Date();
+    const filtered = purchases.filter(p => {
+      const d = new Date(p.date);
+      if(period === 'today') return d.toDateString() === now.toDateString();
+      if(period === 'day' && date) return d.toDateString() === new Date(date).toDateString();
+      if(period === 'week') return (now - d) / 86400000 <= 7;
+      if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return true;
+    });
+    rows = [['ID','Tên nguyên liệu','Số lượng','Đơn vị','Tổng tiền','Giá/đơn vị','NCC','Ngày','Batch ảnh']];
+    filtered.forEach(p => {
+      rows.push([p.id, p.name, p.qty, p.unit, p.price, p.costPerUnit || '', p.supplier || '', p.date || '', p.photoBatchId || '']);
+    });
+    filename = 'purchase_report';
+  }
+
+  if(!rows.length) {
+    showToast('⚠️ Không có dữ liệu để xuất.', 'warning');
+    return false;
+  }
+
+  const csv = '\uFEFF' + rows.map(r => r.map(v => {
+    const s = (v == null ? '' : String(v));
+    if(/[";,\\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+    return s;
+  }).join(';')).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0,10);
+  const downloadName = `${filename}_${dateStr}.csv`;
+  a.href = url;
+  a.download = downloadName;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('📥 Đã xuất báo cáo (.csv) – mở bằng Excel.', 'success');
+
+  // Upload to Google Drive (optional)
+  try {
+    const s = Store.getSettings();
+    if(s.autoUploadToGoogleDrive && s.googleDriveUploadUrl) {
+      const mimeType = 'text/csv';
+      await uploadFileToGoogleDriveByEndpoint({
+        uploadUrl: s.googleDriveUploadUrl,
+        folderId: s.googleDriveFolderId || '',
+        filename: downloadName,
+        mimeType,
+        blob,
+      });
+      showToast('☁️ Đã upload báo cáo lên Google Drive.', 'success');
+    }
+  } catch(err) {
+    console.warn('uploadFileToGoogleDrive error', err);
+    showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+  }
+
+  return true;
+}
+
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result || '';
+      const base64 = dataUrl.toString().split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Không đọc được file để upload.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
+  const base64Data = await blobToBase64(blob);
+  const payload = { filename, mimeType, base64Data, folderId };
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let data = null;
+  try { data = await res.json(); } catch(_) {}
+  if(!res.ok) {
+    const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  if(data && data.success === false) {
+    throw new Error(data.message || data.error || 'Unknown Drive upload error');
+  }
+  return data;
+}
+
+function getWeekStartKey(d) {
+  const x = new Date(d);
+  x.setHours(0,0,0,0);
+  // getDay: 0=Sun..6=Sat → chuyển về Monday start
+  const diff = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - diff);
+  return x.toISOString().slice(0,10);
+}
+
+async function autoExportReportsIfNeeded() {
+  const s = Store.getSettings();
+  const now = new Date();
+
+  if(s.autoExportWeekly) {
+    const weekKey = getWeekStartKey(now);
+    const last = Store.getLastReportExportWeeklyKey();
+    if(weekKey && last !== weekKey) {
+      const ok = await exportReportExcel({ type: s.reportExportType, period: 'week' });
+      if(ok) Store.setLastReportExportWeeklyKey(weekKey);
+    }
+  }
+
+  if(s.autoExportMonthly) {
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const last = Store.getLastReportExportMonthlyKey();
+    if(monthKey && last !== monthKey) {
+      const ok = await exportReportExcel({ type: s.reportExportType, period: 'month' });
+      if(ok) Store.setLastReportExportMonthlyKey(monthKey);
+    }
   }
 }
 
@@ -2819,12 +3802,14 @@ function executeAIActions(parsed, menuFull) {
           if (ex) ex.qty += it.qty;
           else    orderItems[tid].push({ id: m.id, name: m.name, price: m.price, cost: m.cost || 0, qty: it.qty });
         }
+        // Persist + update table status for correct coloring
+        try { saveOrderForTable(tid); } catch(_) {}
 
         // Tự động mở bàn để xác nhận
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
+          else openTable(Number(tid));
         }, 300);
 
       } else if (a.type === 'remove') {
@@ -2840,10 +3825,12 @@ function executeAIActions(parsed, menuFull) {
             if (ex.qty <= 0) orderItems[tid] = orderItems[tid].filter(x => x.id !== a.itemId);
           }
         }
+        // Persist + update table status for correct coloring
+        try { saveOrderForTable(tid); } catch(_) {}
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
+          else openTable(Number(tid));
         }, 300);
 
       } else if (a.type === 'pay') {
@@ -2852,7 +3839,7 @@ function executeAIActions(parsed, menuFull) {
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
+          else openTable(Number(tid));
           // Mở bill sau khi bàn đã mở
           setTimeout(() => {
             if ((orderItems[tid] || []).length > 0) {
@@ -2866,7 +3853,7 @@ function executeAIActions(parsed, menuFull) {
         closeAIAssistant();
         setTimeout(() => {
           if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
+          else openTable(Number(tid));
         }, 200);
       } else if (a.type === 'report') {
         if (!parsed.reply || parsed.reply.length < 30) {
@@ -2928,7 +3915,7 @@ function executeAIActions(parsed, menuFull) {
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
+          else openTable(Number(tid));
         }, 500);
       }
     }
