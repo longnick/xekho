@@ -131,11 +131,13 @@ const Store = {
       bankAccount: '0937707900',
       bankOwner: 'Gánh Khô Chữa Lành',
       autoBackup: true,
+      storageQuotaMb: 500,      // quota mục tiêu nội bộ (MB), tối đa 500
       ocrMode: 'auto',           // 'auto' | 'offline' | 'online'
       photoRetentionDays: 0,     // 0 = không tự xoá
       autoExportWeekly: false,
       autoExportMonthly: false,
-      reportExportType: 'revenue',   // revenue | expense | purchase | all
+      autoPushWeeklyReportToGoogleDrive: false, // tuần mới: xuất 7 ngày rồi đẩy .xlsx lên Drive (cần URL + folderId)
+      reportExportType: 'revenue',   // revenue | expense | purchase | inventory | all
       reportExportPeriod: 'today',   // today | day | week | month | all
       reportExportDate: '',          // YYYY-MM-DD (only for day)
       autoUploadToGoogleDrive: false,
@@ -181,7 +183,23 @@ const Store = {
       const raw = localStorage.getItem(storageKey);
       if(!raw) return;
       try {
-        data[k] = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        // Với backup local mặc định, bỏ ảnh trong lịch sử đơn để tránh quota exceeded.
+        if(!includePhotos && k === 'history' && Array.isArray(parsed)) {
+          data[k] = parsed.slice(0, 300).map(item => {
+            if(!item || typeof item !== 'object') return item;
+            const next = { ...item };
+            if(Array.isArray(next.photos) && next.photos.length) next.photos = [];
+            return next;
+          });
+          return;
+        }
+        // AI history có thể khá dài, giới hạn nhẹ để giảm dung lượng backup local.
+        if(!includePhotos && k === 'aiHistory' && Array.isArray(parsed)) {
+          data[k] = parsed.slice(-120);
+          return;
+        }
+        data[k] = parsed;
       } catch(e) {
         // Skip keys that aren't valid JSON (e.g. raw ISO strings)
         console.warn('[Backup] Skipped key:', k, e.message);
@@ -204,29 +222,67 @@ const Store = {
 
   // Lưu backup vào localStorage (lưu tối đa 2 bản, tránh đầy bộ nhớ)
   saveLocalBackup() {
-    const snapshot = this.getFullBackup({ includePhotos: false });
+    let snapshot = this.getFullBackup({ includePhotos: false });
     const backups = this.get(KEYS.backups) || [];
     const label = new Date(snapshot.exportedAt).toLocaleString('vi-VN', {
       day:'2-digit', month:'2-digit', year:'numeric',
       hour:'2-digit', minute:'2-digit'
     });
-    
-    const size = JSON.stringify(snapshot).length;
-    
+
+    const trySaveSnapshot = (snap) => {
+      localStorage.setItem('gkhl_backup_latest', JSON.stringify(snap));
+      return true;
+    };
+
+    const buildCompactSnapshot = (maxHistory, maxAi) => {
+      const full = this.getFullBackup({ includePhotos: false });
+      if(Array.isArray(full?.data?.history)) {
+        full.data.history = full.data.history.slice(0, Math.max(0, maxHistory));
+      }
+      if(Array.isArray(full?.data?.aiHistory)) {
+        full.data.aiHistory = full.data.aiHistory.slice(-Math.max(0, maxAi));
+      }
+      return full;
+    };
+
     try {
-      localStorage.setItem('gkhl_backup_latest', JSON.stringify(snapshot));
+      trySaveSnapshot(snapshot);
     } catch(e) {
-      // Không crash app khi backup bị quota exceeded
-      console.warn('Backup failed due to quota exceeded', e);
-      if(window.showToast) window.showToast('⚠️ Dung lượng quá lớn, auto-backup bị bỏ qua. Dữ liệu vẫn an toàn.', 'danger');
-      return null;
+      // Nếu đầy dung lượng, dọn metadata backup cũ và thử lại.
+      try {
+        localStorage.removeItem(KEYS.backups);
+        localStorage.removeItem(KEYS.lastBackup);
+        trySaveSnapshot(snapshot);
+      } catch(e2) {
+        // Tiếp tục giảm dung lượng snapshot để cố lưu local backup.
+        const compactLevels = [
+          { history: 120, ai: 80 },
+          { history: 60, ai: 40 },
+          { history: 20, ai: 20 },
+          { history: 0, ai: 0 },
+        ];
+        let saved = false;
+        for(const lv of compactLevels) {
+          try {
+            snapshot = buildCompactSnapshot(lv.history, lv.ai);
+            trySaveSnapshot(snapshot);
+            saved = true;
+            break;
+          } catch(_) {}
+        }
+        if(!saved) {
+          console.warn('Backup failed due to quota exceeded', e2);
+          return null;
+        }
+      }
     }
-    
+
+    const size = JSON.stringify(snapshot).length;
     backups.unshift({ date: snapshot.exportedAt, label, size });
     // Trim trước khi lưu
     while(backups.length > 2) backups.pop();
-    this.set(KEYS.backups, backups);
-    localStorage.setItem(KEYS.lastBackup, new Date().toISOString());
+    try { this.set(KEYS.backups, backups); } catch(_) {}
+    try { localStorage.setItem(KEYS.lastBackup, new Date().toISOString()); } catch(_) {}
     return snapshot;
   },
 

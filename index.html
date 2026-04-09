@@ -514,6 +514,7 @@
               <option value="revenue">Doanh thu (lịch sử đơn hàng)</option>
               <option value="expense">Chi phí</option>
               <option value="purchase">Nhập hàng</option>
+              <option value="inventory">Tồn kho</option>
               <option value="all">Tổng hợp (nhiều sheet)</option>
             </select>
           </div>
@@ -533,32 +534,42 @@
           </div>
           <div class="toggle-wrap">
             <div class="toggle-label">Tự động xuất hàng tuần</div>
-            <label class="toggle"><input type="checkbox" id="set-autoExportWeekly"><span class="toggle-slider"></span></label>
+            <label class="toggle"><input type="checkbox" id="set-autoExportWeekly" onchange="toggleWeeklyDriveCheckbox()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-wrap">
+            <div class="toggle-label">Tuần mới: đẩy file Excel lên Google Drive</div>
+            <label class="toggle"><input type="checkbox" id="set-autoPushWeeklyReportToGoogleDrive"><span class="toggle-slider"></span></label>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin:-4px 0 8px;line-height:1.5">
+            Khi bật: mỗi tuần (lần đầu mở app trong tuần) tạo đúng file .xlsx như nút xuất (loại báo cáo ở trên, kỳ <strong>7 ngày gần nhất</strong>) rồi gửi lên thư mục Drive đã cấu hình — không tự tải xuống máy.
           </div>
           <div class="toggle-wrap">
             <div class="toggle-label">Tự động xuất hàng tháng</div>
             <label class="toggle"><input type="checkbox" id="set-autoExportMonthly"><span class="toggle-slider"></span></label>
           </div>
-          <button type="button" class="btn btn-secondary btn-block" onclick="exportReportExcel()">📥 Xuất file Excel (.csv)</button>
+          <button type="button" class="btn btn-secondary btn-block" onclick="exportReportExcel()">📥 Xuất file Excel (.xlsx)</button>
         </div>
 
-        <!-- Google Drive Upload -->
+        <!-- Google Drive — báo cáo Excel -->
         <div class="card">
-          <div class="card-header"><div class="card-title">☁️ Tự động upload lên Google Drive</div></div>
+          <div class="card-header"><div class="card-title">☁️ Đẩy báo cáo Excel lên Google Drive</div></div>
           <div class="toggle-wrap" style="margin-bottom:8px">
-            <div class="toggle-label">Tự động upload sau khi xuất báo cáo</div>
+            <div class="toggle-label">Sau khi bấm “Xuất Excel”, tự đẩy luôn lên Drive</div>
             <label class="toggle"><input type="checkbox" id="set-autoUploadToGoogleDrive"><span class="toggle-slider"></span></label>
           </div>
           <div class="input-group">
-            <label class="input-label">Upload URL (Google Apps Script)</label>
-            <input class="input" id="set-googleDriveUploadUrl" placeholder="https://script.google.com/macros/s/.../exec">
+            <label class="input-label">URL Web App (Google Apps Script)</label>
+            <input class="input" id="set-googleDriveUploadUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
           </div>
           <div class="input-group">
-            <label class="input-label">Folder ID (tuỳ chọn)</label>
-            <input class="input" id="set-googleDriveFolderId" placeholder="Gán folder để lưu tự động (tuỳ chọn)">
+            <label class="input-label">ID thư mục Google Drive</label>
+            <input class="input" id="set-googleDriveFolderId" placeholder="Dán ID thư mục (ví dụ từ đường dẫn drive.google.com/drive/folders/...)" autocomplete="off">
           </div>
-          <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5">
-            Dùng Google Apps Script web app để nhận JSON: `filename`, `mimeType`, `base64Data`, `folderId` rồi upload lên Drive.
+          <button type="button" class="btn btn-secondary btn-block" onclick="openGoogleDriveReportGuide()">📖 Hướng dẫn cấu hình Google Drive (từng bước)</button>
+          <button type="button" class="btn btn-info btn-block" onclick="pushReportExcelToGoogleDriveManual()">☁️ Đẩy báo cáo lên Drive (theo loại &amp; kỳ đang chọn)</button>
+          <div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.55">
+            File đẩy lên là <strong>đúng file .xlsx</strong> giống lúc xuất (cùng dữ liệu, cùng tên <code>bao_cao_*_YYYY-MM-DD.xlsx</code>), được Apps Script lưu vào <strong>thư mục có ID ở trên</strong>.
+            Web app nhận POST JSON: <code>filename</code>, <code>mimeType</code>, <code>base64Data</code>, <code>folderId</code> rồi tạo file trong thư mục đó.
           </div>
         </div>
 
@@ -574,14 +585,27 @@
           <div class="toggle-label">Tự động backup mỗi ngày</div>
           <label class="toggle"><input type="checkbox" id="set-autoBackup" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
         </div>
+        <div class="input-group" style="margin-bottom:8px">
+          <label class="input-label">Quota lưu trữ tối đa (MB)</label>
+          <input class="input input-sm" id="set-storageQuotaMb" type="number" min="10" max="500" step="1" placeholder="Nhập tối đa 500">
+          <div id="storage-quota-info" style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5"></div>
+        </div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
           Lần backup cuối: <span id="last-backup-time" style="color:var(--success)">Chưa có</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
           <button class="btn btn-info btn-block" onclick="manualBackup()">💾 Backup ngay</button>
           <button class="btn btn-secondary btn-block" onclick="exportBackup()">📥 Xuất file</button>
         </div>
+        <button type="button" class="btn btn-secondary btn-block" style="margin-bottom:12px" onclick="exportSettingsBackup()">📋 Xuất file cài đặt đã lưu</button>
+        <div style="font-size:11px;color:var(--text2);margin:-8px 0 12px;line-height:1.5">
+          Chỉ gồm các mục đã <strong>Lưu cài đặt</strong> (tên quán, bàn, báo cáo, Google Drive, v.v.). Vừa sửa form mà chưa Lưu thì nội dung trong file là bản cũ — bấm ✅ Lưu cài đặt trước khi xuất.
+        </div>
         <button class="btn btn-secondary btn-block" onclick="importBackup()">📤 Nhập file backup</button>
+        <button class="btn btn-warning btn-block" style="margin-top:8px" onclick="cleanupHeavyData()">🧹 Dọn dữ liệu nặng</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5">
+          Dọn ảnh order, ảnh nhập hàng và lịch sử AI cũ để giảm dung lượng lưu trữ khi bị đầy bộ nhớ.
+        </div>
         <div class="section-header" style="margin-top:12px">
           <div class="card-title">Lịch sử backup</div>
         </div>
@@ -751,6 +775,10 @@
             <label class="input-label">Địa chỉ</label>
             <input class="input" id="pur-supplier-addr" placeholder="Địa chỉ...">
           </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Ghi chú</label>
+          <textarea class="input textarea" id="pur-note" rows="2" placeholder="Ghi chú phiếu nhập (nội dung lệnh AI, số hóa đơn, v.v.)"></textarea>
         </div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Nhập hàng &amp; tiếp tục</button>
           </form>
@@ -1102,6 +1130,7 @@
 
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="data.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
@@ -1261,6 +1290,88 @@ Chart.defaults.color = '#A0A0B5';
       <button class="modal-close" onclick="document.getElementById('ncc-detail-modal').classList.remove('active')">✕</button>
     </div>
     <div class="modal-body" id="ncc-detail-content"></div>
+  </div>
+</div>
+
+<!-- Hướng dẫn Google Drive — báo cáo Excel -->
+<div class="modal-overlay" id="gdrive-report-guide-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-sheet" style="max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-handle"></div>
+    <div class="modal-header" style="flex-shrink:0">
+      <div class="modal-title">📖 Hướng dẫn đẩy báo cáo lên Google Drive</div>
+      <button type="button" class="modal-close" onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')" aria-label="Đóng">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding-bottom:28px;font-size:13px;line-height:1.55;color:var(--text)">
+      <p style="margin:0 0 14px;color:var(--text2);font-size:12px">
+        POS gửi file <strong>.xlsx</strong> bằng <strong>POST JSON</strong> tới Web App của bạn. Bạn cần một dự án <strong>Google Apps Script</strong> để nhận dữ liệu và tạo file trong thư mục Drive đã chọn.
+      </p>
+      <ol style="margin:0;padding-left:22px;display:flex;flex-direction:column;gap:14px">
+        <li>
+          <strong>Tạo thư mục trên Drive và lấy ID</strong><br>
+          Vào <a href="https://drive.google.com" target="_blank" rel="noopener">Google Drive</a> → tạo thư mục (ví dụ <em>Báo cáo POS</em>) → mở thư mục → copy <strong>ID</strong> trên thanh địa chỉ:<br>
+          <code style="font-size:11px;word-break:break-all;display:inline-block;margin-top:6px;background:var(--bg3);padding:4px 8px;border-radius:6px">https://drive.google.com/drive/folders/<strong>CHÍNH_LÀ_ID_THƯ_MỤC</strong></code><br>
+          Dán ID này vào ô <strong>ID thư mục Google Drive</strong> trong Cài đặt.
+        </li>
+        <li>
+          <strong>Mở Google Apps Script và tạo dự án</strong><br>
+          Truy cập <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <strong>Dự án mới</strong> → đặt tên (ví dụ <em>POS Upload Báo cáo</em>) → xóa code mặc định và dán toàn bộ <strong>mã mẫu</strong> ở bước 4.
+        </li>
+        <li>
+          <strong>Lưu dự án</strong><br>
+          Bấm <strong>Lưu</strong> (Ctrl+S), đặt tên nếu được hỏi.
+        </li>
+        <li>
+          <strong>Dán mã Apps Script sau vào trình soạn thảo</strong>
+          <pre style="margin:8px 0 0;font-size:11px;line-height:1.45;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;white-space:pre;max-height:220px"><code>function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var name = data.filename || 'bao_cao.xlsx';
+    var mime = data.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    var bytes = Utilities.base64Decode(data.base64Data);
+    var blob = Utilities.newBlob(bytes, mime, name);
+    var file;
+    if (data.folderId &amp;&amp; data.folderId.toString().trim() !== '') {
+      file = DriveApp.getFolderById(data.folderId.toString().trim()).createFile(blob);
+    } else {
+      file = DriveApp.createFile(blob);
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: true, id: file.getId(), url: file.getUrl() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</code></pre>
+          <span style="font-size:11px;color:var(--text2)">Mã này khớp định dạng POS gửi: <code>filename</code>, <code>mimeType</code>, <code>base64Data</code>, <code>folderId</code>. Ứng dụng gửi tiêu đề <strong>Content-Type: text/plain</strong> (thân vẫn là chuỗi JSON) để tránh lỗi CORS trên trình duyệt — bạn <strong>không cần sửa</strong> <code>doPost</code>.</span>
+        </li>
+        <li>
+          <strong>Triển khai Web App lần đầu (quan trọng)</strong><br>
+          Bấm <strong>Triển khai</strong> → <strong>Quản lý Triển khai</strong> → biểu tượng <strong>Tạo triển khai</strong> → chọn loại <strong>Ứng dụng web</strong> → điền mô tả (tuỳ ý) → mục <strong>Thực thi dưới tên</strong>: chọn <strong>Tài khoản của tôi</strong> → <strong>Người có quyền truy cập</strong>: chọn <strong>Bất kỳ ai</strong> (để trình duyệt trên máy POS có thể gọi) hoặc <strong>Bất kỳ người dùng Google</strong> nếu bạn chỉ dùng nội bộ có đăng nhập Google.<br>
+          Bấm <strong>Triển khai</strong> → nếu hỏi <strong>Ủy quyền</strong>, chọn tài khoản Google và cho phép quyền <strong>Google Drive</strong> cho dự án.
+        </li>
+        <li>
+          <strong>Lấy URL Web App</strong><br>
+          Sau khi triển khai, copy <strong>URL Ứng dụng web</strong> — dạng <code style="font-size:11px">https://script.google.com/macros/s/xxxxx/exec</code> → dán vào ô <strong>URL Web App</strong> trong Cài đặt POS.
+        </li>
+        <li>
+          <strong>Cập nhật mã (nếu sửa script)</strong><br>
+          Mỗi lần sửa <code>doPost</code>, cần <strong>Triển khai</strong> → <strong>Quản lý Triển khai</strong> → chỉnh sửa biểu tượng bút → chọn <strong>Phiên bản mới</strong> → <strong>Triển khai</strong>. Nếu không, POS vẫn chạy bản cũ.
+        </li>
+        <li>
+          <strong>Hoàn tất trong POS</strong><br>
+          Điền đủ URL + ID thư mục → bấm <strong>Lưu cài đặt</strong> → dùng <strong>Đẩy báo cáo lên Drive</strong> hoặc <strong>Xuất Excel</strong> (nếu bật tự đẩy) để thử. File <code>bao_cao_*.xlsx</code> sẽ xuất hiện trong thư mục đã chọn.
+        </li>
+      </ol>
+      <p style="margin:16px 0 0;font-size:11px;color:var(--text2);line-height:1.5">
+        <strong>Nếu báo “Failed to fetch”:</strong> dùng URL triển khai kết thúc <code>/exec</code> (không dùng <code>/dev</code>); triển khai lại <strong>Phiên bản mới</strong> sau mỗi lần sửa script; tắt extension chặn (uBlock, Privacy Badger…) đối với <code>script.google.com</code>; thử trình duyệt khác hoặc mạng khác. POS đã gửi <code>text/plain</code> và có chế độ dự phòng tương thích — nếu thành công nhưng không thấy file, kiểm tra đúng thư mục và quyền Drive.
+      </p>
+      <p style="margin:10px 0 0;font-size:11px;color:var(--text2)">
+        <strong>Lưu ý bảo mật:</strong> Web App “Bất kỳ ai” có URL công khai — chỉ nên dùng URL khó đoán và không chia sẻ công khai. Ai biết URL có thể gửi POST (có thể thêm kiểm tra mật khẩu trong script nếu cần).
+      </p>
+      <button type="button" class="btn btn-primary btn-block" style="margin-top:18px" onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')">Đã hiểu, đóng</button>
+    </div>
   </div>
 </div>
 </body>
