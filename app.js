@@ -15,6 +15,7 @@ let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hà
 let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
 let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
 let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
+const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -22,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyStoreSettings();
   runMigrations(); // Patch data spelling differences
   cleanupOldPurchasePhotos(); // dọn ảnh nhập hàng cũ theo cấu hình
+  cleanupOldOrderHistoryPhotos(); // dọn ảnh order trong lịch sử sau 3 ngày
   navigate('tables');
   updateAlertBadge();
   // Auto backup mỗi ngày
@@ -45,6 +47,44 @@ function toggleReportExportDate() {
   const wrap = document.getElementById('report-export-date-wrap');
   if(!sel || !wrap) return;
   wrap.style.display = sel.value === 'day' ? '' : 'none';
+}
+
+function toggleWeeklyDriveCheckbox() {
+  const weeklyEl = document.getElementById('set-autoExportWeekly');
+  const driveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
+  if(!weeklyEl || !driveEl) return;
+  if(!weeklyEl.checked) {
+    driveEl.checked = false;
+    driveEl.disabled = true;
+  } else {
+    driveEl.disabled = false;
+  }
+}
+
+function getGoogleDriveConfigFromUi() {
+  const urlEl = document.getElementById('set-googleDriveUploadUrl');
+  const folderEl = document.getElementById('set-googleDriveFolderId');
+  const s = Store.getSettings();
+  const uploadUrl = (urlEl && urlEl.value.trim()) || s.googleDriveUploadUrl || '';
+  const folderId = (folderEl && folderEl.value.trim()) || s.googleDriveFolderId || '';
+  return { uploadUrl, folderId };
+}
+
+function openGoogleDriveReportGuide() {
+  document.getElementById('gdrive-report-guide-modal')?.classList.add('active');
+}
+
+/** Đẩy lên Drive đúng file .xlsx như lúc xuất (theo loại/kỳ trên form), không tải xuống máy. */
+async function pushReportExcelToGoogleDriveManual() {
+  const { uploadUrl, folderId } = getGoogleDriveConfigFromUi();
+  if(!uploadUrl || !folderId) {
+    showToast('Vui lòng nhập URL Web App và ID thư mục Google Drive (mục Cài đặt).', 'warning');
+    return;
+  }
+  await exportReportExcel({
+    skipLocalDownload: true,
+    uploadToDrive: true,
+  });
 }
 
 // Chạy một lần lúc load để tự động sửa lỗi chính tả dữ liệu cũ mà không làm mất trạng thái của người dùng
@@ -168,6 +208,36 @@ function cleanupOldPurchasePhotos() {
     if(changed) Store.setPurchasePhotos(map);
   } catch(e) {
     console.warn('cleanupOldPurchasePhotos error', e);
+  }
+}
+
+function cleanupOldOrderHistoryPhotos() {
+  try {
+    const history = Store.getHistory();
+    if(!Array.isArray(history) || !history.length) return;
+    const now = Date.now();
+    const maxAgeMs = ORDER_HISTORY_PHOTO_RETENTION_DAYS * 86400000;
+    let changed = false;
+
+    const nextHistory = history.map(order => {
+      const list = Array.isArray(order?.photos) ? order.photos : [];
+      if(!list.length) return order;
+
+      const filtered = list.filter(ph => {
+        if(!ph || !ph.takenAt) return false;
+        const t = new Date(ph.takenAt).getTime();
+        if(!t || Number.isNaN(t)) return false;
+        return (now - t) <= maxAgeMs;
+      });
+
+      if(filtered.length === list.length) return order;
+      changed = true;
+      return { ...order, photos: filtered };
+    });
+
+    if(changed) Store.set('gkhl_history', nextHistory);
+  } catch(e) {
+    console.warn('cleanupOldOrderHistoryPhotos error', e);
   }
 }
 
@@ -713,7 +783,9 @@ function confirmPayment(billNo, total, cost, extras, payMethod) {
   } catch(_) {}
 
   // Save to history
+  const historyId = uid();
   Store.addHistory({
+    historyId,
     id: billNo,
     tableId: currentTable,
     tableName: tableLabel,
@@ -1446,6 +1518,10 @@ function renderPurchaseList() {
 
   const purchasesHtml = purchases.length ? purchases.map(p => {
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
+    if (p.note) {
+      const safeNote = String(p.note).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      subInfo += `<br><small style="color:var(--text2)">${safeNote}</small>`;
+    }
     if (p.photoBatchId) subInfo += `<br><small style="color:var(--text3)">📷 Batch: ${String(p.photoBatchId).slice(0,8)}...</small>`;
     if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
     return `<div class="list-item">
@@ -1473,6 +1549,7 @@ function editPurchase(purchaseId) {
   const purchases = Store.getPurchases();
   const p = purchases.find(x => x.id === purchaseId);
   if(!p) return;
+  renderPurchaseSupplierDropdown();
   // Fill form and open modal
   document.getElementById('pur-name').value = p.name;
   document.getElementById('pur-qty').value = p.qty;
@@ -1480,6 +1557,9 @@ function editPurchase(purchaseId) {
   document.getElementById('pur-supplier').value = p.supplier || '';
   document.getElementById('pur-supplier-phone').value = p.supplierPhone || '';
   document.getElementById('pur-supplier-addr').value = p.supplierAddress || '';
+  const noteEl = document.getElementById('pur-note');
+  if(noteEl) noteEl.value = p.note || '';
+  syncPurchaseSupplierSelectFromPurchase(p);
   // Store editing id
   const form = document.getElementById('purchase-form');
   form.dataset.editId = purchaseId;
@@ -1656,9 +1736,13 @@ function submitPurchase(e) {
   const name = document.getElementById('pur-name').value.trim();
   const qty = parseFloat(document.getElementById('pur-qty').value);
   const price = parseFloat(document.getElementById('pur-price').value);
+  const supplierSel = document.getElementById('pur-supplier-select');
+  const supplierId = supplierSel && supplierSel.value ? supplierSel.value : '';
   const supplierName = document.getElementById('pur-supplier').value.trim() || 'Không rõ';
   const supplierPhone = document.getElementById('pur-supplier-phone').value.trim() || '';
   const supplierAddr = document.getElementById('pur-supplier-addr').value.trim() || '';
+  const noteEl = document.getElementById('pur-note');
+  const note = noteEl ? noteEl.value.trim() : '';
 
   if(!name || isNaN(qty) || isNaN(price)) return;
 
@@ -1691,7 +1775,7 @@ function submitPurchase(e) {
       if(currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
         persistCurrentPurchasePhotosBatch();
       }
-      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierPhone, supplierAddress:supplierAddr, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
+      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress:supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
       Store.setPurchases(purchases);
       Store.setInventory(inv);
       delete form.dataset.editId;
@@ -1711,7 +1795,7 @@ function submitPurchase(e) {
       inv.push(item);
     }
     Store.setInventory(inv);
-    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierPhone, supplierAddress: supplierAddr, photoBatchId: currentPurchasePhotosBatchId || null });
+    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress: supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || null });
     Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
     showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
   }
@@ -1730,6 +1814,7 @@ function submitPurchase(e) {
   document.getElementById('pur-name').value = '';
   document.getElementById('pur-qty').value = '';
   document.getElementById('pur-price').value = '';
+  if(noteEl) noteEl.value = '';
   const nameInp = document.getElementById('pur-name');
   if(nameInp) nameInp.focus();
   renderInventory();
@@ -1985,6 +2070,7 @@ function renderHourlyChart() {
 }
 
 function renderOrderHistoryList() {
+  cleanupOldOrderHistoryPhotos();
   const orders = filterHistory(reportPeriod, reportDateOpts).slice(0, 50);
   
   if(!orders.length) {
@@ -2011,11 +2097,15 @@ function renderOrderHistoryList() {
       const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
       const payLabel = o.payMethod === 'bank' ? 'CK' : 'TM';
       const discountLabel = o.discount > 0 ? ` · 📉-${fmt(o.discount)}đ` : '';
-      return `<div class="list-item" onclick="viewOrderDetail('${o.id}')" style="cursor:pointer">
+      const hasPhotos = Array.isArray(o.photos) && o.photos.length > 0;
+      const photoIcon = hasPhotos ? '📷' : '🚫📷';
+      const photoLabel = hasPhotos ? `${o.photos.length} ảnh` : 'Không ảnh';
+      const detailId = o.historyId || o.id;
+      return `<div class="list-item" onclick="viewOrderDetail('${detailId}')" style="cursor:pointer">
         <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
         <div class="list-item-content">
           <div class="list-item-title">${o.tableName} – ${o.id}</div>
-          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.reduce((s,i)=>s+i.qty,0)||0} phần · ${payIcon} ${payLabel}${discountLabel}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.reduce((s,i)=>s+i.qty,0)||0} phần · ${payIcon} ${payLabel}${discountLabel} · ${photoIcon} ${photoLabel}</div>
         </div>
         <div class="list-item-right">
           <div class="list-item-amount">${fmt(o.total)}đ</div>
@@ -2028,7 +2118,7 @@ function renderOrderHistoryList() {
 
 function viewOrderDetail(orderId) {
   const h = Store.getHistory();
-  const o = h.find(x => x.id === orderId);
+  const o = h.find(x => (x.historyId || x.id) === orderId);
   if(!o) return;
   window._activeOrderDetailPhotos = o.photos || [];
   const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
@@ -2313,7 +2403,7 @@ function showToast(msg, type) {
   if(!toast) {
     toast = document.createElement('div');
     toast.id = 'toast';
-    toast.style.cssText = 'position:fixed;bottom:calc(var(--nav-height,70px) + env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--text);padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid var(--border);';
+    toast.style.cssText = 'position:fixed;bottom:calc(var(--nav-height,70px) + env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--text);padding:10px 14px;border-radius:14px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all 0.3s;white-space:normal;word-break:break-word;line-height:1.45;max-width:min(92vw,420px);text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid var(--border);';
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
@@ -2368,11 +2458,18 @@ function renderSettings() {
   });
   const autoEl = document.getElementById('set-autoBackup');
   if(autoEl) autoEl.checked = s.autoBackup !== false;
+  const quotaEl = document.getElementById('set-storageQuotaMb');
+  if(quotaEl) quotaEl.value = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
 
   const autoWeeklyEl  = document.getElementById('set-autoExportWeekly');
   const autoMonthlyEl = document.getElementById('set-autoExportMonthly');
+  const autoPushWeeklyDriveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
   if(autoWeeklyEl)  autoWeeklyEl.checked  = !!s.autoExportWeekly;
   if(autoMonthlyEl) autoMonthlyEl.checked = !!s.autoExportMonthly;
+  if(autoPushWeeklyDriveEl) {
+    autoPushWeeklyDriveEl.checked = !!s.autoPushWeeklyReportToGoogleDrive;
+    autoPushWeeklyDriveEl.disabled = !s.autoExportWeekly;
+  }
 
   const reportTypeEl = document.getElementById('set-reportExportType');
   if(reportTypeEl && s.reportExportType) reportTypeEl.value = s.reportExportType;
@@ -2390,6 +2487,7 @@ function renderSettings() {
 
   // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
   try { toggleReportExportDate(); } catch(_) {}
+  try { toggleWeeklyDriveCheckbox(); } catch(_) {}
 
   const logoPreview = document.getElementById('set-logo-preview');
   const removeBtn = document.getElementById('set-logo-remove');
@@ -2409,6 +2507,7 @@ function renderSettings() {
   const last = Store.getLastBackupTime();
   const lastEl = document.getElementById('last-backup-time');
   if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
+  updateStorageQuotaInfo();
 }
 
 function submitSettings(e) {
@@ -2427,8 +2526,10 @@ function submitSettings(e) {
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
+  const storageQuotaEl = document.getElementById('set-storageQuotaMb');
   const autoExportWeeklyEl  = document.getElementById('set-autoExportWeekly');
   const autoExportMonthlyEl = document.getElementById('set-autoExportMonthly');
+  const autoPushWeeklyDriveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
   const reportExportTypeEl   = document.getElementById('set-reportExportType');
   const reportExportPeriodEl = document.getElementById('set-reportExportPeriod');
   const reportExportDateEl   = document.getElementById('set-reportExportDate');
@@ -2437,6 +2538,8 @@ function submitSettings(e) {
   const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
 
   const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
+  const quotaMbRaw = storageQuotaEl ? parseInt(storageQuotaEl.value, 10) : Number(s.storageQuotaMb || 500);
+  const storageQuotaMb = Math.min(500, Math.max(10, Number.isFinite(quotaMbRaw) ? quotaMbRaw : 500));
 
   const updated = {
     ...s,
@@ -2450,9 +2553,13 @@ function submitSettings(e) {
     geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     tableCount:   newTableCount,
+    storageQuotaMb,
     autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
     autoExportWeekly:  autoExportWeeklyEl  ? autoExportWeeklyEl.checked  : (s.autoExportWeekly  || false),
     autoExportMonthly: autoExportMonthlyEl ? autoExportMonthlyEl.checked : (s.autoExportMonthly || false),
+    autoPushWeeklyReportToGoogleDrive: autoPushWeeklyDriveEl && autoExportWeeklyEl && autoExportWeeklyEl.checked
+      ? autoPushWeeklyDriveEl.checked
+      : false,
     reportExportType: reportExportTypeEl ? reportExportTypeEl.value : (s.reportExportType || 'revenue'),
     reportExportPeriod: reportExportPeriodEl ? reportExportPeriodEl.value : (s.reportExportPeriod || 'today'),
     reportExportDate: reportExportDateEl ? reportExportDateEl.value : (s.reportExportDate || ''),
@@ -2478,7 +2585,42 @@ function submitSettings(e) {
   }
 
   applyStoreSettings();
+  updateStorageQuotaInfo();
+  if(storageQuotaEl) storageQuotaEl.value = storageQuotaMb;
   showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+}
+
+function getLocalStorageUsageBytes() {
+  try {
+    let total = 0;
+    for(let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || '';
+      const val = localStorage.getItem(key) || '';
+      total += (key.length + val.length) * 2; // UTF-16 (ước lượng)
+    }
+    return total;
+  } catch(_) {
+    return 0;
+  }
+}
+
+function formatBytes(bytes) {
+  const mb = bytes / (1024 * 1024);
+  if(mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function updateStorageQuotaInfo() {
+  const infoEl = document.getElementById('storage-quota-info');
+  if(!infoEl) return;
+  const s = Store.getSettings();
+  const quotaMb = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
+  const usedBytes = getLocalStorageUsageBytes();
+  const quotaBytes = quotaMb * 1024 * 1024;
+  const usedPercent = quotaBytes > 0 ? Math.min(999, (usedBytes / quotaBytes) * 100) : 0;
+  const status = usedBytes > quotaBytes ? '⚠️ Vượt quota' : (usedPercent >= 85 ? '⚠️ Sắp đầy' : '✅ Bình thường');
+  infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}`;
+  infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
 }
 
 function handleLogoUpload(e) {
@@ -2515,15 +2657,25 @@ function removeLogo() {
 // ============================================================
 function manualBackup() {
   try {
+    const s = Store.getSettings();
+    const quotaMb = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
+    const usedBytes = getLocalStorageUsageBytes();
+    if(usedBytes > quotaMb * 1024 * 1024) {
+      showToast('⚠️ Đã vượt quota cài đặt. Nên dọn dữ liệu nặng hoặc xuất file backup.', 'warning');
+    }
     const snapshot = Store.saveLocalBackup();
     renderBackupList();
     const last = Store.getLastBackupTime();
     const lastEl = document.getElementById('last-backup-time');
     if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : '';
     if(!snapshot) {
-      showToast('⚠️ Auto-backup bị bỏ qua do đầy dung lượng. Vui lòng xuất file backup bằng tay.', 'warning');
+      // Fallback: nếu localStorage quá đầy, vẫn tạo bản backup file để không mất dữ liệu sao lưu.
+      exportBackup();
+      showToast('⚠️ Bộ nhớ cục bộ đầy. Đã tự động xuất file backup.', 'warning');
+      updateStorageQuotaInfo();
       return;
     }
+    updateStorageQuotaInfo();
     showToast('💾 Đã backup thành công!', 'success');
   } catch(err) {
     showToast('❌ Backup thất bại: ' + err.message, 'danger');
@@ -2548,106 +2700,582 @@ function exportBackup() {
   }
 }
 
-async function exportReportExcel(override) {
+/** Xuất chỉ mục cài đặt đã lưu trong bộ nhớ (sau khi bấm Lưu cài đặt), không gồm menu/đơn hàng/... */
+function exportSettingsBackup() {
+  try {
+    const settings = Store.getSettings();
+    const payload = {
+      type: 'gkhl_settings_backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `pos_cai_dat_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📋 Đã xuất file cài đặt đã lưu.', 'success');
+  } catch(err) {
+    showToast('❌ Xuất cài đặt thất bại: ' + (err.message || err), 'danger');
+  }
+}
+
+function cleanupHeavyData() {
+  if(!confirm('Dọn dữ liệu nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI mới nhất. Tiếp tục?')) return;
+  try {
+    const history = Store.getHistory() || [];
+    let removedOrderPhotos = 0;
+    const nextHistory = history.map(o => {
+      if(!o || typeof o !== 'object') return o;
+      const photos = Array.isArray(o.photos) ? o.photos : [];
+      removedOrderPhotos += photos.length;
+      return photos.length ? { ...o, photos: [] } : o;
+    });
+    Store.set('gkhl_history', nextHistory);
+
+    const purchaseMap = Store.getPurchasePhotos() || {};
+    let removedPurchasePhotos = 0;
+    Object.values(purchaseMap).forEach(entry => {
+      const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+      removedPurchasePhotos += photos.length;
+    });
+    Store.setPurchasePhotos({});
+    Store.setOrderPhotos({});
+
+    const aiHistory = Store.getAIHistory() || [];
+    const trimmedAiHistory = aiHistory.slice(-120);
+    const removedAiMessages = Math.max(0, aiHistory.length - trimmedAiHistory.length);
+    Store.setAIHistory(trimmedAiHistory);
+
+    renderBackupList();
+    renderOrderHistoryList();
+    updateStorageQuotaInfo();
+    showToast(`🧹 Đã dọn dữ liệu nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
+  } catch(err) {
+    showToast('❌ Dọn dữ liệu thất bại: ' + (err.message || err), 'danger');
+  }
+}
+
+function excelThinBorder() {
+  const color = { argb: 'FFAAAAAA' };
+  return {
+    top: { style: 'thin', color },
+    left: { style: 'thin', color },
+    bottom: { style: 'thin', color },
+    right: { style: 'thin', color },
+  };
+}
+
+function excelColLetter(n) {
+  let s = '';
+  let x = n;
+  while(x > 0) {
+    const r = (x - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    x = Math.floor((x - 1) / 26);
+  }
+  return s;
+}
+
+function excelFmtVnInt(n) {
+  return (Math.round(Number(n) || 0)).toLocaleString('vi-VN');
+}
+
+function applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol }) {
+  const end = excelColLetter(lastCol);
+  ws.mergeCells(`A1:${end}1`);
+  const t = ws.getCell('A1');
+  t.value = title;
+  t.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+  t.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  ws.getRow(1).height = 28;
+
+  ws.getCell('A2').value = 'Kỳ báo cáo:';
+  ws.getCell('B2').value = periodLabel;
+  ws.getCell('A3').value = 'Ngày xuất:';
+  ws.getCell('B3').value = exportDateStr;
+  ws.getCell('A2').font = { bold: true, size: 11 };
+  ws.getCell('A3').font = { bold: true, size: 11 };
+  ws.getCell('B2').font = { size: 11 };
+  ws.getCell('B3').font = { size: 11 };
+  ['A2', 'B2', 'A3', 'B3'].forEach(a => {
+    ws.getCell(a).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+  });
+  ws.getColumn(1).width = Math.max(ws.getColumn(1).width || 0, 14);
+  ws.getColumn(2).width = Math.max(ws.getColumn(2).width || 0, 30);
+  ws.getRow(4).height = 6;
+}
+
+function paintExcelHeaderRow(ws, rowIndex, colCount) {
+  const row = ws.getRow(rowIndex);
+  for(let c = 1; c <= colCount; c++) {
+    const cell = row.getCell(c);
+    cell.font = { bold: true, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+    cell.border = excelThinBorder();
+  }
+  row.height = 22;
+}
+
+function paintExcelTotalRow(ws, rowIndex, colCount) {
+  const row = ws.getRow(rowIndex);
+  for(let c = 1; c <= colCount; c++) {
+    const cell = row.getCell(c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } };
+    cell.border = excelThinBorder();
+  }
+}
+
+function setRowBorders(ws, rowIndex, colCount) {
+  for(let c = 1; c <= colCount; c++) {
+    ws.getRow(rowIndex).getCell(c).border = excelThinBorder();
+  }
+}
+
+async function exportReportExcel(override = {}) {
   const typeEl   = document.getElementById('set-reportExportType');
   const periodEl = document.getElementById('set-reportExportPeriod');
   const dateEl   = document.getElementById('set-reportExportDate');
 
-  const type   = override?.type   || (typeEl   ? typeEl.value   : 'revenue');
-  const period = override?.period || (periodEl ? periodEl.value : 'today');
-  const date   = override?.date   || (dateEl   ? dateEl.value   : '');
+  const typeRaw = override.type || (typeEl ? typeEl.value : 'revenue');
+  const type = String(typeRaw || 'revenue').trim().toLowerCase();
+  const period = override.period || (periodEl ? periodEl.value : 'today');
+  const date   = override.date   || (dateEl   ? dateEl.value   : '');
+
+  const skipLocalDownload = !!override.skipLocalDownload;
+  const forceUploadToDrive = override.uploadToDrive === true;
+
+  const ExcelJSLib = typeof ExcelJS !== 'undefined' ? ExcelJS : (typeof window !== 'undefined' ? window.ExcelJS : undefined);
+  if(!ExcelJSLib) {
+    showToast('Không tải được thư viện Excel. Vui lòng tải lại trang.', 'danger');
+    return false;
+  }
 
   const opts = {};
   if(period === 'day' && date) opts.date = date;
 
-  let rows = [];
-  let filename = 'report';
+  const fmtDateCell = (iso, onlyDate = false) => {
+    if(!iso) return '';
+    const d = new Date(iso);
+    if(Number.isNaN(d.getTime())) return '';
+    return onlyDate ? d.toISOString().slice(0, 10) : d.toLocaleString('vi-VN');
+  };
 
-  if(type === 'revenue' || type === 'all') {
-    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
-    const revRows = [['Bill ID','Bàn','Thời gian','Tổng','Giảm giá','Phí ship','Phương thức']];
-    orders.forEach(o => {
-      revRows.push([
-        o.id,
-        o.tableName || o.tableId || '',
-        o.paidAt || '',
-        o.total,
-        o.discount || 0,
-        o.shipping || 0,
-        o.payMethod || '',
-      ]);
-    });
-    if(type === 'revenue') {
-      rows = revRows;
-      filename = 'revenue_report';
-    } else {
-      rows = revRows;
-      filename = 'full_report_revenue';
+  const exportDateStr = new Date().toLocaleString('vi-VN');
+  const periodLabel = (() => {
+    if(period === 'today') return 'Hôm nay';
+    if(period === 'day' && date) {
+      const d = new Date(`${date}T12:00:00`);
+      return Number.isNaN(d.getTime()) ? 'Ngày cụ thể' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
     }
-  } else if(type === 'expense') {
-    const expenses = filterExpenses(period === 'day' ? 'day' : period, opts);
-    rows = [['ID','Tên chi phí','Số tiền','Danh mục','Ngày']];
-    expenses.forEach(e => {
-      rows.push([e.id, e.name, e.amount, e.category || '', e.date || '']);
-    });
-    filename = 'expense_report';
-  } else if(type === 'purchase') {
+    if(period === 'day') return 'Ngày cụ thể';
+    if(period === 'week') return '7 ngày gần nhất';
+    if(period === 'month') return 'Tháng hiện tại';
+    return 'Tất cả';
+  })();
+
+  const getFilteredPurchases = () => {
     const purchases = Store.getPurchases();
     const now = new Date();
-    const filtered = purchases.filter(p => {
+    return purchases.filter(p => {
       const d = new Date(p.date);
+      if(Number.isNaN(d.getTime())) return false;
       if(period === 'today') return d.toDateString() === now.toDateString();
       if(period === 'day' && date) return d.toDateString() === new Date(date).toDateString();
       if(period === 'week') return (now - d) / 86400000 <= 7;
       if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       return true;
     });
-    rows = [['ID','Tên nguyên liệu','Số lượng','Đơn vị','Tổng tiền','Giá/đơn vị','NCC','Ngày','Batch ảnh']];
-    filtered.forEach(p => {
-      rows.push([p.id, p.name, p.qty, p.unit, p.price, p.costPerUnit || '', p.supplier || '', p.date || '', p.photoBatchId || '']);
+  };
+
+  const HEADER_ROW = 5;
+
+  const fillRevenueSheet = ws => {
+    const lastCol = 9;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO DOANH THU',
+      periodLabel,
+      exportDateStr,
+      lastCol,
     });
-    filename = 'purchase_report';
-  }
+    const headers = [
+      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'Số lượng bán',
+      'Đơn giá (VND)', 'Thành tiền (VND)', 'Thuế VAT (10%)', 'Tổng doanh thu (VND)',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 5; c <= 9; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
 
-  if(!rows.length) {
-    showToast('⚠️ Không có dữ liệu để xuất.', 'warning');
-    return false;
-  }
-
-  const csv = '\uFEFF' + rows.map(r => r.map(v => {
-    const s = (v == null ? '' : String(v));
-    if(/[";,\\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
-    return s;
-  }).join(';')).join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const dateStr = new Date().toISOString().slice(0,10);
-  const downloadName = `${filename}_${dateStr}.csv`;
-  a.href = url;
-  a.download = downloadName;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('📥 Đã xuất báo cáo (.csv) – mở bằng Excel.', 'success');
-
-  // Upload to Google Drive (optional)
-  try {
-    const s = Store.getSettings();
-    if(s.autoUploadToGoogleDrive && s.googleDriveUploadUrl) {
-      const mimeType = 'text/csv';
-      await uploadFileToGoogleDriveByEndpoint({
-        uploadUrl: s.googleDriveUploadUrl,
-        folderId: s.googleDriveFolderId || '',
-        filename: downloadName,
-        mimeType,
-        blob,
+    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    const totals = { qty: 0, gross: 0, vat: 0, net: 0 };
+    orders.forEach(o => {
+      (o.items || []).forEach(item => {
+        const qty = Number(item.qty || 0);
+        const price = Number(item.price || 0);
+        const gross = qty * price;
+        const vat = Math.round(gross * 0.1);
+        const net = gross - vat;
+        const row = ws.getRow(r);
+        row.getCell(1).value = stt++;
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(2).value = fmtDateCell(o.paidAt, true);
+        row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(3).value = item.id || '';
+        row.getCell(4).value = item.name || '';
+        row.getCell(5).value = qty;
+        row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(6).value = excelFmtVnInt(price);
+        row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(7).value = excelFmtVnInt(gross);
+        row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(8).value = excelFmtVnInt(vat);
+        row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(9).value = excelFmtVnInt(net);
+        row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+        setRowBorders(ws, r, lastCol);
+        totals.qty += qty;
+        totals.gross += gross;
+        totals.vat += vat;
+        totals.net += net;
+        r++;
       });
-      showToast('☁️ Đã upload báo cáo lên Google Drive.', 'success');
+    });
+
+    ws.mergeCells(r, 1, r, 4);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(5).value = totals.qty;
+    tr.getCell(5).font = { bold: true };
+    tr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = excelFmtVnInt(totals.gross);
+    tr.getCell(7).font = { bold: true };
+    tr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totals.vat);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = excelFmtVnInt(totals.net);
+    tr.getCell(9).font = { bold: true };
+    tr.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 12 }, { width: 12 }, { width: 32 },
+      { width: 14 }, { width: 16 }, { width: 18 }, { width: 16 }, { width: 20 },
+    ];
+  };
+
+  const fillExpenseSheet = ws => {
+    const lastCol = 6;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO CHI PHÍ',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'Nội dung', 'Danh mục', 'Số tiền (VND)'];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 5; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(6).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+
+    const expenses = filterExpenses(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let total = 0;
+    expenses.forEach(e => {
+      const amount = Number(e.amount || 0);
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = fmtDateCell(e.date, true);
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).value = e.id || '';
+      row.getCell(4).value = e.name || '';
+      row.getCell(5).value = e.category || '';
+      row.getCell(6).value = excelFmtVnInt(amount);
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      setRowBorders(ws, r, lastCol);
+      total += amount;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 5);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(6).value = excelFmtVnInt(total);
+    tr.getCell(6).font = { bold: true };
+    tr.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [{ width: 6 }, { width: 12 }, { width: 12 }, { width: 28 }, { width: 14 }, { width: 18 }];
+  };
+
+  const fillPurchaseSheet = ws => {
+    const lastCol = 10;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO NHẬP HÀNG',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = [
+      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên liệu', 'Số lượng', 'Đơn vị',
+      'Đơn giá (VND)', 'Thành tiền (VND)', 'Nhà cung cấp', 'Ghi chú',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(6).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 7; c <= 8; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(9).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(10).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const filtered = getFilteredPurchases();
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalQty = 0;
+    let totalAmount = 0;
+    filtered.forEach(p => {
+      const qty = Number(p.qty || 0);
+      const amount = Number(p.price || 0);
+      const cpu = Number(p.costPerUnit || 0);
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = fmtDateCell(p.date, true);
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).value = p.id || '';
+      row.getCell(4).value = p.name || '';
+      row.getCell(5).value = qty;
+      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(6).value = p.unit || '';
+      row.getCell(7).value = excelFmtVnInt(cpu);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(amount);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = p.supplier || '';
+      row.getCell(10).value = p.note || '';
+      setRowBorders(ws, r, lastCol);
+      totalQty += qty;
+      totalAmount += amount;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 4);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(5).value = totalQty;
+    tr.getCell(5).font = { bold: true };
+    tr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = '';
+    tr.getCell(8).value = excelFmtVnInt(totalAmount);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = '';
+    tr.getCell(10).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 12 }, { width: 12 }, { width: 24 }, { width: 10 }, { width: 8 },
+      { width: 14 }, { width: 16 }, { width: 20 }, { width: 24 },
+    ];
+  };
+
+  const fillInventorySheet = ws => {
+    const lastCol = 9;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO TỒN KHO',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = [
+      'TT', 'Mã hàng', 'Tên nguyên liệu', 'Đơn vị', 'Tồn hiện tại', 'Tồn tối thiểu',
+      'Giá vốn (VND)', 'Giá trị tồn (VND)', 'Trạng thái',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 5; c <= 7; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(9).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const inv = Store.getInventory() || [];
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalValue = 0;
+    inv.forEach(i => {
+      const qty = Number(i.qty || 0);
+      const min = Number(i.minQty || 0);
+      const cost = Number(i.costPerUnit || 0);
+      const value = qty * cost;
+      const status = qty <= 0 ? 'Hết hàng' : (qty <= min ? 'Sắp hết' : 'Bình thường');
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = i.id || '';
+      row.getCell(3).value = i.name || '';
+      row.getCell(4).value = i.unit || '';
+      row.getCell(5).value = qty;
+      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(6).value = min;
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(7).value = excelFmtVnInt(cost);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(value);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = status;
+      setRowBorders(ws, r, lastCol);
+      totalValue += value;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 7);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totalValue);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [{ width: 6 }, { width: 12 }, { width: 28 }, { width: 8 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 14 }];
+  };
+
+  const workbook = new ExcelJSLib.Workbook();
+  workbook.creator = 'Ganh Kho POS';
+  let filename = 'bao_cao_tong_hop';
+
+  if(type === 'revenue') {
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_doanh_thu';
+  } else if(type === 'expense') {
+    fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_chi_phi';
+  } else if(type === 'purchase') {
+    fillPurchaseSheet(workbook.addWorksheet('NhapHang', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_nhap_hang';
+  } else if(type === 'inventory') {
+    fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_ton_kho';
+  } else if(type === 'all') {
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
+    fillPurchaseSheet(workbook.addWorksheet('NhapHang', { views: [{ showGridLines: true }] }));
+    fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_tong_hop';
+  } else {
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_doanh_thu';
+  }
+
+  const wbout = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const dateStr = new Date().toISOString().slice(0,10);
+  const downloadName = `${filename}_${dateStr}.xlsx`;
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  if(!skipLocalDownload) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const s = Store.getSettings();
+  const wantsUpload = forceUploadToDrive || (override.uploadToDrive !== false && s.autoUploadToGoogleDrive);
+  let uploadOk = null;
+  let uploadDriveOpaque = false;
+
+  if(wantsUpload) {
+    const { uploadUrl, folderId } = getGoogleDriveConfigFromUi();
+    if(!uploadUrl || !folderId) {
+      if(forceUploadToDrive) {
+        showToast('Thiếu URL Web App hoặc ID thư mục Google Drive.', 'warning');
+        return false;
+      }
+      if(s.autoUploadToGoogleDrive && !skipLocalDownload) {
+        showToast('⚠️ Bật tự đẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
+      }
+    } else {
+      try {
+        const up = await uploadFileToGoogleDriveByEndpoint({
+          uploadUrl,
+          folderId,
+          filename: downloadName,
+          mimeType,
+          blob,
+        });
+        uploadOk = true;
+        uploadDriveOpaque = !!(up && up.opaque);
+      } catch(err) {
+        console.warn('uploadFileToGoogleDrive error', err);
+        uploadOk = false;
+        uploadDriveOpaque = false;
+        if(forceUploadToDrive) {
+          showToast('⚠️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
+          return false;
+        }
+        showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+      }
     }
-  } catch(err) {
-    console.warn('uploadFileToGoogleDrive error', err);
-    showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+  }
+
+  if(!skipLocalDownload) {
+    if(uploadOk === true && s.autoUploadToGoogleDrive) {
+      showToast(uploadDriveOpaque
+        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive — vui lòng kiểm tra thư mục (trình duyệt có thể không đọc được phản hồi).'
+        : 'Đã xuất file báo cáo Excel và đẩy bản .xlsx lên Google Drive.', 'success');
+    } else {
+      showToast('Đã xuất file báo cáo Excel.', 'success');
+    }
+  } else if(uploadOk === true) {
+    showToast(uploadDriveOpaque
+      ? '☁️ Đã gửi file .xlsx lên Drive. Mở thư mục đã chọn để xác nhận (chế độ tương thích CORS: không đọc được phản hồi chi tiết).'
+      : '☁️ Đã đẩy file báo cáo (.xlsx) lên thư mục Google Drive đã chọn.', 'success');
   }
 
   return true;
@@ -2666,24 +3294,120 @@ async function blobToBase64(blob) {
   });
 }
 
+function normalizeGoogleScriptWebAppUrl(raw) {
+  let u = String(raw || '').trim();
+  if(!u) return '';
+  u = u.replace(/\s+/g, '');
+  if(/\/usercodeapp\.app$/i.test(u) || /script\.googleusercontent\.com/i.test(u)) {
+    return u;
+  }
+  return u.replace(/\/$/, '');
+}
+
+function isGoogleAppsScriptWebAppUrl(u) {
+  if(!u) return false;
+  return /script\.google\.com\/macros\/s\//i.test(u)
+    || /script\.googleusercontent\.com\/macros\/exec/i.test(u);
+}
+
+/**
+ * Google Apps Script /exec thường chặn CORS khi POST application/json (preflight OPTIONS).
+ * Gửi body là JSON nhưng Content-Type: text/plain để tránh preflight — doPost vẫn JSON.parse(postData.contents).
+ * Nếu vẫn Failed to fetch: thử mode no-cors (không đọc được phản hồi, coi như đã gửi).
+ */
 async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
+  const url = normalizeGoogleScriptWebAppUrl(uploadUrl);
+  if(!url) {
+    throw new Error('Thiếu URL Web App.');
+  }
+  if(!/^https:\/\//i.test(url)) {
+    throw new Error('URL Web App phải dùng https://');
+  }
+  if(/\/dev($|\?)/i.test(url)) {
+    throw new Error('Không dùng URL /dev. Hãy triển khai Web App và dùng URL kết thúc /exec (hoặc URL triển khai đầy đủ Google cung cấp).');
+  }
+
   const base64Data = await blobToBase64(blob);
   const payload = { filename, mimeType, base64Data, folderId };
-  const res = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  let data = null;
-  try { data = await res.json(); } catch(_) {}
-  if(!res.ok) {
-    const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
-    throw new Error(msg);
+  const body = JSON.stringify(payload);
+
+  const readResponse = async (res) => {
+    const text = await res.text();
+    if(!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch(_) {
+      return { _raw: text };
+    }
+  };
+
+  const assertOk = (data, res) => {
+    if(data && data.success === false) {
+      throw new Error(data.message || data.error || 'Google Drive từ chối lưu file.');
+    }
+    if(!res.ok) {
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+  };
+
+  const postCorsPlain = async (contentType) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      redirect: 'follow',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+    const data = await readResponse(res);
+    assertOk(data, res);
+    return { data, opaque: false };
+  };
+
+  const tryNoCorsPlain = async () => {
+    for(const ct of ['text/plain;charset=UTF-8', 'text/plain']) {
+      try {
+        await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          redirect: 'follow',
+          cache: 'no-store',
+          credentials: 'omit',
+          headers: { 'Content-Type': ct },
+          body,
+        });
+        return { opaque: true };
+      } catch(e) {
+        /* thử Content-Type khác */
+      }
+    }
+    throw new Error('Không gửi được tới Web App (kiểm tra mạng hoặc URL).');
+  };
+
+  const isNetErr = (err) => {
+    const msg = String(err && err.message != null ? err.message : err);
+    return !!(err && (err.name === 'TypeError' || /Failed to fetch|NetworkError|network error|Load failed|aborted/i.test(msg)));
+  };
+
+  let lastNet = null;
+  for(const ct of ['text/plain;charset=UTF-8', 'text/plain']) {
+    try {
+      return await postCorsPlain(ct);
+    } catch(err) {
+      if(!isNetErr(err)) throw err;
+      lastNet = err;
+      console.warn('[Drive] Lỗi mạng/CORS với Content-Type', ct, err);
+    }
   }
-  if(data && data.success === false) {
-    throw new Error(data.message || data.error || 'Unknown Drive upload error');
+
+  if(!isGoogleAppsScriptWebAppUrl(url)) {
+    throw new Error('Failed to fetch — URL phải là Web App Google (dạng script.google.com/.../exec). Kiểm tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
   }
-  return data;
+
+  console.warn('[Drive] Chuyển sang no-cors (chỉ phù hợp với Web App Google):', lastNet);
+  return tryNoCorsPlain();
 }
 
 function getWeekStartKey(d) {
@@ -2703,7 +3427,13 @@ async function autoExportReportsIfNeeded() {
     const weekKey = getWeekStartKey(now);
     const last = Store.getLastReportExportWeeklyKey();
     if(weekKey && last !== weekKey) {
-      const ok = await exportReportExcel({ type: s.reportExportType, period: 'week' });
+      const pushDrive = !!s.autoPushWeeklyReportToGoogleDrive;
+      const ok = await exportReportExcel({
+        type: s.reportExportType,
+        period: 'week',
+        skipLocalDownload: pushDrive,
+        uploadToDrive: pushDrive ? true : undefined,
+      });
       if(ok) Store.setLastReportExportWeeklyKey(weekKey);
     }
   }
@@ -3103,7 +3833,7 @@ CHỈ trả JSON, không markdown.`;
       
       try {
         const parsed = JSON.parse(raw);
-        const reply = executeAIActions(parsed, menu);
+        const reply = executeAIActions(parsed, menu, '');
         addAIBubble(reply, 'bot');
         if(aiOutputMode === 'voice') speakText(reply);
       } catch(_) {
@@ -3302,7 +4032,7 @@ async function processAICommand(text) {
     }
   }
 
-  let finalReply = executeAIActions(parsed, menu);
+  let finalReply = executeAIActions(parsed, menu, text);
   if (typeof finalReply === 'string' && modeColor) {
     finalReply = `<span style="color:${modeColor}">${finalReply}</span>`;
   }
@@ -3784,7 +4514,7 @@ function extractMenuItems(text, menu) {
 }
 
 // --- Execute parsed actions (shared between Gemini and Local NLP) ---
-function executeAIActions(parsed, menuFull) {
+function executeAIActions(parsed, menuFull, userText = '') {
   if (!parsed) return 'Không nhận ra lệnh này ạ.';
 
   if (parsed.actions?.length) {
@@ -3880,6 +4610,8 @@ function executeAIActions(parsed, menuFull) {
       } else if (a.type === 'restock') {
         const inv = Store.getInventory();
         let addedNames = [];
+        const rawCmd = String(userText || '').trim();
+        const noteText = rawCmd ? rawCmd.slice(0, 500) : 'Nhap kho qua tro ly AI';
         for (const it of (a.items || [])) {
           const stock = inv.find(x => x.id === it.id || x.name === it.name);
           if (!stock) continue;
@@ -3892,7 +4624,11 @@ function executeAIActions(parsed, menuFull) {
             price: (stock.costPerUnit || 0) * it.qty, 
             costPerUnit: stock.costPerUnit || 0, 
             date: new Date().toISOString(), 
-            supplier: 'AI Assistant' 
+            supplier: '',
+            supplierId: null,
+            supplierPhone: '',
+            supplierAddress: '',
+            note: noteText,
           });
           addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
         }
@@ -4093,13 +4829,41 @@ function renderPurchaseSupplierDropdown() {
 
 function onSupplierSelect(select) {
   const opt = select.options[select.selectedIndex];
-  if (!opt || !opt.value) return;
   const phoneEl = document.getElementById('pur-supplier-phone');
   const addrEl  = document.getElementById('pur-supplier-addr');
   const nameEl  = document.getElementById('pur-supplier');
+  if (!opt || !opt.value) {
+    if (phoneEl) phoneEl.value = '';
+    if (addrEl) addrEl.value = '';
+    if (nameEl) nameEl.value = '';
+    return;
+  }
   if (phoneEl) phoneEl.value = opt.dataset.phone || '';
   if (addrEl)  addrEl.value  = opt.dataset.addr  || '';
   if (nameEl)  nameEl.value  = opt.dataset.name  || '';
+}
+
+function syncPurchaseSupplierSelectFromPurchase(p) {
+  const sel = document.getElementById('pur-supplier-select');
+  if (!sel || !p) return;
+  if (p.supplierId) {
+    sel.value = String(p.supplierId);
+    if (sel.value === String(p.supplierId)) return;
+  }
+  const target = String(p.supplier || '').trim();
+  if (!target) {
+    sel.value = '';
+    return;
+  }
+  for (let i = 0; i < sel.options.length; i++) {
+    const opt = sel.options[i];
+    const nm = String(opt.dataset.name || '').trim();
+    if (nm && nm === target) {
+      sel.selectedIndex = i;
+      return;
+    }
+  }
+  sel.value = '';
 }
 
 /* --- ORPHANED DUPLICATE CODE COMMENTED OUT ---
@@ -4657,7 +5421,7 @@ function extractMenuItems(text, menu) {
 }
 
 // --- Execute parsed actions (shared between Gemini and Local NLP) ---
-function executeAIActions(parsed, menuFull) {
+function executeAIActions(parsed, menuFull, userText = '') {
   if (!parsed) return 'Không nhận ra lệnh này ạ.';
 
   if (parsed.actions?.length) {
