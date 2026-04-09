@@ -601,8 +601,12 @@ function renderCart() {
 
   orderExtras[currentTable] = extras;
 
+  // Tính tổng có VAT
+  const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
   const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
-  const total = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+  const total = subtotal + vatAmount;
 
   if(items.length === 0) {
     document.getElementById('cart-items').innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:32px">🛒</div><div class="empty-text">Chưa có món</div></div>`;
@@ -625,7 +629,15 @@ function renderCart() {
     ).join('');
   }
 
-  document.getElementById('cart-total').textContent = fmtFull(total);
+  // Hiển thị VAT trong tổng nếu có
+  const totalEl = document.getElementById('cart-total');
+  if(totalEl) {
+    if(vatAmount > 0) {
+      totalEl.innerHTML = `${fmtFull(total)} <span style="font-size:10px;color:var(--text3);font-weight:400">(gồm VAT ${taxRate}%: ${fmtFull(vatAmount)})</span>`;
+    } else {
+      totalEl.textContent = fmtFull(total);
+    }
+  }
   document.getElementById('pay-btn').disabled = items.length === 0;
 
   // Cập nhật UI ảnh bàn (nếu đang ở đúng trang)
@@ -639,8 +651,11 @@ function openBillModal() {
   if(items.length === 0) return;
   const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
   const s = Store.getSettings();
+  const taxRate = s.taxRate != null ? Number(s.taxRate) : 0;
   const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
-  const total = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+  const total = subtotal + vatAmount;
   // Dynamically calculate cost based on current inventory
   const inv = Store.getInventory();
   const menu = Store.getMenu();
@@ -667,8 +682,8 @@ function openBillModal() {
   const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
   const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
 
-  // Store bill data for payment confirmation
-  window._pendingBill = { billNo, total, cost, extras, tableLabel };
+  // Store bill data for payment confirmation (include VAT)
+  window._pendingBill = { billNo, total, cost, extras, tableLabel, vatAmount, taxRate };
 
   // Lấy ảnh của bàn (tối đa 5 ảnh) để in kèm bill
   let orderPhotosHtml = '';
@@ -717,9 +732,12 @@ function openBillModal() {
       </table>
       <hr class="bill-divider">
       ${extras.note ? `<div style="font-size:12px;margin-bottom:8px"><em>Ghi chú: ${extras.note}</em></div>` : ''}
-      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
-      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
+      <div style="font-size:12px;margin-bottom:4px;color:var(--text3);display:flex;justify-content:space-between"><span>Tiền hàng</span><span>${fmtFull(itemsTotal)}</span></div>
+      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>📉 Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
+      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🛵 Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
+      ${vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;color:var(--primary)"><span>💹 Thuế VAT (${taxRate}%)</span><span>+${fmtFull(vatAmount)}</span></div>` : ''}
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
+      ${vatAmount > 0 ? `<div style="font-size:10px;color:var(--text3);text-align:right;margin-top:-4px">Đã bao gồm VAT ${taxRate}%: ${fmtFull(vatAmount)}</div>` : ''}
       <div class="bill-qr">
         <div class="bill-qr-label">Quét QR để thanh toán chuyển khoản</div>
         <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:200px;height:200px;object-fit:contain;margin:8px auto;display:block">
@@ -745,8 +763,8 @@ function openPaymentMethodModal() {
 
 function confirmPaymentMethod(method) {
   document.getElementById('pay-method-modal').classList.remove('active');
-  const { billNo, total, cost, extras } = window._pendingBill;
-  confirmPayment(billNo, total, cost, extras, method);
+  const { billNo, total, cost, extras, vatAmount, taxRate } = window._pendingBill;
+  confirmPayment(billNo, total, cost, extras, method, vatAmount, taxRate);
 }
 
 function closeBillModal() {
@@ -766,7 +784,7 @@ function printBill() {
   }
 }
 
-function confirmPayment(billNo, total, cost, extras, payMethod) {
+function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRate) {
   const items = orderItems[currentTable] || [];
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
@@ -796,6 +814,8 @@ function confirmPayment(billNo, total, cost, extras, payMethod) {
     discount: extras?.discount || 0,
     discountNote: extras?.discountNote || '',
     shipping: extras?.shipping || 0,
+    vatAmount: vatAmount || 0,
+    taxRate: taxRate || 0,
     payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
     photos: orderPhotosForBill,
@@ -1916,6 +1936,28 @@ function updateFinanceUI(s) {
   if(finShipping) finShipping.textContent = fmtFull(s.shippingTotal || 0);
   const margin = s.revenue > 0 ? (s.gross/s.revenue*100).toFixed(1) : 0;
   document.getElementById('fin-margin').textContent = margin + '%';
+  // VAT section
+  const settings = Store.getSettings();
+  const taxRate = settings.taxRate != null ? Number(settings.taxRate) : 0;
+  const vatRow = document.getElementById('fin-vat-row');
+  if(vatRow) {
+    // Ưu tiên dùng vatTotal thực tế từ các đơn; fallback về tính từ taxRate
+    const vatTotal = (s.vatTotal > 0) ? s.vatTotal
+      : (taxRate > 0 ? Math.round(s.revenue * taxRate / (100 + taxRate)) : 0);
+    if(taxRate > 0 || vatTotal > 0) {
+      vatRow.style.display = 'grid';
+      const displayRate = taxRate > 0 ? taxRate : '?';
+      const revenueAfterVat = s.revenue - vatTotal;
+      const vatRateLabel = document.getElementById('fin-vat-rate-label');
+      if(vatRateLabel) vatRateLabel.textContent = displayRate;
+      const finVat = document.getElementById('fin-vat');
+      if(finVat) finVat.textContent = fmtFull(vatTotal);
+      const finRevAfterVat = document.getElementById('fin-revenue-after-vat');
+      if(finRevAfterVat) finRevAfterVat.textContent = fmtFull(revenueAfterVat);
+    } else {
+      vatRow.style.display = 'none';
+    }
+  }
   renderExpenseList();
   renderRevenueChart();
 }
@@ -2139,26 +2181,35 @@ function renderOrderHistoryList() {
   let html = '';
   for(const [date, items] of Object.entries(groups)) {
     const dayRevenue = items.reduce((s,o) => s + o.total, 0);
+    const dayOrders = items.length;
+    const dayItems = items.reduce((s,o) => s + (o.items||[]).reduce((ss,i)=>ss+i.qty,0), 0);
     html += `<div class="history-group-header">
-      <span>📅 ${date} <span class="history-group-count">${items.length} đơn</span></span>
+      <span>📅 ${date} <span class="history-group-count">${dayOrders} đơn · ${dayItems} món</span></span>
       <span class="history-group-total">${fmt(dayRevenue)}đ</span>
     </div>`;
     html += items.map(o => {
       const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
-      const payLabel = o.payMethod === 'bank' ? 'CK' : 'TM';
-      const discountLabel = o.discount > 0 ? ` · 📉-${fmt(o.discount)}đ` : '';
+      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+      const totalItems = (o.items||[]).reduce((s,i)=>s+i.qty,0);
+      const discountLabel = o.discount > 0 ? ` · 📉 -${fmt(o.discount)}đ` : '';
+      const shippingLabel = o.shipping > 0 ? ` · 🛵 +${fmt(o.shipping)}đ` : '';
+      const vatLabel = o.vatAmount > 0 ? ` · 💹 VAT ${fmt(o.vatAmount)}đ` : '';
       const hasPhotos = Array.isArray(o.photos) && o.photos.length > 0;
-      const photoIcon = hasPhotos ? '📷' : '🚫📷';
-      const photoLabel = hasPhotos ? `${o.photos.length} ảnh` : 'Không ảnh';
+      const photoIcon = hasPhotos ? '📷' : '';
+      const noteLabel = o.note ? ` · 📝 ${o.note}` : '';
       const detailId = o.historyId || o.id;
+      const itemNames = (o.items||[]).slice(0,3).map(i=>`${i.name} x${i.qty}`).join(', ');
+      const moreItems = (o.items||[]).length > 3 ? ` +${(o.items||[]).length-3}` : '';
       return `<div class="list-item" onclick="viewOrderDetail('${detailId}')" style="cursor:pointer">
         <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
         <div class="list-item-content">
-          <div class="list-item-title">${o.tableName} – ${o.id}</div>
-          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${o.items?.reduce((s,i)=>s+i.qty,0)||0} phần · ${payIcon} ${payLabel}${discountLabel} · ${photoIcon} ${photoLabel}</div>
+          <div class="list-item-title">${o.tableName} · ${o.id}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${totalItems} phần · ${payIcon} ${payLabel}${discountLabel}${shippingLabel}${vatLabel}${noteLabel}${photoIcon ? ' · ' + photoIcon : ''}</div>
+          <div class="list-item-sub" style="color:var(--text3);font-size:10px;margin-top:2px">${itemNames}${moreItems}</div>
         </div>
         <div class="list-item-right">
           <div class="list-item-amount">${fmt(o.total)}đ</div>
+          ${o.cost > 0 ? `<div style="font-size:10px;color:var(--text3)">Vốn: ${fmt(o.cost)}đ</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -2201,9 +2252,10 @@ function viewOrderDetail(orderId) {
       ${o.note ? `<div style="font-size:12px;color:var(--text);margin-top:4px;border-left:2px solid var(--primary);padding-left:6px"><em>Ghi chú: ${o.note}</em></div>` : ''}
     </div>
     <div style="margin-bottom:12px">${itemsHtml}</div>
-    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--text3)"><span>Tổng tiền món</span><span>${fmtFull(subTotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--text3)"><span>Tiền hàng</span><span>${fmtFull(subTotal)}</span></div>
     ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>📉 Giảm giá ${o.discountNote ? `(${o.discountNote})` : ''}</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
     ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🛵 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
+    ${o.vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--primary)"><span>💹 Thuế VAT (${o.taxRate || 0}%)</span><span>+${fmtFull(o.vatAmount)}</span></div>` : ''}
     <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
       <span style="font-weight:700">TỔNG CỘNG</span>
       <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
@@ -2501,11 +2553,15 @@ function renderSettings() {
     ['set-geminiApiKey', s.geminiApiKey|| ''],
     ['set-googleTTSKey', s.googleTTSKey|| ''],
     ['set-tableCount',   s.tableCount  || 20],
+    ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
   ];
   fields.forEach(([id, val]) => {
     const el = document.getElementById(id);
     if(el) el.value = val;
   });
+  // Update VAT display
+  const vatDisplay = document.getElementById('vat-current-display');
+  if(vatDisplay) vatDisplay.textContent = (s.taxRate || 0) + '%';
   const autoEl = document.getElementById('set-autoBackup');
   if(autoEl) autoEl.checked = s.autoBackup !== false;
   const quotaEl = document.getElementById('set-storageQuotaMb');
@@ -2586,10 +2642,12 @@ function submitSettings(e) {
   const autoUploadDriveEl    = document.getElementById('set-autoUploadToGoogleDrive');
   const gdriveUrlEl          = document.getElementById('set-googleDriveUploadUrl');
   const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
+  const taxRateEl            = document.getElementById('set-taxRate');
 
   const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
   const quotaMbRaw = storageQuotaEl ? parseInt(storageQuotaEl.value, 10) : Number(s.storageQuotaMb || 500);
   const storageQuotaMb = Math.min(500, Math.max(10, Number.isFinite(quotaMbRaw) ? quotaMbRaw : 500));
+  const newTaxRate = taxRateEl ? Math.min(100, Math.max(0, parseFloat(taxRateEl.value) || 0)) : (s.taxRate || 0);
 
   const updated = {
     ...s,
@@ -2604,6 +2662,7 @@ function submitSettings(e) {
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     tableCount:   newTableCount,
     storageQuotaMb,
+    taxRate:      newTaxRate,
     autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
     autoExportWeekly:  autoExportWeeklyEl  ? autoExportWeeklyEl.checked  : (s.autoExportWeekly  || false),
     autoExportMonthly: autoExportMonthlyEl ? autoExportMonthlyEl.checked : (s.autoExportMonthly || false),
@@ -2618,6 +2677,9 @@ function submitSettings(e) {
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
   };
   Store.setSettings(updated);
+  // Update VAT display after save
+  const vatDisplay = document.getElementById('vat-current-display');
+  if(vatDisplay) vatDisplay.textContent = newTaxRate + '%';
 
   // Nếu số bàn thay đổi → rebuild danh sách bàn và reset active orders
   if(newTableCount !== oldTableCount) {
@@ -2945,18 +3007,21 @@ async function exportReportExcel(override = {}) {
   };
 
   const HEADER_ROW = 5;
+  const settings = Store.getSettings();
+  const vatRate = settings.taxRate != null ? Number(settings.taxRate) : 0; // % VAT from settings
 
   const fillRevenueSheet = ws => {
     const lastCol = 9;
     applyReportTitleBlock(ws, {
-      title: 'BÁO CÁO DOANH THU',
+      title: 'BÁO CÁO DOANH THU (THEO MON)',
       periodLabel,
       exportDateStr,
       lastCol,
     });
+    const vatLabel = vatRate > 0 ? `Thuế VAT (${vatRate}%)` : 'Thuế VAT (0%)';
     const headers = [
       'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'Số lượng bán',
-      'Đơn giá (VND)', 'Thành tiền (VND)', 'Thuế VAT (10%)', 'Tổng doanh thu (VND)',
+      'Đơn giá (VND)', 'Thành tiền (VND)', vatLabel, 'Sau VAT (VND)',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
@@ -2974,7 +3039,7 @@ async function exportReportExcel(override = {}) {
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
         const gross = qty * price;
-        const vat = Math.round(gross * 0.1);
+        const vat = vatRate > 0 ? Math.round(gross * vatRate / 100) : 0;
         const net = gross - vat;
         const row = ws.getRow(r);
         row.getCell(1).value = stt++;
@@ -3031,6 +3096,128 @@ async function exportReportExcel(override = {}) {
       { width: 14 }, { width: 16 }, { width: 18 }, { width: 16 }, { width: 20 },
     ];
   };
+
+  // Sheet đầy đủ lịch sử đơn hàng (theo đơn, không theo từng món)
+  const fillOrdersSheet = ws => {
+    const lastCol = 14;
+    applyReportTitleBlock(ws, {
+      title: 'LỊCH SỬ ĐƠN HÀNG (ĐẦY ĐỦ)',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const vatLabel = vatRate > 0 ? `VAT (${vatRate}%)` : 'VAT';
+    const headers = [
+      'TT', 'Mã đơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
+      'Tiền hàng (VND)', 'Giảm giá (VND)', 'Phí ship (VND)', vatLabel,
+      'Tổng cộng (VND)', 'Giá vốn (VND)', 'Lãi gộp (VND)', 'PT Thanh toán', 'Ghi chú',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(3).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(4).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(5).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 6; c <= 12; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(13).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalRevenue = 0, totalDiscount = 0, totalShipping = 0, totalVat = 0, totalCost = 0;
+    orders.forEach(o => {
+      const itemsTotal = (o.items||[]).reduce((s,i) => s + i.price*i.qty, 0);
+      const discount = Number(o.discount || 0);
+      const shipping = Number(o.shipping || 0);
+      const vatAmt = Number(o.vatAmount || 0);
+      const cost = Number(o.cost || 0);
+      const total = Number(o.total || 0);
+      const gross = total - cost;
+      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}đ)`).join('; ');
+
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = o.id || (o.historyId || '');
+      row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(3).value = fmtDateCell(o.paidAt);
+      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(4).value = o.tableName || '';
+      row.getCell(4).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(5).value = itemsText;
+      row.getCell(5).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      row.getCell(6).value = excelFmtVnInt(itemsTotal);
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(7).value = excelFmtVnInt(discount);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(shipping);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = excelFmtVnInt(vatAmt);
+      row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(10).value = excelFmtVnInt(total);
+      row.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(10).font = { bold: true };
+      row.getCell(11).value = excelFmtVnInt(cost);
+      row.getCell(11).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(12).value = excelFmtVnInt(gross);
+      row.getCell(12).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(13).value = payLabel;
+      row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(14).value = o.note || '';
+      row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      setRowBorders(ws, r, lastCol);
+      totalRevenue += total;
+      totalDiscount += discount;
+      totalShipping += shipping;
+      totalVat += vatAmt;
+      totalCost += cost;
+      r++;
+    });
+
+    // Total row
+    ws.mergeCells(r, 1, r, 5);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = `TỔNG (${orders.length} đơn)`;
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = excelFmtVnInt(totalDiscount);
+    tr.getCell(7).font = { bold: true };
+    tr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totalShipping);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = excelFmtVnInt(totalVat);
+    tr.getCell(9).font = { bold: true };
+    tr.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(10).value = excelFmtVnInt(totalRevenue);
+    tr.getCell(10).font = { bold: true };
+    tr.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(11).value = excelFmtVnInt(totalCost);
+    tr.getCell(11).font = { bold: true };
+    tr.getCell(11).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(12).value = excelFmtVnInt(totalRevenue - totalCost);
+    tr.getCell(12).font = { bold: true };
+    tr.getCell(12).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(13).value = '';
+    tr.getCell(14).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 18 }, { width: 20 }, { width: 16 }, { width: 50 },
+      { width: 16 }, { width: 14 }, { width: 14 }, { width: 12 },
+      { width: 16 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 24 },
+    ];
+  };
+
 
   const fillExpenseSheet = ws => {
     const lastCol = 6;
@@ -3238,8 +3425,12 @@ async function exportReportExcel(override = {}) {
   let filename = 'bao_cao_tong_hop';
 
   if(type === 'revenue') {
-    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
     filename = 'bao_cao_doanh_thu';
+  } else if(type === 'orders') {
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    filename = 'lich_su_don_hang';
   } else if(type === 'expense') {
     fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
     filename = 'bao_cao_chi_phi';
@@ -3250,13 +3441,15 @@ async function exportReportExcel(override = {}) {
     fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
     filename = 'bao_cao_ton_kho';
   } else if(type === 'all') {
-    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
     fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
     fillPurchaseSheet(workbook.addWorksheet('NhapHang', { views: [{ showGridLines: true }] }));
     fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
     filename = 'bao_cao_tong_hop';
   } else {
-    fillRevenueSheet(workbook.addWorksheet('DoanhThu', { views: [{ showGridLines: true }] }));
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
     filename = 'bao_cao_doanh_thu';
   }
 

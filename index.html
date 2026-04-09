@@ -285,6 +285,17 @@
           <div style="font-size:13px;font-weight:800;color:var(--info)" id="fin-shipping">0đ</div>
         </div>
       </div>
+      <!-- VAT Row -->
+      <div id="fin-vat-row" style="grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;display:none">
+        <div class="card card-sm" style="text-align:center;background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2)">
+          <div style="font-size:12px;color:var(--text2)">💹 VAT (<span id="fin-vat-rate-label">0</span>%)</div>
+          <div style="font-size:13px;font-weight:800;color:var(--primary)" id="fin-vat">0đ</div>
+        </div>
+        <div class="card card-sm" style="text-align:center;background:rgba(0,214,143,0.06);border:1px solid rgba(0,214,143,0.2)">
+          <div style="font-size:12px;color:var(--text2)">Doanh thu sau VAT</div>
+          <div style="font-size:13px;font-weight:800;color:var(--success)" id="fin-revenue-after-vat">0đ</div>
+        </div>
+      </div>
       <div style="display:flex; gap:8px; margin-bottom:12px">
         <div class="card card-sm" style="flex:1;text-align:center">
           <div style="font-size:12px;color:var(--text2)">Biên LN</div>
@@ -459,6 +470,17 @@
             <label class="input-label">Tên chủ tài khoản</label>
             <input class="input" id="set-bankOwner" placeholder="Tên chủ TK">
           </div>
+          <div class="input-group">
+            <label class="input-label">💹 Thuế VAT (%)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input class="input" id="set-taxRate" type="number" min="0" max="100" step="0.1" placeholder="0" style="max-width:100px">
+              <span style="font-size:13px;color:var(--text2)">% (0 = không tính VAT)</span>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">
+              Nhập % VAT áp dụng cho tất cả đơn hàng. VAT sẽ hiển thị trên bill in và được tính vào các báo cáo.<br>
+              <span style="color:var(--warning)">⚠️ Ví dụ: VAT 10% → nhập 10. Hiện tại: <b id="vat-current-display">0%</b></span>
+            </div>
+          </div>
         </div>
 
         <!-- GEMINI AI -->
@@ -513,7 +535,8 @@
           <div class="input-group">
             <label class="input-label">Loại báo cáo cần xuất</label>
             <select id="set-reportExportType" class="select">
-              <option value="revenue">Doanh thu (lịch sử đơn hàng)</option>
+              <option value="revenue">Doanh thu (theo đơn + theo món)</option>
+              <option value="orders">Lịch sử đơn hàng đầy đủ</option>
               <option value="expense">Chi phí</option>
               <option value="purchase">Nhập hàng</option>
               <option value="inventory">Tồn kho</option>
