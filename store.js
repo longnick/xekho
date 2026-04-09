@@ -119,7 +119,7 @@ const Store = {
 
   // SETTINGS
   getSettings() {
-    return this.get(KEYS.settings) || {
+    const defaults = {
       tableCount: 20,
       currency: 'đ',
       taxRate: 0,
@@ -131,19 +131,23 @@ const Store = {
       bankAccount: '0937707900',
       bankOwner: 'Gánh Khô Chữa Lành',
       autoBackup: true,
-      storageQuotaMb: 500,      // quota mục tiêu nội bộ (MB), tối đa 500
-      ocrMode: 'auto',           // 'auto' | 'offline' | 'online'
-      photoRetentionDays: 0,     // 0 = không tự xoá
+      storageQuotaMb: 500,
+      ocrMode: 'auto',
+      photoRetentionDays: 0,
       autoExportWeekly: false,
       autoExportMonthly: false,
-      autoPushWeeklyReportToGoogleDrive: false, // tuần mới: xuất 7 ngày rồi đẩy .xlsx lên Drive (cần URL + folderId)
-      reportExportType: 'revenue',   // revenue | expense | purchase | inventory | all
-      reportExportPeriod: 'today',   // today | day | week | month | all
-      reportExportDate: '',          // YYYY-MM-DD (only for day)
+      autoPushWeeklyReportToGoogleDrive: false,
+      reportExportType: 'revenue',
+      reportExportPeriod: 'today',
+      reportExportDate: '',
       autoUploadToGoogleDrive: false,
       googleDriveUploadUrl: '',
       googleDriveFolderId: '',
     };
+    const saved = this.get(KEYS.settings);
+    if(!saved) return defaults;
+    // Merge: đảm bảo các field mới (như taxRate) luôn tồn tại
+    return { ...defaults, ...saved };
   },
   setSettings(s) { this.set(KEYS.settings, s); },
 
@@ -421,10 +425,11 @@ function getRevenueSummary(period, opts) {
   const gross = revenue - cost;
   const discountTotal = orders.reduce((s,o) => s + (o.discount || 0), 0);
   const shippingTotal = orders.reduce((s,o) => s + (o.shipping || 0), 0);
+  const vatTotal = orders.reduce((s,o) => s + (o.vatAmount || 0), 0);
   const expenses = filterExpenses(period, opts);
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   const profit = gross - expenseTotal;
-  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash, discountTotal, shippingTotal };
+  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash, discountTotal, shippingTotal, vatTotal };
 }
 
 // Top selling items
