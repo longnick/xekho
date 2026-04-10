@@ -17,6 +17,178 @@ let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override
 let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
 const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
 
+// ============================================================
+// IMAGE ZOOM/PAN VIEWER
+// Supports pinch-to-zoom & drag/pan for mobile image viewing
+// ============================================================
+
+const ImgZoom = (() => {
+  let _img = null;
+  let _wrap = null;
+  let _scale = 1;
+  let _translateX = 0;
+  let _translateY = 0;
+  let _startX = 0;
+  let _startY = 0;
+  let _lastDist = null;
+  let _lastScale = 1;
+  let _isDragging = false;
+  let _originX = 0;
+  let _originY = 0;
+  const MIN_SCALE = 1;
+  const MAX_SCALE = 5;
+
+  function _applyTransform() {
+    if (!_img) return;
+    _img.style.transform = `scale(${_scale}) translate(${_translateX / _scale}px, ${_translateY / _scale}px)`;
+    _img.style.cursor = _scale > 1 ? 'grab' : 'default';
+  }
+
+  function _clampTranslate() {
+    if (!_img || !_wrap) return;
+    const ww = _wrap.clientWidth;
+    const wh = _wrap.clientHeight;
+    const iw = _img.naturalWidth || _img.clientWidth;
+    const ih = _img.naturalHeight || _img.clientHeight;
+    // Compute visible bounds
+    const scaledW = Math.min(iw, ww) * _scale;
+    const scaledH = Math.min(ih, wh) * _scale;
+    const maxX = Math.max(0, (scaledW - ww) / 2);
+    const maxY = Math.max(0, (scaledH - wh) / 2);
+    _translateX = Math.max(-maxX, Math.min(maxX, _translateX));
+    _translateY = Math.max(-maxY, Math.min(maxY, _translateY));
+  }
+
+  function _onTouchStart(e) {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      _lastDist = Math.hypot(dx, dy);
+      _lastScale = _scale;
+      _isDragging = false;
+    } else if (e.touches.length === 1) {
+      _startX = e.touches[0].clientX - _translateX;
+      _startY = e.touches[0].clientY - _translateY;
+      _isDragging = true;
+    }
+  }
+
+  function _onTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 2 && _lastDist !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const ratio = dist / _lastDist;
+      _scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _lastScale * ratio));
+      if (_scale <= MIN_SCALE) { _translateX = 0; _translateY = 0; }
+      _clampTranslate();
+      _applyTransform();
+    } else if (e.touches.length === 1 && _isDragging && _scale > 1) {
+      _translateX = e.touches[0].clientX - _startX;
+      _translateY = e.touches[0].clientY - _startY;
+      _clampTranslate();
+      _applyTransform();
+    }
+  }
+
+  function _onTouchEnd(e) {
+    if (e.touches.length < 2) _lastDist = null;
+    if (e.touches.length === 0) _isDragging = false;
+    if (_scale < 1.05) { _scale = 1; _translateX = 0; _translateY = 0; _applyTransform(); }
+  }
+
+  // Double-tap to toggle zoom
+  let _lastTap = 0;
+  function _onTouchEndTap(e) {
+    _onTouchEnd(e);
+    if (e.changedTouches.length !== 1) return;
+    const now = Date.now();
+    if (now - _lastTap < 300) {
+      if (_scale > 1) { _scale = 1; _translateX = 0; _translateY = 0; }
+      else { _scale = 2.5; }
+      _applyTransform();
+    }
+    _lastTap = now;
+  }
+
+  // Mouse drag for desktop
+  function _onMouseDown(e) {
+    if (_scale <= 1) return;
+    _isDragging = true;
+    _startX = e.clientX - _translateX;
+    _startY = e.clientY - _translateY;
+    _img.style.cursor = 'grabbing';
+  }
+  function _onMouseMove(e) {
+    if (!_isDragging || _scale <= 1) return;
+    _translateX = e.clientX - _startX;
+    _translateY = e.clientY - _startY;
+    _clampTranslate();
+    _applyTransform();
+  }
+  function _onMouseUp() {
+    _isDragging = false;
+    if (_img) _img.style.cursor = _scale > 1 ? 'grab' : 'default';
+  }
+  // Mouse wheel zoom
+  function _onWheel(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.85 : 1.2;
+    _scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _scale * delta));
+    if (_scale <= MIN_SCALE) { _translateX = 0; _translateY = 0; }
+    _clampTranslate();
+    _applyTransform();
+  }
+
+  function attach(wrapEl, imgEl) {
+    detach();
+    _img = imgEl;
+    _wrap = wrapEl;
+    _scale = 1; _translateX = 0; _translateY = 0;
+    _applyTransform();
+    _img.style.transformOrigin = 'center center';
+    _img.style.transition = 'none';
+    _img.style.willChange = 'transform';
+    _img.style.maxWidth = '100%';
+    _img.style.maxHeight = '100%';
+    _img.style.userSelect = 'none';
+    _img.style.webkitUserSelect = 'none';
+    _img.draggable = false;
+
+    _wrap.addEventListener('touchstart', _onTouchStart, { passive: false });
+    _wrap.addEventListener('touchmove', _onTouchMove, { passive: false });
+    _wrap.addEventListener('touchend', _onTouchEndTap, { passive: false });
+    _wrap.addEventListener('mousedown', _onMouseDown);
+    _wrap.addEventListener('mousemove', _onMouseMove);
+    _wrap.addEventListener('mouseup', _onMouseUp);
+    _wrap.addEventListener('mouseleave', _onMouseUp);
+    _wrap.addEventListener('wheel', _onWheel, { passive: false });
+  }
+
+  function detach() {
+    if (_wrap) {
+      _wrap.removeEventListener('touchstart', _onTouchStart);
+      _wrap.removeEventListener('touchmove', _onTouchMove);
+      _wrap.removeEventListener('touchend', _onTouchEndTap);
+      _wrap.removeEventListener('mousedown', _onMouseDown);
+      _wrap.removeEventListener('mousemove', _onMouseMove);
+      _wrap.removeEventListener('mouseup', _onMouseUp);
+      _wrap.removeEventListener('mouseleave', _onMouseUp);
+      _wrap.removeEventListener('wheel', _onWheel);
+    }
+    _img = null; _wrap = null;
+    _scale = 1; _translateX = 0; _translateY = 0;
+  }
+
+  function reset() {
+    _scale = 1; _translateX = 0; _translateY = 0;
+    if (_img) _applyTransform();
+  }
+
+  return { attach, detach, reset };
+})();
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
@@ -750,10 +922,14 @@ function openBillModal() {
     ${orderPhotosHtml}
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn btn-secondary" style="flex:1" onclick="printBill()">🖨️ In bill</button>
-      <button class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">✅ Thanh toán</button>
-    </div>`;
+      <button id="bill-pay-btn" class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">✅ Thanh toán</button>
+    </div>
+    <div id="pay-watch-status" style="font-size:11px;text-align:center;margin-top:8px;min-height:16px;color:var(--text3);transition:color 0.3s"></div>`;
 
   document.getElementById('bill-modal').classList.add('active');
+
+  // Bắt đầu theo dõi thanh toán tự động (nếu đã cấu hình Casso)
+  startPaymentWatcher(total, billNo);
 }
 
 function openPaymentMethodModal() {
@@ -768,6 +944,8 @@ function confirmPaymentMethod(method) {
 }
 
 function closeBillModal() {
+  // Dừng theo dõi thanh toán
+  stopPaymentWatcher();
   document.getElementById('bill-modal').classList.remove('active');
 }
 
@@ -1001,6 +1179,10 @@ async function handlePurchasePhotoCapture(event) {
     renderPurchasePhotoThumbs();
     const last = currentPurchasePhotos[currentPurchasePhotos.length - 1];
     setPurchasePhotoViewer(last);
+    
+    // Áp dụng lưu ngay sau khi chụp để tránh việc chưa submit đã mất ảnh
+    persistCurrentPurchasePhotosBatch();
+
     setPurOcrStatus(added > 1
       ? `📷 Đã thêm ${added} ảnh chứng từ. Có thể bấm "🧾 Quét" để đọc dữ liệu.`
       : '📷 Đã thêm ảnh chứng từ. Có thể bấm "🧾 Quét" để đọc dữ liệu.');
@@ -1040,6 +1222,24 @@ function setPurchasePhotoViewer(photo) {
   if(!box || !img || !photo) return;
   img.src = photo.dataUrl;
   box.style.display = 'block';
+  window._currentPurchaseViewerPhoto = photo;
+}
+
+function openCurrentPurchasePhotoViewerFull() {
+  const p = window._currentPurchaseViewerPhoto;
+  if(!p) return;
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  ImgZoom.detach();
+  img.src = p.dataUrl;
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
 function persistCurrentPurchasePhotosBatch() {
@@ -1513,12 +1713,17 @@ function openPurchasePhotoFullFromBatch(batchId, photoIdx) {
 
   const modal = document.getElementById('purchase-photo-full-modal');
   const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
   const meta = document.getElementById('purchase-photo-full-meta');
   if(!modal || !img) return;
 
+  ImgZoom.detach();
   img.src = p.dataUrl;
   if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : `Batch: ${batchId}`;
   modal.classList.add('active');
+  // Attach zoom after image loads
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
 function openPurchasePhotoBatchFull(photoIdx) {
@@ -1527,12 +1732,16 @@ function openPurchasePhotoBatchFull(photoIdx) {
   if(!p) return;
   const modal = document.getElementById('purchase-photo-full-modal');
   const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
   const meta = document.getElementById('purchase-photo-full-meta');
   if(!modal || !img) return;
 
+  ImgZoom.detach();
   img.src = p.dataUrl;
   if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
   modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
 function deletePurchasePhotoBatch(batchId) {
@@ -2273,11 +2482,15 @@ function openOrderDetailPhotoFull(idx) {
   if(!p) return;
   const modal = document.getElementById('order-detail-photo-full-modal');
   const img = document.getElementById('order-detail-photo-full-img');
+  const wrap = document.getElementById('order-detail-photo-full-wrap');
   if(!modal || !img) return;
+  ImgZoom.detach();
   img.src = p.dataUrl;
   const meta = document.getElementById('order-detail-photo-full-meta');
   if(meta) meta.textContent = p.takenAt ? `Thời gian: ${fmtDateTime(p.takenAt)}` : '';
   modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
 // ============================================================
@@ -2500,7 +2713,7 @@ function applyDateFilter(page) {
 // TOAST
 
 // ============================================================
-function showToast(msg, type) {
+function showToast(msg, type, duration) {
   let toast = document.getElementById('toast');
   if(!toast) {
     toast = document.createElement('div');
@@ -2508,16 +2721,19 @@ function showToast(msg, type) {
     toast.style.cssText = 'position:fixed;bottom:calc(var(--nav-height,70px) + env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--text);padding:10px 14px;border-radius:14px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all 0.3s;white-space:normal;word-break:break-word;line-height:1.45;max-width:min(92vw,420px);text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid var(--border);';
     document.body.appendChild(toast);
   }
+  // Clear previous auto-hide timer
+  if(toast._hideTimer) clearTimeout(toast._hideTimer);
   toast.textContent = msg;
-  toast.style.borderColor = type === 'success' ? 'var(--success)' : type === 'danger' ? 'var(--danger)' : 'var(--border)';
+  toast.style.borderColor = type === 'success' ? 'var(--success)' : type === 'danger' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--border)';
   requestAnimationFrame(() => {
     toast.style.opacity = '1';
     toast.style.transform = 'translateX(-50%) translateY(0)';
   });
-  setTimeout(() => {
+  const ms = (typeof duration === 'number' && duration > 0) ? duration : 2500;
+  toast._hideTimer = setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(-50%) translateY(20px)';
-  }, 2500);
+  }, ms);
 }
 
 // ============================================================
@@ -2594,6 +2810,19 @@ function renderSettings() {
   // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
   try { toggleReportExportDate(); } catch(_) {}
   try { toggleWeeklyDriveCheckbox(); } catch(_) {}
+
+  // Payment watcher fields
+  const cassoTokenEl = document.getElementById('set-cassoToken');
+  if (cassoTokenEl) cassoTokenEl.value = s.cassoToken || '';
+  const autoPayEl = document.getElementById('set-autoPayDetect');
+  if (autoPayEl) autoPayEl.checked = !!s.autoPayDetect;
+  const paySoundEl = document.getElementById('set-paySound');
+  const paySoundValEl = document.getElementById('set-paySound-val');
+  if (paySoundEl) {
+    paySoundEl.value = s.paySoundVolume ?? 80;
+    if (paySoundValEl) paySoundValEl.textContent = (s.paySoundVolume ?? 80) + '%';
+    paySoundEl.oninput = () => { if (paySoundValEl) paySoundValEl.textContent = paySoundEl.value + '%'; };
+  }
 
   const logoPreview = document.getElementById('set-logo-preview');
   const removeBtn = document.getElementById('set-logo-remove');
@@ -2675,6 +2904,10 @@ function submitSettings(e) {
     autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
     googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
+    // Payment watcher
+    cassoToken:     (() => { const el = document.getElementById('set-cassoToken'); return el ? el.value.trim() : (s.cassoToken || ''); })(),
+    autoPayDetect:  (() => { const el = document.getElementById('set-autoPayDetect'); return el ? el.checked : (s.autoPayDetect || false); })(),
+    paySoundVolume: (() => { const el = document.getElementById('set-paySound'); return el ? Number(el.value) : (s.paySoundVolume ?? 80); })(),
   };
   Store.setSettings(updated);
   // Update VAT display after save
@@ -2731,7 +2964,9 @@ function updateStorageQuotaInfo() {
   const quotaBytes = quotaMb * 1024 * 1024;
   const usedPercent = quotaBytes > 0 ? Math.min(999, (usedBytes / quotaBytes) * 100) : 0;
   const status = usedBytes > quotaBytes ? '⚠️ Vượt quota' : (usedPercent >= 85 ? '⚠️ Sắp đầy' : '✅ Bình thường');
-  infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}`;
+  // iOS Safari / WKWebView giới hạn localStorage khoảng 5-10 MB thực tế
+  const BROWSER_LIMIT_NOTE = '📱 Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
+  infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
   infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
 }
 
@@ -2765,32 +3000,346 @@ function removeLogo() {
 }
 
 // ============================================================
+// PAYMENT WATCHER — Tự động nhận tiền QR Banking
+// ============================================================
+
+/**
+ * Phát âm thanh nhận tiền (coin/chime) bằng Web Audio API.
+ * Không cần file âm thanh nào — tổng hợp ngay trên thiết bị.
+ * @param {number} vol - 0..1
+ */
+function playPaymentSound(vol = 0.8) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const notes = [
+      { freq: 523.25, start: 0,    dur: 0.18 },  // C5
+      { freq: 659.25, start: 0.12, dur: 0.18 },  // E5
+      { freq: 783.99, start: 0.24, dur: 0.18 },  // G5
+      { freq: 1046.5, start: 0.36, dur: 0.36 },  // C6
+    ];
+
+    notes.forEach(({ freq, start, dur }) => {
+      // Sine oscillator
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + start;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(vol * 0.5, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+
+      // Harmonics (overtone for coin feel)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.type = 'triangle';
+      osc2.frequency.value = freq * 2.75;
+      gain2.gain.setValueAtTime(0, t);
+      gain2.gain.linearRampToValueAtTime(vol * 0.15, t + 0.01);
+      gain2.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.6);
+      osc2.start(t);
+      osc2.stop(t + dur);
+    });
+
+    // Auto-close context sau 2 giây
+    setTimeout(() => { try { ctx.close(); } catch(_) {} }, 2000);
+  } catch (e) {
+    console.warn('[PaySound] Web Audio failed:', e.message);
+  }
+}
+
+function testPaySound() {
+  const s = Store.getSettings();
+  const vol = (Number(s.paySoundVolume ?? 80)) / 100;
+  playPaymentSound(vol);
+  showToast('🔔 Âm thanh nhận tiền!', 'success');
+}
+
+// ------- Watcher state -------
+let _payWatchTimer    = null;
+let _payWatchAmount   = 0;
+let _payWatchStart    = 0;   // Timestamp khi bắt đầu watch (ms)
+let _payWatchSeenTxIds = new Set(); // IDs đã xử lý để tránh double-trigger
+let _payWatchConfirmed = false;
+
+/**
+ * Gọi Casso API để lấy 20 giao dịch gần nhất.
+ * Casso token: Apikey <token>
+ * SePay token (Bearer): nếu dài hơn 40 ký tự hoặc bắt đầu bằng "sepay_" → dùng SePay endpoint.
+ */
+async function fetchRecentTransactions(token) {
+  // Detect provider
+  const isSePay = token.startsWith('sepay_') || token.length > 60;
+
+  if (isSePay) {
+    // SePay: https://my.sepay.vn/userapi/transactions/list
+    const res = await fetch('https://my.sepay.vn/userapi/transactions/list?limit=20', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error(`SePay HTTP ${res.status}`);
+    const data = await res.json();
+    // data.transactions[].amount_in, .id, .transaction_date, .description
+    const records = (data.transactions || []).map(t => ({
+      id:     String(t.id),
+      amount: Number(t.amount_in || 0),
+      desc:   t.description || '',
+      when:   t.transaction_date || '',
+    }));
+    return records;
+  } else {
+    // Casso: https://oauth.casso.vn/v2/transactions
+    const res = await fetch('https://oauth.casso.vn/v2/transactions?page=1&pageSize=20', {
+      headers: { 'Authorization': `Apikey ${token}` }
+    });
+    if (!res.ok) throw new Error(`Casso HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error !== 0) throw new Error(`Casso error: ${data.message}`);
+    const records = ((data.data || {}).records || []).map(t => ({
+      id:     String(t.id),
+      amount: Number(t.amount || 0),
+      desc:   t.description || '',
+      when:   t.when || '',
+    }));
+    return records;
+  }
+}
+
+/**
+ * Bắt đầu polling khi bill được hiển thị.
+ * @param {number} expectedAmount - Số tiền cần nhận
+ * @param {string} billNo        - Mã bill để tham chiếu
+ */
+function startPaymentWatcher(expectedAmount, billNo) {
+  const s = Store.getSettings();
+  if (!s.autoPayDetect || !s.cassoToken) return;
+
+  stopPaymentWatcher(); // Dừng watcher cũ nếu có
+
+  _payWatchAmount    = expectedAmount;
+  _payWatchStart     = Date.now();
+  _payWatchSeenTxIds = new Set();
+  _payWatchConfirmed = false;
+
+  // Hiển thị trạng thái đang chờ
+  _payWatchUpdateStatus('⏳ Đang chờ thanh toán...', 'var(--text3)');
+
+  const token = s.cassoToken;
+  const vol   = (Number(s.paySoundVolume ?? 80)) / 100;
+
+  const poll = async () => {
+    if (_payWatchConfirmed) return;
+
+    // Dừng sau 30 phút để không poll mãi
+    if (Date.now() - _payWatchStart > 30 * 60 * 1000) {
+      stopPaymentWatcher();
+      _payWatchUpdateStatus('⌛ Đã hết thời gian chờ (30 phút)', 'var(--text3)');
+      return;
+    }
+
+    try {
+      const txns = await fetchRecentTransactions(token);
+
+      // Tìm giao dịch khớp: đúng số tiền + trong vòng 5 phút kể từ khi mở bill
+      const match = txns.find(t => {
+        if (_payWatchSeenTxIds.has(t.id)) return false;
+        if (t.amount !== _payWatchAmount) return false;
+        if (!t.when) return true; // Nếu không có time, chấp nhận
+        const txTime = new Date(t.when).getTime();
+        return (txTime >= _payWatchStart - 5 * 60 * 1000); // ±5 phút
+      });
+
+      if (match) {
+        _payWatchConfirmed = true;
+        _payWatchSeenTxIds.add(match.id);
+        stopPaymentWatcher();
+        onPaymentReceived(match, billNo, vol);
+      }
+    } catch (err) {
+      // Lỗi mạng thì lặng im, tiếp tục poll
+      console.warn('[PayWatcher] poll error:', err.message);
+      _payWatchUpdateStatus('⚠️ Đang kiểm tra... (lỗi kết nối tạm thời)', 'var(--warning)');
+    }
+
+    // Đặt lịch poll tiếp (3 giây)
+    if (!_payWatchConfirmed) {
+      _payWatchTimer = setTimeout(poll, 3000);
+    }
+  };
+
+  // Bắt đầu poll ngay sau 1 giây (cho QR hiển thị xong)
+  _payWatchTimer = setTimeout(poll, 1000);
+}
+
+/** Dừng polling */
+function stopPaymentWatcher() {
+  if (_payWatchTimer) { clearTimeout(_payWatchTimer); _payWatchTimer = null; }
+}
+
+/** Cập nhật dòng trạng thái trong bill modal */
+function _payWatchUpdateStatus(text, color) {
+  const el = document.getElementById('pay-watch-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = color || 'var(--text3)';
+}
+
+/**
+ * Được gọi khi phát hiện giao dịch khớp.
+ * Phát âm → hiện thông báo lớn → tự điền phương thức "bank" vào xác nhận.
+ */
+function onPaymentReceived(tx, billNo, vol) {
+  // 1) Âm thanh
+  playPaymentSound(vol);
+
+  // 2) Cập nhật trạng thái trong bill
+  _payWatchUpdateStatus(
+    `✅ Đã nhận ${fmtFull(tx.amount)} — ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
+    'var(--success)'
+  );
+
+  // 3) Nút thanh toán chuyển sang màu xanh nổi bật
+  const payBtn = document.getElementById('bill-pay-btn');
+  if (payBtn) {
+    payBtn.textContent = '🎉 Xác nhận đã nhận tiền';
+    payBtn.classList.remove('btn-success');
+    payBtn.classList.add('btn-success');
+    payBtn.style.animation = 'pulse-pay 0.8s ease 3';
+  }
+
+  // 4) Hiện toast toàn màn hình
+  showPaymentBanner(tx.amount, tx.desc);
+
+  // 5) Haptic (nếu có)
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+
+/**
+ * Hiển thị banner lớn "Đã nhận tiền" phủ lên màn hình ngắn.
+ */
+function showPaymentBanner(amount, desc) {
+  let banner = document.getElementById('pay-received-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'pay-received-banner';
+    banner.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9999',
+      'display:flex', 'flex-direction:column',
+      'align-items:center', 'justify-content:center',
+      'background:rgba(0,0,0,0.82)',
+      'backdrop-filter:blur(8px)',
+      'animation:fadeInPay 0.35s ease',
+      'cursor:pointer',
+    ].join(';');
+    banner.onclick = () => {
+      banner.style.opacity = '0';
+      setTimeout(() => { try { banner.remove(); } catch(_){} }, 300);
+    };
+    document.body.appendChild(banner);
+  }
+
+  banner.innerHTML = `
+    <div style="text-align:center;padding:32px;max-width:320px">
+      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">💰</div>
+      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">ĐÃ NHẬN TIỀN!</div>
+      <div style="font-size:32px;font-weight:900;color:#fff;margin-bottom:12px">${fmtFull(amount)}</div>
+      ${desc ? `<div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:20px;line-height:1.4">${desc}</div>` : ''}
+      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm để đóng</div>
+    </div>
+  `;
+  banner.style.opacity = '1';
+  banner.style.display = 'flex';
+
+  // Tự tắt sau 6 giây
+  setTimeout(() => {
+    if (banner && banner.parentNode) {
+      banner.style.opacity = '0';
+      banner.style.transition = 'opacity 0.4s';
+      setTimeout(() => { try { banner.remove(); } catch(_){} }, 400);
+    }
+  }, 6000);
+}
+
+// ============================================================
 // BACKUP
 // ============================================================
+
+/**
+ * Tự dịn nhẹ dữ liệu nặng trong localStorage (không xóa hản) để giảm dỡng lượng trước khi backup.
+ * - Bỏ photos khỏi lịch sử đơn (nếu còn lưu sau khi clean job)
+ * - Giới hạn AI history xuống 60 entry
+ * Trả về số bytes tiết kiệm được.
+ */
+function pruneBeforeBackup() {
+  let freed = 0;
+  try {
+    // Trim AI history -> 60 entries
+    const ai = Store.getAIHistory() || [];
+    if(ai.length > 60) {
+      const before = JSON.stringify(ai).length;
+      Store.setAIHistory(ai.slice(-60));
+      freed += before - JSON.stringify(Store.getAIHistory()).length;
+    }
+    // Strip large photos still embedded in history entries
+    const hist = Store.getHistory() || [];
+    let histChanged = false;
+    const cleanHist = hist.map(o => {
+      if(!o || !Array.isArray(o.photos) || !o.photos.length) return o;
+      histChanged = true;
+      return { ...o, photos: [] };
+    });
+    if(histChanged) {
+      const before = JSON.stringify(hist).length;
+      Store.set('gkhl_history', cleanHist);
+      freed += before - JSON.stringify(cleanHist).length;
+    }
+  } catch(_) {}
+  return freed;
+}
+
 function manualBackup() {
   try {
-    const s = Store.getSettings();
-    const quotaMb = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
-    const usedBytes = getLocalStorageUsageBytes();
-    if(usedBytes > quotaMb * 1024 * 1024) {
-      showToast('⚠️ Đã vượt quota cài đặt. Nên dọn dữ liệu nặng hoặc xuất file backup.', 'warning');
-    }
+    // Bước 1: Tự dịn data nặng (silent) trước khi lưu
+    pruneBeforeBackup();
+
+    // Bước 2: Cố lưu local backup
     const snapshot = Store.saveLocalBackup();
     renderBackupList();
     const last = Store.getLastBackupTime();
     const lastEl = document.getElementById('last-backup-time');
     if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : '';
+    updateStorageQuotaInfo();
+
     if(!snapshot) {
-      // Fallback: nếu localStorage quá đầy, vẫn tạo bản backup file để không mất dữ liệu sao lưu.
-      exportBackup();
-      showToast('⚠️ Bộ nhớ cục bộ đầy. Đã tự động xuất file backup.', 'warning');
-      updateStorageQuotaInfo();
+      // Trường hợp localStorage browser đầy (iOS Safari giới hạn ~5-10 MB thực tế)
+      // Không tự động xuất file (gây bối rối) — hỏi người dùng thảy.
+      showToast(
+        '⚠️ Bộ nhớ trình duyệt đầy (iOS/Safari giới hạn ~5–10 MB). ' +
+        'Hãy bấm "📥 Xuất file" để lưu backup ra máy.',
+        'warning',
+        6000
+      );
       return;
     }
-    updateStorageQuotaInfo();
     showToast('💾 Đã backup thành công!', 'success');
   } catch(err) {
-    showToast('❌ Backup thất bại: ' + err.message, 'danger');
+    // Catch lỗi QuotaExceededError bất kỳ cấp độ nào
+    if(err.name === 'QuotaExceededError' || /quota/i.test(err.message || '')) {
+      updateStorageQuotaInfo();
+      showToast(
+        '⚠️ Bộ nhớ trình duyệt bị đầy. Hãy bấm "📥 Xuất file" hoặc "🧹 Dọn dữ liệu nặng" rồi thử lại.',
+        'warning',
+        6000
+      );
+    } else {
+      showToast('❌ Backup thất bại: ' + (err.message || err), 'danger');
+    }
   }
 }
 

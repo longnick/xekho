@@ -483,6 +483,41 @@
           </div>
         </div>
 
+        <!-- 💳 Nhận tiền tự động (Casso) -->
+        <div class="card" style="border-color:rgba(0,214,143,0.3)">
+          <div class="card-header">
+            <div class="card-title">💳 Nhận tiền tự động (QR Banking)</div>
+          </div>
+          <div class="toggle-wrap">
+            <div class="toggle-label">Tự động nhận tiền khi khách quét QR</div>
+            <label class="toggle"><input type="checkbox" id="set-autoPayDetect"><span class="toggle-slider"></span></label>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin:-4px 0 12px;line-height:1.6">
+            Khi bật: hiện bill lên thì app sẽ tự kiểm tra giao dịch ngân hàng mỗi 3 giây. Khi nhận được tiền đúng số tiền, app phát âm thanh và báo 🎉.
+          </div>
+          <div class="input-group">
+            <label class="input-label">Casso API Token
+              <a href="https://casso.vn" target="_blank" style="color:var(--primary);font-size:10px;margin-left:6px">→ Lấy token tại casso.vn</a>
+            </label>
+            <input type="password" class="input" id="set-cassoToken" placeholder="Dán Casso API Token vào đây..." autocomplete="off">
+            <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">
+              Casso là dịch vụ miễn phí theo dõi & webhook giao dịch ngân hàng. Đăng ký tại <b>casso.vn</b> → Tích hợp → API → lấy <b>API Token</b>.
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Âm lượng thông báo nhận tiền</label>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input type="range" id="set-paySound" min="0" max="100" value="80" style="flex:1;accent-color:var(--success)">
+              <span id="set-paySound-val" style="font-size:12px;color:var(--success);min-width:36px">80%</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-success btn-block" onclick="testPaySound()" style="margin-bottom:4px">🔔 Thử âm thanh nhận tiền</button>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.5">
+            Nếu dùng SePay thay Casso: điền SePay API Token vào ô trên — hệ thống tự nhận dạng loại token.
+          </div>
+        </div>
+
+
         <!-- GEMINI AI -->
         <div class="card">
           <div class="card-header"><div class="card-title">🤖 Thông minh (Gemini API)</div></div>
@@ -758,7 +793,7 @@
               <button type="button" class="btn btn-xs btn-primary" onclick="runPurchaseOcrFromLatestPhoto()">🧾 Quét</button>
             </div>
           </div>
-          <div id="pur-photo-viewer" style="display:none;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);max-height:32vh;">
+          <div id="pur-photo-viewer" style="display:none;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);max-height:32vh;cursor:zoom-in;" onclick="openCurrentPurchasePhotoViewerFull()">
             <img id="pur-photo-viewer-img" src="" alt="Chứng từ nhập hàng" style="width:100%;height:100%;object-fit:contain;">
           </div>
           <div id="pur-photo-thumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;"></div>
@@ -835,16 +870,22 @@
 </div>
 
 <!-- Purchase Photo Full Modal -->
-<div class="modal-overlay" id="purchase-photo-full-modal" onclick="if(event.target===this)this.classList.remove('active')">
-  <div class="modal-sheet" style="max-height:92vh;">
+<div class="modal-overlay" id="purchase-photo-full-modal" onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+  <div class="modal-sheet zoom-sheet" style="max-height:95vh;">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div class="modal-title">📷 Ảnh full</div>
-      <button class="modal-close" onclick="document.getElementById('purchase-photo-full-modal').classList.remove('active')">✕</button>
+    <div class="modal-header" style="flex-shrink:0;">
+      <div class="modal-title">📷 Ảnh chứng từ</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺ Reset</button>
+        <button class="modal-close" onclick="document.getElementById('purchase-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+      </div>
     </div>
-    <div class="modal-body" style="padding:10px 16px;">
-      <img id="purchase-photo-full-img" src="" alt="Ảnh full" style="width:100%;max-height:70vh;object-fit:contain;border-radius:12px;">
-      <div id="purchase-photo-full-meta" style="font-size:11px;color:var(--text3);margin-top:8px;"></div>
+    <div id="purchase-photo-full-wrap" class="photo-zoom-wrap">
+      <img id="purchase-photo-full-img" src="" alt="Ảnh chứng từ">
+    </div>
+    <div class="photo-zoom-bar">
+      <div id="purchase-photo-full-meta" style="font-size:11px;color:var(--text3);margin-bottom:2px;"></div>
+      <div class="photo-zoom-hint">🤏 Chụm 2 ngón để zoom · Chạm 2x để phóng to/thu nhỏ · Kéo để di chuyển</div>
     </div>
   </div>
 </div>
@@ -1111,16 +1152,22 @@
 </div>
 
 <!-- Order Detail Photo Full Modal -->
-<div class="modal-overlay" id="order-detail-photo-full-modal" onclick="if(event.target===this)this.classList.remove('active')">
-  <div class="modal-sheet" style="max-height:92vh;">
+<div class="modal-overlay" id="order-detail-photo-full-modal" onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+  <div class="modal-sheet zoom-sheet" style="max-height:95vh;">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div class="modal-title">📷 Ảnh full</div>
-      <button class="modal-close" onclick="document.getElementById('order-detail-photo-full-modal').classList.remove('active')">✕</button>
+    <div class="modal-header" style="flex-shrink:0;">
+      <div class="modal-title">📷 Ảnh ghi nhận</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺ Reset</button>
+        <button class="modal-close" onclick="document.getElementById('order-detail-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+      </div>
     </div>
-    <div class="modal-body" style="padding:10px 16px;">
-      <img id="order-detail-photo-full-img" src="" alt="Ảnh full" style="width:100%;max-height:70vh;object-fit:contain;border-radius:12px;">
-      <div id="order-detail-photo-full-meta" style="font-size:11px;color:var(--text3);margin-top:8px;"></div>
+    <div id="order-detail-photo-full-wrap" class="photo-zoom-wrap">
+      <img id="order-detail-photo-full-img" src="" alt="Ảnh ghi nhận">
+    </div>
+    <div class="photo-zoom-bar">
+      <div id="order-detail-photo-full-meta" style="font-size:11px;color:var(--text3);margin-bottom:2px;"></div>
+      <div class="photo-zoom-hint">🤏 Chụm 2 ngón để zoom · Chạm 2x để phóng to/thu nhỏ · Kéo để di chuyển</div>
     </div>
   </div>
 </div>

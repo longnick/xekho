@@ -873,3 +873,80 @@ body {
 }
 .ai-camera-btn:active { transform: scale(0.95); background: rgba(0,149,255,0.15); border-color: var(--info); color: var(--info); }
 .ai-camera-btn svg { flex-shrink: 0; }
+
+/* ---- PHOTO ZOOM MODAL ---- */
+/* Modal sheet overrides for zoom viewer — must NOT have overflow-y:auto on the sheet itself */
+.modal-overlay .modal-sheet.zoom-sheet {
+  overflow: hidden;              /* disable sheet scrolling — zoom wrap handles interaction */
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;             /* no extra bottom padding; bottom bar is inside flex */
+}
+/* The black image viewport */
+.photo-zoom-wrap {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  position: relative;
+  touch-action: none;            /* let JS handle all touch gestures */
+  min-height: 0;
+  cursor: default;
+}
+.photo-zoom-wrap img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;          /* pointer events handled on wrap */
+}
+/* Bottom info bar inside zoom modal */
+.photo-zoom-bar {
+  flex-shrink: 0;
+  padding: 8px 16px 12px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+.photo-zoom-hint {
+  font-size: 10px;
+  color: var(--text3);
+  text-align: center;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ---- PAYMENT RECEIVED BANNER ---- */
+@keyframes fadeInPay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes bounceIn {
+  0%   { transform: scale(0.3); opacity: 0; }
+  50%  { transform: scale(1.15); opacity: 1; }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-pay {
+  0%   { box-shadow: 0 0 0 0 rgba(0,214,143,0.7); }
+  70%  { box-shadow: 0 0 0 12px rgba(0,214,143,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,214,143,0); }
+}
+
+#pay-received-banner {
+  transition: opacity 0.4s;
+}
+
+/* Pay status line in bill */
+#pay-watch-status {
+  font-size: 11px;
+  text-align: center;
+  min-height: 16px;
+  transition: color 0.3s;
+  padding: 2px 0;
+}
