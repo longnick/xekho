@@ -881,6 +881,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-bottom: 0;             /* no extra bottom padding; bottom bar is inside flex */
+  max-height: calc(100vh - env(safe-area-inset-top, 40px) - 20px);
 }
 /* The black image viewport */
 .photo-zoom-wrap {
