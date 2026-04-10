@@ -1223,10 +1223,10 @@ function clearTable() {
   if(typeof orderExtras !== 'undefined') delete orderExtras[currentTable];
   // Xoá ảnh ghi nhận bàn trong Store
   try {
-    const photoMap = Store.getOrderPhotos();
+    const photoMap = orderPhotoCache || {};
     if (photoMap && currentTable && photoMap[currentTable]) {
       delete photoMap[currentTable];
-      Store.setOrderPhotos(photoMap);
+      Store.setOrderPhotosAsync(photoMap);
     }
   } catch(_) {}
   const orders = Store.getOrders();
