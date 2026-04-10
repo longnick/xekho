@@ -13,6 +13,7 @@ let chartInstances = {};
 let orderPhotoCache = null;           // lazy: Store.getOrderPhotos()
 let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng đang mở
 let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
+let purchasePhotoCache = null;        // RAM cache cho bộ nhớ thiết bị
 let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
 let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
 const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
@@ -190,7 +191,14 @@ const ImgZoom = (() => {
 })();
 
 // ---- Init ----
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // 1. Tải cở sở dữ liệu hệ thống (Bất đồng bộ)
+  await PhotoDB.init();
+  await migratePhotosToIndexedDB(); // Vá lỗi "Bộ nhớ đầy" trước đây
+  purchasePhotoCache = await Store.getPurchasePhotosAsync() || {};
+  orderPhotoCache = await Store.getOrderPhotosAsync() || {};
+
+  // 2. Chạy luồng Main
   initNav();
   applyStoreSettings();
   runMigrations(); // Patch data spelling differences
@@ -347,13 +355,13 @@ function applyStoreSettings() {
 }
 
 // Dọn ảnh nhập hàng cũ theo photoRetentionDays
-function cleanupOldPurchasePhotos() {
+async function cleanupOldPurchasePhotos() {
   try {
     const s = Store.getSettings();
     const days = Number(s.photoRetentionDays || 0);
     if(!days || isNaN(days) || days <= 0) return;
-    const map = Store.getPurchasePhotos();
-    if(!map || typeof map !== 'object') return;
+    const map = purchasePhotoCache || {};
+    if(Object.keys(map).length === 0) return;
     const now = Date.now();
     const maxAgeMs = days * 86400000;
     let changed = false;
@@ -377,37 +385,28 @@ function cleanupOldPurchasePhotos() {
         }
       }
     });
-    if(changed) Store.setPurchasePhotos(map);
+    if(changed) {
+      purchasePhotoCache = map;
+      await Store.setPurchasePhotosAsync(map);
+    }
   } catch(e) {
     console.warn('cleanupOldPurchasePhotos error', e);
   }
 }
 
-function cleanupOldOrderHistoryPhotos() {
+async function cleanupOldOrderHistoryPhotos() {
   try {
     const history = Store.getHistory();
     if(!Array.isArray(history) || !history.length) return;
     const now = Date.now();
     const maxAgeMs = ORDER_HISTORY_PHOTO_RETENTION_DAYS * 86400000;
-    let changed = false;
 
-    const nextHistory = history.map(order => {
-      const list = Array.isArray(order?.photos) ? order.photos : [];
-      if(!list.length) return order;
-
-      const filtered = list.filter(ph => {
-        if(!ph || !ph.takenAt) return false;
-        const t = new Date(ph.takenAt).getTime();
-        if(!t || Number.isNaN(t)) return false;
-        return (now - t) <= maxAgeMs;
-      });
-
-      if(filtered.length === list.length) return order;
-      changed = true;
-      return { ...order, photos: filtered };
-    });
-
-    if(changed) Store.set('gkhl_history', nextHistory);
+    for (const order of history) {
+      const d = new Date(order.paidAt).getTime();
+      if (!Number.isNaN(d) && (now - d) > maxAgeMs) {
+         await PhotoDB.remove('history_' + order.historyId);
+      }
+    }
   } catch(e) {
     console.warn('cleanupOldOrderHistoryPhotos error', e);
   }
@@ -860,7 +859,7 @@ function openBillModal() {
   // Lấy ảnh của bàn (tối đa 5 ảnh) để in kèm bill
   let orderPhotosHtml = '';
   try {
-    if(!orderPhotoCache) orderPhotoCache = Store.getOrderPhotos();
+    if(!orderPhotoCache) orderPhotoCache = {};
     const list = (orderPhotoCache && currentTable && orderPhotoCache[currentTable]) ? orderPhotoCache[currentTable] : [];
     const limited = Array.isArray(list) ? list.slice(0, 5) : [];
     if(limited.length) {
@@ -969,17 +968,22 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
   // Attach order photos for this bill (then clear them from bàn)
   let orderPhotosForBill = [];
   try {
-    if(orderPhotoCache == null) orderPhotoCache = Store.getOrderPhotos();
-    const list = orderPhotoCache && orderPhotoCache[currentTable] ? orderPhotoCache[currentTable] : [];
+    if(!orderPhotoCache) orderPhotoCache = {};
+    const list = orderPhotoCache[currentTable] || [];
     if(Array.isArray(list) && list.length) {
       orderPhotosForBill = list.map(p => ({ id:p.id, dataUrl:p.dataUrl, takenAt:p.takenAt || null }));
       delete orderPhotoCache[currentTable];
-      Store.setOrderPhotos(orderPhotoCache);
+      Store.setOrderPhotosAsync(orderPhotoCache); // Bất đồng bộ lưu lại
     }
   } catch(_) {}
 
   // Save to history
   const historyId = uid();
+  
+  if (orderPhotosForBill.length > 0) {
+     PhotoDB.set('history_' + historyId, orderPhotosForBill);
+  }
+
   Store.addHistory({
     historyId,
     id: billNo,
@@ -996,7 +1000,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     taxRate: taxRate || 0,
     payMethod: payMethod || 'cash',
     paidAt: new Date().toISOString(),
-    photos: orderPhotosForBill,
+    photos: [], // Loại bỏ base64 khỏi history cho nhẹ
   });
 
   // Deduct inventory
@@ -1044,7 +1048,7 @@ function renderInventory() {
 
 function ensureOrderPhotoCache() {
   if(!orderPhotoCache) {
-    orderPhotoCache = Store.getOrderPhotos() || {};
+    orderPhotoCache = {};
   }
 }
 
@@ -1088,7 +1092,7 @@ async function handleOrderPhotoCapture(event) {
       added++;
     }
     orderPhotoCache[currentTable] = list;
-    Store.setOrderPhotos(orderPhotoCache);
+    Store.setOrderPhotosAsync(orderPhotoCache);
     updateOrderPhotoUI();
     if(added > 0) {
       showToast(added > 1 ? `📷 Đã thêm ${added} ảnh cho bàn ${currentTable}` : `📷 Đã lưu ảnh cho bàn ${currentTable}`);
@@ -1242,11 +1246,11 @@ function openCurrentPurchasePhotoViewerFull() {
   if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
-function persistCurrentPurchasePhotosBatch() {
+async function persistCurrentPurchasePhotosBatch() {
   if(!currentPurchasePhotosBatchId) return;
   if(!currentPurchasePhotos || !currentPurchasePhotos.length) return;
   try {
-    const map = Store.getPurchasePhotos() || {};
+    const map = purchasePhotoCache || {};
     const batchId = currentPurchasePhotosBatchId;
     const existing = map[batchId];
 
@@ -1260,7 +1264,8 @@ function persistCurrentPurchasePhotosBatch() {
     });
     entry.photos = entry.photos || [];
     map[batchId] = entry;
-    Store.setPurchasePhotos(map);
+    purchasePhotoCache = map;
+    await Store.setPurchasePhotosAsync(map);
   } catch(e) {
     console.warn('persistCurrentPurchasePhotosBatch error', e);
     showToast('⚠️ Lưu ảnh bị lỗi (có thể đầy dung lượng).', 'danger');
@@ -1603,7 +1608,7 @@ function submitInvEdit(e) {
 }
 
 function getPurchasePhotoBatchEntries() {
-  const map = Store.getPurchasePhotos() || {};
+  const map = purchasePhotoCache || {};
   const purchases = Store.getPurchases();
   const entries = [];
 
@@ -1673,7 +1678,7 @@ function renderPurchasePhotoManager() {
 }
 
 function viewPurchasePhotoBatch(batchId) {
-  const map = Store.getPurchasePhotos() || {};
+  const map = purchasePhotoCache || {};
   const entry = map[batchId];
   const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
   if(!photos.length) {
@@ -1705,7 +1710,7 @@ function viewPurchasePhotoBatch(batchId) {
 }
 
 function openPurchasePhotoFullFromBatch(batchId, photoIdx) {
-  const map = Store.getPurchasePhotos() || {};
+  const map = purchasePhotoCache || {};
   const entry = map[batchId];
   const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
   const p = photos && photos.length ? photos[photoIdx] : null;
@@ -1744,8 +1749,8 @@ function openPurchasePhotoBatchFull(photoIdx) {
   if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
 }
 
-function deletePurchasePhotoBatch(batchId) {
-  const map = Store.getPurchasePhotos() || {};
+async function deletePurchasePhotoBatch(batchId) {
+  const map = purchasePhotoCache || {};
   if(!map[batchId]) {
     showToast('Không tìm thấy batch ảnh.', 'warning');
     return;
@@ -1753,7 +1758,8 @@ function deletePurchasePhotoBatch(batchId) {
   if(!confirm('Xóa toàn bộ ảnh chứng từ của batch này? Hành động này không thể hoàn tác.')) return;
 
   delete map[batchId];
-  Store.setPurchasePhotos(map);
+  purchasePhotoCache = map;
+  await Store.setPurchasePhotosAsync(map);
 
   // Gỡ liên kết khỏi các lần nhập
   const purchases = Store.getPurchases();
@@ -2426,11 +2432,19 @@ function renderOrderHistoryList() {
   document.getElementById('order-history-list').innerHTML = html;
 }
 
-function viewOrderDetail(orderId) {
+async function viewOrderDetail(orderId) {
   const h = Store.getHistory();
   const o = h.find(x => (x.historyId || x.id) === orderId);
   if(!o) return;
-  window._activeOrderDetailPhotos = o.photos || [];
+
+  // Lấy ảnh từ indexeddb hoặc fallback (old data)
+  let photos = o.photos || [];
+  if (!photos.length && o.historyId) {
+     const dbPhotos = await PhotoDB.get('history_' + o.historyId);
+     if (Array.isArray(dbPhotos)) photos = dbPhotos;
+  }
+
+  window._activeOrderDetailPhotos = photos;
   const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
   const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
   const itemsHtml = (o.items||[]).map(i =>
@@ -2440,11 +2454,11 @@ function viewOrderDetail(orderId) {
     </div>`
   ).join('');
   const subTotal = (o.items||[]).reduce((s, i) => s + i.price * i.qty, 0);
-  const photosHtml = (o.photos && o.photos.length)
+  const photosHtml = (photos && photos.length)
     ? `<div style="margin-top:12px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px">📷 Ảnh ghi nhận đơn</div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
-          ${o.photos.map((p, idx) => `
+          ${photos.map((p, idx) => `
             <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
                  onclick="openOrderDetailPhotoFull(${idx})" title="Xem ảnh full">
               <img src="${p.dataUrl}" alt="Ảnh đơn" style="width:100%;height:100%;object-fit:cover;">
@@ -3386,27 +3400,34 @@ function exportSettingsBackup() {
   }
 }
 
-function cleanupHeavyData() {
+async function cleanupHeavyData() {
   if(!confirm('Dọn dữ liệu nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI mới nhất. Tiếp tục?')) return;
   try {
     const history = Store.getHistory() || [];
     let removedOrderPhotos = 0;
+    
+    // Xóa ảnh của các đơn vị lịch sử khỏi bộ nhớ PhotoDB
+    for(const o of history) {
+      if(o && o.historyId) {
+         await PhotoDB.remove('history_' + o.historyId);
+         removedOrderPhotos++; // Chấp nhận đếm vo vì không tải dataUrl ra nữa
+      }
+    }
+    // Vẫn cập nhật lại mảng history cho chắc ăn không còn base64 lọt nào
     const nextHistory = history.map(o => {
       if(!o || typeof o !== 'object') return o;
       const photos = Array.isArray(o.photos) ? o.photos : [];
-      removedOrderPhotos += photos.length;
       return photos.length ? { ...o, photos: [] } : o;
     });
     Store.set('gkhl_history', nextHistory);
 
-    const purchaseMap = Store.getPurchasePhotos() || {};
-    let removedPurchasePhotos = 0;
-    Object.values(purchaseMap).forEach(entry => {
-      const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
-      removedPurchasePhotos += photos.length;
-    });
-    Store.setPurchasePhotos({});
-    Store.setOrderPhotos({});
+    const purchaseMap = purchasePhotoCache || {};
+    let removedPurchasePhotos = Object.keys(purchaseMap).length;
+    
+    purchasePhotoCache = {};
+    orderPhotoCache = {};
+    await Store.setPurchasePhotosAsync({});
+    await Store.setOrderPhotosAsync({});
 
     const aiHistory = Store.getAIHistory() || [];
     const trimmedAiHistory = aiHistory.slice(-120);

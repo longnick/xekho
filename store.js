@@ -117,6 +117,12 @@ const Store = {
   getPurchasePhotos() { return this.get(KEYS.purchasePhotos) || {}; },
   setPurchasePhotos(map) { this.set(KEYS.purchasePhotos, map); },
 
+  // ASYNC PHOTO GETTERS/SETTERS (Sử dụng IndexedDB)
+  async getPurchasePhotosAsync() { return (await PhotoDB.get(KEYS.purchasePhotos)) || {}; },
+  async setPurchasePhotosAsync(map) { await PhotoDB.set(KEYS.purchasePhotos, map); },
+  async getOrderPhotosAsync() { return (await PhotoDB.get(KEYS.orderPhotos)) || {}; },
+  async setOrderPhotosAsync(map) { await PhotoDB.set(KEYS.orderPhotos, map); },
+
   // SETTINGS
   getSettings() {
     const defaults = {
@@ -587,4 +593,111 @@ function getMarketingInsights() {
     });
   }
   return insights;
+}
+
+// ============================================================
+// PHOTODB - LƯU TRỮ HÌNH ẢNH BẰNG INDEXEDDB
+// Giúp giảm tải localStorage (giới hạn 5MB)
+// ============================================================
+const PhotoDB = {
+  db: null,
+  init() {
+    return new Promise((resolve) => {
+      const req = indexedDB.open('gkhl_photos_db', 1);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore('photos');
+      };
+      req.onsuccess = e => { this.db = e.target.result; resolve(true); };
+      req.onerror = () => resolve(false);
+    });
+  },
+  async get(key) {
+    if(!this.db) await this.init();
+    if(!this.db) return null;
+    return new Promise(resolve => {
+      try {
+        const req = this.db.transaction('photos', 'readonly').objectStore('photos').get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch { resolve(null); }
+    });
+  },
+  async set(key, val) {
+    if(!this.db) await this.init();
+    if(!this.db) return false;
+    return new Promise(resolve => {
+      try {
+        const req = this.db.transaction('photos', 'readwrite').objectStore('photos').put(val, key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      } catch { resolve(false); }
+    });
+  },
+  async remove(key) {
+    if(!this.db) await this.init();
+    if(!this.db) return false;
+    return new Promise(resolve => {
+      try {
+        const req = this.db.transaction('photos', 'readwrite').objectStore('photos').delete(key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      } catch { resolve(false); }
+    });
+  }
+};
+
+// ============================================================
+// HÀM MIGRATION: Chuyển ảnh từ localStorage sang IndexedDB
+// Chạy 1 lần lúc bật app để khắc phục lỗi "Quota Exceeded"
+// ============================================================
+async function migratePhotosToIndexedDB() {
+  await PhotoDB.init();
+
+  // 1. Move Purchase Photos
+  const purPhotosRaw = localStorage.getItem(KEYS.purchasePhotos);
+  if (purPhotosRaw) {
+    try {
+      const purMap = JSON.parse(purPhotosRaw);
+      await PhotoDB.set(KEYS.purchasePhotos, purMap);
+      localStorage.removeItem(KEYS.purchasePhotos);
+      console.log('[Migration] Chuyển đổi thành công Purchase Photos sang IndexedDB');
+    } catch(e) { console.warn('[Migration] Lỗi chuyển Purchase Photos', e); }
+  }
+
+  // 2. Move Order Photos (Active)
+  const ordPhotosRaw = localStorage.getItem(KEYS.orderPhotos);
+  if (ordPhotosRaw) {
+    try {
+      const ordMap = JSON.parse(ordPhotosRaw);
+      await PhotoDB.set(KEYS.orderPhotos, ordMap);
+      localStorage.removeItem(KEYS.orderPhotos);
+      console.log('[Migration] Chuyển đổi thành công Order Photos sang IndexedDB');
+    } catch(e) { console.warn('[Migration] Lỗi chuyển Order Photos', e); }
+  }
+
+  // 3. Move History Photos (Tách base64 ra khỏi Object history để nhẹ localStorage)
+  const historyRaw = localStorage.getItem(KEYS.history);
+  if (historyRaw) {
+    try {
+      let history = JSON.parse(historyRaw);
+      let historyChanged = false;
+
+      // Quét từng đơn trong thẻ history
+      for (let i = 0; i < history.length; i++) {
+        const o = history[i];
+        if (o.photos && o.photos.length > 0) {
+          // Lưu vào PhotoDB
+          await PhotoDB.set('history_' + o.historyId, o.photos);
+          // Xóa photos dataUrl khỏi đối tượng gốc, chừa lại format trống hoặc null
+          o.photos = []; 
+          historyChanged = true;
+        }
+      }
+
+      if (historyChanged) {
+        localStorage.setItem(KEYS.history, JSON.stringify(history));
+        console.log('[Migration] Chuyển đổi thành công History Photos sang IndexedDB và dọn dẹp localStorage');
+      }
+    } catch(e) { console.warn('[Migration] Lỗi chuyển History Photos', e); }
+  }
 }
