@@ -190,8 +190,149 @@ const ImgZoom = (() => {
   return { attach, detach, reset };
 })();
 
+// ============================================================
+// LOGIN & USER MANAGEMENT
+// ============================================================
+let currentUser = null;
+
+function checkLoginState() {
+  const cUser = sessionStorage.getItem('gkhl_current_user');
+  const appEl = document.getElementById('app');
+  const loginEl = document.getElementById('login-screen');
+  if(cUser) {
+    currentUser = JSON.parse(cUser);
+    loginEl.style.opacity = '0';
+    loginEl.style.pointerEvents = 'none';
+    appEl.style.display = 'block';
+    applyRoleRights();
+    return true;
+  } else {
+    appEl.style.display = 'none';
+    loginEl.style.opacity = '1';
+    loginEl.style.pointerEvents = 'auto';
+    return false;
+  }
+}
+
+function handleLogin(e) {
+  e.preventDefault();
+  const u = document.getElementById('login-username').value.trim();
+  const p = document.getElementById('login-password').value.trim();
+  const err = document.getElementById('login-error');
+  
+  const users = Store.getUsers();
+  const found = users.find(x => x.username.toLowerCase() === u.toLowerCase() && x.password === p);
+  
+  if(found) {
+    err.textContent = '';
+    sessionStorage.setItem('gkhl_current_user', JSON.stringify(found));
+    document.getElementById('login-password').value = '';
+    checkLoginState();
+    showToast('👋 Xin chào ' + found.username);
+  } else {
+    err.textContent = '❌ Sai tên đăng nhập hoặc mật khẩu!';
+  }
+}
+
+function handleLogout() {
+  if(!confirm('Bạn có chắc chắn muốn đăng xuất?')) return;
+  sessionStorage.removeItem('gkhl_current_user');
+  currentUser = null;
+  // Dọn RAM
+  orderItems = {};
+  navigate('tables'); // quay về trang chủ ẩn
+  checkLoginState();
+}
+
+function applyRoleRights() {
+  if(!currentUser) return;
+  const isStaff = currentUser.role === 'staff';
+  // Hide restricted tabs for Staff
+  const restrictedTabs = ['inventory', 'finance', 'reports', 'insights', 'menu', 'settings'];
+  restrictedTabs.forEach(tab => {
+    const el = document.querySelector(`.nav-item[data-page="${tab}"]`);
+    if(el) el.style.display = isStaff ? 'none' : '';
+  });
+  
+  // Hide delete buttons inside Order Page
+  const orderDelBtns = document.querySelectorAll('.delete-order-btn'); 
+  orderDelBtns.forEach(btn => btn.style.display = isStaff ? 'none' : '');
+  
+  const clearTableBtn = document.getElementById('btn-clear-table');
+  if(clearTableBtn) clearTableBtn.style.display = isStaff ? 'none' : '';
+}
+
+// ==== Quản lý người dùng ====
+function renderUserManagement() {
+  if(!currentUser || currentUser.role !== 'admin') return;
+  const umSection = document.getElementById('settings-user-management');
+  if(umSection) umSection.style.display = 'block';
+  
+  const list = document.getElementById('user-management-list');
+  if(!list) return;
+  
+  const users = Store.getUsers();
+  list.innerHTML = users.map(u => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👤</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${u.username} ${u.role==='admin' ? '<span class="badge badge-primary">Admin</span>' : '<span class="badge badge-info">Staff</span>'}</div>
+        <div class="list-item-sub">Mật khẩu: ***</div>
+      </div>
+      <div>
+        <button type="button" class="btn btn-xs btn-danger" onclick="deleteUser('${u.username}')" ${u.username.toLowerCase()==='admin' ? 'disabled':''}>Xóa</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openAddUserModal() {
+  document.getElementById('user-edit-username').value = '';
+  document.getElementById('user-edit-password').value = '';
+  document.getElementById('user-modal').classList.add('active');
+}
+
+function submitUser(e) {
+  e.preventDefault();
+  const u = document.getElementById('user-edit-username').value.trim();
+  const p = document.getElementById('user-edit-password').value.trim();
+  const r = document.getElementById('user-edit-role').value;
+  
+  if(!u || !p) return;
+  
+  const users = Store.getUsers();
+  const exIndex = users.findIndex(x => x.username.toLowerCase() === u.toLowerCase());
+  
+  if(exIndex >= 0) {
+    users[exIndex].password = p;
+    users[exIndex].role = r;
+  } else {
+    users.push({ username: u, password: p, role: r });
+  }
+  
+  Store.setUsers(users);
+  document.getElementById('user-modal').classList.remove('active');
+  showToast('✅ Đã lưu nhân viên ' + u);
+  renderUserManagement();
+}
+
+function deleteUser(username) {
+  if(username.toLowerCase() === 'admin') return;
+  if(!confirm(`Xóa nhân viên ${username}?`)) return;
+  let users = Store.getUsers();
+  users = users.filter(x => x.username.toLowerCase() !== username.toLowerCase());
+  Store.setUsers(users);
+  renderUserManagement();
+}
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', async () => {
+  // Chặn đăng nhập
+  const isLoggedIn = checkLoginState();
+  if(!isLoggedIn) {
+    // App vẫn init ngầm phía sau để load sẵn DOM, khi login xong hiển thị là xài ngay
+  }
+
   // 1. Tải cở sở dữ liệu hệ thống (Bất đồng bộ)
   await PhotoDB.init();
   await migratePhotosToIndexedDB(); // Vá lỗi "Bộ nhớ đầy" trước đây
@@ -2782,7 +2923,10 @@ function renderSettings() {
     ['set-bankOwner',    s.bankOwner   || ''],
     ['set-geminiApiKey', s.geminiApiKey|| ''],
     ['set-googleTTSKey', s.googleTTSKey|| ''],
-    ['set-tableCount',   s.tableCount  || 20],
+    ['set-gemmaEndpoint',s.gemmaEndpoint || 'http://127.0.0.1:11434/v1/chat/completions'],
+    ['set-gemmaModel',   s.gemmaModel    || 'gemma2:9b'],
+    ['set-gemmaApiKey',  s.gemmaApiKey   || ''],
+    ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
   ];
   fields.forEach(([id, val]) => {
@@ -2857,6 +3001,9 @@ function renderSettings() {
   const lastEl = document.getElementById('last-backup-time');
   if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
   updateStorageQuotaInfo();
+  
+  // Hiển thị danh sách user nếu là admin
+  try { renderUserManagement(); } catch(e){}
 }
 
 function submitSettings(e) {
@@ -2873,6 +3020,9 @@ function submitSettings(e) {
   const bankOwnerEl   = document.getElementById('set-bankOwner');
   const geminiEl      = document.getElementById('set-geminiApiKey');
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
+  const gemmaEndpointEl = document.getElementById('set-gemmaEndpoint');
+  const gemmaModelEl    = document.getElementById('set-gemmaModel');
+  const gemmaApiKeyEl   = document.getElementById('set-gemmaApiKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
   const storageQuotaEl = document.getElementById('set-storageQuotaMb');
@@ -2903,6 +3053,9 @@ function submitSettings(e) {
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
     geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
+    gemmaEndpoint:(gemmaEndpointEl&& gemmaEndpointEl.value.trim())|| 'http://127.0.0.1:11434/v1/chat/completions',
+    gemmaModel:   (gemmaModelEl  && gemmaModelEl.value.trim())    || 'gemma2:9b',
+    gemmaApiKey:  (gemmaApiKeyEl && gemmaApiKeyEl.value.trim())   || '',
     tableCount:   newTableCount,
     storageQuotaMb,
     taxRate:      newTaxRate,
@@ -4341,10 +4494,40 @@ let aiOutputMode = 'voice'; // 'voice' or 'text'
 // ------ UI helpers ------
 let aiChatHistoryLoaded = false;
 
+function toggleAIEngine() {
+  const s = Store.getSettings();
+  s.activeAIEngine = (s.activeAIEngine === 'gemma') ? 'gemini' : 'gemma';
+  Store.setSettings(s);
+  updateAIModeUI();
+  
+  const engineBtn = document.getElementById('ai-engine-toggle');
+  if(engineBtn) {
+    if(s.activeAIEngine === 'gemma') {
+      engineBtn.textContent = '🧠 Local AI';
+      engineBtn.className = 'badge badge-info';
+    } else {
+      engineBtn.textContent = '⚡ Gemini';
+      engineBtn.className = 'badge badge-primary';
+    }
+  }
+}
+
 function openAIAssistant() {
   const modal = document.getElementById('ai-modal');
   if(!modal) return;
   modal.classList.add('active');
+  const s = Store.getSettings();
+  const engineBtn = document.getElementById('ai-engine-toggle');
+  if(engineBtn) {
+    if(s.activeAIEngine === 'gemma') {
+      engineBtn.textContent = '🧠 Local AI';
+      engineBtn.className = 'badge badge-info';
+    } else {
+      engineBtn.textContent = '⚡ Gemini';
+      engineBtn.className = 'badge badge-primary';
+    }
+  }
+
   updateAIModeUI();
   updateAIOutputToggleUI();
 
@@ -4385,17 +4568,27 @@ function updateAIModeUI() {
   const s = Store.getSettings();
   const el = document.getElementById('ai-status-text');
   if(!el) return;
+  const isGemma = (s.activeAIEngine === 'gemma');
+
   if (s.forceOffline) {
     el.innerHTML = '📴 Chế độ Offline (Nhanh)';
     el.style.background = 'var(--bg2)';
     el.style.color = 'var(--text2)';
     el.style.border = '1px solid var(--border)';
   } else {
-    const hasKey = !!s.geminiApiKey;
-    el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
-    el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-    el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
-    el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+    if(isGemma) {
+      const hasUrl = !!s.gemmaEndpoint;
+      el.innerHTML = hasUrl ? '🔌 Connect: Local DB' : '⚠️ Thiếu Endpoint Local';
+      el.style.background = hasUrl ? 'rgba(0,149,255,0.1)' : 'rgba(239,68,68,0.1)';
+      el.style.color = hasUrl ? 'var(--info)' : 'var(--danger)';
+      el.style.border = hasUrl ? '1px solid rgba(0,149,255,0.3)' : '1px solid rgba(239,68,68,0.3)';
+    } else {
+      const hasKey = !!s.geminiApiKey;
+      el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
+      el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+      el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
+      el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+    }
   }
 }
 
@@ -4799,18 +4992,63 @@ async function callGemini(apiKey, systemPrompt) {
   throw lastError || new Error('Tất cả Gemini models đều không khả dụng.');
 }
 
+async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
+  const url = endpoint || 'http://127.0.0.1:11434/v1/chat/completions';
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: model || 'gemma2:latest',
+      messages: [{ role: 'user', content: systemPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.1
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || 'Lỗi từ Local API');
+  if (!data.choices || !data.choices.length) throw new Error('Local AI không trả về kết quả.');
+
+  return data.choices[0].message.content;
+}
+
 // --- Main processor: Hybrid Failover ---
 async function processAICommand(text) {
   const s = Store.getSettings();
   const menu       = Store.getMenu();
   const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
 
-  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey;
+  const isGemma = (s.activeAIEngine === 'gemma');
+  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey && !isGemma;
+  const canUseGemma = !s.forceOffline && isGemma && s.gemmaEndpoint;
 
   let parsed;
   let modeColor = '';
 
-  if (canUseGemini) {
+  if (canUseGemma) {
+    try {
+      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
+      const prompt = buildGemmaPrompt(text, tablesInfo, menuForAI);
+      let raw = await callLocalGemma(s.gemmaEndpoint, s.gemmaApiKey, s.gemmaModel, prompt);
+      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try { parsed = JSON.parse(raw); }
+      catch(_) { return raw; }
+      modeColor = 'var(--info)';
+    } catch(e) {
+      console.warn('Gemma Local failed:', e.message);
+      const offlineResult = localNLPEngine(text, menu, tablesInfo);
+      if (offlineResult) {
+        parsed = offlineResult;
+        modeColor = 'var(--warning)';
+      } else {
+        return `⚠️ Kết nối Local Server thất bại (${e.message}). Đang dùng NLP Offline nhưng không hiểu lệnh.`;
+      }
+    }
+  } else if (canUseGemini) {
     try {
       const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
       const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
@@ -4851,6 +5089,51 @@ async function processAICommand(text) {
   }
   
   return finalReply;
+}
+
+function buildGemmaPrompt(text, tablesInfo, menu) {
+  // Add current orders context just to make Gemma smarter
+  const currentOrders = {};
+  const orders = Store.getOrders();
+  Object.keys(orders).forEach(tid => {
+    if(orders[tid] && orders[tid].length > 0) {
+      currentOrders[tid] = orders[tid].map(i => `${i.qty}x ${i.name}`);
+    }
+  });
+
+  return `Bạn là trợ lý AI nội bộ cho hệ thống POS nhà hàng/quán ăn.
+
+Nguyên tắc bắt buộc:
+1. Bạn KHÔNG được tự ý thay đổi dữ liệu.
+2. Bạn chỉ được trả về JSON hợp lệ theo schema.
+3. Nếu không chắc chắn về tên món, số lượng, bàn, hoặc ý định người dùng, phải đặt needs_confirmation=true.
+4. Không tự suy đoán SKU nếu chưa đủ chắc chắn.
+5. Ưu tiên an toàn dữ liệu hơn sự tiện lợi.
+6. Chỉ sử dụng thông tin nằm trong ngữ cảnh mà app cung cấp.
+7. Nếu người dùng hỏi báo cáo, chỉ tóm tắt từ số liệu được truyền vào.
+8. Nếu câu hỏi ngoài phạm vi POS, trả lời ngắn rằng yêu cầu không thuộc nghiệp vụ POS.
+
+Quy tắc ánh xạ (Action Mapping):
+- "thêm", "cho thêm", "order thêm", "đặt", "gọi" => order
+- "bớt", "giảm", "huỷ 1 món", "xóa" => remove 
+- "ghi chú", "nhắc bếp", "ít cay", "không đá" => note
+- "tính tiền", "thanh toán", "bill" => pay
+- "báo cáo", "hôm nay bán được" => insight
+
+Đầu ra bắt buộc là JSON Object KHÔNG kèm giải thích:
+{
+  "type": "order|remove|pay|insight|unknown",
+  "tableId": "ID bàn (Ví dụ: 1, 2, 3... Hoặc 'null' nếu không đề cập)",
+  "items": [{"name": "Tên món", "qty": 1}],
+  "needs_confirmation": false
+}
+
+Dữ liệu ngữ cảnh:
+- Danh sách bàn: ${JSON.stringify(tablesInfo)}
+- Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
+- Thực đơn: ${JSON.stringify(menu)}
+
+Câu lệnh người dùng: "${text}"`;
 }
 
 function buildGeminiPrompt(text, tablesInfo, menu) {
