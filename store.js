@@ -19,6 +19,7 @@ const KEYS = {
   suppliers: 'gkhl_suppliers',
   lastReportExportWeekly: 'gkhl_last_report_export_weekly',
   lastReportExportMonthly: 'gkhl_last_report_export_monthly',
+  users: 'gkhl_users',
 };
 
 const Store = {
@@ -32,6 +33,18 @@ const Store = {
   // MENU
   getMenu() { return this.get(KEYS.menu) || DEFAULT_MENU; },
   setMenu(m) { this.set(KEYS.menu, m); },
+
+  // USERS
+  getUsers() { 
+    let u = this.get(KEYS.users);
+    if (!u || u.length === 0) {
+      // Default admin if none exists
+      u = [{ username: 'admin', password: '123', role: 'admin' }];
+      this.setUsers(u);
+    }
+    return u;
+  },
+  setUsers(users) { this.set(KEYS.users, users); },
 
   // INVENTORY
   getInventory() { return this.get(KEYS.inventory) || DEFAULT_INVENTORY; },
