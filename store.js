@@ -20,6 +20,7 @@ const KEYS = {
   lastReportExportWeekly: 'gkhl_last_report_export_weekly',
   lastReportExportMonthly: 'gkhl_last_report_export_monthly',
   users: 'gkhl_users',
+  unitConversions: 'gkhl_unit_conversions',
 };
 
 const Store = {
@@ -337,17 +338,46 @@ const Store = {
   },
 
   // DEDUCT inventory when order is paid
+  // Logic:
+  //  - Nếu đơn vị công thức (ing.unit) = đơn vị tồn (stock.unit) → trừ thẳng
+  //  - Nếu khác đơn vị + có quy đổi (unitConversions) → trừ theo tỉ lệ quy đổi
+  //  - Nếu khác đơn vị + không có quy đổi → KHÔNG trừ (tránh sai lệch)
   deductInventory(items) {
     const menu = this.getMenu();
     const inv = this.getInventory();
+    const conversions = this.getUnitConversions();
+
     items.forEach(item => {
       const dish = menu.find(m => m.id === item.id);
-      if(!dish) return;
+      if (!dish || !Array.isArray(dish.ingredients)) return;
+
       dish.ingredients.forEach(ing => {
         const stock = inv.find(i => i.name === ing.name);
-        if(stock) {
+        if (!stock) return;
+
+        // Đơn vị công thức (ing.unit) — fallback về đơn vị tồn kho
+        const ingUnit = ing.unit || stock.unit;
+
+        // Cùng đơn vị → trừ thẳng
+        if (!ingUnit || ingUnit === stock.unit) {
           stock.qty = Math.max(0, stock.qty - ing.qty * item.qty);
+          return;
         }
+
+        // Khác đơn vị → tìm quy đổi
+        const conv = conversions.find(c =>
+          c.ingredientName === ing.name &&
+          c.recipeUnit === ingUnit &&
+          c.purchaseUnit === stock.unit
+        );
+
+        if (conv && Number(conv.recipeQty) > 0) {
+          // recipeQty phần = purchaseQty đơn vị mua
+          // Cần (ing.qty * item.qty) phần → tốn bao nhiêu đơn vị mua?
+          const stockQtyUsed = (ing.qty * item.qty) * (Number(conv.purchaseQty) / Number(conv.recipeQty));
+          stock.qty = Math.max(0, stock.qty - stockQtyUsed);
+        }
+        // Không có quy đổi → bỏ qua, KHÔNG trừ
       });
     });
     this.setInventory(inv);
@@ -369,6 +399,23 @@ const Store = {
   deleteSupplier(id) {
     const list = this.getSuppliers().filter(s => s.id !== id);
     this.set(KEYS.suppliers, list);
+  },
+
+  // UNIT CONVERSIONS (Quy đổi đơn vị: đơn vị mua → đơn vị công thức)
+  // Structure: { id, ingredientName, purchaseUnit, purchaseQty, recipeUnit, recipeQty, note }
+  // Example: 1 trái bắp = 4 phần bắp (recipeUnit)
+  getUnitConversions() { return this.get(KEYS.unitConversions) || []; },
+  setUnitConversions(arr) { this.set(KEYS.unitConversions, arr); },
+  addUnitConversion(conv) {
+    const list = this.getUnitConversions();
+    // Remove duplicate if same ingredientName + recipeUnit
+    const filtered = list.filter(c => !(c.ingredientName === conv.ingredientName && c.recipeUnit === conv.recipeUnit));
+    filtered.unshift(conv);
+    this.set(KEYS.unitConversions, filtered);
+  },
+  deleteUnitConversion(id) {
+    const list = this.getUnitConversions().filter(c => c.id !== id);
+    this.set(KEYS.unitConversions, list);
   },
 };
 

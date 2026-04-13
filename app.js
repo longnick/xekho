@@ -196,57 +196,52 @@ const ImgZoom = (() => {
 let currentUser = null;
 
 function checkLoginState() {
-  const cUser = sessionStorage.getItem('gkhl_current_user');
-  const appEl = document.getElementById('app');
-  const loginEl = document.getElementById('login-screen');
-  if(cUser) {
-    currentUser = JSON.parse(cUser);
-    loginEl.style.opacity = '0';
-    loginEl.style.pointerEvents = 'none';
-    appEl.style.display = 'block';
-    applyRoleRights();
-    return true;
-  } else {
-    appEl.style.display = 'none';
-    loginEl.style.opacity = '1';
-    loginEl.style.pointerEvents = 'auto';
-    return false;
+  const savedStr = sessionStorage.getItem('gkhl_current_session');
+  if(savedStr) {
+    try {
+      currentUser = JSON.parse(savedStr);
+      const loginScreen = document.getElementById('login-screen');
+      if (loginScreen) loginScreen.classList.remove('active');
+      applyRoleRights();
+      return true;
+    } catch(e) {}
   }
+  return false;
 }
 
-function handleLogin(e) {
+function handleLoginSubmit(e) {
   e.preventDefault();
   const u = document.getElementById('login-username').value.trim();
-  const p = document.getElementById('login-password').value.trim();
-  const err = document.getElementById('login-error');
-  
+  const p = document.getElementById('login-password').value;
   const users = Store.getUsers();
-  const found = users.find(x => x.username.toLowerCase() === u.toLowerCase() && x.password === p);
   
-  if(found) {
-    err.textContent = '';
-    sessionStorage.setItem('gkhl_current_user', JSON.stringify(found));
-    document.getElementById('login-password').value = '';
-    checkLoginState();
-    showToast('👋 Xin chào ' + found.username);
+  const match = users.find(x => x.username === u && x.password === p);
+  if(match) {
+    currentUser = { username: match.username, role: match.role };
+    sessionStorage.setItem('gkhl_current_session', JSON.stringify(currentUser));
+    document.getElementById('login-screen').classList.remove('active');
+    document.getElementById('login-error').textContent = '';
+    applyRoleRights();
   } else {
-    err.textContent = '❌ Sai tên đăng nhập hoặc mật khẩu!';
+    document.getElementById('login-error').textContent = 'Sai tài khoản hoặc mật khẩu';
   }
 }
 
 function handleLogout() {
-  if(!confirm('Bạn có chắc chắn muốn đăng xuất?')) return;
-  sessionStorage.removeItem('gkhl_current_user');
-  currentUser = null;
-  // Dọn RAM
-  orderItems = {};
-  navigate('tables'); // quay về trang chủ ẩn
-  checkLoginState();
+  sessionStorage.removeItem('gkhl_current_session');
+  location.reload();
 }
 
 function applyRoleRights() {
   if(!currentUser) return;
+  
+  const userDisplay = document.getElementById('current-user-display');
+  if(userDisplay) {
+    userDisplay.innerHTML = `<span style="margin-right:4px">👋</span>${currentUser.username}`;
+  }
+
   const isStaff = currentUser.role === 'staff';
+  
   // Hide restricted tabs for Staff
   const restrictedTabs = ['inventory', 'finance', 'reports', 'insights', 'menu', 'settings'];
   restrictedTabs.forEach(tab => {
@@ -254,6 +249,19 @@ function applyRoleRights() {
     if(el) el.style.display = isStaff ? 'none' : '';
   });
   
+  // Hide UI parts for Staff
+  const revCard = document.getElementById('staff-hide-rev');
+  if(revCard) revCard.style.display = isStaff ? 'none' : '';
+  const ordCard = document.getElementById('staff-hide-ord');
+  if(ordCard) ordCard.style.display = isStaff ? 'none' : '';
+  
+  const aifab = document.getElementById('ai-fab');
+  if(aifab) aifab.style.display = isStaff ? 'none' : '';
+  const aimic = document.getElementById('ai-mic-btn');
+  if(aimic) aimic.style.display = isStaff ? 'none' : '';
+  const mainFab = document.getElementById('main-fab');
+  if(mainFab) mainFab.style.display = isStaff ? 'none' : '';
+
   // Hide delete buttons inside Order Page
   const orderDelBtns = document.querySelectorAll('.delete-order-btn'); 
   orderDelBtns.forEach(btn => btn.style.display = isStaff ? 'none' : '');
@@ -273,14 +281,15 @@ function renderUserManagement() {
   
   const users = Store.getUsers();
   list.innerHTML = users.map(u => `
-    <div class="list-item">
+    <div class="list-item" onclick="editUser('${u.username}')" style="cursor:pointer">
       <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👤</div>
       <div class="list-item-content">
         <div class="list-item-title">${u.username} ${u.role==='admin' ? '<span class="badge badge-primary">Admin</span>' : '<span class="badge badge-info">Staff</span>'}</div>
         <div class="list-item-sub">Mật khẩu: ***</div>
       </div>
       <div>
-        <button type="button" class="btn btn-xs btn-danger" onclick="deleteUser('${u.username}')" ${u.username.toLowerCase()==='admin' ? 'disabled':''}>Xóa</button>
+        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUser('${u.username}')">Sửa</button>
+        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUser('${u.username}')" ${u.username.toLowerCase()==='admin' ? 'disabled':''}>Xóa</button>
       </div>
     </div>
   `).join('');
@@ -288,7 +297,41 @@ function renderUserManagement() {
 
 function openAddUserModal() {
   document.getElementById('user-edit-username').value = '';
+  document.getElementById('user-edit-username').readOnly = false;
   document.getElementById('user-edit-password').value = '';
+  document.getElementById('user-edit-password').placeholder = '***';
+  document.getElementById('user-edit-password').required = true;
+  document.getElementById('user-edit-role').value = 'staff';
+  document.getElementById('user-edit-role').disabled = false;
+  
+  const title = document.getElementById('user-modal-title');
+  if(title) title.textContent = 'Thêm Nhân Viên';
+  
+  document.getElementById('user-modal').classList.add('active');
+}
+
+function editUser(username) {
+  const users = Store.getUsers();
+  const u = users.find(x => x.username === username);
+  if(!u) return;
+
+  const title = document.getElementById('user-modal-title');
+  if(title) title.textContent = 'Sửa Nhân Viên';
+  
+  document.getElementById('user-edit-username').value = u.username;
+  document.getElementById('user-edit-username').readOnly = true;
+  document.getElementById('user-edit-password').value = '';
+  document.getElementById('user-edit-password').placeholder = '(Bỏ trống nếu không đổi)';
+  document.getElementById('user-edit-password').required = false;
+  
+  if (u.username.toLowerCase() === 'admin') {
+    document.getElementById('user-edit-role').value = 'admin';
+    document.getElementById('user-edit-role').disabled = true;
+  } else {
+    document.getElementById('user-edit-role').disabled = false;
+    document.getElementById('user-edit-role').value = u.role;
+  }
+  
   document.getElementById('user-modal').classList.add('active');
 }
 
@@ -296,17 +339,19 @@ function submitUser(e) {
   e.preventDefault();
   const u = document.getElementById('user-edit-username').value.trim();
   const p = document.getElementById('user-edit-password').value.trim();
-  const r = document.getElementById('user-edit-role').value;
+  let r = document.getElementById('user-edit-role').value;
   
-  if(!u || !p) return;
+  if(!u) return;
+  if(u.toLowerCase() === 'admin') r = 'admin'; // security enforcement
   
   const users = Store.getUsers();
   const exIndex = users.findIndex(x => x.username.toLowerCase() === u.toLowerCase());
   
   if(exIndex >= 0) {
-    users[exIndex].password = p;
+    if(p) users[exIndex].password = p;
     users[exIndex].role = r;
   } else {
+    if(!p) return; // Must have password for new user
     users.push({ username: u, password: p, role: r });
   }
   
@@ -577,6 +622,52 @@ function renderPage(page) {
     case 'insights': renderInsights(); break;
     case 'menu':     renderMenuAdmin(); break;
     case 'settings': renderSettings(); break;
+  }
+}
+
+function switchSettingsTab(tabId, btn) {
+  const tabsWrap = btn.parentElement;
+  tabsWrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const settingsWrap = document.getElementById('page-settings');
+  settingsWrap.querySelectorAll('.settings-tab-content').forEach(el => el.style.display = 'none');
+  const target = document.getElementById('set-tab-' + tabId);
+  if(target) target.style.display = 'block';
+}
+
+function switchReportTab(tabId, btn) {
+  const tabsWrap = btn.parentElement;
+  tabsWrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const reportsWrap = document.getElementById('page-reports');
+  reportsWrap.querySelectorAll('.report-tab-content').forEach(el => el.style.display = 'none');
+  const target = document.getElementById('report-tab-' + tabId);
+  if(target) target.style.display = 'block';
+}
+
+function navigateToReport(type) {
+  navigate('reports');
+  if (type === 'revenue') {
+    const btn = document.querySelector('#page-reports .tab-bar .tab-btn:first-child');
+    if (btn) switchReportTab('revenue', btn);
+  } else if (type === 'expense') {
+    const btn = document.querySelector('#page-reports .tab-bar .tab-btn:nth-child(2)');
+    if (btn) switchReportTab('purchase', btn);
+  }
+}
+
+function addNoteToCartItem(itemId) {
+  const items = orderItems[currentTable] || [];
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+
+  const currentNote = item.note || '';
+  const newNote = prompt(`Nhập ghi chú cho món [${item.name}]:`, currentNote);
+
+  if (newNote !== null) {
+    // Treat as valid update, trim if present
+    item.note = newNote.trim();
+    renderCart();
   }
 }
 
@@ -892,15 +983,19 @@ function saveOrder() {
 
 function renderCart() {
   const items = orderItems[currentTable] || [];
-  const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
+  const extras = orderExtras[currentTable] || {discount: 0, discountInput: 0, discountType: 'amount', shipping: 0};
   
+  const discountTypeEl = document.getElementById('cart-discount-type');
   const dInp = document.getElementById('cart-discount');
   const dNoteInp = document.getElementById('cart-discount-note');
   const sInp = document.getElementById('cart-shipping');
   const noteInp = document.getElementById('cart-note');
-  
-  if (dInp && document.activeElement === dInp) extras.discount = parseFloat(dInp.value) || 0;
-  else if (dInp) dInp.value = extras.discount || '';
+
+  if (discountTypeEl && document.activeElement === discountTypeEl) extras.discountType = discountTypeEl.value;
+  else if (discountTypeEl) discountTypeEl.value = extras.discountType || 'amount';
+
+  if (dInp && document.activeElement === dInp) extras.discountInput = parseFloat(dInp.value) || 0;
+  else if (dInp) dInp.value = extras.discountInput || '';
 
   if (dNoteInp && document.activeElement === dNoteInp) extras.discountNote = dNoteInp.value || '';
   else if (dNoteInp) dNoteInp.value = extras.discountNote || '';
@@ -911,11 +1006,18 @@ function renderCart() {
   if (noteInp && document.activeElement === noteInp) extras.note = noteInp.value || '';
   else if (noteInp) noteInp.value = extras.note || '';
 
+  const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
+  const itemsTotal = items.reduce((s,i) => s + i.price*(i.qty||1), 0);
+
+  if (extras.discountType === 'percent') {
+    extras.discount = Math.round((itemsTotal * (extras.discountInput || 0)) / 100);
+  } else {
+    extras.discount = extras.discountInput || 0;
+  }
+
   orderExtras[currentTable] = extras;
 
   // Tính tổng có VAT
-  const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
-  const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
   const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
   const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
   const total = subtotal + vatAmount;
@@ -923,22 +1025,26 @@ function renderCart() {
   if(items.length === 0) {
     document.getElementById('cart-items').innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:32px">🛒</div><div class="empty-text">Chưa có món</div></div>`;
   } else {
-    document.getElementById('cart-items').innerHTML = items.map(item =>
-      `<div class="cart-item">
-        <div class="cart-item-name">${item.name}</div>
-        <div class="cart-qty-ctrl">
-          <button class="qty-btn" onclick="changeQty('${item.id}',-1)">−</button>
-          <input type="number" class="cart-qty-input" min="1" max="99" value="${item.qty}"
-            onchange="setCartQty('${item.id}', this.value)"
-            onclick="this.select()" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;padding:2px 4px">
-          <button class="qty-btn" onclick="changeQty('${item.id}',1)">+</button>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px">
-          <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
-          <button class="qty-btn" style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${item.id}')">✕</button>
-        </div>
-      </div>`
-    ).join('');
+      document.getElementById('cart-items').innerHTML = items.map(item =>
+        `<div class="cart-item">
+          <div>
+            <div class="cart-item-name">${item.name}</div>
+            ${item.note ? `<div style="font-size:10px; color:var(--text2); margin-top:2px;">( Ghi chú: ${item.note} )</div>` : ''}
+          </div>
+          <div class="cart-qty-ctrl">
+            <button class="qty-btn" onclick="changeQty('${item.id}',-1)">−</button>
+            <input type="number" class="cart-qty-input" min="1" max="99" value="${item.qty}"
+              onchange="setCartQty('${item.id}', this.value)"
+              onclick="this.select()" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;padding:2px 4px">
+            <button class="qty-btn" onclick="changeQty('${item.id}',1)">+</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px">
+            <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
+            <button class="qty-btn" style="color:var(--primary); background:rgba(0,149,255,0.1); width:28px;" onclick="addNoteToCartItem('${item.id}')" title="Thêm ghi chú">📝</button>
+            <button class="qty-btn" style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${item.id}')">✕</button>
+          </div>
+        </div>`
+      ).join('');
   }
 
   // Hiển thị VAT trong tổng nếu có
@@ -1037,7 +1143,7 @@ function openBillModal() {
       <table class="bill-items">
         <thead><tr><th>Món</th><th style="text-align:center">SL</th><th style="text-align:right">Đ.Giá</th><th style="text-align:right">T.Tiền</th></tr></thead>
         <tbody>${items.map(i=>`<tr>
-          <td>${i.name}</td><td style="text-align:center">${i.qty}</td>
+          <td>${i.name}${i.note ? `<br><small style="font-size:9px;color:#666;line-height:1">(Note: ${i.note})</small>` : ''}</td><td style="text-align:center">${i.qty}</td>
           <td style="text-align:right">${fmt(i.price)}</td>
           <td class="amount">${fmt(i.price*i.qty)}</td></tr>`).join('')}
         </tbody>
@@ -1971,7 +2077,9 @@ function editPurchase(purchaseId) {
   // Fill form and open modal
   document.getElementById('pur-name').value = p.name;
   document.getElementById('pur-qty').value = p.qty;
+  document.getElementById('pur-unit').value = p.unit || (p.qty ? 'phần' : '');
   document.getElementById('pur-price').value = p.price;
+  calcPurUnitPrice();
   document.getElementById('pur-supplier').value = p.supplier || '';
   document.getElementById('pur-supplier-phone').value = p.supplierPhone || '';
   document.getElementById('pur-supplier-addr').value = p.supplierAddress || '';
@@ -2156,12 +2264,33 @@ function openPurchaseModal() {
   document.getElementById('purchase-modal').classList.add('active');
 }
 
+function calcPurUnitPrice() {
+  const qtyStr = document.getElementById('pur-qty').value;
+  const priceStr = document.getElementById('pur-price').value;
+  const unit = document.getElementById('pur-unit')?.value || 'đvt';
+  
+  const unitLabel = document.getElementById('pur-unit-label');
+  if (unitLabel) unitLabel.textContent = '/' + unit;
+
+  const unitPriceEl = document.getElementById('pur-unit-price');
+  if (unitPriceEl) {
+    const qty = parseFloat(qtyStr);
+    const price = parseFloat(priceStr);
+    if (!isNaN(qty) && qty > 0 && !isNaN(price)) {
+      unitPriceEl.value = Math.round(price / qty).toLocaleString('vi-VN');
+    } else {
+      unitPriceEl.value = '';
+    }
+  }
+}
+
 function submitPurchase(e) {
   e.preventDefault();
   const inv = Store.getInventory();
   const name = document.getElementById('pur-name').value.trim();
   const qty = parseFloat(document.getElementById('pur-qty').value);
   const price = parseFloat(document.getElementById('pur-price').value);
+  const unit = document.getElementById('pur-unit')?.value.trim() || 'đvt';
   const supplierSel = document.getElementById('pur-supplier-select');
   const supplierId = supplierSel && supplierSel.value ? supplierSel.value : '';
   const supplierName = document.getElementById('pur-supplier').value.trim() || 'Không rõ';
@@ -2192,8 +2321,11 @@ function submitPurchase(e) {
       if(item && item.name.toLowerCase() === name.toLowerCase()) {
         item.qty += qty;
         item.costPerUnit = price/qty;
+        // Do not overwrite item.unit if it already exists, unless we want to? Let's just keep item.unit or update it.
+        // Usually unit is set on creation. We will update it.
+        item.unit = unit; 
       } else if(!item) {
-        item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
+        item = { id:uid(), name, qty, unit, minQty:5, costPerUnit:price/qty };
         inv.push(item);
       }
 
@@ -2216,8 +2348,9 @@ function submitPurchase(e) {
     if(item) {
       item.qty += qty;
       item.costPerUnit = price/qty;
+      item.unit = unit;
     } else {
-      item = { id:uid(), name, qty, unit:'phần', minQty:5, costPerUnit:price/qty };
+      item = { id:uid(), name, qty, unit, minQty:5, costPerUnit:price/qty };
       inv.push(item);
     }
     Store.setInventory(inv);
@@ -2239,12 +2372,133 @@ function submitPurchase(e) {
   // Clear only item fields
   document.getElementById('pur-name').value = '';
   document.getElementById('pur-qty').value = '';
+  document.getElementById('pur-unit').value = '';
   document.getElementById('pur-price').value = '';
+  calcPurUnitPrice();
   if(noteEl) noteEl.value = '';
   const nameInp = document.getElementById('pur-name');
   if(nameInp) nameInp.focus();
   renderInventory();
   updateAlertBadge();
+}
+
+// ============================================================
+// CONVERSION (Quy đổi đơn vị)
+// ============================================================
+function renderConversionTab() {
+  const conversions = Store.getUnitConversions();
+  const listEl = document.getElementById('conversion-list');
+  if(!listEl) return;
+
+  listEl.innerHTML = conversions.map(c => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(139,92,246,0.1)">🔄</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${c.ingredientName}</div>
+        <div class="list-item-sub">Công thức: ${c.purchaseQty} ${c.purchaseUnit} = ${c.recipeQty} ${c.recipeUnit}</div>
+        ${c.note ? `<div class="list-item-sub" style="color:var(--text3);font-size:10px">Ghi chú: ${c.note}</div>` : ''}
+      </div>
+      <div class="list-item-right" style="flex-direction:row; gap:4px; align-items:center;">
+        <button class="btn btn-xs btn-outline" onclick="editConversion('${c.id}')">✏️</button>
+        <button class="btn btn-xs btn-danger" onclick="deleteConversion('${c.id}')">🗑️</button>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-icon">🔄</div><div class="empty-text">Chưa có quy đổi đơn vị nào</div></div>';
+}
+
+function updateConvPreview() {
+  const purQty = parseFloat(document.getElementById('conv-purchase-qty').value) || 0;
+  const purUnit = document.getElementById('conv-purchase-unit').value || '...';
+  const recQty = parseFloat(document.getElementById('conv-recipe-qty').value) || 0;
+  const recUnit = document.getElementById('conv-recipe-unit').value || '...';
+  const textEl = document.getElementById('conv-preview-text');
+  
+  if(purQty > 0 && purUnit !== '...' && recQty > 0 && recUnit !== '...') {
+    textEl.innerHTML = `<span style="color:var(--success)">${purQty} ${purUnit}</span> = <span style="color:var(--primary)">${recQty} ${recUnit}</span>`;
+  } else {
+    textEl.innerHTML = `<span style="color:var(--primary)">Nhập thông tin bên dưới để xem trước</span>`;
+  }
+}
+
+function resetConversionForm() {
+  document.getElementById('conversion-form').reset();
+  document.getElementById('conv-edit-id').value = '';
+  document.getElementById('conv-purchase-qty').value = '1';
+  document.getElementById('conv-recipe-qty').value = '1';
+  updateConvPreview();
+  // Set focus on first field
+  const ingField = document.getElementById('conv-ingredient');
+  if(ingField) {
+    ingField.focus();
+    // Cập nhật lại đơn vị mua nếu có tồn kho
+    ingField.onchange = function() {
+      const inv = Store.getInventory();
+      const stock = inv.find(i => i.name.toLowerCase() === this.value.toLowerCase());
+      if(stock && stock.unit) {
+        document.getElementById('conv-purchase-unit').value = stock.unit;
+        updateConvPreview();
+      }
+    };
+  }
+}
+
+function submitConversion(e) {
+  e.preventDefault();
+  const idEl = document.getElementById('conv-edit-id');
+  const id = idEl.value;
+  const ingredientName = document.getElementById('conv-ingredient').value.trim();
+  const purchaseQty = parseFloat(document.getElementById('conv-purchase-qty').value);
+  const purchaseUnit = document.getElementById('conv-purchase-unit').value.trim();
+  const recipeQty = parseFloat(document.getElementById('conv-recipe-qty').value);
+  const recipeUnit = document.getElementById('conv-recipe-unit').value.trim();
+  const note = document.getElementById('conv-note').value.trim();
+
+  if(!ingredientName || !purchaseUnit || isNaN(purchaseQty) || purchaseQty<=0 || !recipeUnit || isNaN(recipeQty) || recipeQty<=0) {
+    showToast('Vui lòng nhập đầy đủ và hợp lệ', 'warning');
+    return;
+  }
+
+  const conversions = Store.getUnitConversions();
+  if(id) {
+    // Edit
+    const idx = conversions.findIndex(c => c.id === id);
+    if(idx >= 0) {
+      conversions[idx] = { ...conversions[idx], ingredientName, purchaseQty, purchaseUnit, recipeQty, recipeUnit, note };
+      Store.setUnitConversions(conversions);
+      showToast('✅ Đã cập nhật quy đổi!');
+    }
+  } else {
+    // Add (addUnitConversion takes care of duplicates for same ingredient + recipe unit)
+    Store.addUnitConversion({ id:uid(), ingredientName, purchaseQty, purchaseUnit, recipeQty, recipeUnit, note });
+    showToast('✅ Đã thêm quy đổi mới!', 'success');
+  }
+  
+  resetConversionForm();
+  renderConversionTab();
+}
+
+function editConversion(id) {
+  const conversions = Store.getUnitConversions();
+  const conv = conversions.find(c => c.id === id);
+  if(!conv) return;
+
+  document.getElementById('conv-edit-id').value = conv.id;
+  document.getElementById('conv-ingredient').value = conv.ingredientName;
+  document.getElementById('conv-purchase-qty').value = conv.purchaseQty;
+  document.getElementById('conv-purchase-unit').value = conv.purchaseUnit;
+  document.getElementById('conv-recipe-qty').value = conv.recipeQty;
+  document.getElementById('conv-recipe-unit').value = conv.recipeUnit;
+  document.getElementById('conv-note').value = conv.note || '';
+  updateConvPreview();
+  // Scroll form into view
+  document.getElementById('conversion-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function deleteConversion(id) {
+  if(!confirm('Xóa quy đổi này?')) return;
+  Store.deleteUnitConversion(id);
+  renderConversionTab();
+  showToast('🗑️ Đã xóa quy đổi', 'success');
 }
 
 // ============================================================
@@ -2449,6 +2703,7 @@ function setReportPeriod(p) {
   renderCategoryChart();
   renderHourlyChart();
   renderOrderHistoryList();
+  renderExpenseReport();
 }
 
 function renderTopItems() {
@@ -2515,6 +2770,81 @@ function renderHourlyChart() {
       }
     }
   });
+}
+
+function renderExpenseReport() {
+  const ctx = document.getElementById('expense-chart');
+  const listEl = document.getElementById('purchase-report-list');
+  if (!ctx || !listEl) return;
+
+  const now = new Date();
+  const filterFn = (dateStr) => {
+    const d = new Date(dateStr);
+    if(reportPeriod === 'today') return d.toDateString() === now.toDateString();
+    if(reportPeriod === 'day' && reportDateOpts && reportDateOpts.date) {
+      return d.toDateString() === new Date(reportDateOpts.date).toDateString();
+    }
+    if(reportPeriod === 'range' && reportDateOpts && reportDateOpts.fromDate && reportDateOpts.toDate) {
+      const from = new Date(reportDateOpts.fromDate); from.setHours(0,0,0,0);
+      const to = new Date(reportDateOpts.toDate); to.setHours(23,59,59,999);
+      return d >= from && d <= to;
+    }
+    if(reportPeriod === 'week') return (now - d) / 86400000 <= 7;
+    if(reportPeriod === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return true;
+  };
+
+  const rawPurchases = Store.getPurchases().filter(p => filterFn(p.date));
+  const rawExpenses = Store.getExpenses().filter(e => filterFn(e.date));
+
+  const sums = {};
+  rawPurchases.forEach(p => {
+    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.qty * p.price);
+  });
+  rawExpenses.forEach(e => {
+    const cat = e.category || 'Chi phí khác';
+    sums[cat] = (sums[cat] || 0) + e.amount;
+  });
+
+  const labels = Object.keys(sums);
+  const data = labels.map(l => sums[l]);
+
+  if(chartInstances.expense) chartInstances.expense.destroy();
+  if(data.every(v => v === 0)) {
+    // Hide or render empty?
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-text">Chưa có chi phí nào trong khoảng thời gian này.</div></div>';
+    ctx.style.display = 'none';
+  } else {
+    ctx.style.display = 'block';
+    const colors = ['#00D68F','#FF3D71','#A855F7','#0095FF','#FFD700','#FF6B35','#8F9BB3'];
+    chartInstances.expense = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth:0, hoverOffset:8 }] },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+      }
+    });
+
+    // Render list
+    const allItems = [
+      ...rawPurchases.map(p => ({ type: 'purchase', name: `Nhập: ${p.name}`, amount: p.qty*p.price, date: p.date, note: `${p.qty} ${p.unit} - ${p.supplier||''}` })),
+      ...rawExpenses.map(e => ({ type: 'expense', name: e.name, amount: e.amount, date: e.date, note: e.category }))
+    ].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    listEl.innerHTML = allItems.map(item => `
+      <div class="list-item">
+        <div class="list-item-icon" style="background:${item.type==='purchase'?'rgba(0,214,143,0.1)':'rgba(255,61,113,0.1)'}">${item.type==='purchase'?'📦':'💸'}</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${item.name}</div>
+          <div class="list-item-sub">${fmtDate(item.date)} · ${item.note || ''}</div>
+        </div>
+        <div class="list-item-right" style="color:var(--danger);font-weight:bold;">
+          ${fmt(item.amount)}đ
+        </div>
+      </div>
+    `).join('');
+  }
 }
 
 function renderOrderHistoryList() {
@@ -2722,7 +3052,7 @@ function openAddMenuModal(id) {
   const list = document.getElementById('menu-ingredients-list');
   list.innerHTML = '';
   if (dish && dish.ingredients && dish.ingredients.length > 0) {
-    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty));
+    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty, ing.unit));
   } else {
     // addIngredientRow(); // Add an empty row by default
   }
@@ -2752,12 +3082,13 @@ function submitMenuItem(e) {
 
   const ingredients = [];
   const inv = Store.getInventory();
-  document.querySelectorAll('#menu-ingredients-list > div').forEach(row => {
+  document.querySelectorAll('#menu-ingredients-list > .ingredient-row').forEach(row => {
     const ingName = row.querySelector('.ing-name-sel').value;
     const qty = parseFloat(row.querySelector('.ing-qty-val').value);
+    const unit = row.querySelector('.ing-unit-sel').value;
     if (ingName && qty > 0) {
       const stock = inv.find(i => i.name === ingName);
-      ingredients.push({ name: ingName, qty, unit: stock ? stock.unit : '' });
+      ingredients.push({ name: ingName, qty, unit: unit || (stock ? stock.unit : '') });
     }
   });
 
@@ -2774,7 +3105,7 @@ function submitMenuItem(e) {
 }
 
 
-function addIngredientRow(name='', qty='') {
+function addIngredientRow(name='', qty='', unit='') {
   const inv = Store.getInventory();
   // Filter inventory list to generate options
   const options = inv.map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})</option>`).join('');
@@ -2782,19 +3113,58 @@ function addIngredientRow(name='', qty='') {
   const div = document.createElement('div');
   div.style.display = 'flex';
   div.style.gap = '8px';
+  div.className = 'ingredient-row';
+  div.style.alignItems = 'center';
   div.innerHTML = `
-    <select class="select ing-name-sel" style="flex:2">
+    <select class="select ing-name-sel" style="flex:2" onchange="updateIngUnitDropdown(this)">
       <option value="">-- Chọn NL --</option>
       ${options}
+    </select>
+    <select class="select ing-unit-sel" style="flex:1.5">
+      <option value="">-- Tính theo --</option>
     </select>
     <input type="number" class="input ing-qty-val" placeholder="SL" value="${qty}" style="flex:1" step="0.01">
     <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove();">✕</button>
   `;
   document.getElementById('menu-ingredients-list').appendChild(div);
   
+  const nameSel = div.querySelector('.ing-name-sel');
   if (name) {
-    const sel = div.querySelector('.ing-name-sel');
-    sel.value = name;
+    nameSel.value = name;
+    updateIngUnitDropdown(nameSel, unit);
+  }
+}
+
+window.updateIngUnitDropdown = function(selectEl, selectedUnit = '') {
+  const row = selectEl.closest('.ingredient-row');
+  if(!row) return;
+  const unitSel = row.querySelector('.ing-unit-sel');
+  const ingName = selectEl.value;
+  
+  unitSel.innerHTML = '<option value="">-- Tính theo --</option>';
+  if(!ingName) return;
+
+  const inv = Store.getInventory();
+  const convs = Store.getUnitConversions();
+  
+  const stock = inv.find(i => i.name === ingName);
+  if(!stock) return;
+
+  // Add default unit (stock unit)
+  let html = `<option value="${stock.unit}">${stock.unit} (tồn kho)</option>`;
+
+  // Add conversion units
+  const matches = convs.filter(c => c.ingredientName === ingName && c.purchaseUnit === stock.unit);
+  matches.forEach(c => {
+    html += `<option value="${c.recipeUnit}">${c.recipeUnit} (quy đổi)</option>`;
+  });
+
+  unitSel.innerHTML = html;
+  if(selectedUnit) {
+    unitSel.value = selectedUnit;
+  } else {
+    // default to stock unit
+    unitSel.value = stock.unit;
   }
 }
 
@@ -2860,6 +3230,7 @@ function applyDateFilter(page) {
     renderCategoryChart();
     renderHourlyChart();
     renderOrderHistoryList();
+    renderExpenseReport(); // NEW!
   }
 }
 
