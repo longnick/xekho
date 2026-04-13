@@ -12,32 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-<!-- ===== LOGIN SCREEN ===== -->
-<div id="login-screen" style="position:fixed; top:0; left:0; right:0; bottom:0; background:var(--bg); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; transition:opacity 0.4s ease, transform 0.4s ease; opacity:1; pointer-events:auto; overflow:hidden;">
-  <div style="background:var(--bg2); padding:32px 24px; border-radius:var(--radius-lg); width:100%; max-width:360px; box-shadow:0 10px 40px rgba(0,0,0,0.3); border:1px solid var(--border); text-align:center;">
-    <div style="font-size:48px; margin-bottom:12px;">🍢</div>
-    <h2 style="margin:0 0 4px 0; color:var(--text); font-size:20px;">Gánh Khô Chữa Lành</h2>
-    <p style="margin:0 0 24px 0; color:var(--text2); font-size:13px;">POS System Login</p>
-    
-    <form id="login-form" onsubmit="handleLogin(event)" style="display:flex; flex-direction:column; gap:16px;">
-      <div class="input-group" style="text-align:left;">
-        <label class="input-label">Tài khoản</label>
-        <input type="text" id="login-username" class="input" placeholder="Nhập tên đăng nhập" required autocomplete="username">
-      </div>
-      <div class="input-group" style="text-align:left;">
-        <label class="input-label">Mật khẩu</label>
-        <input type="password" id="login-password" class="input" placeholder="Nhập mật khẩu" required autocomplete="current-password">
-      </div>
-      <div id="login-error" style="color:var(--danger); font-size:13px; min-height:18px; text-align:left;"></div>
-      <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px; height:48px; font-size:16px;">Đăng nhập</button>
-    </form>
-    <div style="margin-top:24px; font-size:11px; color:var(--text3);">
-      Mặc định admin / 123
-    </div>
-  </div>
-</div>
-
-<div id="app" style="display:none;">
+<div id="app" style="display:flex;">
 
   <!-- ===== HEADER ===== -->
   <header class="app-header">
@@ -49,6 +24,7 @@
       </div>
     </div>
     <div class="header-actions">
+      <div id="current-user-display" style="font-size: 13px; font-weight: 600; color: var(--primary); background: rgba(124, 58, 237, 0.1); padding: 4px 10px; border-radius: 12px; margin-right: 5px; display: flex; align-items: center;"></div>
       <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI" style="position:relative; display:none;">
         <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
         <span id="ai-active-dot" style="position:absolute;top:4px;right:4px;width:7px;height:7px;background:var(--success);border-radius:50%;display:none"></span>
@@ -60,9 +36,6 @@
       <button class="header-btn" onclick="handleLogout()" title="Đăng xuất" style="color:var(--text2)">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
       </button>
-      <button class="header-btn" onclick="resetAllData()" title="Reset sạch dữ liệu" style="color:var(--danger)">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      </button>
     </div>
   </header>
 
@@ -73,12 +46,12 @@
     <div id="page-tables" class="page">
       <!-- Quick Stats -->
       <div class="stats-grid">
-        <div class="stat-card orange">
+        <div class="stat-card orange" id="staff-hide-rev">
           <div class="stat-icon">💰</div>
           <div class="stat-value" id="today-revenue">0đ</div>
           <div class="stat-label">Doanh thu hôm nay</div>
         </div>
-        <div class="stat-card green">
+        <div class="stat-card green" id="staff-hide-ord">
           <div class="stat-icon">🧾</div>
           <div class="stat-value" id="today-orders">0</div>
           <div class="stat-label">Đơn hàng hôm nay</div>
@@ -146,8 +119,12 @@
         </div>
         <div class="cart-items" id="cart-items"></div>
         <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
-          <div style="display:flex;gap:10px">
-            <input type="number" class="input input-sm" id="cart-discount" placeholder="Giảm giá (đ)" oninput="renderCart()" min="0">
+          <div style="display:flex;gap:10px;align-items:center;">
+            <select id="cart-discount-type" class="select select-sm" style="flex:0 0 70px; padding:0 8px;" onchange="renderCart()">
+              <option value="amount" selected>VNĐ</option>
+              <option value="percent">%</option>
+            </select>
+            <input type="number" class="input input-sm" id="cart-discount" placeholder="Giảm giá" oninput="renderCart()" min="0">
             <input type="text" class="input input-sm" id="cart-discount-note" placeholder="Lý do giảm giá..." oninput="renderCart()">
           </div>
           <div style="display:flex;gap:10px">
@@ -174,6 +151,7 @@
       <div class="tab-bar">
         <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 Kho</button>
         <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập</button>
+        <button class="tab-btn" onclick="switchInvTab('conversion',this)">🔄 Quy đổi</button>
         <button class="tab-btn" onclick="switchInvTab('ledger',this)">📓 Thẻ kho</button>
         <button class="tab-btn" onclick="switchInvTab('forecast',this)">🔮 Dự báo</button>
         <button class="tab-btn" onclick="switchInvTab('ncc',this)">🏭 NCC</button>
@@ -206,6 +184,57 @@
           </div>
         </div>
         <div id="forecast-list"></div>
+      </div>
+
+      <!-- CONVERSION TAB -->
+      <div id="inv-tab-conversion" style="display:none">
+        <!-- Inline Add Form -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header">
+            <div class="card-title">🔄 Thêm quy đổi đơn vị mới</div>
+          </div>
+          <form id="conversion-form" onsubmit="submitConversion(event)" style="display:flex;flex-direction:column;gap:10px">
+            <input type="hidden" id="conv-edit-id">
+            <div class="input-group">
+              <label class="input-label">Tên nguyên liệu *</label>
+              <input class="input" id="conv-ingredient" required list="conv-ing-names" placeholder="Bắp, Đậu hũ...">
+              <datalist id="conv-ing-names"></datalist>
+            </div>
+            <div style="background:var(--bg3);border-radius:10px;padding:12px;font-size:12px;color:var(--text2);line-height:1.7">
+              <b style="color:var(--text)">📐 Công thức quy đổi:</b><br>
+              <span id="conv-preview-text" style="color:var(--primary)">Nhập thông tin bên dưới để xem trước</span>
+            </div>
+            <div class="form-row" style="align-items:flex-end">
+              <div class="input-group">
+                <label class="input-label">SL mua *</label>
+                <input class="input" id="conv-purchase-qty" type="number" min="0.001" step="0.001" value="1" required oninput="updateConvPreview()">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Đơn vị mua *</label>
+                <input class="input" id="conv-purchase-unit" placeholder="trái, hộp, kg..." required oninput="updateConvPreview()">
+              </div>
+              <div style="padding-bottom:8px;font-size:20px;font-weight:700;color:var(--text2);flex-shrink:0">=</div>
+              <div class="input-group">
+                <label class="input-label">SL quy đổi *</label>
+                <input class="input" id="conv-recipe-qty" type="number" min="0.001" step="0.001" value="1" required oninput="updateConvPreview()">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Đơn vị công thức *</label>
+                <input class="input" id="conv-recipe-unit" placeholder="phần, miếng..." required oninput="updateConvPreview()">
+              </div>
+            </div>
+            <div class="input-group">
+              <label class="input-label">Ghi chú</label>
+              <input class="input" id="conv-note" placeholder="Ví dụ: 1 trái bắp = 4 phần bắp xào">
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="submit" class="btn btn-primary" style="flex:2">✅ Lưu quy đổi</button>
+              <button type="button" class="btn btn-secondary" style="flex:1" onclick="resetConversionForm()">🔄 Reset</button>
+            </div>
+          </form>
+        </div>
+        <!-- List -->
+        <div id="conversion-list"></div>
       </div>
 
       <!-- LEDGER TAB -->
@@ -258,7 +287,7 @@
 
       <!-- Finance Stats -->
       <div class="stats-grid">
-        <div class="stat-card orange">
+        <div class="stat-card orange clickable" onclick="navigateToReport('revenue')" title="Đến Báo Cáo Doanh Thu">
           <div class="stat-icon">💰</div>
           <div class="stat-value" id="fin-revenue">0đ</div>
           <div class="stat-label">Doanh thu</div>
@@ -268,7 +297,7 @@
           <div class="stat-value" id="fin-gross">0đ</div>
           <div class="stat-label">Lãi gộp</div>
         </div>
-        <div class="stat-card red">
+        <div class="stat-card red clickable" onclick="navigateToReport('expense')" title="Đến Báo Cáo Chi Phí (Nhập hàng, Khác)">
           <div class="stat-icon">💸</div>
           <div class="stat-value" id="fin-expense">0đ</div>
           <div class="stat-label">Chi phí</div>
@@ -375,23 +404,84 @@
         </div>
       </div>
 
-      <!-- Charts -->
-      <div class="chart-wrap">
-        <div class="card-title" style="margin-bottom:10px">🍽️ Doanh thu theo danh mục</div>
-        <canvas id="category-chart"></canvas>
-      </div>
-      <div class="chart-wrap">
-        <div class="card-title" style="margin-bottom:10px">⏰ Doanh thu theo giờ</div>
-        <canvas id="hourly-chart"></canvas>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchReportTab('revenue', this)">💰 Báo cáo Doanh Thu</button>
+        <button class="tab-btn" onclick="switchReportTab('purchase', this)">💸 Báo cáo Chi Phí</button>
       </div>
 
-      <!-- Top Items -->
-      <div class="section-header"><div class="section-title">🔥 Món bán chạy</div></div>
-      <div id="top-items"></div>
+      <!-- TAB: REVENUE -->
+      <div id="report-tab-revenue" class="report-tab-content">
+        <!-- Charts -->
+        <div class="chart-wrap">
+          <div class="card-title" style="margin-bottom:10px">🍽️ Doanh thu theo danh mục</div>
+          <canvas id="category-chart"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <div class="card-title" style="margin-bottom:10px">⏰ Doanh thu theo giờ</div>
+          <canvas id="hourly-chart"></canvas>
+        </div>
 
-      <!-- History -->
-      <div class="section-header"><div class="section-title">🧾 Lịch sử đơn hàng</div></div>
-      <div id="order-history-list"></div>
+        <!-- Top Items -->
+        <div class="section-header"><div class="section-title">🔥 Món bán chạy</div></div>
+        <div id="top-items"></div>
+
+        <!-- History -->
+        <div class="section-header"><div class="section-title">🧾 Lịch sử đơn hàng</div></div>
+        <div id="order-history-list"></div>
+      </div>
+
+      <!-- TAB: PURCHASE / EXPENSE -->
+      <div id="report-tab-purchase" class="report-tab-content" style="display:none;">
+        <div class="chart-wrap">
+          <div class="card-title" style="margin-bottom:10px">🍕 Tỉ lệ các loại chi phí</div>
+          <canvas id="expense-chart"></canvas>
+        </div>
+        <div class="section-header"><div class="section-title">🧾 Bảng kê chi phí & Nhập hàng</div></div>
+        <div id="purchase-report-list" class="card" style="padding:0">
+           <div class="empty-state"><div class="empty-text">Chọn khoảng thời gian để xem báo cáo chi phí.</div></div>
+        </div>
+      </div>
+      
+      <!-- Excel/Drive Card (Moved from Settings) -->
+      <div class="card" style="margin-top:20px; border-color:var(--primary);">
+        <div class="card-header"><div class="card-title">📊 Xuất Báo Cáo & Google Drive</div></div>
+        <div class="input-group">
+          <label class="input-label">Loại báo cáo cần xuất file Excel</label>
+          <select id="set-reportExportType" class="select">
+            <option value="revenue">Doanh thu (theo đơn + theo món)</option>
+            <option value="orders">Lịch sử đơn hàng đầy đủ</option>
+            <option value="expense">Chi phí</option>
+            <option value="purchase">Nhập hàng</option>
+            <option value="inventory">Tồn kho</option>
+            <option value="all">Tổng hợp (nhiều sheet)</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <button type="button" class="btn btn-secondary btn-block" onclick="exportReportExcel()">📥 Tải file Excel</button>
+          <button type="button" class="btn btn-info btn-block" onclick="pushReportExcelToGoogleDriveManual()">☁️ Đẩy lên Drive</button>
+        </div>
+        
+        <div class="toggle-wrap" style="margin-top:16px;">
+          <div class="toggle-label">Tự động xuất hàng tuần (lên Drive)</div>
+          <label class="toggle"><input type="checkbox" id="set-autoExportWeekly" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-wrap">
+          <div class="toggle-label">Tự động xuất hàng tháng</div>
+          <label class="toggle"><input type="checkbox" id="set-autoExportMonthly" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+        </div>
+        
+        <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+          <div class="input-group">
+            <label class="input-label">Cấu hình Google Drive Upload URL</label>
+            <input class="input" id="set-googleDriveUploadUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" onchange="submitSettings(event)">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Drive Folder ID</label>
+            <input class="input" id="set-googleDriveFolderId" placeholder="Dán ID thư mục" autocomplete="off" onchange="submitSettings(event)">
+          </div>
+          <button type="button" class="btn btn-sm btn-outline btn-block" onclick="openGoogleDriveReportGuide()">📖 Hướng dẫn lấy Link/ID</button>
+        </div>
+      </div>
     </div>
 
     <!-- ========== PAGE: INSIGHTS ========== -->
@@ -440,17 +530,26 @@
 
     <!-- ========== PAGE: SETTINGS ========== -->
     <div id="page-settings" class="page">
-      <!-- User Management -->
-      <div id="settings-user-management" class="card" style="display:none;">
-        <div class="card-header">
-          <div class="card-title">👥 Quản lý nhân viên</div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
-        </div>
-        <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchSettingsTab('store',this)">🏪 Cửa hàng</button>
+        <button class="tab-btn" onclick="switchSettingsTab('users',this)">👥 Nhân sự</button>
+        <button class="tab-btn" onclick="switchSettingsTab('payment',this)">💳 Thanh toán</button>
+        <button class="tab-btn" onclick="switchSettingsTab('ai',this)">🤖 Hệ thống AI</button>
+        <button class="tab-btn" onclick="switchSettingsTab('data',this)">💾 Dữ liệu</button>
       </div>
 
-      <!-- Store Info -->
-      <form id="settings-form" onsubmit="submitSettings(event)">
+      <div id="set-tab-users" class="settings-tab-content" style="display:none;">
+        <div id="settings-user-management" class="card">
+          <div class="card-header">
+            <div class="card-title">👥 Quản lý nhân viên</div>
+            <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
+          </div>
+          <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+      </div>
+
+      <div id="set-tab-store" class="settings-tab-content">
+        <form id="settings-form" onsubmit="submitSettings(event)">
         <div class="card">
           <div class="card-header"><div class="card-title">🏪 Thông tin quán</div></div>
           
@@ -492,6 +591,21 @@
           </div>
         </div>
 
+        <!-- Danger Zone -->
+        <div class="card" style="border-color:var(--danger);">
+          <div class="card-header">
+            <div class="card-title" style="color:var(--danger)">⚠️ Vùng nguy hiểm</div>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Xoá toàn bộ dữ liệu giao dịch, lịch sử, tồn kho để bắt đầu hoạt động chính thức.</div>
+          <button class="btn btn-danger btn-block" type="button" onclick="resetAllData()">🔄 Reset sạch dữ liệu</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
+      </form>
+      </div>
+
+      <div id="set-tab-payment" class="settings-tab-content" style="display:none;">
+        <form id="settings-form-payment" onsubmit="submitSettings(event)">
         <!-- Bank Info -->
         <div class="card">
           <div class="card-header"><div class="card-title">🏦 Thông tin thanh toán</div></div>
@@ -554,7 +668,12 @@
           </div>
         </div>
 
+        <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
+        </form>
+      </div>
 
+      <div id="set-tab-ai" class="settings-tab-content" style="display:none;">
+        <form id="settings-form-ai" onsubmit="submitSettings(event)">
         <!-- GEMMA LOCAL AI -->
         <div class="card">
           <div class="card-header"><div class="card-title">🧠 Local AI (Ollama / Gemma 4)</div></div>
@@ -619,79 +738,13 @@
           </div>
         </div>
 
-        <!-- Xuất báo cáo Excel -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">📊 Xuất báo cáo (Excel)</div></div>
-          <div class="input-group">
-            <label class="input-label">Loại báo cáo cần xuất</label>
-            <select id="set-reportExportType" class="select">
-              <option value="revenue">Doanh thu (theo đơn + theo món)</option>
-              <option value="orders">Lịch sử đơn hàng đầy đủ</option>
-              <option value="expense">Chi phí</option>
-              <option value="purchase">Nhập hàng</option>
-              <option value="inventory">Tồn kho</option>
-              <option value="all">Tổng hợp (nhiều sheet)</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label class="input-label">Kỳ báo cáo</label>
-            <select id="set-reportExportPeriod" class="select" onchange="toggleReportExportDate()">
-              <option value="today">Hôm nay</option>
-              <option value="day">Chọn ngày cụ thể</option>
-              <option value="week">7 ngày gần nhất</option>
-              <option value="month">Tháng này</option>
-              <option value="all">Tất cả</option>
-            </select>
-          </div>
-          <div class="input-group" id="report-export-date-wrap" style="display:none">
-            <label class="input-label">Ngày báo cáo</label>
-            <input type="date" id="set-reportExportDate" class="input">
-          </div>
-          <div class="toggle-wrap">
-            <div class="toggle-label">Tự động xuất hàng tuần</div>
-            <label class="toggle"><input type="checkbox" id="set-autoExportWeekly" onchange="toggleWeeklyDriveCheckbox()"><span class="toggle-slider"></span></label>
-          </div>
-          <div class="toggle-wrap">
-            <div class="toggle-label">Tuần mới: đẩy file Excel lên Google Drive</div>
-            <label class="toggle"><input type="checkbox" id="set-autoPushWeeklyReportToGoogleDrive"><span class="toggle-slider"></span></label>
-          </div>
-          <div style="font-size:11px;color:var(--text2);margin:-4px 0 8px;line-height:1.5">
-            Khi bật: mỗi tuần (lần đầu mở app trong tuần) tạo đúng file .xlsx như nút xuất (loại báo cáo ở trên, kỳ <strong>7 ngày gần nhất</strong>) rồi gửi lên thư mục Drive đã cấu hình — không tự tải xuống máy.
-          </div>
-          <div class="toggle-wrap">
-            <div class="toggle-label">Tự động xuất hàng tháng</div>
-            <label class="toggle"><input type="checkbox" id="set-autoExportMonthly"><span class="toggle-slider"></span></label>
-          </div>
-          <button type="button" class="btn btn-secondary btn-block" onclick="exportReportExcel()">📥 Xuất file Excel (.xlsx)</button>
-        </div>
-
-        <!-- Google Drive — báo cáo Excel -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">☁️ Đẩy báo cáo Excel lên Google Drive</div></div>
-          <div class="toggle-wrap" style="margin-bottom:8px">
-            <div class="toggle-label">Sau khi bấm “Xuất Excel”, tự đẩy luôn lên Drive</div>
-            <label class="toggle"><input type="checkbox" id="set-autoUploadToGoogleDrive"><span class="toggle-slider"></span></label>
-          </div>
-          <div class="input-group">
-            <label class="input-label">URL Web App (Google Apps Script)</label>
-            <input class="input" id="set-googleDriveUploadUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-          </div>
-          <div class="input-group">
-            <label class="input-label">ID thư mục Google Drive</label>
-            <input class="input" id="set-googleDriveFolderId" placeholder="Dán ID thư mục (ví dụ từ đường dẫn drive.google.com/drive/folders/...)" autocomplete="off">
-          </div>
-          <button type="button" class="btn btn-secondary btn-block" onclick="openGoogleDriveReportGuide()">📖 Hướng dẫn cấu hình Google Drive (từng bước)</button>
-          <button type="button" class="btn btn-info btn-block" onclick="pushReportExcelToGoogleDriveManual()">☁️ Đẩy báo cáo lên Drive (theo loại &amp; kỳ đang chọn)</button>
-          <div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.55">
-            File đẩy lên là <strong>đúng file .xlsx</strong> giống lúc xuất (cùng dữ liệu, cùng tên <code>bao_cao_*_YYYY-MM-DD.xlsx</code>), được Apps Script lưu vào <strong>thư mục có ID ở trên</strong>.
-            Web app nhận POST JSON: <code>filename</code>, <code>mimeType</code>, <code>base64Data</code>, <code>folderId</code> rồi tạo file trong thư mục đó.
-          </div>
-        </div>
-
         <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
-      </form>
+        </form>
+      </div>
 
-      <!-- Backup Section -->
+      <div id="set-tab-data" class="settings-tab-content" style="display:none;">
+        <form id="settings-form-data" onsubmit="submitSettings(event)">
+        <!-- Backup Section -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">💾 Backup dữ liệu</div>
@@ -727,13 +780,8 @@
         <div id="backup-list" class="card" style="padding:0"></div>
       </div>
 
-      <!-- Danger Zone -->
-      <div class="card" style="border-color:var(--danger);">
-        <div class="card-header">
-          <div class="card-title" style="color:var(--danger)">⚠️ Vùng nguy hiểm</div>
-        </div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Xoá toàn bộ dữ liệu giao dịch, lịch sử, tồn kho để bắt đầu hoạt động chính thức.</div>
-        <button class="btn btn-danger btn-block" onclick="resetAllData()">🔄 Reset sạch dữ liệu</button>
+      <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
+      </form>
       </div>
     </div>
 
@@ -864,13 +912,29 @@
           <datalist id="inv-names"></datalist>
         </div>
         <div class="form-row">
-          <div class="input-group">
+          <div class="input-group" style="flex:2">
             <label class="input-label">Số lượng *</label>
-            <input class="input" id="pur-qty" type="number" min="0.01" step="0.01" placeholder="10" required>
+            <input class="input" id="pur-qty" type="number" min="0.01" step="0.01" placeholder="10" required oninput="calcPurUnitPrice()">
           </div>
+          <div class="input-group" style="flex:1">
+            <label class="input-label">Đơn vị *</label>
+            <input class="input" id="pur-unit" placeholder="kg, trái..." required list="inv-units">
+            <datalist id="inv-units"></datalist>
+          </div>
+        </div>
+        <div class="form-row">
           <div class="input-group">
             <label class="input-label">Tổng tiền (đ) *</label>
-            <input class="input" id="pur-price" type="number" min="0" placeholder="150000" required>
+            <input class="input" id="pur-price" type="number" min="0" placeholder="150000" required oninput="calcPurUnitPrice()">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Đơn giá nhập (đ/đvt)</label>
+            <div style="position:relative">
+              <input class="input" id="pur-unit-price" type="text" readonly tabindex="-1"
+                style="background:var(--bg3);color:var(--success);font-weight:700;cursor:default"
+                placeholder="Tự tính...">
+              <span id="pur-unit-label" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3)"></span>
+            </div>
           </div>
         </div>
         <div class="input-group">
@@ -967,12 +1031,12 @@
           <div class="input-group">
             <label class="input-label">Danh mục</label>
             <select class="select" id="exp-category">
-              <option>Điện/Nước</option>
-              <option>Thuê mặt bằng</option>
-              <option>Nhân công</option>
-              <option>Marketing</option>
-              <option>Vận chuyển</option>
-              <option>Khác</option>
+              <option>Chi phí nhân sự</option>
+              <option>Chi phí marketing</option>
+              <option>Chi phí vận chuyển</option>
+              <option>Chi phí điện nước</option>
+              <option>Chi phí mặt bằng</option>
+              <option>Chi phí khác</option>
             </select>
           </div>
         </div>
@@ -1261,6 +1325,26 @@
   </div>
 </div>
 
+<div class="login-screen active" id="login-screen">
+  <div class="login-box">
+    <div style="font-size:40px; margin-bottom:10px;">🍢</div>
+    <h2 style="margin-bottom:5px;">Gánh Khô Chữa Lành</h2>
+    <div style="color:var(--text2); font-size:14px; margin-bottom:20px;">Hệ thống Điểm bán hàng (POS)</div>
+    <form onsubmit="handleLoginSubmit(event)">
+      <div class="input-group">
+        <label class="input-label" style="text-align:left;">Tài khoản</label>
+        <input type="text" id="login-username" class="input" required autocomplete="username" placeholder="Nhập tài khoản">
+      </div>
+      <div class="input-group">
+        <label class="input-label" style="text-align:left;">Mật khẩu</label>
+        <input type="password" id="login-password" class="input" required autocomplete="current-password" placeholder="Nhập mật khẩu">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" style="padding:12px; margin-top:20px;">Đăng nhập</button>
+    </form>
+    <div id="login-error" style="color:var(--danger); font-size:12px; margin-top:10px; min-height:15px;"></div>
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -1303,19 +1387,24 @@ function switchInvTab(tab, el) {
   invTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   if(el) el.classList.add('active');
-  document.getElementById('inv-tab-stock').style.display    = tab === 'stock'    ? '' : 'none';
-  document.getElementById('inv-tab-purchase').style.display = tab === 'purchase' ? '' : 'none';
-  document.getElementById('inv-tab-forecast').style.display = tab === 'forecast' ? '' : 'none';
-  document.getElementById('inv-tab-ledger').style.display   = tab === 'ledger'   ? '' : 'none';
-  document.getElementById('inv-tab-ncc').style.display      = tab === 'ncc'      ? '' : 'none';
+  document.getElementById('inv-tab-stock').style.display      = tab === 'stock'      ? '' : 'none';
+  document.getElementById('inv-tab-purchase').style.display   = tab === 'purchase'   ? '' : 'none';
+  document.getElementById('inv-tab-conversion').style.display = tab === 'conversion' ? '' : 'none';
+  document.getElementById('inv-tab-forecast').style.display   = tab === 'forecast'   ? '' : 'none';
+  document.getElementById('inv-tab-ledger').style.display     = tab === 'ledger'     ? '' : 'none';
+  document.getElementById('inv-tab-ncc').style.display        = tab === 'ncc'        ? '' : 'none';
   renderInventory();
 
-  // Populate datalist for purchase and ledger
-  if(tab === 'purchase' || tab === 'stock' || tab === 'ledger') {
+  // Populate datalist for purchase, stock, ledger, and conversion
+  if(tab === 'purchase' || tab === 'stock' || tab === 'ledger' || tab === 'conversion') {
     const inv = Store.getInventory();
     const dl = document.getElementById('inv-names');
     if(dl) {
       dl.innerHTML = inv.map(i=>`<option value="${i.name}">`).join('');
+    }
+    const convDl = document.getElementById('conv-ing-names');
+    if(convDl) {
+      convDl.innerHTML = inv.map(i=>`<option value="${i.name}">`).join('');
     }
     const select = document.getElementById('ledger-item-select');
     if(select && select.children.length <= 1) {

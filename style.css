@@ -719,6 +719,55 @@ body {
   .menu-grid { grid-template-columns: 1fr 1fr 1fr; }
 }
 
+@media (min-width: 768px) {
+  /* Hide bottom nav style and make it a sidebar */
+  .bottom-nav {
+    top: 0; bottom: 0; left: 0; right: auto;
+    width: 80px; height: 100vh;
+    flex-direction: column; align-items: stretch; justify-content: flex-start;
+    padding-top: calc(var(--header-height) + 16px);
+    border-top: none; border-right: 1px solid var(--border);
+  }
+  .nav-item {
+    flex: none; height: 75px;
+    justify-content: center;
+  }
+  
+  /* Shift main content & header */
+  .app-header {
+    left: 80px; width: calc(100% - 80px);
+  }
+  .main-content {
+    margin-left: 80px;
+    padding-bottom: var(--safe-bottom); /* Fix bottom overflow since there's no bottom nav */
+  }
+
+  /* Page specific adjustments */
+  #page-orders {
+    height: calc(100vh - var(--header-height));
+  }
+  
+  /* Order screen split pane */
+  .order-split { flex-direction: row; }
+  .order-pane-menu { flex: 1; border-right: 1px solid var(--border); padding-right: 12px; }
+  .order-pane-cart { flex: 0 0 350px; }
+
+  /* Settings tabs */
+  #page-settings .tab-bar { flex-wrap: wrap; }
+  #page-settings .tab-btn { flex: 1 1 20%; }
+
+  /* Grids */
+  .table-grid { grid-template-columns: repeat(6, 1fr); }
+  .menu-grid { grid-template-columns: repeat(4, 1fr); }
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .table-grid { grid-template-columns: repeat(8, 1fr); }
+  .menu-grid { grid-template-columns: repeat(5, 1fr); }
+  .order-pane-cart { flex: 0 0 400px; }
+}
+
 /* ---- MINIMALIST ICONS ---- */
 .minimal-icon { opacity: 0.8; transition: opacity 0.2s; }
 .nav-item.active .minimal-icon { opacity: 1; }
@@ -951,3 +1000,11 @@ body {
   transition: color 0.3s;
   padding: 2px 0;
 }
+
+.clickable { cursor: pointer; transition: transform 0.2s; }
+.clickable:hover { transform: scale(1.02); }
+
+.login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 9999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+.login-screen.active { opacity: 1; pointer-events: auto; }
+.login-box { width: 90%; max-width: 400px; background: var(--bg2); padding: 30px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+.staff-hide { display: none !important; }
