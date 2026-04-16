@@ -216,6 +216,12 @@ body {
 .order-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .order-header .back-btn { width: 36px; height: 36px; background: var(--bg3); border-radius: 10px; border: none; color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .order-table-name { font-size: 18px; font-weight: 800; }
+.order-cart-pill { height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--border); background: var(--bg3); color: var(--text); font-weight: 800; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,0.25); white-space: nowrap; }
+.order-cart-pill:active { transform: scale(0.97); }
+.order-cart-pill-icon { font-size: 18px; line-height: 1; }
+.order-cart-pill-count { font-size: 16px; }
+.order-cart-pill-dot { opacity: 0.8; }
+.order-cart-pill-total { font-size: 16px; }
 
 /* Two fixed panes in order page */
 #page-orders {
@@ -254,6 +260,19 @@ body {
 .order-pane-cart .cart-items {
   max-height: none;
   flex: 1;
+}
+
+@media (max-width: 767px) {
+  .order-pane-cart { display: none; }
+  .order-cart-pill { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-height) + var(--safe-bottom) + 14px); height: 52px; padding: 0 22px; z-index: 120; border-width: 2px; background: linear-gradient(135deg, rgba(0,149,255,0.22), rgba(255,107,53,0.12)); }
+  .order-cart-pill:active { transform: translateX(-50%) scale(0.97); }
+  .order-header { margin-bottom: 0; }
+}
+
+#cart-sheet #order-cart-root {
+  border: none;
+  background: transparent;
+  border-radius: 0;
 }
 
 /* Category Tabs */
