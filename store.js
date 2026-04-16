@@ -21,6 +21,7 @@ const KEYS = {
   lastReportExportMonthly: 'gkhl_last_report_export_monthly',
   users: 'gkhl_users',
   unitConversions: 'gkhl_unit_conversions',
+  currentShift: 'gkhl_current_shift',
 };
 
 const Store = {
@@ -31,8 +32,8 @@ const Store = {
     localStorage.setItem(key, JSON.stringify(val));
   },
 
-  // MENU
-  getMenu() { return this.get(KEYS.menu) || DEFAULT_MENU; },
+  // MENU – Không fallback về data giả, ứng dụng chờ Firestore qua window.appState
+  getMenu() { return this.get(KEYS.menu) || []; },
   setMenu(m) { this.set(KEYS.menu, m); },
 
   // USERS
@@ -47,8 +48,8 @@ const Store = {
   },
   setUsers(users) { this.set(KEYS.users, users); },
 
-  // INVENTORY
-  getInventory() { return this.get(KEYS.inventory) || DEFAULT_INVENTORY; },
+  // INVENTORY – Không fallback về data giả, ứng dụng chờ Firestore qua window.appState
+  getInventory() { return this.get(KEYS.inventory) || []; },
   setInventory(inv) { this.set(KEYS.inventory, inv); },
 
   // TABLES
@@ -116,6 +117,9 @@ const Store = {
     const exp = this.getExpenses();
     exp.unshift(e);
     this.set(KEYS.expenses, exp);
+    if (window.DB && window.DB.Expenses && window.DB.Expenses.add) {
+      window.DB.Expenses.add(e).catch(console.error);
+    }
   },
 
   // PURCHASES
@@ -124,6 +128,9 @@ const Store = {
     const pur = this.getPurchases();
     pur.unshift(p);
     this.set(KEYS.purchases, pur);
+    if (window.DB && window.DB.Purchases && window.DB.Purchases.add) {
+      window.DB.Purchases.add(p).catch(console.error);
+    }
   },
   setPurchases(arr) { this.set(KEYS.purchases, arr); },
 
@@ -180,6 +187,10 @@ const Store = {
   getAIHistory() { return this.get(KEYS.aiHistory) || []; },
   setAIHistory(h) { this.set(KEYS.aiHistory, h); },
 
+  // SHIFT MANAGEMENT
+  getCurrentShift() { return this.get(KEYS.currentShift) || null; },
+  setCurrentShift(shift) { this.set(KEYS.currentShift, shift); },
+
   // RESET ALL DATA (giữ lại menu và cài đặt)
   resetAll(keepMenu = true, keepInventory = true) {
     const menu = keepMenu ? this.getMenu() : null;
@@ -204,10 +215,25 @@ const Store = {
     const data = {};
     Object.entries(KEYS).forEach(([k, storageKey]) => {
       if(SKIP_KEYS.has(k)) return;
-      const raw = localStorage.getItem(storageKey);
-      if(!raw) return;
+      
+      let parsed = null;
+      // Ưu tiên lấy từ window.appState (Firestore) nếu có, nếu không thì lấy từ localStorage
+      if (window.appState && window.appState[k]) {
+        parsed = window.appState[k];
+      } else {
+        const raw = localStorage.getItem(storageKey);
+        if(!raw) return;
+        try {
+          parsed = JSON.parse(raw);
+        } catch(e) {
+          console.warn('[Backup] Skipped key:', k, e.message);
+          return;
+        }
+      }
+
+      if(!parsed) return;
+
       try {
-        const parsed = JSON.parse(raw);
         // Với backup local mặc định, bỏ ảnh trong lịch sử đơn để tránh quota exceeded.
         if(!includePhotos && k === 'history' && Array.isArray(parsed)) {
           data[k] = parsed.slice(0, 300).map(item => {
@@ -225,10 +251,13 @@ const Store = {
         }
         data[k] = parsed;
       } catch(e) {
-        // Skip keys that aren't valid JSON (e.g. raw ISO strings)
-        console.warn('[Backup] Skipped key:', k, e.message);
+        console.warn('[Backup] Error processing key:', k, e.message);
       }
     });
+    
+    // Đảm bảo settings luôn có
+    if (!data.settings) data.settings = this.getSettings();
+
     return {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -439,7 +468,11 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6
 // period: 'today'|'day'|'week'|'month'|'all'|'range'
 // opts: { date: 'YYYY-MM-DD', fromDate: 'YYYY-MM-DD', toDate: 'YYYY-MM-DD' }
 function filterHistory(period, opts) {
-  const h = Store.getHistory();
+  // Ưu tiên lịch sử từ Cloud (appState), fallback về LocalStorage
+  const h = (window.appState && window.appState.history && window.appState.history.length > 0)
+    ? window.appState.history
+    : Store.getHistory();
+
   const now = new Date();
   return h.filter(o => {
     const d = new Date(o.paidAt);
@@ -459,9 +492,13 @@ function filterHistory(period, opts) {
   });
 }
 
+
 // Filter expenses by period (same logic)
 function filterExpenses(period, opts) {
-  const expenses = Store.getExpenses();
+  // Ưu tiên chi phí từ Cloud (appState), fallback về LocalStorage
+  const expenses = (window.appState && window.appState.expenses && window.appState.expenses.length > 0)
+    ? window.appState.expenses
+    : Store.getExpenses();
   const now = new Date();
   return expenses.filter(e => {
     const d = new Date(e.date);
@@ -484,18 +521,50 @@ function filterExpenses(period, opts) {
 // Revenue summary
 function getRevenueSummary(period, opts) {
   const orders = filterHistory(period, opts);
-  const revenue = orders.reduce((s,o) => s + o.total, 0);
+  
+  // Tổng tiền khách thực trả (bao gồm VAT)
+  const totalPaid = orders.reduce((s,o) => s + o.total, 0);
+  
   const revenueBank = orders.filter(o => o.payMethod === 'bank').reduce((s,o) => s + o.total, 0);
   const revenueCash = orders.filter(o => o.payMethod !== 'bank').reduce((s,o) => s + o.total, 0);
-  const cost = orders.reduce((s,o) => s + (o.cost || 0), 0);
-  const gross = revenue - cost;
+  
+  // Doanh thu gộp (chưa trừ chiết khấu, không gồm VAT/Ship)
+  const grossSales = orders.reduce((s,o) => s + (o.items || []).reduce((sum, i) => sum + i.price * i.qty, 0), 0);
+  
   const discountTotal = orders.reduce((s,o) => s + (o.discount || 0), 0);
   const shippingTotal = orders.reduce((s,o) => s + (o.shipping || 0), 0);
   const vatTotal = orders.reduce((s,o) => s + (o.vatAmount || 0), 0);
+  
+  // Doanh thu thuần (Net Sales) = Doanh thu gộp - Chiết khấu
+  const netSales = grossSales - discountTotal;
+  
+  // Giá vốn hàng bán (COGS)
+  const cost = orders.reduce((s,o) => s + (o.cost || 0), 0);
+  
+  // Lợi nhuận gộp (Gross Profit) = Doanh thu thuần - COGS
+  const gross = netSales - cost;
+  
   const expenses = filterExpenses(period, opts);
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
+  
+  // Lợi nhuận ròng (Net Profit) = Lợi nhuận gộp - OPEX
   const profit = gross - expenseTotal;
-  return { revenue, cost, gross, expenseTotal, profit, orders: orders.length, revenueBank, revenueCash, discountTotal, shippingTotal, vatTotal };
+  
+  return { 
+    revenue: totalPaid, // Vẫn giữ `revenue` là tổng tiền cho tương thích UI cũ (nếu cần)
+    netSales,
+    grossSales,
+    cost, 
+    gross, 
+    expenseTotal, 
+    profit, 
+    orders: orders.length, 
+    revenueBank, 
+    revenueCash, 
+    discountTotal, 
+    shippingTotal, 
+    vatTotal 
+  };
 }
 
 // Top selling items
@@ -512,9 +581,30 @@ function getTopItems(period, limit) {
   return Object.values(map).sort((a,b) => b.qty - a.qty).slice(0, limit || 10);
 }
 
+// Most profitable items
+function getTopProfitableItems(period, limit) {
+  const orders = filterHistory(period);
+  const map = {};
+  orders.forEach(o => {
+    (o.items||[]).forEach(item => {
+      if(!map[item.name]) map[item.name] = { name:item.name, qty:0, revenue:0, cost:0 };
+      map[item.name].qty += item.qty;
+      map[item.name].revenue += item.price * item.qty;
+      map[item.name].cost += (item.cost || 0) * item.qty;
+    });
+  });
+  return Object.values(map)
+    .map(i => ({ ...i, profit: i.revenue - i.cost }))
+    .sort((a,b) => b.profit - a.profit)
+    .slice(0, limit || 10);
+}
+
 // Revenue by day (last N days)
 function getRevenueByDay(days) {
-  const h = Store.getHistory();
+  // Cloud-first with LocalStorage fallback
+  const h = (window.appState && window.appState.history && window.appState.history.length > 0)
+    ? window.appState.history
+    : Store.getHistory();
   const result = [];
   for(let i = days-1; i >= 0; i--) {
     const d = new Date();
@@ -532,7 +622,7 @@ function getRevenueByDay(days) {
 
 // Inventory alerts
 function getInventoryAlerts() {
-  const inv = Store.getInventory();
+  const inv = Store.getInventory().filter(i => !i.hidden);
   const critical = inv.filter(i => i.qty <= i.minQty * 0.5);
   const low = inv.filter(i => i.qty > i.minQty * 0.5 && i.qty <= i.minQty);
   return { critical, low };
@@ -560,7 +650,7 @@ function getForecastNeeds(days) {
   const avgDays = 7;
   const forecastDays = days || 3;
   const needs = [];
-  inv.forEach(stock => {
+  inv.filter(i => !i.hidden).forEach(stock => {
     const cons = consumed[stock.name] || 0;
     const dailyAvg = cons / avgDays;
     const projected = dailyAvg * forecastDays;
