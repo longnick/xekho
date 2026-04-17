@@ -33,7 +33,7 @@ import {
   initializeFirestore,
   persistentLocalCache,
   doc, collection,
-  getDoc, setDoc, updateDoc, deleteDoc, addDoc,
+  getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
   onSnapshot,
   runTransaction,
   query, orderBy, limit, where,
@@ -454,10 +454,13 @@ const Tables = {
    * Gọi khi migrate hoặc khi tableCount thay đổi.
    */
   async initTables(count) {
-    const existing = new Set(window.appState.tables.map(t => t.id));
-    const batch    = writeBatch(_db);
+    const existing = window.appState.tables || [];
+    const existingIds = new Set(existing.map(t => Number(t.id)));
+    const batch = writeBatch(_db);
+    
+    // 1. Thêm các bàn còn thiếu (nếu tăng số lượng)
     for (let i = 1; i <= count; i++) {
-      if (existing.has(i)) continue;
+      if (existingIds.has(i)) continue;
       batch.set(_doc('tables', i), sanitize({
         id:       i,
         name:     `Bàn ${i}`,
@@ -467,6 +470,14 @@ const Tables = {
         note:     '',
       }));
     }
+    
+    // 2. Xóa các bàn dư thừa (nếu giảm số lượng)
+    for (const t of existing) {
+      if (Number(t.id) > count) {
+        batch.delete(_doc('tables', t.id));
+      }
+    }
+    
     await batch.commit();
   },
 };
@@ -739,13 +750,30 @@ const Inventory = {
   async deduct(menuItems) {
     const menu       = window.appState.menu || [];
     const inventory  = window.appState.inventory || [];
+    const normalizeKey = (text) => String(text || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
 
     // Tính lượng cần trừ cho mỗi nguyên liệu
     const deductions = {}; // { [inventoryId]: amountToDeduct }
 
     menuItems.forEach(orderItem => {
       const dish = menu.find(m => m.id === orderItem.id);
-      if (!dish || !Array.isArray(dish.ingredients)) return;
+      if (!dish) return;
+
+      const itemType = dish.itemType || ((Array.isArray(dish.ingredients) && dish.ingredients.length > 0) ? 'finished_good' : 'retail_item');
+      if (itemType === 'retail_item') {
+        const stock = inventory.find(s => s.id === dish.linkedInventoryId) || inventory.find(s => normalizeKey(s.name) === normalizeKey(dish.name));
+        if (!stock || !stock.id) return;
+        deductions[stock.id] = (deductions[stock.id] || 0) + orderItem.qty;
+        return;
+      }
+
+      if (!Array.isArray(dish.ingredients)) return;
 
       dish.ingredients.forEach(ing => {
         const stock = inventory.find(s => s.name === ing.name);
@@ -1546,16 +1574,15 @@ window.DB = {
 
   // Reset Data Cloud
   resetCloudData: async (keepMenu, keepInventory) => {
-    const collectionsToClear = ['history', 'orders', 'expenses', 'purchases', 'aiHistory'];
+    const collectionsToClear = ['history', 'orders', 'expenses', 'purchases', 'aiHistory', 'shiftLogs'];
     if (!keepMenu) collectionsToClear.push('menu');
-    if (!keepInventory) collectionsToClear.push('inventory', 'unitConversions');
-
-    const storeId = window.appState.userDoc?.storeId;
-    if (!storeId) throw new Error("Chưa có storeId");
+    if (!keepInventory) collectionsToClear.push('inventory', 'unitConversions', 'suppliers');
 
     for (const colName of collectionsToClear) {
-      const colRef = collection(_db, `stores/${storeId}/${colName}`);
+      const colRef = collection(_db, colName);
       const snapshot = await getDocs(colRef);
+      if (snapshot.empty) continue;
+      
       const batch = writeBatch(_db);
       snapshot.docs.forEach(doc => {
         batch.delete(doc.ref);

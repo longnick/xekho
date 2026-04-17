@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // WASTAGE (Xuất hủy / Hao hụt)
 // ============================================================
 function renderWastageTab() {
@@ -89,12 +89,20 @@ let chartInstances = {};
 
 // Photos & OCR state
 let orderPhotoCache = null;           // lazy: Store.getOrderPhotos()
-let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng đang mở
-let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
-let purchasePhotoCache = null;        // RAM cache cho bộ nhớ thiết bị
+let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng �?ang m�?
+let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" �?�? gom ảnh
+let purchasePhotoCache = null;        // RAM cache cho b�? nh�? thiết b�?
 let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
 let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
-const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
+const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong l�?ch sử 3 ngày
+
+function applyTheme(themeName) {
+  const body = document.body;
+  if (!body) return;
+
+  body.classList.remove('theme-nang-dong', 'theme-nhe-nhang', 'theme-chill', 'theme-ruc-ro', 'theme-hien-dai');
+  body.classList.add(`theme-${themeName || 'hien-dai'}`);
+}
 
 // ============================================================
 // IMAGE ZOOM/PAN VIEWER
@@ -271,9 +279,9 @@ const ImgZoom = (() => {
 // ============================================================
 // LOGIN & USER MANAGEMENT
 // ============================================================
-let currentUser = { username: 'admin', role: 'admin' }; // Mặc định là admin khi bỏ giao diện đăng nhập
+let currentUser = { username: 'admin', role: 'admin' }; // Mặc �?�?nh là admin khi bỏ giao di�?n �?�?ng nhập
 
-// Chỉ dùng biến trên RAM, tuyệt đối không lấy từ LocalStorage
+// Ch�? dùng biến trên RAM, tuy�?t �?�?i không lấy từ LocalStorage
 function checkLoginState() {
   return true; // Bỏ qua check login
 }
@@ -296,7 +304,7 @@ function applyRoleRights() {
   
   const userDisplay = document.getElementById('current-user-display');
   if(userDisplay) {
-    userDisplay.innerHTML = `<span style="margin-right:4px">👋</span>${currentUser.username}`;
+    userDisplay.innerHTML = `<span style="margin-right:4px">👤</span>${currentUser.username}`;
   }
 
   const isStaff = currentUser.role === 'staff';
@@ -330,37 +338,54 @@ function applyRoleRights() {
 }
 
 // ==== Quản lý người dùng ====
+function _getManagedUsers(includeDisabled = false) {
+  const users = (window.appState && Array.isArray(window.appState.users) && window.appState.users.length > 0)
+    ? window.appState.users
+    : Store.getUsers();
+  if (!includeDisabled) return (users || []).filter(u => String(u?.role || '').toLowerCase() !== 'disabled');
+  return users || [];
+}
+
+function _getUserIdentity(u = {}) {
+  return String(u.uid || u.username || u.email || '');
+}
+
 function renderUserManagement() {
-  if(!currentUser || currentUser.role !== 'admin') return;
+  if (!isAdminUser()) return;
   const umSection = document.getElementById('settings-user-management');
   if(umSection) umSection.style.display = 'block';
 
   const list = document.getElementById('user-management-list');
   if(!list) return;
 
-  // Ưu tiên user từ Cloud (appState), fallback LocalStorage
-  const users    = (window.appState && window.appState.users && window.appState.users.length > 0)
-    ? window.appState.users
-    : Store.getUsers();
+  const users = _getManagedUsers(false);
   const presence = (window.appState && window.appState.presence) || {};
+
+  if (!users.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">Chưa có nhân viên</div></div>';
+    return;
+  }
 
   list.innerHTML = users.map(u => {
     const uname    = u.username || u.displayName || u.email || '';
-    const uid      = u.uid || '';
+    const uid      = _getUserIdentity(u);
     const pres     = presence[uid] || null;
     const isOnline = pres && pres.online;
     const onlineDot = `<span title="${isOnline ? 'Đang online' : 'Offline'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isOnline ? 'var(--success,#00D68F)' : '#555'};margin-left:6px;vertical-align:middle;"></span>`;
+    const roleText = String(u.role || '').toLowerCase();
+    const isRootAdmin = uname.toLowerCase() === 'admin' || roleText === 'admin';
+    const isSelf = String(currentUser?.username || '').toLowerCase() === uname.toLowerCase();
 
     return `
-    <div class="list-item" onclick="editUser('${uname}')" style="cursor:pointer">
-      <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👤</div>
+    <div class="list-item" onclick="editUserById('${uid}')" style="cursor:pointer">
+      <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👥</div>
       <div class="list-item-content">
-        <div class="list-item-title">${uname} ${u.role==='admin' ? '<span class="badge badge-primary">Admin</span>' : '<span class="badge badge-info">Staff</span>'} ${onlineDot}</div>
-        <div class="list-item-sub">${isOnline ? '🟢 Đang online' : (pres ? '⚫ Offline' : '–')}</div>
+        <div class="list-item-title">${uname} ${roleText==='admin' ? '<span class="badge badge-primary">Admin</span>' : '<span class="badge badge-info">Staff</span>'} ${onlineDot}</div>
+        <div class="list-item-sub">${isOnline ? '🟢 Đang online' : (pres ? '⚫ Offline' : 'Chưa hoạt động')}</div>
       </div>
       <div>
-        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUser('${uname}')">Sửa</button>
-        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUser('${uname}')" ${uname.toLowerCase()==='admin' ? 'disabled':''}>Xóa</button>
+        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUserById('${uid}')">Sửa</button>
+        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUserById('${uid}')" ${(isRootAdmin || isSelf) ? 'disabled' : ''}>Xóa</button>
       </div>
     </div>`;
   }).join('');
@@ -381,9 +406,9 @@ function openAddUserModal() {
   document.getElementById('user-modal').classList.add('active');
 }
 
-function editUser(username) {
-  const users = Store.getUsers();
-  const u = users.find(x => x.username === username);
+function editUserById(userId) {
+  const users = _getManagedUsers(true);
+  const u = users.find(x => _getUserIdentity(x) === String(userId));
   if(!u) return;
 
   const title = document.getElementById('user-modal-title');
@@ -406,6 +431,13 @@ function editUser(username) {
   document.getElementById('user-modal').classList.add('active');
 }
 
+function editUser(username) {
+  const users = _getManagedUsers(true);
+  const u = users.find(x => String((x.username || '')).toLowerCase() === String(username || '').toLowerCase());
+  if (!u) return;
+  editUserById(_getUserIdentity(u));
+}
+
 async function submitUser(e) {
   e.preventDefault();
   const u = document.getElementById('user-edit-username').value.trim();
@@ -415,8 +447,8 @@ async function submitUser(e) {
   if(!u) return;
   if(u.toLowerCase() === 'admin') r = 'admin'; // security enforcement
   
-  const users = (window.DB && window.DB.Users) ? window.DB.Users.getAll() : Store.getUsers();
-  const existing = users.find(x => x.username.toLowerCase() === u.toLowerCase());
+  const users = _getManagedUsers(true);
+  const existing = users.find(x => String(x.username || '').toLowerCase() === u.toLowerCase());
   
   if(existing) {
     if(p) {
@@ -429,7 +461,7 @@ async function submitUser(e) {
   } else {
     if(!p) return; // Must have password for new user
     const emailStr = u.includes('@') ? u : u + '@ganhkho.vn';
-    // FIX 3: Dùng Users.add (Shadow App) – Admin KHÔNG bị văng phiên
+    // FIX 3: Dùng Users.add (Shadow App) �?? Admin KH�?NG b�? v�?ng phiên
     if (window.DB && window.DB.Users && window.DB.Users.add) {
       try {
         await window.DB.Users.add(emailStr, p, u, r);
@@ -449,32 +481,82 @@ async function submitUser(e) {
   renderUserManagement();
 }
 
-function deleteUser(username) {
-  if(username.toLowerCase() === 'admin') return;
-  if(!confirm(`Xóa nhân viên ${username}?`)) return;
-  let users = Store.getUsers();
-  users = users.filter(x => x.username.toLowerCase() !== username.toLowerCase());
-  Store.setUsers(users);
+async function deleteUserById(userId) {
+  const users = _getManagedUsers(true);
+  const u = users.find(x => _getUserIdentity(x) === String(userId));
+  if (!u) return;
+
+  const uname = u.username || u.displayName || u.email || 'nhân viên';
+  if (uname.toLowerCase() === 'admin' || String(u.role || '').toLowerCase() === 'admin') {
+    showToast('Không thể xóa tài khoản quản trị.', 'warning');
+    return;
+  }
+  if (String(currentUser?.username || '').toLowerCase() === String(uname).toLowerCase()) {
+    showToast('Không thể tự xóa tài khoản đang đăng nhập.', 'warning');
+    return;
+  }
+  if (!confirm(`Xóa nhân viên ${uname}?`)) return;
+
+  // Cloud-first: disable user trên Firestore để đồng bộ toàn hệ thống
+  if (window.DB?.Users?.disable && u.uid) {
+    try {
+      await window.DB.Users.disable(u.uid);
+      if (window.appState?.users) {
+        window.appState.users = window.appState.users.map(x =>
+          (x.uid === u.uid ? { ...x, role: 'disabled' } : x)
+        );
+      }
+      showToast(`✅ Đã xóa nhân viên ${uname}`, 'success');
+      renderUserManagement();
+      return;
+    } catch (err) {
+      showToast('Lỗi xóa nhân viên: ' + (err?.message || err), 'danger');
+      return;
+    }
+  }
+
+  // Fallback local
+  let localUsers = Store.getUsers();
+  localUsers = localUsers.filter(x => _getUserIdentity(x) !== String(userId));
+  Store.setUsers(localUsers);
+  if (window.appState?.users) {
+    window.appState.users = (window.appState.users || []).filter(x => _getUserIdentity(x) !== String(userId));
+  }
+  showToast(`✅ Đã xóa nhân viên ${uname}`, 'success');
   renderUserManagement();
+}
+
+function deleteUser(username) {
+  const users = _getManagedUsers(true);
+  const u = users.find(x => String((x.username || '')).toLowerCase() === String(username || '').toLowerCase());
+  if (!u) return;
+  deleteUserById(_getUserIdentity(u));
 }
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', async () => {
-  // Chặn đăng nhập (LocalStorage session)
+  // Chặn �?�?ng nhập (LocalStorage session)
   const isLoggedIn = checkLoginState();
   if(!isLoggedIn) {
-    // App vẫn init ngầm phía sau, login xong hiển thị ngay
+    // App vẫn init ngầm phía sau, login xong hi�?n th�? ngay
   }
 
-  // 1. Tải cơ sở dữ liệu hệ thống (Bất đồng bộ)
+  // 1. Tải cơ s�? dữ li�?u h�? th�?ng (Bất �?�?ng b�?)
   await PhotoDB.init();
   await migratePhotosToIndexedDB();
   purchasePhotoCache = await Store.getPurchasePhotosAsync() || {};
   orderPhotoCache    = await Store.getOrderPhotosAsync()   || {};
 
-  // 2. Chạy luồng Main
+  // 2. Chạy lu�?ng Main
   initNav();
   applyStoreSettings();
+  
+  // Áp dụng Theme ngay từ lúc load app
+  const s = Store.getSettings();
+  if (s && s.appTheme) {
+    applyTheme(s.appTheme);
+  }
+  
   runMigrations();
   cleanupOldPurchasePhotos();
   cleanupOldOrderHistoryPhotos();
@@ -482,11 +564,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateAlertBadge();
 
   setTimeout(() => {
-    // Chỉ auto-backup LocalStorage khi Firebase chưa sẵn sàng (offline mode)
+    // Ch�? auto-backup LocalStorage khi Firebase chưa sẵn sàng (offline mode)
     if (!window.DB || !window.appState || !window.appState.ready) {
       if(Store.autoBackupIfNeeded()) console.log('[POS] Auto backup (offline mode) done');
     } else {
-      console.log('[POS] Firebase đang hoạt động – bỏ qua auto backup LocalStorage');
+      console.log('[POS] Firebase đang hoạt động - bỏ qua auto backup LocalStorage');
     }
   }, 3000);
   try { updatePurOcrModeLabel(); } catch(_) {}
@@ -495,8 +577,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }, 4500);
 
   // 3. ======================== FIREBASE BRIDGE ========================
-  // db.js dùng type="module" nên window.DB gán bất đồng bộ.
-  // Hàm này poll tối đa 5 giây rồi mới đăng ký lắng nghe events.
+  // db.js dùng type="module" nên window.DB gán bất �?�?ng b�?.
+  // Hàm này poll t�?i �?a 5 giây r�?i m�?i �?�?ng ký lắng nghe events.
   function _waitForDB(cb, timeout = 5000) {
     if (window.DB) { cb(); return; }
     const start = Date.now();
@@ -506,19 +588,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         cb();
       } else if (Date.now() - start > timeout) {
         clearInterval(t);
-        console.warn('[Bridge] ⚠️ window.DB không khởi tạo được sau 5s – chạy offline');
+        console.warn('[Bridge] ⚠️ window.DB không khởi tạo được sau 5s - chạy offline');
       }
     }, 50);
   }
 
   _waitForDB(() => {
-    console.log('[Bridge] window.DB đã sẵn sàng – đăng ký Firebase events');
+    console.log('[Bridge] window.DB đã sẵn sàng - đăng ký Firebase events');
 
   window.addEventListener('db:signedIn', (e) => {
     const ud = e.detail && e.detail.userDoc;
     if (ud) {
       currentUser = { username: ud.displayName || ud.username || ud.email, role: ud.role };
-      // Ẩn màn hình đăng nhập nếu đẫ load xong Auth
+      // Ẩn màn hình �?�?ng nhập nếu �?ẫ load xong Auth
       const loginScreen = document.getElementById('login-screen');
       if (loginScreen) loginScreen.classList.remove('active');
       applyRoleRights();
@@ -526,26 +608,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Khi db.js báo signedOut → chỉ reload nếu TRƯỚC ĐÓ có session (tránh vòng lặp reload)
+  // Khi db.js báo signedOut �?? ch�? reload nếu TRƯ�?C Đ�? có session (tránh vòng lặp reload)
   window.addEventListener('db:signedOut', () => {
     const hadSession = !!sessionStorage.getItem('gkhl_current_session');
     sessionStorage.removeItem('gkhl_current_session');
     if (hadSession) {
-      // Người dùng đang dùng app rồi bị đăng xuất → reload về login
+      // Người dùng �?ang dùng app r�?i b�? �?�?ng xuất �?? reload về login
       location.reload();
     }
-    // Nếu chưa có session (lần đầu load, chưa đăng nhập) → không làm gì
+    // Nếu chưa có session (lần �?ầu load, chưa �?�?ng nhập) �?? không làm gì
   });
 
-  // Khi Firebase đã ready (tất cả snapshot đã về)
+  // Khi Firebase �?ã ready (tất cả snapshot �?ã về)
   window.addEventListener('db:ready', () => {
-    console.log('[Bridge] appState.ready – re-render từ Cloud');
+    console.log('[Bridge] appState.ready - re-render từ Cloud');
     applyStoreSettings();
     renderTables();
     updateAlertBadge();
     renderUserManagement();
 
-    // Re-render các màn hình dựa trên current page để tránh bị trống
+    // Re-render các màn hình dựa trên current page �?�? tránh b�? tr�?ng
     if (typeof currentPage !== 'undefined') {
       if (currentPage === 'orders') {
         renderCatTabs?.();
@@ -557,7 +639,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Khởi tạo sơ đồ bàn nếu collection tables trống (chống failed-precondition)
+    // Kh�?i tạo sơ �?�? bàn nếu collection tables tr�?ng (ch�?ng failed-precondition)
     if (window.DB && window.DB.seedTables) {
       const s = (window.appState && window.appState.settings) || {};
       const tableCount = s.tableCount || 20;
@@ -580,11 +662,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { renderMenuAdmin(); } catch(_) {}
       }
     }
-    // Báo cáo: re-render khi lịch sử / chi phí / nhập hàng thay đổi
+    // Báo cáo: re-render khi l�?ch sử / chi phí / nhập hàng thay �?�?i
     if (key === 'history' || key === 'expenses' || key === 'purchases') {
       renderTables();    // cập nhật doanh thu hôm nay trên thẻ
       updateAlertBadge();
-      // Nếu đang ở trang reports hoặc finance thì re-render luôn
+      // Nếu �?ang �? trang reports hoặc finance thì re-render luôn
       if (typeof currentPage !== 'undefined' && currentPage === 'reports') {
         try { renderReports(); } catch(_) {}
       }
@@ -644,7 +726,7 @@ async function pushReportExcelToGoogleDriveManual() {
   });
 }
 
-// Chạy một lần lúc load để tự động sửa lỗi chính tả dữ liệu cũ mà không làm mất trạng thái của người dùng
+// Chạy m�?t lần lúc load �?�? tự �?�?ng sửa l�?i chính tả dữ li�?u cũ mà không làm mất trạng thái của người dùng
 function runMigrations() {
   const s = Store.getSettings();
   if (s.migratedV2) return; // Prevent multiple runs just in case, or run once
@@ -683,7 +765,7 @@ function runMigrations() {
     else if (m.name === 'Lạp xít') { mappedMenu = true; m.name = 'Lạp vịt nướng'; }
     else if (m.name === 'Khô cá bống') { mappedMenu = true; m.name = 'Khô cá bống nướng'; }
     else if (m.name === 'Khô cá đao') { mappedMenu = true; m.name = 'Khô cá đao nướng'; }
-    else if (m.name === 'Khô cá bò') { mappedMenu = true; m.name = 'Khô cá bò Nướng'; }
+    else if (m.name === 'Khô cá bò') { mappedMenu = true; m.name = 'Khô cá bò nướng'; }
     else if (m.name === 'Mực khô') { mappedMenu = true; m.name = 'Mực khô nướng'; }
     else if (m.name === 'Cá sun sin chiên giòn') { mappedMenu = true; m.name = 'Cá sụn xịn chiên giòn'; }
     else if (m.name === 'Ba chỉ nướng lá dói') { mappedMenu = true; m.name = 'Ba chỉ nướng lá dổi'; }
@@ -728,7 +810,7 @@ function applyStoreSettings() {
       logoIcon.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
       logoIcon.style.background = 'transparent';
     } else {
-      logoIcon.innerHTML = '🍢';
+      logoIcon.innerHTML = '🧡';
       logoIcon.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
     }
   }
@@ -974,9 +1056,9 @@ function openStockAlertPopup() {
   html += `
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('stock-alert-modal').classList.remove('active');navigate('inventory');switchInvTab('purchase',document.querySelector('.tab-btn:nth-child(2)'))">
-          🚚 Nhập hàng đầy đủ
+          📦 Nhập hàng đầy đủ
         </button>
-        <button class="btn btn-secondary" onclick="document.getElementById('stock-alert-modal').classList.remove('active')">❌ Đóng</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('stock-alert-modal').classList.remove('active')">✕ Đóng</button>
       </div>
   `;
 
@@ -1028,9 +1110,9 @@ function quickAddStockFromAlert(invId) {
 
 /**
  * _getTables() / _getOrders()
- * Luôn ưu tiên dữ liệu từ Cloud (window.appState).
- * Nếu appState chưa ready hoặc rỗng → fallback LocalStorage.
- * Đây là "Lớp đệm Fallback" chống Race Condition.
+ * Luôn ưu tiên dữ li�?u từ Cloud (window.appState).
+ * Nếu appState chưa ready hoặc r�?ng �?? fallback LocalStorage.
+ * Đây là "L�?p �?�?m Fallback" ch�?ng Race Condition.
  */
 function _getTables() {
   return (window.appState && window.appState.tables && window.appState.tables.length > 0)
@@ -1040,7 +1122,7 @@ function _getTables() {
 function _getOrders() {
   // appState.orders = { [tableId]: orderObject } (online format)
   // Store.getOrders() = { [tableId]: itemsArray } (offline format)
-  // Trả về offline format để không vỡ các hàm cũ
+  // Trả về offline format �?�? không vỡ các hàm cũ
   if (window.appState && window.appState.orders && Object.keys(window.appState.orders).length > 0) {
     const map = {};
     Object.entries(window.appState.orders).forEach(([tid, order]) => {
@@ -1051,14 +1133,450 @@ function _getOrders() {
   return Store.getOrders();
 }
 function _getMenu() {
-  return (window.appState && window.appState.menu && window.appState.menu.length > 0)
+  const inv = _getInventory();
+  const menu = (window.appState && window.appState.menu && window.appState.menu.length > 0)
     ? window.appState.menu
     : Store.getMenu();
+  return (menu || []).map(item => normalizeMenuItemModel(item, inv));
 }
 function _getInventory() {
-  return (window.appState && window.appState.inventory && window.appState.inventory.length > 0)
+  const inventory = (window.appState && window.appState.inventory && window.appState.inventory.length > 0)
     ? window.appState.inventory
     : Store.getInventory();
+  return (inventory || []).map(normalizeInventoryItemModel);
+}
+
+
+
+const ITEM_TYPE_LABELS = {
+  [ITEM_TYPES.RETAIL]: 'Bán thẳng',
+  [ITEM_TYPES.RAW]: 'Nguyên liệu',
+  [ITEM_TYPES.FINISHED]: 'Thành phẩm',
+};
+
+function getCurrentUserRole() {
+  return (window.appState && window.appState.userDoc && window.appState.userDoc.role)
+    || (currentUser && currentUser.role)
+    || 'admin';
+}
+
+function isAdminUser() {
+  const role = String(getCurrentUserRole() || '').toLowerCase();
+  return role === 'admin' || role === 'owner' || role === 'superadmin';
+}
+
+function normalizeViKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function inferInventoryItemType(item = {}) {
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
+  if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
+  return ITEM_TYPES.RAW;
+}
+
+function normalizeInventoryItemModel(item = {}) {
+  return {
+    ...item,
+    itemType: inferInventoryItemType(item),
+    mergedInto: item.mergedInto || null,
+    qty: Number(item.qty || 0),
+    minQty: Number(item.minQty || 0),
+    costPerUnit: Number(item.costPerUnit || 0),
+    hidden: !!item.hidden,
+  };
+}
+
+function inferMenuItemType(item = {}) {
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.FINISHED) return item.itemType;
+  return Array.isArray(item.ingredients) && item.ingredients.length > 0 ? ITEM_TYPES.FINISHED : ITEM_TYPES.RETAIL;
+}
+
+function findLinkedInventoryIdForMenuItem(item = {}, inventory = []) {
+  if (item.linkedInventoryId && inventory.some(inv => inv.id === item.linkedInventoryId)) return item.linkedInventoryId;
+  const exact = inventory.find(inv => !inv.hidden && normalizeViKey(inv.name) === normalizeViKey(item.name));
+  return exact ? exact.id : null;
+}
+
+function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
+  const itemType = inferMenuItemType(item);
+  return {
+    ...item,
+    itemType,
+    linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
+    ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
+  };
+}
+
+function getInventoryTypeBadge(itemType) {
+  if (itemType === ITEM_TYPES.RETAIL) return '<span class="badge badge-info">Bán thẳng</span>';
+  if (itemType === ITEM_TYPES.FINISHED) return '<span class="badge badge-warning">Thành phẩm</span>';
+  return '<span class="badge badge-primary">Nguyên liệu</span>';
+}
+
+function refreshIngredientDependentViews() {
+  try { renderInventory(); } catch(_) {}
+  try { renderMenuAdmin(); } catch(_) {}
+  try { updateAlertBadge(); } catch(_) {}
+  try {
+    const purSelect = document.getElementById('pur-name');
+    if (purSelect && document.getElementById('purchase-modal')?.classList.contains('active')) {
+      const prev = purSelect.value;
+      openPurchaseModal();
+      if (prev) {
+        purSelect.value = prev;
+        onPurchaseItemSelect();
+      }
+    }
+  } catch(_) {}
+}
+
+function propagateInventoryReferenceRename(oldItem, newItem) {
+  if (!oldItem || !newItem || !oldItem.name || oldItem.name === newItem.name) return;
+  const oldName = oldItem.name;
+  const newName = newItem.name;
+
+  // COMPLETE CLEANUP: Remove all references to old name and replace with new name
+  
+  // 1. Update Menu items with exact name match
+  const menu = Store.getMenu().map(m => {
+    const next = { ...m };
+    // Update menu item name if it matches exactly
+    if (next.name === oldName) {
+      next.name = newName;
+    }
+    // Update ingredients in recipes
+    if (Array.isArray(next.ingredients)) {
+      next.ingredients = next.ingredients.map(ing => ing.name === oldName ? { ...ing, name: newName } : ing);
+    }
+    return next;
+  });
+  Store.setMenu(menu);
+
+  // 2. Update Purchases with exact name match
+  const purchases = Store.getPurchases().map(p => p.name === oldName ? { ...p, name: newName } : p);
+  Store.setPurchases(purchases);
+
+  // 3. Update Unit Conversions with exact name match
+  const conversions = Store.getUnitConversions().map(c => c.ingredientName === oldName ? { ...c, ingredientName: newName } : c);
+  Store.setUnitConversions(conversions);
+
+  // 4. Update Expenses with exact name match
+  const expenses = Store.getExpenses().map(e => e.name === oldName ? { ...e, name: newName } : e);
+  Store.setExpenses(expenses);
+
+  // 5. Update Cloud appState if exists
+  if (window.appState?.menu) {
+    window.appState.menu = window.appState.menu.map(m => {
+      const next = { ...m };
+      if (next.name === oldName) {
+        next.name = newName;
+      }
+      if (Array.isArray(next.ingredients)) {
+        next.ingredients = next.ingredients.map(ing => ing.name === oldName ? { ...ing, name: newName } : ing);
+      }
+      return next;
+    });
+  }
+  if (window.appState?.purchases) {
+    window.appState.purchases = window.appState.purchases.map(p => p.name === oldName ? { ...p, name: newName } : p);
+  }
+  if (window.appState?.expenses) {
+    window.appState.expenses = window.appState.expenses.map(e => e.name === oldName ? { ...e, name: newName } : e);
+  }
+}
+
+async function syncInventoryReferenceRenameToCloud(oldItem, newItem) {
+  if (!window.DB || !oldItem || !newItem || !oldItem.name || oldItem.name === newItem.name) return;
+  try {
+    // Sync all menu items that might have been updated
+    if (window.DB.Menu?.update) {
+      for (const item of Store.getMenu()) {
+        await window.DB.Menu.update(item.id, {
+          name: item.name,
+          itemType: item.itemType,
+          linkedInventoryId: item.linkedInventoryId || null,
+          ingredients: item.ingredients || [],
+        });
+      }
+    }
+    // Sync all purchases with the new name
+    if (window.DB.Purchases?.update) {
+      for (const p of Store.getPurchases().filter(x => x.name === newItem.name || x.name === oldItem.name)) {
+        await window.DB.Purchases.update(p.id, { name: p.name });
+      }
+    }
+    // Sync all expenses with the new name
+    if (window.DB.Expenses?.update) {
+      for (const e of Store.getExpenses().filter(x => x.name === newItem.name || x.name === oldItem.name)) {
+        await window.DB.Expenses.update(e.id, { name: e.name });
+      }
+    }
+    // Sync unit conversions
+    if (window.DB.UnitConversions?.update) {
+      for (const c of Store.getUnitConversions().filter(x => x.ingredientName === newItem.name || x.ingredientName === oldItem.name)) {
+        await window.DB.UnitConversions.update(c.id, { ingredientName: c.ingredientName });
+      }
+    }
+  } catch (e) {
+    console.warn('[rename-sync] cloud warning', e);
+  }
+}
+
+function tokenSimilarity(a, b) {
+  const ta = new Set(normalizeViKey(a).split(' ').filter(Boolean));
+  const tb = new Set(normalizeViKey(b).split(' ').filter(Boolean));
+  if (!ta.size || !tb.size) return 0;
+  let common = 0;
+  ta.forEach(x => { if (tb.has(x)) common += 1; });
+  return common / Math.max(ta.size, tb.size);
+}
+
+function getIngredientMergeSuggestions() {
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+  const suggestions = [];
+  for (let i = 0; i < inv.length; i++) {
+    for (let j = i + 1; j < inv.length; j++) {
+      const a = inv[i];
+      const b = inv[j];
+      if (a.itemType !== b.itemType || a.unit !== b.unit) continue;
+      const na = normalizeViKey(a.name);
+      const nb = normalizeViKey(b.name);
+      const score = na === nb ? 1 : (na.includes(nb) || nb.includes(na) ? 0.9 : tokenSimilarity(a.name, b.name));
+      if (score < 0.72) continue;
+      const target = a.qty >= b.qty ? a : b;
+      const source = target.id === a.id ? b : a;
+      if (suggestions.some(s => s.source.id === source.id || s.target.id === source.id)) continue;
+      suggestions.push({
+        id: `merge_${source.id}_${target.id}`,
+        source,
+        target,
+        score,
+      });
+    }
+  }
+  return suggestions.sort((a, b) => b.score - a.score);
+}
+
+function renderIngredientMergeBoard() {
+  const el = document.getElementById('ingredient-merge-board');
+  if (!el) return;
+  const suggestions = getIngredientMergeSuggestions();
+  const requests = Store.getItemMergeRequests();
+  if (!suggestions.length && !requests.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🧹</div><div class="empty-text">Chưa phát hiện nguyên liệu trùng gần giống.</div></div>';
+    return;
+  }
+
+  const requestSet = new Set(requests.filter(r => r.status === 'pending').map(r => `${r.sourceId}:${r.targetId}`));
+  el.innerHTML = suggestions.map(s => {
+    const key = `${s.source.id}:${s.target.id}`;
+    const hasPending = requestSet.has(key);
+    const actionBtn = isAdminUser()
+      ? `<button class="btn btn-xs btn-primary" onclick="approveIngredientMerge('${s.source.id}','${s.target.id}')">Phê duyệt merge</button>`
+      : `<button class="btn btn-xs btn-outline" ${hasPending ? 'disabled' : ''} onclick="requestIngredientMerge('${s.source.id}','${s.target.id}')">${hasPending ? 'Đã gửi duyệt' : 'Gửi duyệt'}</button>`;
+    return `<div class="list-item">
+      <div class="list-item-content">
+        <div class="list-item-title">${s.source.name} → ${s.target.name}</div>
+        <div class="list-item-sub">${ITEM_TYPE_LABELS[s.source.itemType]} · ${Math.round(s.score * 100)}% giống nhau · cùng đơn vị ${s.source.unit}</div>
+      </div>
+      <div class="list-item-right">${actionBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+function requestIngredientMerge(sourceId, targetId) {
+  const source = _getInventory().find(i => i.id === sourceId);
+  const target = _getInventory().find(i => i.id === targetId);
+  if (!source || !target) return;
+  const requests = Store.getItemMergeRequests();
+  if (requests.some(r => r.status === 'pending' && r.sourceId === sourceId && r.targetId === targetId)) {
+    showToast('Đề nghị merge này đang chờ admin phê duyệt.', 'warning');
+    return;
+  }
+  requests.unshift({
+    id: uid(),
+    sourceId,
+    targetId,
+    sourceName: source.name,
+    targetName: target.name,
+    requestedBy: currentUser?.username || 'staff',
+    requestedAt: new Date().toISOString(),
+    status: 'pending',
+  });
+  Store.setItemMergeRequests(requests);
+  renderIngredientMergeBoard();
+  showToast('Đã gửi đề nghị merge cho admin.', 'success');
+}
+
+async function approveIngredientMerge(sourceId, targetId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được phê duyệt merge nguyên liệu.', 'danger');
+    return;
+  }
+  const inventory = _getInventory();
+  const source = inventory.find(i => i.id === sourceId);
+  const target = inventory.find(i => i.id === targetId);
+  if (!source || !target) {
+    showToast('Không tìm thấy nguyên liệu để merge.', 'warning');
+    return;
+  }
+  if (source.id === target.id) return;
+  
+  // Enhanced confirmation message for complete cleanup
+  const confirmMessage = `Gộp "${source.name}" vào "${target.name}"?\n\n` +
+    `- Cộng dồn tồn kho\n` +
+    `- Giữ lại tên "${target.name}"\n` +
+    `- XÓA HOÀN TOÀN tên "${source.name}" khỏi hệ thống\n` +
+    `- Cập nhật menu, phiếu nhập, quy đổi liên quan`;
+  
+  if (!confirm(confirmMessage)) return;
+
+  const mergedQty = (target.qty || 0) + (source.qty || 0);
+  const mergedCost = mergedQty > 0
+    ? (((target.qty || 0) * (target.costPerUnit || 0)) + ((source.qty || 0) * (source.costPerUnit || 0))) / mergedQty
+    : 0;
+
+  const nextInventory = inventory.map(item => {
+    if (item.id === target.id) {
+      return {
+        ...item,
+        qty: mergedQty,
+        costPerUnit: mergedCost,
+        minQty: Math.max(item.minQty || 0, source.minQty || 0),
+        supplierName: item.supplierName || source.supplierName || '',
+        supplierPhone: item.supplierPhone || source.supplierPhone || '',
+        supplierAddress: item.supplierAddress || source.supplierAddress || '',
+      };
+    }
+    if (item.id === source.id) {
+      return { ...item, qty: 0, hidden: true, mergedInto: target.id };
+    }
+    return item;
+  });
+  Store.setInventory(nextInventory);
+  if (window.appState?.inventory) {
+    window.appState.inventory = nextInventory.map(normalizeInventoryItemModel);
+  }
+  propagateInventoryReferenceRename(source, { ...target, name: target.name, id: target.id });
+  await syncInventoryReferenceRenameToCloud(source, { ...target, name: target.name, id: target.id });
+
+  const requests = Store.getItemMergeRequests().map(r => (
+    r.sourceId === sourceId && r.targetId === targetId
+      ? { ...r, status: 'approved', approvedBy: currentUser?.username || 'admin', approvedAt: new Date().toISOString() }
+      : r
+  ));
+  Store.setItemMergeRequests(requests);
+
+  if (window.DB) {
+    try {
+      if (window.DB.Inventory?.update) {
+        await window.DB.Inventory.update(target.id, {
+          qty: mergedQty,
+          costPerUnit: mergedCost,
+          minQty: Math.max(target.minQty || 0, source.minQty || 0),
+          supplierName: target.supplierName || source.supplierName || '',
+          supplierPhone: target.supplierPhone || source.supplierPhone || '',
+          supplierAddress: target.supplierAddress || source.supplierAddress || '',
+        });
+        await window.DB.Inventory.update(source.id, { qty: 0, hidden: true, mergedInto: target.id });
+      }
+      if (window.DB.Menu?.update) {
+        for (const item of Store.getMenu()) {
+          await window.DB.Menu.update(item.id, {
+            itemType: item.itemType,
+            linkedInventoryId: item.linkedInventoryId || null,
+            ingredients: item.ingredients || [],
+            name: item.name,
+          });
+        }
+      }
+      if (window.DB.Purchases?.update) {
+        for (const p of Store.getPurchases().filter(x => x.name === target.name || x.name === source.name)) {
+          await window.DB.Purchases.update(p.id, { name: p.name });
+        }
+      }
+    } catch (e) {
+      console.warn('[merge] cloud sync warning', e);
+    }
+  }
+
+  refreshIngredientDependentViews();
+  renderIngredientMergeBoard();
+  populateManualMergeDropdowns();
+  showToast(`Đã merge "${source.name}" vào "${target.name}".`, 'success');
+}
+
+// ============================================================
+// MANUAL MERGE FUNCTIONS
+// ============================================================
+
+function populateManualMergeDropdowns() {
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+  const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  
+  const sourceSelect = document.getElementById('manual-merge-source');
+  const targetSelect = document.getElementById('manual-merge-target');
+  
+  if (sourceSelect && targetSelect) {
+    sourceSelect.innerHTML = '<option value="">-- Chọn nguyên liệu nguồn --</option>';
+    targetSelect.innerHTML = '<option value="">-- Chọn nguyên liệu đích --</option>';
+    
+    sortedInv.forEach(item => {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = `${item.name} (${item.unit})`;
+      sourceSelect.appendChild(option.cloneNode(true));
+      targetSelect.appendChild(option);
+    });
+  }
+}
+
+function initiateManualMerge() {
+  const sourceId = document.getElementById('manual-merge-source').value;
+  const targetId = document.getElementById('manual-merge-target').value;
+  
+  if (!sourceId || !targetId) {
+    showToast('Vui lòng chọn cả nguyên liệu nguồn và nguyên liệu đích.', 'warning');
+    return;
+  }
+  
+  if (sourceId === targetId) {
+    showToast('Không thể merge nguyên liệu với chính nó.', 'warning');
+    return;
+  }
+  
+  const source = _getInventory().find(i => i.id === sourceId);
+  const target = _getInventory().find(i => i.id === targetId);
+  
+  if (!source || !target) {
+    showToast('Không tìm thấy nguyên liệu.', 'error');
+    return;
+  }
+  
+  if (source.itemType !== target.itemType) {
+    showToast('Chỉ có thể merge nguyên liệu cùng loại.', 'warning');
+    return;
+  }
+  
+  if (source.unit !== target.unit) {
+    showToast('Chỉ có thể merge nguyên liệu cùng đơn vị tính.', 'warning');
+    return;
+  }
+  
+  if (confirm(`Xác nhận merge thủ công:\n\n"${source.name}" → "${target.name}"\n\n- Cộng dồn tồn kho\n- Giữ lại tên "${target.name}"\n- Xóa tên "${source.name}" khỏi hệ thống`)) {
+    if (isAdminUser()) {
+      approveIngredientMerge(sourceId, targetId);
+      return;
+    }
+    requestIngredientMerge(sourceId, targetId);
+  }
 }
 
 function renderTables() {
@@ -1066,9 +1584,13 @@ function renderTables() {
   const orders = _getOrders();
   const grid = document.getElementById('table-grid');
   const now = Date.now();
+  const occupiedIcons = ['🍽️', '🍻', '🥢', '🍲', '🥘', '🍺', '🔥', '🧾'];
 
-  const occupied = tables.filter(t => t.status === 'occupied').length;
-  const empty    = tables.filter(t => t.status === 'empty').length;
+  const occupied = tables.filter(t => {
+    const order = orders[t.id] || [];
+    return order.length > 0 || t.status === 'occupied' || t.status === 'serving';
+  }).length;
+  const empty = tables.length - occupied;
   document.getElementById('tables-occupied').textContent = occupied;
   document.getElementById('tables-empty').textContent    = empty;
 
@@ -1090,14 +1612,17 @@ function renderTables() {
     const order      = orders[t.id];
     const total      = order ? order.reduce((s,i) => s+i.price*i.qty, 0) : 0;
     const elapsed    = t.openTime ? Math.floor((now - new Date(t.openTime).getTime())/60000) : 0;
-    const statusClass = t.status;
-    const statusEmoji = t.status === 'empty' ? '🟢' : t.status === 'occupied' ? '🔴' : '🟡';
+    const isOccupied = total > 0 || t.status === 'occupied' || t.status === 'serving';
+    const statusClass = isOccupied ? 'occupied' : 'empty';
+    const tableNum = Number(t.id) || 0;
+    const occupiedEmoji = occupiedIcons[(Math.max(1, tableNum) - 1) % occupiedIcons.length];
+    const statusEmoji = isOccupied ? occupiedEmoji : '🪑';
 
     return `<div class="table-card ${statusClass}" onclick="openTable(${t.id})" id="table-card-${t.id}">
       ${elapsed > 0 ? `<div class="table-time">${elapsed}p</div>` : ''}
       <div class="table-num">${t.id}</div>
       <div class="table-icon">${statusEmoji}</div>
-      ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${t.status === 'empty' ? 'Trống' : 'Đang phục vụ'}</div>`}
+      ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${isOccupied ? 'Đang phục vụ' : 'Trống'}</div>`}
     </div>`;
   }).join('');
 }
@@ -1122,7 +1647,7 @@ function openTable(tableId) {
     const cloudOrder = window.appState && window.appState.orders && window.appState.orders[String(currentTable)];
     if (cloudOrder && cloudOrder.items && cloudOrder.items.length > 0) {
       orderItems[currentTable] = [...cloudOrder.items];
-      // Ghi cước orderId vào bộ nhớ tiền cho phase write
+      // Ghi cư�?c orderId vào b�? nh�? tiền cho phase write
       window._currentOrderId = window._currentOrderId || {};
       window._currentOrderId[currentTable] = cloudOrder.id || cloudOrder.orderId;
     } else {
@@ -1131,7 +1656,7 @@ function openTable(tableId) {
     }
   }
 
-  const label = currentTable === 'takeaway' ? '🛝️ Mang về' : `Bàn ${currentTable}`;
+  const label = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
   document.getElementById('order-table-title').textContent = label;
   navigate('orders');
 }
@@ -1147,11 +1672,16 @@ async function clearTable() {
   // Cloud: huỷ đơn nếu tồn tại
   try {
     if (window.DB && currentTable !== 'takeaway') {
-      const orderId = (typeof _getCloudOrderId === 'function') ? _getCloudOrderId(key) : null;
+      const orderIdFromCache = (typeof _getCloudOrderId === 'function') ? _getCloudOrderId(key) : null;
+      const orderIdFromAppState = window.appState?.orders?.[key]?.id || null;
+      const orderIdFromForTable = window.DB?.Orders?.forTable ? (window.DB.Orders.forTable(currentTable)?.id || null) : null;
+      const orderIdFromTable = window.appState?.tables?.find?.(t => String(t.id) === key)?.orderId || null;
+      const orderId = orderIdFromCache || orderIdFromAppState || orderIdFromForTable || orderIdFromTable;
       if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
         await window.DB.Orders.cancel(orderId);
       }
       if (window._currentOrderId) delete window._currentOrderId[key];
+      if (window.appState?.orders && window.appState.orders[key]) delete window.appState.orders[key];
     }
   } catch(e) {
     console.warn('[clearTable] cloud cancel error', e);
@@ -1175,6 +1705,15 @@ async function clearTable() {
       table.note = '';
       Store.setTables(tables);
     }
+    if (window.appState?.tables) {
+      const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+      if (cloudTable) {
+        cloudTable.status = 'empty';
+        cloudTable.orderId = null;
+        cloudTable.openTime = null;
+        cloudTable.note = '';
+      }
+    }
   }
 
   try { renderCart(); } catch(_) {}
@@ -1184,11 +1723,11 @@ async function clearTable() {
 }
 
 // ============================================================
-// CLOUD ORDER SYNC HELPERS  –  Transaction-safe
+// CLOUD ORDER SYNC HELPERS  �??  Transaction-safe
 // Thay thế pattern updateMeta({ items }) cũ (race condition)
 // ============================================================
 
-/** Lấy orderId hiện tại của 1 bàn từ Cloud (appState hoặc cache) */
+/** Lấy orderId hi�?n tại của 1 bàn từ Cloud (appState hoặc cache) */
 function _getCloudOrderId(key) {
   const ordersMap = window.appState && window.appState.orders;
   return (window._currentOrderId && window._currentOrderId[String(key)])
@@ -1197,8 +1736,8 @@ function _getCloudOrderId(key) {
 }
 
 /**
- * Đảm bảo tồn tại đơn hàng Cloud cho bàn key.
- * Nếu chưa có → gọi Orders.open() và cache lại orderId.
+ * Đảm bảo t�?n tại �?ơn hàng Cloud cho bàn key.
+ * Nếu chưa có �?? gọi Orders.open() và cache lại orderId.
  * Trả về Promise<orderId|null>
  */
 async function _ensureCloudOrder(key) {
@@ -1218,14 +1757,14 @@ async function _ensureCloudOrder(key) {
  *
  * action = {
  *   type : 'add' | 'change' | 'remove'
- *   item : { id, name, price, cost, qty }   ← bắt buộc khi type='add'
- *   itemId   : string                        ← bắt buộc khi type='change'|'remove'
- *   itemNote : string                        ← tuỳ chọn
- *   delta    : number                        ← bắt buộc khi type='change'
+ *   item : { id, name, price, cost, qty }   �?� bắt bu�?c khi type='add'
+ *   itemId   : string                        �?� bắt bu�?c khi type='change'|'remove'
+ *   itemNote : string                        �?� tuỳ chọn
+ *   delta    : number                        �?� bắt bu�?c khi type='change'
  * }
  * tableKey = currentTable hoặc tableId của bàn cần sync
  *
- * Không ném exception ra ngoài – chỉ log lỗi để UI không bị block.
+ * Không ném exception ra ngoài �?? ch�? log l�?i �?�? UI không b�? block.
  */
 async function _cloudSyncItem(action, tableKey) {
   if (!window.DB || tableKey === 'takeaway') return;
@@ -1233,12 +1772,12 @@ async function _cloudSyncItem(action, tableKey) {
   try {
     let orderId;
     if (action.type === 'add') {
-      // Mở đơn mới nếu chưa có
+      // M�? �?ơn m�?i nếu chưa có
       orderId = await _ensureCloudOrder(key);
       if (!orderId) return;
       await window.DB.Orders.addItem(orderId, action.item);
     } else {
-      // change / remove chỉ thực hiện khi đơn đã tồn tại
+      // change / remove ch�? thực hi�?n khi �?ơn �?ã t�?n tại
       orderId = _getCloudOrderId(key);
       if (!orderId) return;
       if (action.type === 'change') {
@@ -1252,7 +1791,7 @@ async function _cloudSyncItem(action, tableKey) {
   }
 }
 
-// Lưu order cho một bàn cụ thể (dùng cho AI actions)
+// Lưu order cho m�?t bàn cụ th�? (dùng cho AI actions)
 function saveOrderForTable(tableId) {
   const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
   const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
@@ -1267,9 +1806,9 @@ function saveOrderForTable(tableId) {
     const table = tables.find(t => t.id === key);
     if(table) {
       const hasItems = (orderItems[key] || []).length > 0;
-      if(hasItems && table.status === 'empty') {
+      if(hasItems) {
         table.status   = 'occupied';
-        table.openTime = Date.now();
+        table.openTime = table.openTime || Date.now();
       } else if(!hasItems) {
         table.status   = 'empty';
         table.openTime = null;
@@ -1278,9 +1817,9 @@ function saveOrderForTable(tableId) {
     }
   }
 
-  // --- Firestore (cloud sync – AI batch write) ---
-  // saveOrderForTable được gọi từ AI actions khi đã build sẵn toàn bộ orderItems[key].
-  // Dùng _ensureCloudOrder + updateMeta là hợp lý vì AI là writer duy nhất tại thời điểm này.
+  // --- Firestore (cloud sync �?? AI batch write) ---
+  // saveOrderForTable �?ược gọi từ AI actions khi �?ã build sẵn toàn b�? orderItems[key].
+  // Dùng _ensureCloudOrder + updateMeta là hợp lý vì AI là writer duy nhất tại thời �?i�?m này.
   if (window.DB && key !== 'takeaway') {
     const items = orderItems[key] || [];
     if (items.length > 0) {
@@ -1289,6 +1828,15 @@ function saveOrderForTable(tableId) {
           if (orderId) return window.DB.Orders.updateMeta(orderId, { items });
         })
         .catch(console.error);
+    } else {
+      const orderId = _getCloudOrderId(key);
+      if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
+        window.DB.Orders.cancel(orderId)
+          .then(() => {
+            if (window._currentOrderId) delete window._currentOrderId[String(key)];
+          })
+          .catch(console.error);
+      }
     }
   }
 }
@@ -1304,7 +1852,7 @@ function renderOrderPage() {
   renderCatTabs();
   renderMenuItems();
   renderCart();
-  // Khi mở trang order, đồng bộ UI ảnh bàn
+  // Khi m�? trang order, �?�?ng b�? UI ảnh bàn
   try { updateOrderPhotoUI(); } catch(_) {}
 }
 
@@ -1322,7 +1870,7 @@ function selectCat(cat) {
 }
 
 function renderMenuItems() {
-  const menu  = _getMenu(); // ← Cloud-first với LocalStorage fallback
+  const menu  = _getMenu(); // �?� Cloud-first v�?i LocalStorage fallback
   const items = orderItems[currentTable] || [];
   let filtered = currentCat === 'Tất cả' ? menu : menu.filter(m => m.category === currentCat);
   if(menuSearch) filtered = filtered.filter(m => m.name.toLowerCase().includes(menuSearch.toLowerCase()));
@@ -1338,7 +1886,7 @@ function renderMenuItems() {
 }
 
 function addToOrder(itemId) {
-  const menu = _getMenu(); // ← Cloud-first
+  const menu = _getMenu(); // �?� Cloud-first
   const dish = menu.find(m => m.id === itemId);
   if(!dish) return;
   if(!orderItems[currentTable]) orderItems[currentTable] = [];
@@ -1378,7 +1926,7 @@ function changeQty(itemId, delta) {
   if(items[idx].qty <= 0) {
     items.splice(idx, 1);
     saveOrder();
-    // Cloud: xóa dòng món khỏi đơn
+    // Cloud: xóa dòng món khỏi �?ơn
     _cloudSyncItem({ type: 'remove', itemId, itemNote: '' }, currentTable);
   } else {
     saveOrder();
@@ -1396,18 +1944,18 @@ function setCartQty(itemId, val) {
   if(!items) return;
   const idx = items.findIndex(i => i.id === itemId);
   if(idx < 0) return;
-  const delta = qty - items[idx].qty; // tính delta để dùng Transaction
+  const delta = qty - items[idx].qty; // tính delta �?�? dùng Transaction
   items[idx].qty = qty;
   saveOrder();
-  // Cloud: Transaction-based changeQty với delta thực tế
+  // Cloud: Transaction-based changeQty v�?i delta thực tế
   if(delta !== 0) _cloudSyncItem({ type: 'change', itemId, itemNote: '', delta }, currentTable);
   renderMenuItems();
   renderCart();
 }
 
 function saveOrder() {
-  // Chỉ ghi LocalStorage + cập nhật trạng thái bàn.
-  // Cloud sync được xử lý riêng bởi _cloudSyncItem() trong từng hàm
+  // Ch�? ghi LocalStorage + cập nhật trạng thái bàn.
+  // Cloud sync �?ược xử lý riêng b�?i _cloudSyncItem() trong từng hàm
   // (addToOrder, changeQty, removeCartItem, setCartQty) dùng Transaction-based API.
 
   // --- LocalStorage (offline backup) ---
@@ -1420,9 +1968,9 @@ function saveOrder() {
     const table = tables.find(t => t.id === currentTable);
     if(table) {
       const hasItems = (orderItems[currentTable]||[]).length > 0;
-      if(hasItems && table.status === 'empty') {
+      if(hasItems) {
         table.status   = 'occupied';
-        table.openTime = Date.now();
+        table.openTime = table.openTime || Date.now();
       } else if(!hasItems) {
         table.status   = 'empty';
         table.openTime = null;
@@ -1468,7 +2016,7 @@ function renderCart() {
 
   orderExtras[currentTable] = extras;
 
-  // Tính tổng có VAT
+  // Tính t�?ng có VAT
   const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
   const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
   const total = subtotal + vatAmount;
@@ -1499,7 +2047,7 @@ function renderCart() {
       ).join('');
   }
 
-  // Hiển thị VAT trong tổng nếu có
+  // Hi�?n th�? VAT trong t�?ng nếu có
   const totalEl = document.getElementById('cart-total');
   if(totalEl) {
     if(vatAmount > 0) {
@@ -1516,7 +2064,7 @@ function renderCart() {
   if (pillTotalEl) pillTotalEl.textContent = fmtFull(total);
   document.getElementById('pay-btn').disabled = items.length === 0;
 
-  // Cập nhật UI ảnh bàn (nếu đang ở đúng trang)
+  // Cập nhật UI ảnh bàn (nếu �?ang �? �?úng trang)
   try {
     updateOrderPhotoUI();
   } catch(_) {}
@@ -1527,6 +2075,11 @@ function openCartSheet() {
   const body = document.getElementById('cart-sheet-body');
   const cart = document.getElementById('order-cart-root');
   if (!overlay || !body || !cart) return;
+  
+  // Set explicit height to allow scrolling within the sheet
+  body.style.maxHeight = '70vh';
+  body.style.overflowY = 'auto';
+  
   body.appendChild(cart);
   overlay.classList.add('active');
   renderCart();
@@ -1538,6 +2091,7 @@ function closeCartSheet() {
   const host = document.getElementById('order-cart-host');
   const cart = document.getElementById('order-cart-root');
   if (host && cart) host.appendChild(cart);
+  renderCart(); // Re-render to ensure it shows correctly in the host
 }
 
 function openBillModal() {
@@ -1558,7 +2112,10 @@ function openBillModal() {
   items.forEach(item => {
     const dish = menu.find(m => m.id === item.id);
     let dishCost = dish?.cost || 0;
-    if (dish && dish.ingredients && dish.ingredients.length > 0) {
+    if (dish && dish.itemType === ITEM_TYPES.RETAIL) {
+      const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
+      dishCost = linked ? linked.costPerUnit || 0 : dishCost;
+    } else if (dish && dish.ingredients && dish.ingredients.length > 0) {
       let calcCost = 0;
       dish.ingredients.forEach(ing => {
         const stock = inv.find(i => i.name === ing.name);
@@ -1580,7 +2137,7 @@ function openBillModal() {
   // Store bill data for payment confirmation (include VAT)
   window._pendingBill = { billNo, total, cost, extras, tableLabel, vatAmount, taxRate };
 
-  // Lấy ảnh của bàn (tối đa 5 ảnh) để in kèm bill
+  // Lấy ảnh của bàn (t�?i �?a 5 ảnh) �?�? in kèm bill
   let orderPhotosHtml = '';
   try {
     if(!orderPhotoCache) orderPhotoCache = {};
@@ -1589,7 +2146,7 @@ function openBillModal() {
     if(limited.length) {
       orderPhotosHtml = `
       <div class="bill-photo-page">
-        <h3 style="font-size:14px;margin:12px 0 6px;">📷 Ảnh ghi nhận bàn</h3>
+        <h3 style="font-size:14px;margin:12px 0 6px;">📸 Ảnh ghi nhận bàn</h3>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           ${limited.map(ph => `
             <div style="flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);">
@@ -1605,7 +2162,7 @@ function openBillModal() {
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
       <div class="bill-header">
-        <div class="bill-logo">🍢 ${s.storeName||'Gánh Khô Chữa Lành'}</div>
+        <div class="bill-logo">🧾 ${s.storeName||'Gánh Khô Chữa Lành'}</div>
         ${s.storeSlogan ? `<div class="bill-sub">${s.storeSlogan}</div>` : ''}
         ${s.storePhone ? `<div class="bill-sub" style="margin-top:4px">ĐT: ${s.storePhone}</div>` : ''}
         ${s.storeAddress ? `<div class="bill-sub">${s.storeAddress}</div>` : ''}
@@ -1628,30 +2185,30 @@ function openBillModal() {
       <hr class="bill-divider">
       ${extras.note ? `<div style="font-size:12px;margin-bottom:8px"><em>Ghi chú: ${extras.note}</em></div>` : ''}
       <div style="font-size:12px;margin-bottom:4px;color:var(--text3);display:flex;justify-content:space-between"><span>Tiền hàng</span><span>${fmtFull(itemsTotal)}</span></div>
-      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>📉 Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
-      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🛵 Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
-      ${vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;color:var(--primary)"><span>💹 Thuế VAT (${taxRate}%)</span><span>+${fmtFull(vatAmount)}</span></div>` : ''}
+      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🏷️ Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
+      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🚚 Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
+      ${vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;color:var(--primary)"><span>🧾 Thuế VAT (${taxRate}%)</span><span>+${fmtFull(vatAmount)}</span></div>` : ''}
       <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
       ${vatAmount > 0 ? `<div style="font-size:10px;color:var(--text3);text-align:right;margin-top:-4px">Đã bao gồm VAT ${taxRate}%: ${fmtFull(vatAmount)}</div>` : ''}
       <div class="bill-qr">
         <div class="bill-qr-label">Quét QR để thanh toán chuyển khoản</div>
         <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:200px;height:200px;object-fit:contain;margin:8px auto;display:block">
-        <div class="bill-qr-bank">${s.bankName||'Vietinbank'} – ${bank}</div>
+        <div class="bill-qr-bank">${s.bankName||'Vietinbank'} • ${bank}</div>
         <div class="bill-qr-amount">${fmtFull(total)}</div>
       </div>
       <hr class="bill-divider">
-      <div class="bill-thanks">Cảm ơn quý khách! Hẹn gặp lại 🙏</div>
+      <div class="bill-thanks">Cảm ơn quý khách! Hẹn gặp lại ❤️</div>
     </div>
     ${orderPhotosHtml}
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn btn-secondary" style="flex:1" onclick="printBill()">🖨️ In bill</button>
-      <button id="bill-pay-btn" class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">✅ Thanh toán</button>
+      <button id="bill-pay-btn" class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">💳 Thanh toán</button>
     </div>
     <div id="pay-watch-status" style="font-size:11px;text-align:center;margin-top:8px;min-height:16px;color:var(--text3);transition:color 0.3s"></div>`;
 
   document.getElementById('bill-modal').classList.add('active');
 
-  // Bắt đầu theo dõi thanh toán tự động (nếu đã cấu hình Casso)
+  // Bắt �?ầu theo dõi thanh toán tự �?�?ng (nếu �?ã cấu hình Casso)
   startPaymentWatcher(total, billNo);
 }
 
@@ -1686,7 +2243,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
   const items      = orderItems[currentTable] || [];
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
-  // --- Ảnh hóa đơn ---
+  // --- Ảnh hóa �?ơn ---
   let orderPhotosForBill = [];
   try {
     if(!orderPhotoCache) orderPhotoCache = {};
@@ -1745,7 +2302,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     };
 
     if (orderId && currentTable !== 'takeaway') {
-      // Đóng đơn trên Firestore → ghi history, xóa order, reset bàn
+      // Đóng �?ơn trên Firestore �?? ghi history, xóa order, reset bàn
       window.DB.Orders.close(orderId, payInfo)
         .then(() => window.DB.Inventory.deduct(items))
         .catch(console.error);
@@ -1790,7 +2347,10 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
 let invTab = 'stock'; // stock | purchase | forecast
 
 function renderInventory() {
-  if(invTab === 'stock') renderStockList();
+  if(invTab === 'stock') {
+    renderStockList();
+    populateManualMergeDropdowns(); // Populate manual merge dropdowns when stock tab is shown
+  }
   else if(invTab === 'purchase') renderPurchaseList();
   else if(invTab === 'ledger') renderLedger();
   else if(invTab === 'ncc') renderNCC();
@@ -1853,12 +2413,12 @@ async function handleOrderPhotoCapture(event) {
     Store.setOrderPhotosAsync(orderPhotoCache);
     updateOrderPhotoUI();
     if(added > 0) {
-      showToast(added > 1 ? `📷 Đã thêm ${added} ảnh cho bàn ${currentTable}` : `📷 Đã lưu ảnh cho bàn ${currentTable}`);
+      showToast(added > 1 ? `📸 Đã thêm ${added} ảnh cho bàn ${currentTable}` : `📸 Đã lưu ảnh cho bàn ${currentTable}`);
     } else {
       showToast('⚠️ Không có file ảnh hợp lệ.', 'warning');
     }
     if(files.length > added && list.length >= 5) {
-      showToast('⚠️ Đã đủ 5 ảnh/bàn — bỏ qua phần còn lại.', 'warning');
+      showToast('⚠️ Đã đủ 5 ảnh/bàn - bỏ qua phần còn lại.', 'warning');
     }
   } catch(e) {
     console.warn('handleOrderPhotoCapture error', e);
@@ -1942,12 +2502,12 @@ async function handlePurchasePhotoCapture(event) {
     const last = currentPurchasePhotos[currentPurchasePhotos.length - 1];
     setPurchasePhotoViewer(last);
     
-    // Áp dụng lưu ngay sau khi chụp để tránh việc chưa submit đã mất ảnh
+    // Áp dụng lưu ngay sau khi chụp �?�? tránh vi�?c chưa submit �?ã mất ảnh
     persistCurrentPurchasePhotosBatch();
 
     setPurOcrStatus(added > 1
-      ? `📷 Đã thêm ${added} ảnh chứng từ. Có thể bấm "🧾 Quét" để đọc dữ liệu.`
-      : '📷 Đã thêm ảnh chứng từ. Có thể bấm "🧾 Quét" để đọc dữ liệu.');
+      ? `📸 Đã thêm ${added} ảnh chứng từ. Có thể bấm "Quét" để đọc dữ liệu.`
+      : '📸 Đã thêm ảnh chứng từ. Có thể bấm "Quét" để đọc dữ liệu.');
   } catch(e) {
     console.warn('handlePurchasePhotoCapture error', e);
     showToast('❌ Không xử lý được ảnh chứng từ.', 'danger');
@@ -2168,7 +2728,7 @@ Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Kh
 }
 
 function parsePurchaseText(text, source) {
-  // Heuristic đơn giản: tìm số lớn nhất làm price, số còn lại làm qty
+  // Heuristic �?ơn giản: tìm s�? l�?n nhất làm price, s�? còn lại làm qty
   const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
   let price = null;
   let qty = null;
@@ -2181,7 +2741,7 @@ function parsePurchaseText(text, source) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let bestLine = '';
   lines.forEach(l => {
-    if(/[A-Za-zÀ-ỹ]/.test(l) && l.length > bestLine.length) bestLine = l;
+    if(/[A-Za-z\u00C0-\u1EF9]/.test(l) && l.length > bestLine.length) bestLine = l;
   });
   return {
     name: bestLine || '',
@@ -2276,20 +2836,33 @@ function resizeImageToDataUrl(file, maxSize, quality) {
 }
 
 function renderStockList() {
-  const inv = Store.getInventory();
+  const inv = _getInventory();
   const search = (document.getElementById('inv-search')||{}).value || '';
-  const filtered = inv.filter(i => !i.hidden && (!search || i.name.toLowerCase().includes(search.toLowerCase())));
+  const filtered = inv
+    .filter(i => !i.hidden && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi')); // Sắp xếp theo alphabet tiếng Việt
   const {critical, low} = getInventoryAlerts();
   const critSet = new Set(critical.map(i=>i.id));
   const lowSet = new Set(low.map(i=>i.id));
+
+  // Calculate total inventory value
+  let totalValue = 0;
+  filtered.forEach(i => {
+    totalValue += (i.qty || 0) * (i.costPerUnit || 0);
+  });
+  
+  const totalValEl = document.getElementById('total-inventory-value');
+  if (totalValEl) {
+    totalValEl.textContent = fmtFull(totalValue);
+  }
 
   const html = filtered.map(i => {
     const pct = Math.min(100, (i.qty / (i.minQty * 3)) * 100);
     const level = critSet.has(i.id) ? 'low' : lowSet.has(i.id) ? 'mid' : 'ok';
     const barClass = level === 'low' ? 'red' : level === 'mid' ? 'yellow' : 'green';
-    return `<div class="inv-item">
+    return `<div class="inv-item" onclick="viewItemLedger('${i.id}')" style="cursor:pointer;">
       <div style="flex:1">
-        <div class="inv-name">${i.name} <span class="inv-unit">(${i.unit})</span></div>
+        <div class="inv-name">${i.name} <span class="inv-unit">(${i.unit})</span> ${getInventoryTypeBadge(i.itemType)}</div>
         <div class="progress"><div class="progress-bar ${barClass}" style="width:${pct}%"></div></div>
         <div style="font-size:10px;color:var(--text3)">Tối thiểu: ${i.minQty} ${i.unit}</div>
       </div>
@@ -2305,6 +2878,7 @@ function renderStockList() {
   }).join('') || '<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">Không có dữ liệu</div></div>';
 
   document.getElementById('stock-list').innerHTML = html;
+  renderIngredientMergeBoard();
 
   // Alert summary
   const alertDiv = document.getElementById('inv-alerts');
@@ -2312,6 +2886,20 @@ function renderStockList() {
   if(critical.length > 0) alertHtml += `<div class="alert-card danger" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cần nhập gấp (${critical.length})</div><div class="alert-desc">${critical.map(i=>i.name).join(', ')}</div></div></div>`;
   if(low.length > 0) alertHtml += `<div class="alert-card warning" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">⚠️</div><div class="alert-content"><div class="alert-title">Sắp hết (${low.length})</div><div class="alert-desc">${low.map(i=>i.name).join(', ')}</div></div></div>`;
   alertDiv.innerHTML = alertHtml;
+}
+
+function viewItemLedger(itemId) {
+  // Switch to ledger tab
+  switchInvTab('ledger', document.querySelector('.tab-btn:nth-child(3)'));
+
+  // Select the clicked item in ledger dropdown then re-render
+  setTimeout(() => {
+    const ledgerSelect = document.getElementById('ledger-item-select');
+    if (ledgerSelect) {
+      ledgerSelect.value = itemId;
+      renderLedger();
+    }
+  }, 100);
 }
 
 function quickAddStock(invId) {
@@ -2336,7 +2924,7 @@ function quickAddStock(invId) {
     updateAlertBadge();
     showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
   }
-  // Log purchase (vẫn giữ track’s purchase record)
+  // Log purchase (vẫn giữ track�??s purchase record)
   Store.addPurchase({ id:uid(), name:item.name, qty:amt, unit:item.unit, price:(item.costPerUnit||0)*amt, costPerUnit:item.costPerUnit||0, date:new Date().toISOString(), supplier:'Nhập thủ công' });
 }
 
@@ -2344,6 +2932,7 @@ function openAddInvItemModal() {
   document.getElementById('inv-edit-id').value = '';
   document.getElementById('inv-edit-name').value = '';
   document.getElementById('inv-edit-unit').value = '';
+  document.getElementById('inv-edit-type').value = ITEM_TYPES.RAW;
   document.getElementById('inv-edit-qty').value = '0';
   document.getElementById('inv-edit-min').value = '5';
   document.getElementById('inv-edit-cost').value = '0';
@@ -2351,7 +2940,7 @@ function openAddInvItemModal() {
   document.getElementById('inv-edit-supplier').value = '';
   document.getElementById('inv-edit-supplier-phone').value = '';
   document.getElementById('inv-edit-supplier-addr').value = '';
-  document.getElementById('inv-edit-modal-title').textContent = '📦 Tạo Nguyên Liệu Mới';
+  document.getElementById('inv-edit-modal-title').textContent = '🧾 Tạo Nguyên Liệu Mới';
   document.getElementById('inv-edit-modal').classList.add('active');
 }
 
@@ -2362,6 +2951,7 @@ function editInvItem(invId) {
   document.getElementById('inv-edit-id').value = item.id;
   document.getElementById('inv-edit-name').value = item.name;
   document.getElementById('inv-edit-unit').value = item.unit;
+  document.getElementById('inv-edit-type').value = item.itemType || ITEM_TYPES.RAW;
   document.getElementById('inv-edit-qty').value = item.qty;
   document.getElementById('inv-edit-min').value = item.minQty;
   document.getElementById('inv-edit-cost').value = item.costPerUnit || 0;
@@ -2369,7 +2959,7 @@ function editInvItem(invId) {
   document.getElementById('inv-edit-supplier').value = item.supplierName || '';
   document.getElementById('inv-edit-supplier-phone').value = item.supplierPhone || '';
   document.getElementById('inv-edit-supplier-addr').value = item.supplierAddress || '';
-  document.getElementById('inv-edit-modal-title').textContent = '📦 Cập nhật nguyên liệu';
+  document.getElementById('inv-edit-modal-title').textContent = '🧾 Cập nhật nguyên liệu';
   document.getElementById('inv-edit-modal').classList.add('active');
 }
 
@@ -2378,6 +2968,7 @@ function submitInvEdit(e) {
   const id = document.getElementById('inv-edit-id').value;
   const name = document.getElementById('inv-edit-name').value.trim();
   const unit = document.getElementById('inv-edit-unit').value.trim();
+  const itemType = document.getElementById('inv-edit-type').value;
   const minQty = parseFloat(document.getElementById('inv-edit-min').value);
   const cost = parseFloat(document.getElementById('inv-edit-cost').value);
   const status = document.getElementById('inv-edit-status').value;
@@ -2388,20 +2979,27 @@ function submitInvEdit(e) {
   if(!name || !unit || isNaN(minQty) || isNaN(cost)) return;
 
   const hidden = (status === 'hidden');
-  const updateData = { name, unit, minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
+  const existing = id ? Store.getInventory().find(i => i.id === id) : null;
+  const updateData = { name, unit, itemType, minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
   
   if (window.DB && window.DB.Inventory) {
     if (id) {
       window.DB.Inventory.update(id, updateData)
         .then(() => {
-          renderInventory();
+          if (window.appState?.inventory) {
+            const idx = window.appState.inventory.findIndex(i => i.id === id);
+            if (idx >= 0) window.appState.inventory[idx] = { ...window.appState.inventory[idx], ...updateData };
+          }
+          propagateInventoryReferenceRename(existing, { ...existing, ...updateData, id });
+          syncInventoryReferenceRenameToCloud(existing, { ...existing, ...updateData, id });
+          refreshIngredientDependentViews();
           document.getElementById('inv-edit-modal').classList.remove('active');
           showToast('✅ Đã cập nhật nguyên liệu');
         }).catch(e => showToast('Lỗi cập nhật kho: ' + e.message, 'danger'));
     } else {
       window.DB.Inventory.add({ id: uid(), qty: 0, ...updateData })
         .then(() => {
-          renderInventory();
+          refreshIngredientDependentViews();
           document.getElementById('inv-edit-modal').classList.remove('active');
           showToast('✅ Đã tạo nguyên liệu mới');
         }).catch(e => showToast('Lỗi tạo nguyên liệu: ' + e.message, 'danger'));
@@ -2417,7 +3015,8 @@ function submitInvEdit(e) {
       inv.push({ id: uid(), qty: 0, ...updateData });
     }
     Store.setInventory(inv);
-    renderInventory();
+    if (id) propagateInventoryReferenceRename(existing, { ...(existing || {}), ...updateData, id });
+    refreshIngredientDependentViews();
     document.getElementById('inv-edit-modal').classList.remove('active');
     showToast(id ? '✅ Đã cập nhật nguyên liệu' : '✅ Đã tạo nguyên liệu mới');
   }
@@ -2456,7 +3055,7 @@ function getPurchasePhotoBatchEntries() {
 function renderPurchasePhotoManager() {
   const entries = getPurchasePhotoBatchEntries();
   if(!entries.length) {
-    return '<div class="card" style="padding:12px;margin-bottom:12px;"><div class="card-title" style="margin-bottom:6px">📷 Quản lý hình ảnh đã chụp</div><div class="card-sub" style="font-size:12px;color:var(--text3)">Chưa có ảnh chứng từ đã lưu</div></div>';
+    return '<div class="card" style="padding:12px;margin-bottom:12px;"><div class="card-title" style="margin-bottom:6px">🖼️ Quản lý hình ảnh đã chụp</div><div class="card-sub" style="font-size:12px;color:var(--text3)">Chưa có ảnh chứng từ đã lưu</div></div>';
   }
 
   const html = entries.slice(0, 10).map(e => `
@@ -2466,7 +3065,7 @@ function renderPurchasePhotoManager() {
              onclick="openPurchasePhotoFullFromBatch('${e.batchId}', 0)">
       </div>
       <div class="list-item-content">
-        <div class="list-item-title">📷 Batch chứng từ</div>
+        <div class="list-item-title">🖼️ Batch chứng từ</div>
         <div class="list-item-sub" style="margin-top:4px">
           <div>Thời gian: ${e.createdAt ? fmtDateTime(e.createdAt) : ''}</div>
           <div>Số ảnh: ${e.count}</div>
@@ -2485,7 +3084,7 @@ function renderPurchasePhotoManager() {
   return `
     <div class="card" style="padding:12px;margin-bottom:12px;">
       <div class="card-header" style="margin-bottom:8px">
-        <div class="card-title">📷 Quản lý hình ảnh đã chụp</div>
+        <div class="card-title">🖼️ Quản lý hình ảnh đã chụp</div>
         <div class="card-sub" style="margin-left:auto;font-size:11px;color:var(--text3)">Xem lại & xóa thủ công</div>
       </div>
       ${html}
@@ -2588,7 +3187,7 @@ async function deletePurchasePhotoBatch(batchId) {
   });
   if(changed) Store.setPurchases(purchases);
 
-  // Nếu modal đang mở batch đó thì reset
+  // Nếu modal �?ang m�? batch �?ó thì reset
   if(String(currentPurchasePhotosBatchId || '') === String(batchId)) {
     currentPurchasePhotosBatchId = null;
     currentPurchasePhotos = [];
@@ -2607,17 +3206,20 @@ async function deletePurchasePhotoBatch(batchId) {
 
 function renderPurchaseList() {
   const purchases = Store.getPurchases().slice(0, 50);
+  const inv = _getInventory();
 
   const purchasesHtml = purchases.length ? purchases.map(p => {
+    const invItem = inv.find(i => i.name === p.name);
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
+    if (invItem) subInfo += `<br><small style="color:var(--text3)">${ITEM_TYPE_LABELS[invItem.itemType] || 'Nguyên liệu'}</small>`;
     if (p.note) {
       const safeNote = String(p.note).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       subInfo += `<br><small style="color:var(--text2)">${safeNote}</small>`;
     }
-    if (p.photoBatchId) subInfo += `<br><small style="color:var(--text3)">📷 Batch: ${String(p.photoBatchId).slice(0,8)}...</small>`;
+    if (p.photoBatchId) subInfo += `<br><small style="color:var(--text3)">🖼️ Batch: ${String(p.photoBatchId).slice(0,8)}...</small>`;
     if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
     return `<div class="list-item">
-      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📦</div>
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📥</div>
       <div class="list-item-content">
         <div class="list-item-title">${p.name}</div>
         <div class="list-item-sub">${subInfo}</div>
@@ -2630,7 +3232,7 @@ function renderPurchaseList() {
         </div>
       </div>
     </div>`;
-  }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
+  }).join('') : '<div class="empty-state"><div class="empty-icon">📥</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
 
   const wrap = document.getElementById('purchase-list');
   if(!wrap) return;
@@ -2679,7 +3281,7 @@ function renderForecast() {
   const needs = getForecastNeeds(3);
   document.getElementById('forecast-list').innerHTML = needs.length ? needs.map(n =>
     `<div class="alert-card ${n.urgent?'danger':'warning'}">
-      <div class="alert-icon">${n.urgent?'🚨':'📊'}</div>
+      <div class="alert-icon">${n.urgent?'🚨':'📦'}</div>
       <div class="alert-content">
         <div class="alert-title">${n.name} <span class="badge ${n.urgent?'badge-danger':'badge-warning'}">${n.urgent?'KHẨN':'Dự báo'}</span></div>
         <div class="alert-desc">Tồn: ${n.currentQty} ${n.unit} | Trung bình/ngày: ${n.dailyAvg} ${n.unit}<br>Cần nhập thêm ~${n.need.toFixed(1)} ${n.unit} cho 3 ngày tới</div>
@@ -2689,7 +3291,7 @@ function renderForecast() {
 }
 
 function renderLedger() {
-  const invItems = Store.getInventory();
+  const invItems = _getInventory();
   const select = document.getElementById('ledger-item-select');
   const monthInput = document.getElementById('ledger-month');
   
@@ -2699,8 +3301,9 @@ function renderLedger() {
   }
   
   const currentVal = select.value;
+  const sortedItems = invItems.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + 
-    invItems.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
+    sortedItems.map(i => `<option value="${i.id}">${i.hidden ? '🚫 ' : ''}${i.name} (${i.unit})</option>`).join('');
   select.value = currentVal;
 
   const itemId = select.value;
@@ -2709,7 +3312,7 @@ function renderLedger() {
 
   if(!itemId) {
     if(infoCardEl) infoCardEl.innerHTML = '';
-    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">👈</div><div class="empty-text">Vui lòng chọn một nguyên liệu để xem thẻ kho</div></div>';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Vui lòng chọn một nguyên liệu để xem thẻ kho</div></div>';
     return;
   }
 
@@ -2718,15 +3321,18 @@ function renderLedger() {
 
   const itemName = inv.name;
 
-  // Hiển thị thông tin nguyên liệu
+  // Hi�?n th�? thông tin nguyên li�?u
   if(infoCardEl) {
     infoCardEl.innerHTML = `
       <div class="card" style="padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(0,149,255,0.05),rgba(0,149,255,0.15))">
         <div>
-          <div style="font-weight:700;font-size:16px;color:var(--text)">${inv.hidden ? '🔴 ' : ''}${inv.name} ${inv.hidden ? '<span style="font-size:10px;padding:2px 4px;background:#ff4d4f;color:#fff;border-radius:4px;vertical-align:middle;margin-left:4px">Đã ẩn</span>' : ''}</div>
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${inv.hidden ? '🚫 ' : ''}${inv.name} ${inv.hidden ? '<span style="font-size:10px;padding:2px 4px;background:#ff4d4f;color:#fff;border-radius:4px;vertical-align:middle;margin-left:4px">Đã ẩn</span>' : ''}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:4px">Tồn hiện tại: <strong style="color:var(--primary)">${fmt(inv.qty)} ${inv.unit}</strong></div>
         </div>
-        <button class="btn btn-sm btn-secondary" onclick="editInvItem('${inv.id}')">✏️ Sửa thông tin</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-secondary" onclick="editInvItem('${inv.id}')">✏️ Sửa thông tin</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteInventoryItemFromLedger('${inv.id}')">🗑️ Xóa</button>
+        </div>
       </div>
     `;
   }
@@ -2840,9 +3446,94 @@ function renderLedger() {
     </div>
   </div>`;
 
-  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">Không có giao dịch trong tháng</div></div>';
+  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Không có giao dịch trong tháng</div></div>';
 
   document.getElementById('ledger-list').innerHTML = html;
+}
+
+async function deleteInventoryItemFromLedger(itemId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được xóa nguyên liệu.', 'danger');
+    return;
+  }
+
+  const inventory = _getInventory();
+  const item = inventory.find(i => i.id === itemId);
+  if (!item) {
+    showToast('Không tìm thấy nguyên liệu để xóa.', 'warning');
+    return;
+  }
+
+  const menu = Store.getMenu();
+  const unitConversions = Store.getUnitConversions();
+  const relatedRetail = menu.filter(m => m.linkedInventoryId === item.id).length;
+  const relatedRecipes = menu.reduce((sum, m) => sum + ((m.ingredients || []).filter(ing => ing.name === item.name).length), 0);
+  const relatedConversions = unitConversions.filter(c => c.ingredientName === item.name).length;
+
+  const msg = [
+    `Xóa nguyên liệu "${item.name}" khỏi hệ thống?`,
+    '',
+    '- Nguyên liệu sẽ bị xóa khỏi Thẻ kho và Tồn kho',
+    `- Liên kết menu bán thẳng bị ảnh hưởng: ${relatedRetail}`,
+    `- Công thức có chứa nguyên liệu này: ${relatedRecipes}`,
+    `- Quy đổi đơn vị liên quan: ${relatedConversions}`,
+    '',
+    'Hành động này không thể hoàn tác.'
+  ].join('\n');
+  if (!confirm(msg)) return;
+
+  // 1) Xóa nguyên liệu trong kho
+  const nextInventory = inventory.filter(i => i.id !== item.id);
+  Store.setInventory(nextInventory);
+  if (window.appState?.inventory) {
+    window.appState.inventory = nextInventory.map(normalizeInventoryItemModel);
+  }
+
+  // 2) Dọn liên kết menu/công thức để tránh rác
+  const nextMenu = menu.map(m => {
+    const next = { ...m };
+    if (next.linkedInventoryId === item.id) next.linkedInventoryId = null;
+    if (Array.isArray(next.ingredients)) {
+      next.ingredients = next.ingredients.filter(ing => ing.name !== item.name);
+    }
+    return next;
+  });
+  Store.setMenu(nextMenu);
+  if (window.appState?.menu) window.appState.menu = nextMenu;
+
+  // 3) Dọn quy đổi đơn vị liên quan
+  const nextConversions = unitConversions.filter(c => c.ingredientName !== item.name);
+  Store.setUnitConversions(nextConversions);
+
+  // 4) Dọn request merge liên quan
+  const nextRequests = Store.getItemMergeRequests().filter(r => r.sourceId !== item.id && r.targetId !== item.id);
+  Store.setItemMergeRequests(nextRequests);
+
+  // 5) Sync cloud (best effort)
+  if (window.DB) {
+    try {
+      if (window.DB.Inventory?.delete) await window.DB.Inventory.delete(item.id);
+      if (window.DB.Menu?.update) {
+        for (const m of nextMenu) {
+          await window.DB.Menu.update(m.id, {
+            linkedInventoryId: m.linkedInventoryId || null,
+            ingredients: m.ingredients || [],
+            itemType: m.itemType,
+            name: m.name,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[delete-inventory] cloud sync warning', e);
+    }
+  }
+
+  const ledgerSelect = document.getElementById('ledger-item-select');
+  if (ledgerSelect) ledgerSelect.value = '';
+  refreshIngredientDependentViews();
+  renderLedger();
+  populateManualMergeDropdowns();
+  showToast(`✅ Đã xóa nguyên liệu "${item.name}".`, 'success');
 }
 
 function resetPurchasePhotoFileInputs() {
@@ -2857,7 +3548,7 @@ function openPurchaseModal() {
   delete form.dataset.editId;
   form.reset();
   resetPurchasePhotoFileInputs();
-  // Reset session ảnh chứng từ cho lần nhập hiện tại
+  // Reset session ảnh chứng từ cho lần nhập hi�?n tại
   currentPurchasePhotos = [];
   currentPurchasePhotosBatchId = null;
   const thumbs = document.getElementById('pur-photo-thumbs');
@@ -2865,17 +3556,18 @@ function openPurchaseModal() {
   const viewer = document.getElementById('pur-photo-viewer');
   if(viewer) viewer.style.display = 'none';
   setPurOcrStatus('');
-  document.getElementById('purchase-modal-title').textContent = '🚚 Nhập hàng mới';
+  document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
   renderPurchaseSupplierDropdown(); // Load danh sách NCC
   
   // Render options for inventory select
-  const inv = Store.getInventory().filter(i => !i.hidden);
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
   const select = document.getElementById('pur-name');
   if(select) {
     select.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' + 
-      inv.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+      inv.map(i => `<option value="${i.id}">${i.name} (${ITEM_TYPE_LABELS[i.itemType] || 'Nguyên liệu'})</option>`).join('');
   }
   document.getElementById('pur-last-price-hint').style.display = 'none';
+  document.getElementById('pur-price-compare-hint').style.display = 'none';
 
   document.getElementById('purchase-modal').classList.add('active');
 }
@@ -2889,13 +3581,27 @@ function calcPurUnitPrice() {
   if (unitLabel) unitLabel.textContent = '/' + unit;
 
   const unitPriceEl = document.getElementById('pur-unit-price');
+  const compareEl = document.getElementById('pur-price-compare-hint');
   if (unitPriceEl) {
     const qty = parseFloat(qtyStr);
     const price = parseFloat(priceStr);
     if (!isNaN(qty) && qty > 0 && !isNaN(price)) {
-      unitPriceEl.value = Math.round(price / qty).toLocaleString('vi-VN');
+      const currentUnitPrice = Math.round(price / qty);
+      unitPriceEl.value = currentUnitPrice.toLocaleString('vi-VN');
+      const lastPrice = Number(unitPriceEl.dataset.lastPrice || 0);
+      if (compareEl && lastPrice > 0) {
+        const diff = currentUnitPrice - lastPrice;
+        const pct = lastPrice > 0 ? Math.round((diff / lastPrice) * 100) : 0;
+        const trend = diff > 0 ? '▲ tăng' : diff < 0 ? '▼ giảm' : '• bằng';
+        const color = diff > 0 ? 'var(--danger)' : diff < 0 ? 'var(--success)' : 'var(--text3)';
+        compareEl.innerHTML = `<span style="color:${color}">${trend} ${fmt(Math.abs(diff))}đ (${Math.abs(pct)}%) so với lần gần nhất</span>`;
+        compareEl.style.display = '';
+      } else if (compareEl) {
+        compareEl.style.display = 'none';
+      }
     } else {
       unitPriceEl.value = '';
+      if (compareEl) compareEl.style.display = 'none';
     }
   }
 }
@@ -2917,18 +3623,23 @@ function onPurchaseItemSelect() {
   if(item) {
     unitInp.value = item.unit || '';
     
-    // Tìm đơn giá nhập gần nhất
+    // Tìm �?ơn giá nhập gần nhất
     const purchases = Store.getPurchases().filter(p => p.name === item.name);
     if(purchases.length > 0) {
-      purchases.sort((a,b) => new Date(b.date) - new Date(a.date)); // Mới nhất lên đầu
+      purchases.sort((a,b) => new Date(b.date) - new Date(a.date)); // M�?i nhất lên �?ầu
       const lastPur = purchases[0];
       const lastPrice = lastPur.qty > 0 ? lastPur.price / lastPur.qty : 0;
       hintEl.innerHTML = `Đơn giá nhập gần nhất: <strong>${fmt(lastPrice)}đ / ${item.unit}</strong>`;
       hintEl.style.display = 'block';
+      const unitPriceEl = document.getElementById('pur-unit-price');
+      if (unitPriceEl) unitPriceEl.dataset.lastPrice = String(Math.round(lastPrice));
     } else {
       hintEl.style.display = 'none';
+      const unitPriceEl = document.getElementById('pur-unit-price');
+      if (unitPriceEl) unitPriceEl.dataset.lastPrice = '';
     }
   }
+  calcPurUnitPrice();
 }
 
 function submitPurchase(e) {
@@ -2936,7 +3647,7 @@ function submitPurchase(e) {
   const inv = Store.getInventory();
   const itemId = document.getElementById('pur-name').value;
   if(!itemId) return;
-  const item = inv.find(i => i.id === itemId);
+  let item = inv.find(i => i.id === itemId);
   if(!item) return;
 
   const name = item.name;
@@ -2989,20 +3700,29 @@ function submitPurchase(e) {
         inv.push(item);
       }
 
-      // Gắn batch ảnh chứng từ (nếu có) cho lần chỉnh sửa này
+      // Gắn batch ảnh chứng từ (nếu có) cho lần ch�?nh sửa này
       if(currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
         persistCurrentPurchasePhotosBatch();
       }
-      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, costPerUnit:price/qty, supplier:supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress:supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
-      Store.setPurchases(purchases);
-      Store.setInventory(inv);
-      delete form.dataset.editId;
-      document.getElementById('purchase-modal-title').textContent = '🚚 Nhập hàng mới';
+      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, itemType: item.itemType, inventoryItemId: item.id, costPerUnit:price/qty, supplier:supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress:supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
+    Store.setPurchases(purchases);
+    Store.setInventory(inv);
+    delete form.dataset.editId;
+    document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
+    
+    // Nếu chi phí �?i kèm, cũng cần update
+    const expenses = Store.getExpenses();
+    const expIdx = expenses.findIndex(e => e.name === `Nhập hàng: ${oldName}` && Math.abs(e.amount - oldPrice) < 0.1);
+    if(expIdx >= 0) {
+      expenses[expIdx] = { ...expenses[expIdx], name: `Nhập hàng: ${name}`, amount: price };
+      Store.set(KEYS.expenses, expenses);
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.add) window.DB.Expenses.add(expenses[expIdx]);
     }
-    showToast('✅ Đã cập nhật nhập hàng!');
-  } else {
+  }
+  showToast('✅ Đã cập nhật nhập hàng!');
+} else {
     // ADD MODE
-    // Lưu batch ảnh chứng từ (nếu có) - chỉ lưu theo batch id để tránh trùng lặp
+    // Lưu batch ảnh chứng từ (nếu có) - ch�? lưu theo batch id �?�? tránh trùng lặp
     persistCurrentPurchasePhotosBatch();
     const purchaseId = uid();
     if(item) {
@@ -3014,22 +3734,26 @@ function submitPurchase(e) {
       item.costPerUnit = newCostPerUnit;
       item.unit = unit;
     } else {
-      item = { id:uid(), name, qty, unit, minQty:5, costPerUnit:price/qty };
+      item = { id:uid(), name, qty, unit, itemType: ITEM_TYPES.RAW, minQty:5, costPerUnit:price/qty };
       inv.push(item);
     }
     Store.setInventory(inv);
-    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress: supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || null });
-    Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
+    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, itemType: item.itemType, inventoryItemId: item.id, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress: supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || null });
+    // B�? Tạo bản ghi Expense tự �?�?ng, ch�? lưu Purchase
+    // Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
     showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
   }
 
-  // Sau khi bấm "Nhập hàng": giữ modal mở để tiếp tục nhập nguyên liệu mới
-  // - Reset các field nhập nguyên liệu, giữ lại NCC + ảnh chứng từ
+  // Sau khi bấm "Nhập hàng": giữ modal m�? �?�? tiếp tục nhập nguyên li�?u m�?i
+  // - Reset các field nhập nguyên li�?u, giữ lại NCC + ảnh chứng từ
   if(editId) {
     document.getElementById('purchase-modal').classList.remove('active');
     document.getElementById('purchase-form').reset();
     renderInventory();
     updateAlertBadge();
+    if (typeof renderPurchaseReport === 'function' && currentPage === 'reports') {
+      renderPurchaseReport();
+    }
     return;
   }
 
@@ -3047,10 +3771,10 @@ function submitPurchase(e) {
 }
 
 // ============================================================
-// STOCKTAKE (Kiểm kê)
+// STOCKTAKE (Ki�?m kê)
 // ============================================================
 function renderStocktakeHistory() {
-  const expenses = Store.getExpenses().filter(e => e.category === 'Lãi/Lỗ do kiểm kê');
+  const expenses = Store.getExpenses().filter(e => ['Lãi/Lỗ do kiểm kê', 'Lãi/L�? do ki�?m kê'].includes(e.category));
   const listEl = document.getElementById('stocktake-history-list');
   if(!listEl) return;
 
@@ -3073,10 +3797,11 @@ function renderStocktakeHistory() {
 
 function openStocktakeModal() {
   const inv = Store.getInventory().filter(i => !i.hidden);
+  const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   const listEl = document.getElementById('stocktake-list');
   if(!listEl) return;
 
-  listEl.innerHTML = inv.map(i => `
+  listEl.innerHTML = sortedInv.map(i => `
     <div class="list-item" style="padding:8px 12px; gap:8px">
       <div class="list-item-content">
         <div class="list-item-title">${i.name}</div>
@@ -3109,7 +3834,7 @@ function submitStocktake() {
     if(!isNaN(actual) && actual !== sys) {
       const item = inv.find(i => i.id === id);
       if(item) {
-        const diff = actual - sys; // dương = lãi (dư), âm = lỗ (thiếu)
+        const diff = actual - sys; // dương = lãi (dư), âm = l�? (thiếu)
         const diffCost = diff * (item.costPerUnit || 0);
 
         updates.push({
@@ -3182,7 +3907,7 @@ function renderConversionTab() {
 
   listEl.innerHTML = conversions.map(c => `
     <div class="list-item">
-      <div class="list-item-icon" style="background:rgba(139,92,246,0.1)">🔄</div>
+      <div class="list-item-icon" style="background:rgba(139,92,246,0.1)">⚖️</div>
       <div class="list-item-content">
         <div class="list-item-title">${c.ingredientName}</div>
         <div class="list-item-sub">Công thức: ${c.purchaseQty} ${c.purchaseUnit} = ${c.recipeQty} ${c.recipeUnit}</div>
@@ -3193,7 +3918,7 @@ function renderConversionTab() {
         <button class="btn btn-xs btn-danger" onclick="deleteConversion('${c.id}')">🗑️</button>
       </div>
     </div>
-  `).join('') || '<div class="empty-state"><div class="empty-icon">🔄</div><div class="empty-text">Chưa có quy đổi đơn vị nào</div></div>';
+  `).join('') || '<div class="empty-state"><div class="empty-icon">⚖️</div><div class="empty-text">Chưa có quy đổi đơn vị nào</div></div>';
 }
 
 function updateConvPreview() {
@@ -3220,7 +3945,7 @@ function resetConversionForm() {
   const ingField = document.getElementById('conv-ingredient');
   if(ingField) {
     ingField.focus();
-    // Cập nhật lại đơn vị mua nếu có tồn kho
+    // Cập nhật lại �?ơn v�? mua nếu có t�?n kho
     ingField.onchange = function() {
       const inv = Store.getInventory();
       const stock = inv.find(i => i.name.toLowerCase() === this.value.toLowerCase());
@@ -3294,7 +4019,7 @@ function deleteConversion(id) {
 // ============================================================
 // PAGE: FINANCE
 // ============================================================
-let financePeriod = 'month'; // Thay đổi mặc định thành 'month'
+let financePeriod = 'month'; // Thay �?�?i mặc �?�?nh thành 'month'
 let financeDateOpts = {};
 
 function renderFinance() {
@@ -3322,7 +4047,7 @@ function setFinancePeriod(p) {
 }
 
 function updateFinanceUI(s) {
-  // Thay đổi cách hiển thị các chỉ số tài chính
+  // Thay �?�?i cách hi�?n th�? các ch�? s�? tài chính
   document.getElementById('fin-revenue').textContent = fmtFull(s.netSales);
   document.getElementById('fin-cost').textContent = fmtFull(s.cost);
   document.getElementById('fin-gross').textContent = fmtFull(s.gross);
@@ -3351,7 +4076,7 @@ function updateFinanceUI(s) {
       const finVat = document.getElementById('fin-vat');
       if(finVat) finVat.textContent = fmtFull(vatTotal);
       const finRevAfterVat = document.getElementById('fin-revenue-after-vat');
-      // Tổng thực thu (có VAT và phí ship)
+      // T�?ng thực thu (có VAT và phí ship)
       if(finRevAfterVat) finRevAfterVat.textContent = fmtFull(s.revenue);
     } else {
       vatRow.style.display = 'none';
@@ -3395,7 +4120,31 @@ function renderExpenseList() {
   document.getElementById('expense-list').innerHTML = html;
 }
 
+function editExpense(expenseId) {
+  const expenses = Store.getExpenses();
+  const e = expenses.find(x => x.id === expenseId);
+  if(!e) return;
+  
+  if (e.category === 'Nhập hàng' || e.name.startsWith('Nhập hàng:')) {
+    showToast('Chi phí nhập hàng được tạo tự động. Vui lòng chuyển sang mục Nhập hàng để chỉnh sửa phiếu nhập.', 'warning');
+    return;
+  }
+
+  document.getElementById('exp-name').value = e.name;
+  document.getElementById('exp-amount').value = e.amount;
+  document.getElementById('exp-category').value = e.category || 'Chi phí khác';
+  
+  const form = document.getElementById('expense-form');
+  form.dataset.editId = expenseId;
+  document.getElementById('expense-modal').querySelector('.modal-title').textContent = '✏️ Sửa chi phí';
+  document.getElementById('expense-modal').classList.add('active');
+}
+
 function openExpenseModal() {
+  const form = document.getElementById('expense-form');
+  delete form.dataset.editId;
+  form.reset();
+  document.getElementById('expense-modal').querySelector('.modal-title').textContent = '💸 Thêm chi phí';
   document.getElementById('expense-modal').classList.add('active');
 }
 
@@ -3405,12 +4154,58 @@ function submitExpense(e) {
   const amount = parseFloat(document.getElementById('exp-amount').value);
   const category = document.getElementById('exp-category').value;
   if(!name || isNaN(amount)) return;
-  Store.addExpense({ id:uid(), name, amount, category, date:new Date().toISOString() });
+
+  const form = document.getElementById('expense-form');
+  const editId = form.dataset.editId;
+
+  if (editId) {
+    const expenses = Store.getExpenses();
+    const idx = expenses.findIndex(x => x.id === editId);
+    if (idx >= 0) {
+      expenses[idx] = { ...expenses[idx], name, amount, category };
+      Store.set(KEYS.expenses, expenses);
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.add) {
+        // Technically update, but using add is fine if using setDoc with same id
+        window.DB.Expenses.add(expenses[idx]).catch(console.error);
+      }
+    }
+    showToast('✅ Đã cập nhật chi phí!');
+  } else {
+    Store.addExpense({ id:uid(), name, amount, category, date:new Date().toISOString() });
+    showToast('✅ Đã thêm chi phí!');
+  }
+  
   document.getElementById('expense-modal').classList.remove('active');
-  document.getElementById('expense-form').reset();
+  form.reset();
+  delete form.dataset.editId;
   renderFinance();
-  showToast('✅ Đã thêm chi phí!');
+  if (typeof renderPurchaseReport === 'function' && currentPage === 'reports') {
+    renderPurchaseReport();
+  }
 }
+
+// ---- Auto cleanup script for wrong expenses (Run once) ----
+setTimeout(async () => {
+  try {
+    const expenses = Store.getExpenses() || [];
+    const toDelete = expenses.filter(e => e.category === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:')));
+    if (toDelete.length > 0) {
+      console.log('[Cleanup] Found wrong auto-generated expenses:', toDelete.length);
+      const newExpenses = expenses.filter(e => !(e.category === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:'))));
+      Store.set(KEYS.expenses, newExpenses);
+      
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.delete) {
+        for (const exp of toDelete) {
+          if (exp.id) await window.DB.Expenses.delete(exp.id).catch(console.warn);
+        }
+      }
+      console.log('[Cleanup] Removed duplicate expenses successfully.');
+    }
+  } catch (err) {
+    console.error('[Cleanup] Error:', err);
+  }
+}, 3000);
+
 
 function openDiscountDetails() {
   const orders = filterHistory(financePeriod).filter(o => o.discount && o.discount > 0);
@@ -3421,9 +4216,9 @@ function openDiscountDetails() {
   
   document.getElementById('discount-detail-content').innerHTML = orders.map(o => `
     <div class="list-item" onclick="document.getElementById('discount-detail-modal').classList.remove('active'); viewOrderDetail('${o.id}')" style="cursor:pointer">
-      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">📉</div>
+      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">🏷️</div>
       <div class="list-item-content">
-        <div class="list-item-title">${o.tableName} – ${o.id}</div>
+        <div class="list-item-title">${o.tableName} • ${o.id}</div>
         <div class="list-item-sub">${fmtDateTime(o.paidAt)}</div>
       </div>
       <div class="list-item-right">
@@ -3449,18 +4244,18 @@ function renderRevenueChart() {
     
     const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
     
-    // Doanh thu gộp (chưa trừ chiết khấu)
+    // Doanh thu g�?p (chưa trừ chiết khấu)
     const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
     
-    // Tính lại chi phí nguyên liệu (COGS) dựa trên từng món để tránh dữ liệu lỗi (cost quá cao) trong lịch sử cũ
+    // Tính lại chi phí nguyên li�?u (COGS) dựa trên từng món �?�? tránh dữ li�?u l�?i (cost quá cao) trong l�?ch sử cũ
     const dayCost = dayOrders.reduce((s,o) => s + (o.items || []).reduce((ss, i) => ss + (i.cost || 0) * (i.qty || 1), 0), 0);
     const dayDiscount = dayOrders.reduce((s,o) => s + (o.discount || 0), 0); // Chi phí giảm giá
     const dayVat = dayOrders.reduce((s,o) => s + (o.vatAmount || 0), 0); // VAT
     
     const dayExp = e.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0); // Nhân sự, marketing, etc.
-    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0); // Nhập hàng (giá trị price lưu tổng tiền bill nhập)
+    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0); // Nhập hàng (giá tr�? price lưu t�?ng tiền bill nhập)
     
-    // Tổng CHI PHÍ (lấy trị tuyệt đối để biểu đồ luôn dương)
+    // T�?ng CHI PHÍ (lấy tr�? tuy�?t �?�?i �?�? bi�?u �?�? luôn dương)
     const totalOut = dayCost + dayDiscount + dayVat + dayExp + dayPur;
     
     data.push({
@@ -3533,7 +4328,7 @@ function renderRevenueChart() {
 
 // ============================================================
 // ============================================================
-// CHỐT CA  –  Ghi ShiftLogs lên Firestore
+// CHỐT CA  �??  Ghi ShiftLogs lên Firestore
 // ============================================================
 // ============================================================
 // SHIFT MANAGEMENT (Quản lý ca)
@@ -3575,7 +4370,7 @@ function updateShiftBtnUI() {
     btn.style.background = 'linear-gradient(135deg, #f43f5e, #e11d48)';
     if(statusText) statusText.innerHTML = `<span style="color:var(--success)">Đang mở (${fmtDateTime(shift.openedAt).split(' ')[1]})</span>`;
   } else {
-    btn.innerHTML = '🔓 Mở Ca';
+    btn.innerHTML = '🟢 Mở Ca';
     btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
     if(statusText) statusText.innerHTML = `<span style="color:var(--text2)">Chưa mở ca</span>`;
   }
@@ -3695,8 +4490,8 @@ function shiftPayInOut(type, expectedCash) {
 
   Store.setCurrentShift(shift);
   
-  // Ghi nhận vào chi phí/thu nhập (dùng Expense cho Pay Out, nhưng không tính vào OPEX P&L nếu là rút tiền đi chợ, tùy thiết kế. 
-  // Ở đây ghi lại thành log Expense với category "Rút tiền ca" để tra cứu)
+  // Ghi nhận vào chi phí/thu nhập (dùng Expense cho Pay Out, nhưng không tính vào OPEX P&L nếu là rút tiền �?i chợ, tùy thiết kế. 
+  // �? �?ây ghi lại thành log Expense v�?i category "Rút tiền ca" �?�? tra cứu)
   if(type === 'out') {
     Store.addExpense({
       id: uid(),
@@ -3763,12 +4558,12 @@ async function closeShift(expectedCash) {
     showToast(`✅ Đã đóng ca (Offline)! Chênh lệch: ${fmt(diff)}đ`, 'success');
   }
 
-  // Nếu thiếu/dư tiền mặt, có thể ghi nhận vào Expense
+  // Nếu thiếu/dư tiền mặt, có th�? ghi nhận vào Expense
   if(diff !== 0) {
     Store.addExpense({
       id: uid(),
       name: `Chênh lệch đóng ca: ${diff > 0 ? 'Dư' : 'Thiếu'} tiền mặt`,
-      amount: -diff, // Nếu dư, diff > 0, amount âm -> Lãi. Nếu thiếu, diff < 0, amount dương -> Lỗ (Chi phí)
+      amount: -diff, // Nếu dư, diff > 0, amount âm -> Lãi. Nếu thiếu, diff < 0, amount dương -> L�? (Chi phí)
       category: 'Chênh lệch ca',
       date: new Date().toISOString(),
       note: `Dự kiến: ${expectedCash}, Thực tế: ${actualCash}. Ghi chú: ${note}`
@@ -3783,7 +4578,7 @@ async function closeShift(expectedCash) {
 
 // PAGE: REPORTS
 // ============================================================
-let reportPeriod = 'month'; // Thay đổi mặc định thành 'month' để hiển thị đủ dữ liệu từ các ngày trước
+let reportPeriod = 'month'; // Thay �?�?i mặc �?�?nh thành 'month' �?�? hi�?n th�? �?ủ dữ li�?u từ các ngày trư�?c
 let reportDateOpts = {};
 
 function renderReports() {
@@ -3840,7 +4635,7 @@ function renderTopItems() {
         <div class="list-item-amount" style="color:var(--success)">Lãi: ${fmt(item.profit)}đ</div>
       </div>
     </div>`
-  ).join('') : '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có dữ liệu</div></div>';
+  ).join('') : '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">Chưa có dữ liệu</div></div>';
 }
 
 function renderTrendChart() {
@@ -3861,7 +4656,7 @@ function renderTrendChart() {
     
     const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
     
-    // Tính Doanh thu gộp
+    // Tính doanh thu gộp
     const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
     
     // Tính lại chi phí an toàn từ từng món
@@ -4059,7 +4854,7 @@ function renderExpenseReport() {
 
   const sums = {};
   rawPurchases.forEach(p => {
-    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.qty * p.price);
+    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.price);
   });
   rawExpenses.forEach(e => {
     const cat = e.category || 'Chi phí khác';
@@ -4088,13 +4883,13 @@ function renderExpenseReport() {
 
     // Render list
     const allItems = [
-      ...rawPurchases.map(p => ({ type: 'purchase', name: `Nhập: ${p.name}`, amount: p.qty*p.price, date: p.date, note: `${p.qty} ${p.unit} - ${p.supplier||''}` })),
-      ...rawExpenses.map(e => ({ type: 'expense', name: e.name, amount: e.amount, date: e.date, note: e.category }))
+      ...rawPurchases.map(p => ({ type: 'purchase', id: p.id, name: `Nhập: ${p.name}`, amount: p.price, date: p.date, note: `${p.qty} ${p.unit} - ${p.supplier||''}` })),
+      ...rawExpenses.map(e => ({ type: 'expense', id: e.id, name: e.name, amount: e.amount, date: e.date, note: e.category }))
     ].sort((a,b) => new Date(b.date) - new Date(a.date));
 
     listEl.innerHTML = allItems.map(item => `
-      <div class="list-item">
-        <div class="list-item-icon" style="background:${item.type==='purchase'?'rgba(0,214,143,0.1)':'rgba(255,61,113,0.1)'}">${item.type==='purchase'?'📦':'💸'}</div>
+      <div class="list-item" style="cursor:pointer;" onclick="${item.type === 'purchase' ? `editPurchase('${item.id}')` : `editExpense('${item.id}')`}">
+        <div class="list-item-icon" style="background:${item.type==='purchase'?'rgba(0,214,143,0.1)':'rgba(255,61,113,0.1)'}">${item.type==='purchase'?'📥':'💸'}</div>
         <div class="list-item-content">
           <div class="list-item-title">${item.name}</div>
           <div class="list-item-sub">${fmtDate(item.date)} · ${item.note || ''}</div>
@@ -4112,7 +4907,7 @@ function renderOrderHistoryList() {
   const orders = filterHistory(reportPeriod, reportDateOpts).slice(0, 50);
   
   if(!orders.length) {
-    document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử</div></div>';
+    document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có lịch sử</div></div>';
     return;
   }
 
@@ -4137,11 +4932,11 @@ function renderOrderHistoryList() {
       const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
       const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
       const totalItems = (o.items||[]).reduce((s,i)=>s+i.qty,0);
-      const discountLabel = o.discount > 0 ? ` · 📉 -${fmt(o.discount)}đ` : '';
-      const shippingLabel = o.shipping > 0 ? ` · 🛵 +${fmt(o.shipping)}đ` : '';
-      const vatLabel = o.vatAmount > 0 ? ` · 💹 VAT ${fmt(o.vatAmount)}đ` : '';
+      const discountLabel = o.discount > 0 ? ` · 🏷️ -${fmt(o.discount)}đ` : '';
+      const shippingLabel = o.shipping > 0 ? ` · 🚚 +${fmt(o.shipping)}đ` : '';
+      const vatLabel = o.vatAmount > 0 ? ` · 🧾 VAT ${fmt(o.vatAmount)}đ` : '';
       const hasPhotos = Array.isArray(o.photos) && o.photos.length > 0;
-      const photoIcon = hasPhotos ? '📷' : '';
+      const photoIcon = hasPhotos ? '📸' : '';
       const noteLabel = o.note ? ` · 📝 ${o.note}` : '';
       const detailId = o.historyId || o.id;
       const itemNames = (o.items||[]).slice(0,3).map(i=>`${i.name} x${i.qty}`).join(', ');
@@ -4187,7 +4982,7 @@ async function viewOrderDetail(orderId) {
   const subTotal = (o.items||[]).reduce((s, i) => s + i.price * i.qty, 0);
   const photosHtml = (photos && photos.length)
     ? `<div style="margin-top:12px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px">📷 Ảnh ghi nhận đơn</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">📸 Ảnh ghi nhận đơn</div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
           ${photos.map((p, idx) => `
             <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
@@ -4207,9 +5002,9 @@ async function viewOrderDetail(orderId) {
     </div>
     <div style="margin-bottom:12px">${itemsHtml}</div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--text3)"><span>Tiền hàng</span><span>${fmtFull(subTotal)}</span></div>
-    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>📉 Giảm giá ${o.discountNote ? `(${o.discountNote})` : ''}</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
-    ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🛵 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
-    ${o.vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--primary)"><span>💹 Thuế VAT (${o.taxRate || 0}%)</span><span>+${fmtFull(o.vatAmount)}</span></div>` : ''}
+    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>🏷️ Giảm giá ${o.discountNote ? `(${o.discountNote})` : ''}</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
+    ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🚚 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
+    ${o.vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--primary)"><span>🧾 Thuế VAT (${o.taxRate || 0}%)</span><span>+${fmtFull(o.vatAmount)}</span></div>` : ''}
     <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
       <span style="font-weight:700">TỔNG CỘNG</span>
       <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
@@ -4260,8 +5055,8 @@ function renderInsights() {
   const week = getRevenueSummary('week');
   const avgWeekly = week.revenue / 7;
   const warnHtml = today.revenue < avgWeekly * 0.6 && avgWeekly > 0
-    ? `<div class="alert-card danger"><div class="alert-icon">📉</div><div class="alert-content"><div class="alert-title">Cảnh báo doanh thu</div><div class="alert-desc">Hôm nay thấp hơn ${((1-today.revenue/avgWeekly)*100).toFixed(0)}% so với trung bình tuần (${fmt(avgWeekly)}đ/ngày)</div></div></div>`
-    : `<div class="alert-card success"><div class="alert-icon">✅</div><div class="alert-content"><div class="alert-title">Doanh thu ổn định</div><div class="alert-desc">Hôm nay: ${fmtFull(today.revenue)} – trong mức bình thường</div></div></div>`;
+    ? `<div class="alert-card danger"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cảnh báo doanh thu</div><div class="alert-desc">Hôm nay thấp hơn ${((1-today.revenue/avgWeekly)*100).toFixed(0)}% so với trung bình tuần (${fmt(avgWeekly)}đ/ngày)</div></div></div>`
+    : `<div class="alert-card success"><div class="alert-icon">✅</div><div class="alert-content"><div class="alert-title">Doanh thu ổn định</div><div class="alert-desc">Hôm nay: ${fmtFull(today.revenue)} - trong mức bình thường</div></div></div>`;
   document.getElementById('revenue-warning').innerHTML = warnHtml;
 }
 
@@ -4276,7 +5071,10 @@ function renderMenuAdmin() {
 
   document.getElementById('menu-admin-list').innerHTML = filtered.map(m => {
     let computedCost = m.cost || 0;
-    if (m.ingredients && m.ingredients.length > 0) {
+    if (m.itemType === ITEM_TYPES.RETAIL) {
+      const linked = inv.find(i => i.id === m.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(m.name));
+      computedCost = linked ? linked.costPerUnit || 0 : 0;
+    } else if (m.ingredients && m.ingredients.length > 0) {
       computedCost = m.ingredients.reduce((s, ing) => {
         const stock = inv.find(i => i.name === ing.name);
         return s + (ing.qty * (stock ? stock.costPerUnit : 0));
@@ -4286,7 +5084,7 @@ function renderMenuAdmin() {
       <div class="list-item-icon" style="background:rgba(255,107,53,0.1)">🍽️</div>
       <div class="list-item-content">
         <div class="list-item-title">${m.name} <span style="font-size:11px;color:var(--text3);font-weight:normal">(${m.unit || 'phần'})</span></div>
-        <div class="list-item-sub">${m.category} · Giá vốn NL: ${fmt(computedCost)}đ ${m.ingredients?.length ? `· 🧪 ${m.ingredients.length} NL` : ''}</div>
+        <div class="list-item-sub">${m.category} · ${ITEM_TYPE_LABELS[m.itemType] || 'Món'} · Giá vốn: ${fmt(computedCost)}đ ${m.itemType === ITEM_TYPES.FINISHED && m.ingredients?.length ? `· 🧂 ${m.ingredients.length} NL` : ''}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">${fmt(m.price)}đ</div>
@@ -4301,6 +5099,7 @@ function renderMenuAdmin() {
 
 function openAddMenuModal(id) {
   const menu = _getMenu();
+  const inventory = _getInventory().filter(i => !i.hidden);
   const dish = id ? menu.find(m => m.id === id) : null;
   document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
   document.getElementById('menu-item-id').value = dish?.id || '';
@@ -4308,6 +5107,13 @@ function openAddMenuModal(id) {
   document.getElementById('menu-item-unit').value = dish?.unit || 'phần';
   document.getElementById('menu-item-price').value = dish?.price || '';
   document.getElementById('menu-item-category').value = dish?.category || CATEGORIES[0];
+  document.getElementById('menu-item-type').value = dish?.itemType || ITEM_TYPES.FINISHED;
+  const linkedSel = document.getElementById('menu-linked-inventory-id');
+  if (linkedSel) {
+    linkedSel.innerHTML = '<option value="">-- Chọn hàng tồn kho --</option>' + inventory
+      .map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    linkedSel.value = dish?.linkedInventoryId || '';
+  }
   
   const list = document.getElementById('menu-ingredients-list');
   list.innerHTML = '';
@@ -4316,6 +5122,7 @@ function openAddMenuModal(id) {
   } else {
     // addIngredientRow(); // Add an empty row by default
   }
+  toggleMenuItemTypeUI();
   
   document.getElementById('menu-modal').classList.add('active');
 }
@@ -4339,16 +5146,17 @@ function deleteMenuItem(id) {
 
 function submitMenuItem(e) {
   e.preventDefault();
-  const menu = _getMenu();
   const id = document.getElementById('menu-item-id').value;
   const name = document.getElementById('menu-item-name').value.trim();
   const price = parseFloat(document.getElementById('menu-item-price').value);
   const category = document.getElementById('menu-item-category').value;
   const unit = document.getElementById('menu-item-unit').value.trim() || 'phần';
+  const itemType = document.getElementById('menu-item-type').value || ITEM_TYPES.FINISHED;
+  const linkedInventoryId = document.getElementById('menu-linked-inventory-id').value || null;
   if(!name || isNaN(price)) return;
 
   const ingredients = [];
-  const inv = (window.appState && window.appState.inventory) || Store.getInventory();
+  const inv = _getInventory();
   document.querySelectorAll('#menu-ingredients-list > .ingredient-row').forEach(row => {
     const ingName = row.querySelector('.ing-name-sel').value;
     const qty = parseFloat(row.querySelector('.ing-qty-val').value);
@@ -4359,11 +5167,22 @@ function submitMenuItem(e) {
     }
   });
 
+  if (itemType === ITEM_TYPES.FINISHED && ingredients.length === 0) {
+    showToast('Thành phẩm / món ăn bắt buộc phải có công thức.', 'warning');
+    return;
+  }
+  if (itemType === ITEM_TYPES.RETAIL && !linkedInventoryId) {
+    showToast('Hàng bán thẳng phải liên kết với một hàng tồn kho.', 'warning');
+    return;
+  }
+
+  const payload = { name, unit, price, cost: 0, category, itemType, linkedInventoryId, ingredients: itemType === ITEM_TYPES.FINISHED ? ingredients : [] };
+
   // FIX 4: Ghi thẳng lên Firestore
   if (window.DB && window.DB.Menu) {
     const fn = id
-      ? window.DB.Menu.update(id, { name, unit, price, category, ingredients })
-      : window.DB.Menu.add({ id: uid(), name, unit, price, cost: 0, category, ingredients });
+      ? window.DB.Menu.update(id, payload)
+      : window.DB.Menu.add({ id: uid(), ...payload });
     fn.then(() => {
       document.getElementById('menu-modal').classList.remove('active');
       renderMenuAdmin();
@@ -4373,9 +5192,9 @@ function submitMenuItem(e) {
     const menu = Store.getMenu();
     if(id) {
       const idx = menu.findIndex(m => m.id === id);
-      if(idx >= 0) { menu[idx] = {...menu[idx], name, unit, price, cost: menu[idx].cost || 0, category, ingredients}; }
+      if(idx >= 0) { menu[idx] = {...menu[idx], ...payload, cost: menu[idx].cost || 0}; }
     } else {
-      menu.push({ id:uid(), name, unit, price, cost: 0, category, ingredients });
+      menu.push({ id:uid(), ...payload });
     }
     Store.setMenu(menu);
     document.getElementById('menu-modal').classList.remove('active');
@@ -4384,11 +5203,21 @@ function submitMenuItem(e) {
   }
 }
 
+function toggleMenuItemTypeUI() {
+  const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
+  const linkWrap = document.getElementById('menu-linked-inventory-wrap');
+  const title = document.getElementById('menu-ingredients-title');
+  const list = document.getElementById('menu-ingredients-list');
+  if (linkWrap) linkWrap.style.display = type === ITEM_TYPES.RETAIL ? '' : 'none';
+  if (title) title.textContent = type === ITEM_TYPES.RETAIL ? 'Công thức (không bắt buộc cho bán thẳng)' : 'Công thức (Nguyên liệu)';
+  if (list && type === ITEM_TYPES.RETAIL && !list.children.length) list.innerHTML = '';
+}
+
 
 function addIngredientRow(name='', qty='', unit='') {
   const inv = Store.getInventory();
   // Filter inventory list to generate options (include hidden if already selected)
-  const options = inv.filter(i => !i.hidden || i.name === name).map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})${i.hidden ? ' 🔴(Đã ẩn)' : ''}</option>`).join('');
+  const options = inv.filter(i => !i.hidden || i.name === name).map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})${i.hidden ? ' 🚫(Đã ẩn)' : ''}</option>`).join('');
   
   const div = document.createElement('div');
   div.style.display = 'flex';
@@ -4469,7 +5298,7 @@ function setDateMode(page, mode, btn) {
     inputsDiv.innerHTML = `
       <div style="display:flex;gap:8px;align-items:center">
         <input type="date" class="input input-sm date-input" id="${page}-from-date" onchange="applyDateFilter('${page}')">
-        <span style="color:var(--text2);font-size:12px;white-space:nowrap">→</span>
+        <span style="color:var(--text2);font-size:12px;white-space:nowrap">đến</span>
         <input type="date" class="input input-sm date-input" id="${page}-to-date" onchange="applyDateFilter('${page}')">
       </div>`;
     const today = new Date().toISOString().split('T')[0];
@@ -4564,7 +5393,7 @@ async function confirmResetData(keepMenu, keepInventory) {
       showToast('❌ Lỗi khi xóa dữ liệu Cloud: ' + e.message, 'danger');
     }
   } else if (window.appState) {
-    // Chế độ Offline: Cập nhật lại window.appState rỗng
+    // Chế �?�? Offline: Cập nhật lại window.appState r�?ng
     const fieldsToReset = ['history', 'orders', 'expenses', 'purchases', 'aiHistory'];
     if(!keepMenu) fieldsToReset.push('menu');
     if(!keepInventory) fieldsToReset.push('inventory', 'unitConversions');
@@ -4573,7 +5402,7 @@ async function confirmResetData(keepMenu, keepInventory) {
       if(Array.isArray(window.appState[f])) window.appState[f] = [];
       else if(typeof window.appState[f] === 'object') window.appState[f] = {};
     });
-    showToast('🔄 Đã reset dữ liệu cục bộ! Sẵn sàng hoạt động.', 'success');
+    showToast('�??? Đã reset dữ li�?u cục b�?! Sẵn sàng hoạt �?�?ng.', 'success');
   }
 
   document.getElementById('reset-modal').classList.remove('active');
@@ -4618,12 +5447,16 @@ function renderSettings() {
   const autoWeeklyEl  = document.getElementById('set-autoExportWeekly');
   const autoMonthlyEl = document.getElementById('set-autoExportMonthly');
   const autoPushWeeklyDriveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
+  const ocrModeEl = document.getElementById('set-ocrMode');
+  const photoRetentionEl = document.getElementById('set-photoRetentionDays');
   if(autoWeeklyEl)  autoWeeklyEl.checked  = !!s.autoExportWeekly;
   if(autoMonthlyEl) autoMonthlyEl.checked = !!s.autoExportMonthly;
   if(autoPushWeeklyDriveEl) {
     autoPushWeeklyDriveEl.checked = !!s.autoPushWeeklyReportToGoogleDrive;
     autoPushWeeklyDriveEl.disabled = !s.autoExportWeekly;
   }
+  if(ocrModeEl) ocrModeEl.value = s.ocrMode || 'auto';
+  if(photoRetentionEl) photoRetentionEl.value = String(Number(s.photoRetentionDays || 0));
 
   const reportTypeEl = document.getElementById('set-reportExportType');
   if(reportTypeEl && s.reportExportType) reportTypeEl.value = s.reportExportType;
@@ -4639,7 +5472,7 @@ function renderSettings() {
   const gdriveFolderEl = document.getElementById('set-googleDriveFolderId');
   if(gdriveFolderEl) gdriveFolderEl.value = s.googleDriveFolderId || '';
 
-  // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
+  // Hi�?n th�?/ẩn phần chọn ngày báo cáo theo kỳ
   try { toggleReportExportDate(); } catch(_) {}
   try { toggleWeeklyDriveCheckbox(); } catch(_) {}
 
@@ -4656,6 +5489,10 @@ function renderSettings() {
     paySoundEl.oninput = () => { if (paySoundValEl) paySoundValEl.textContent = paySoundEl.value + '%'; };
   }
 
+  // Theme radio buttons
+  const themeInput = document.querySelector(`input[name="appTheme"][value="${s.appTheme || 'hien-dai'}"]`);
+  if (themeInput) themeInput.checked = true;
+
   const logoPreview = document.getElementById('set-logo-preview');
   const removeBtn = document.getElementById('set-logo-remove');
   if (logoPreview) {
@@ -4663,7 +5500,7 @@ function renderSettings() {
       logoPreview.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;">`;
       if(removeBtn) removeBtn.style.display = 'inline-block';
     } else {
-      logoPreview.innerHTML = '<span style="font-size:20px;">🍢</span>';
+      logoPreview.innerHTML = '<span style="font-size:20px;">�?��</span>';
       if(removeBtn) removeBtn.style.display = 'none';
     }
   }
@@ -4676,7 +5513,7 @@ function renderSettings() {
   if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
   updateStorageQuotaInfo();
   
-  // Hiển thị danh sách user nếu là admin
+  // Hi�?n th�? danh sách user nếu là admin
   try { renderUserManagement(); } catch(e){}
 }
 
@@ -4710,6 +5547,12 @@ function submitSettings(e) {
   const gdriveUrlEl          = document.getElementById('set-googleDriveUploadUrl');
   const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
   const taxRateEl            = document.getElementById('set-taxRate');
+  const ocrModeEl            = document.getElementById('set-ocrMode');
+  const photoRetentionEl     = document.getElementById('set-photoRetentionDays');
+  
+  // Theme value
+  const themeInput = document.querySelector('input[name="appTheme"]:checked');
+  const selectedTheme = themeInput ? themeInput.value : (s.appTheme || 'hien-dai');
 
   const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
   const quotaMbRaw = storageQuotaEl ? parseInt(storageQuotaEl.value, 10) : Number(s.storageQuotaMb || 500);
@@ -4745,12 +5588,21 @@ function submitSettings(e) {
     autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
     googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
+    ocrMode: (ocrModeEl && ['auto', 'offline', 'online'].includes(ocrModeEl.value)) ? ocrModeEl.value : (s.ocrMode || 'auto'),
+    photoRetentionDays: photoRetentionEl ? Math.max(0, parseInt(photoRetentionEl.value, 10) || 0) : Number(s.photoRetentionDays || 0),
+    activeAIEngine: (s.activeAIEngine === 'gemma') ? 'gemma' : 'gemini',
+    forceOffline: !!s.forceOffline,
+    appTheme: selectedTheme,
     // Payment watcher
     sepayToken:     (() => { const el = document.getElementById('set-sepayToken'); return el ? el.value.trim() : (s.sepayToken || ''); })(),
     autoPayDetect:  (() => { const el = document.getElementById('set-autoPayDetect'); return el ? el.checked : (s.autoPayDetect || false); })(),
     paySoundVolume: (() => { const el = document.getElementById('set-paySound'); return el ? Number(el.value) : (s.paySoundVolume ?? 80); })(),
   };
-  // FIX 4: Ghi settings lên Firestore (đồng bộ đa thiết bị)
+  
+  // Apply theme immediately
+  applyTheme(selectedTheme);
+  
+  // FIX 4: Ghi settings lên Firestore (�?�?ng b�? �?a thiết b�?)
   if (window.DB && window.DB.Settings) {
     window.DB.Settings.save(updated).catch(e => console.warn('[Settings] Cloud save error:', e));
   }
@@ -4759,10 +5611,14 @@ function submitSettings(e) {
   const vatDisplay = document.getElementById('vat-current-display');
   if(vatDisplay) vatDisplay.textContent = newTaxRate + '%';
 
-  // Nếu số bàn thay đổi → rebuild danh sách bàn và reset active orders
+  // Nếu s�? bàn thay �?�?i �?? rebuild danh sách bàn và reset active orders
   if(newTableCount !== oldTableCount) {
     Store.rebuildTables(newTableCount);
-    // Xoá các order của bàn vượt số lượng mới
+    // Cloud sync: kh�?i tạo bàn tr�?ng lên Firestore
+    if (window.DB && window.DB.Tables && window.DB.Tables.initTables) {
+      window.DB.Tables.initTables(newTableCount).catch(e => console.warn('[Tables] Cloud init error:', e));
+    }
+    // Xoá các order của bàn vượt s�? lượng m�?i (Local)
     const orders = Store.getOrders();
     Object.keys(orders).forEach(tid => {
       if(parseInt(tid) > newTableCount) delete orders[tid];
@@ -4777,7 +5633,7 @@ function submitSettings(e) {
   applyStoreSettings();
   updateStorageQuotaInfo();
   if(storageQuotaEl) storageQuotaEl.value = storageQuotaMb;
-  showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+  showToast('�?? Đã lưu cài �?ặt!' + (newTableCount !== oldTableCount ? ` Sơ �?�? bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
 }
 
 function getLocalStorageUsageBytes() {
@@ -4786,7 +5642,7 @@ function getLocalStorageUsageBytes() {
     for(let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || '';
       const val = localStorage.getItem(key) || '';
-      total += (key.length + val.length) * 2; // UTF-16 (ước lượng)
+      total += (key.length + val.length) * 2; // UTF-16 (ư�?c lượng)
     }
     return total;
   } catch(_) {
@@ -4808,9 +5664,9 @@ function updateStorageQuotaInfo() {
   const usedBytes = getLocalStorageUsageBytes();
   const quotaBytes = quotaMb * 1024 * 1024;
   const usedPercent = quotaBytes > 0 ? Math.min(999, (usedBytes / quotaBytes) * 100) : 0;
-  const status = usedBytes > quotaBytes ? '⚠️ Vượt quota' : (usedPercent >= 85 ? '⚠️ Sắp đầy' : '✅ Bình thường');
-  // iOS Safari / WKWebView giới hạn localStorage khoảng 5-10 MB thực tế
-  const BROWSER_LIMIT_NOTE = '📱 Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
+  const status = usedBytes > quotaBytes ? '�?�️ Vượt quota' : (usedPercent >= 85 ? '�?�️ Sắp �?ầy' : '�?? Bình thường');
+  // iOS Safari / WKWebView gi�?i hạn localStorage khoảng 5-10 MB thực tế
+  const BROWSER_LIMIT_NOTE = '�??� Lưu ý: Trình duy�?t iPhone/Safari gi�?i hạn localStorage khoảng <b>5�??10 MB</b>. Quota cài �?ặt ch�? dùng �?�? cảnh báo trư�?c trong app.';
   infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
   infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
 }
@@ -4819,7 +5675,7 @@ function handleLogoUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   if (file.size > 2 * 1024 * 1024) {
-    showToast('❌ Ảnh quá lớn. Chọn ảnh < 2MB', 'danger');
+    showToast('�? Ảnh quá l�?n. Chọn ảnh < 2MB', 'danger');
     return;
   }
   const reader = new FileReader();
@@ -4830,7 +5686,7 @@ function handleLogoUpload(e) {
     Store.setSettings(s);
     applyStoreSettings();
     renderSettings();
-    showToast('✅ Đã cập nhật logo!', 'success');
+    showToast('�?? Đã cập nhật logo!', 'success');
   };
   reader.readAsDataURL(file);
 }
@@ -4841,16 +5697,16 @@ function removeLogo() {
   Store.setSettings(s);
   applyStoreSettings();
   renderSettings();
-  showToast('🗑️ Đã xoá logo!', 'success');
+  showToast('�???️ Đã xoá logo!', 'success');
 }
 
 // ============================================================
-// PAYMENT WATCHER — Tự động nhận tiền QR Banking
+// PAYMENT WATCHER �?? Tự �?�?ng nhận tiền QR Banking
 // ============================================================
 
 /**
  * Phát âm thanh nhận tiền (coin/chime) bằng Web Audio API.
- * Không cần file âm thanh nào — tổng hợp ngay trên thiết bị.
+ * Không cần file âm thanh nào �?? t�?ng hợp ngay trên thiết b�?.
  * @param {number} vol - 0..1
  */
 function playPaymentSound(vol = 0.8) {
@@ -4904,18 +5760,18 @@ function testPaySound() {
   const s = Store.getSettings();
   const vol = (Number(s.paySoundVolume ?? 80)) / 100;
   playPaymentSound(vol);
-  showToast('🔔 Âm thanh nhận tiền!', 'success');
+  showToast('�??? �?m thanh nhận tiền!', 'success');
 }
 
 // ------- Watcher state -------
 let _payWatchTimer    = null;
 let _payWatchAmount   = 0;
-let _payWatchStart    = 0;   // Timestamp khi bắt đầu watch (ms)
-let _payWatchSeenTxIds = new Set(); // IDs đã xử lý để tránh double-trigger
+let _payWatchStart    = 0;   // Timestamp khi bắt �?ầu watch (ms)
+let _payWatchSeenTxIds = new Set(); // IDs �?ã xử lý �?�? tránh double-trigger
 let _payWatchConfirmed = false;
 
 /**
- * Gọi API để lấy 20 giao dịch gần nhất.
+ * Gọi API �?�? lấy 20 giao d�?ch gần nhất.
  */
 async function fetchRecentTransactions(token) {
   if (!token) return [];
@@ -4937,9 +5793,9 @@ async function fetchRecentTransactions(token) {
 }
 
 /**
- * Bắt đầu polling khi bill được hiển thị.
- * @param {number} expectedAmount - Số tiền cần nhận
- * @param {string} billNo        - Mã bill để tham chiếu
+ * Bắt �?ầu polling khi bill �?ược hi�?n th�?.
+ * @param {number} expectedAmount - S�? tiền cần nhận
+ * @param {string} billNo        - Mã bill �?�? tham chiếu
  */
 function startPaymentWatcher(expectedAmount, billNo) {
   const s = Store.getSettings();
@@ -4952,7 +5808,7 @@ function startPaymentWatcher(expectedAmount, billNo) {
   _payWatchSeenTxIds = new Set();
   _payWatchConfirmed = false;
 
-  // Hiển thị trạng thái đang chờ
+  // Hi�?n th�? trạng thái �?ang chờ
   _payWatchUpdateStatus('⏳ Đang chờ thanh toán (SePay)...', 'var(--text3)');
 
   const token = s.sepayToken;
@@ -4961,17 +5817,17 @@ function startPaymentWatcher(expectedAmount, billNo) {
   const poll = async () => {
     if (_payWatchConfirmed) return;
 
-    // Dừng sau 30 phút để không poll mãi
+    // Dừng sau 30 phút �?�? không poll mãi
     if (Date.now() - _payWatchStart > 30 * 60 * 1000) {
       stopPaymentWatcher();
-      _payWatchUpdateStatus('⌛ Đã hết thời gian chờ (30 phút)', 'var(--text3)');
+      _payWatchUpdateStatus('�?? Đã hết thời gian chờ (30 phút)', 'var(--text3)');
       return;
     }
 
     try {
       const txns = await fetchRecentTransactions(token);
 
-      // Tìm giao dịch khớp: đúng số tiền + trong vòng 5 phút kể từ khi mở bill
+      // Tìm giao d�?ch kh�?p: �?úng s�? tiền + trong vòng 5 phút k�? từ khi m�? bill
       const match = txns.find(t => {
         if (_payWatchSeenTxIds.has(t.id)) return false;
         if (t.amount !== _payWatchAmount) return false;
@@ -4987,18 +5843,18 @@ function startPaymentWatcher(expectedAmount, billNo) {
         onPaymentReceived(match, billNo, vol);
       }
     } catch (err) {
-      // Lỗi mạng thì lặng im, tiếp tục poll
+      // L�?i mạng thì lặng im, tiếp tục poll
       console.warn('[PayWatcher] poll error:', err.message);
-      _payWatchUpdateStatus('⚠️ Đang kiểm tra qua SePay... (lỗi kết nối tạm thời)', 'var(--warning)');
+      _payWatchUpdateStatus('�?�️ Đang ki�?m tra qua SePay... (l�?i kết n�?i tạm thời)', 'var(--warning)');
     }
 
-    // Đặt lịch poll tiếp (5 giây)
+    // Đặt l�?ch poll tiếp (5 giây)
     if (!_payWatchConfirmed) {
       _payWatchTimer = setTimeout(poll, 5000);
     }
   };
 
-  // Bắt đầu poll ngay sau 1 giây (cho QR hiển thị xong)
+  // Bắt �?ầu poll ngay sau 1 giây (cho QR hi�?n th�? xong)
   _payWatchTimer = setTimeout(poll, 1000);
 }
 
@@ -5016,29 +5872,29 @@ function _payWatchUpdateStatus(text, color) {
 }
 
 /**
- * Được gọi khi phát hiện giao dịch khớp.
- * Phát âm → hiện thông báo lớn → tự điền phương thức "bank" vào xác nhận.
+ * Được gọi khi phát hi�?n giao d�?ch kh�?p.
+ * Phát âm �?? hi�?n thông báo l�?n �?? tự �?iền phương thức "bank" vào xác nhận.
  */
 function onPaymentReceived(tx, billNo, vol) {
-  // 1) Âm thanh
+  // 1) �?m thanh
   playPaymentSound(vol);
 
   // 2) Cập nhật trạng thái trong bill
   _payWatchUpdateStatus(
-    `✅ Đã nhận ${fmtFull(tx.amount)} — ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
+    `�?? Đã nhận ${fmtFull(tx.amount)} �?? ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
     'var(--success)'
   );
 
-  // 3) Nút thanh toán chuyển sang màu xanh nổi bật
+  // 3) Nút thanh toán chuy�?n sang màu xanh n�?i bật
   const payBtn = document.getElementById('bill-pay-btn');
   if (payBtn) {
-    payBtn.textContent = '🎉 Xác nhận đã nhận tiền';
+    payBtn.textContent = '�??? Xác nhận �?ã nhận tiền';
     payBtn.classList.remove('btn-success');
     payBtn.classList.add('btn-success');
     payBtn.style.animation = 'pulse-pay 0.8s ease 3';
   }
 
-  // 4) Hiện toast toàn màn hình
+  // 4) Hi�?n toast toàn màn hình
   showPaymentBanner(tx.amount, tx.desc);
 
   // 5) Haptic (nếu có)
@@ -5046,7 +5902,7 @@ function onPaymentReceived(tx, billNo, vol) {
 }
 
 /**
- * Hiển thị banner lớn "Đã nhận tiền" phủ lên màn hình ngắn.
+ * Hi�?n th�? banner l�?n "Đã nhận tiền" phủ lên màn hình ngắn.
  */
 function showPaymentBanner(amount, desc) {
   let banner = document.getElementById('pay-received-banner');
@@ -5071,11 +5927,11 @@ function showPaymentBanner(amount, desc) {
 
   banner.innerHTML = `
     <div style="text-align:center;padding:32px;max-width:320px">
-      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">💰</div>
-      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">ĐÃ NHẬN TIỀN!</div>
+      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">�??�</div>
+      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">Đ�? NHẬN TI�?N!</div>
       <div style="font-size:32px;font-weight:900;color:#fff;margin-bottom:12px">${fmtFull(amount)}</div>
       ${desc ? `<div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:20px;line-height:1.4">${desc}</div>` : ''}
-      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm để đóng</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm �?�? �?óng</div>
     </div>
   `;
   banner.style.opacity = '1';
@@ -5096,10 +5952,10 @@ function showPaymentBanner(amount, desc) {
 // ============================================================
 
 /**
- * Tự dịn nhẹ dữ liệu nặng trong localStorage (không xóa hản) để giảm dỡng lượng trước khi backup.
- * - Bỏ photos khỏi lịch sử đơn (nếu còn lưu sau khi clean job)
- * - Giới hạn AI history xuống 60 entry
- * Trả về số bytes tiết kiệm được.
+ * Tự d�?n nhẹ dữ li�?u nặng trong localStorage (không xóa hản) �?�? giảm dỡng lượng trư�?c khi backup.
+ * - Bỏ photos khỏi l�?ch sử �?ơn (nếu còn lưu sau khi clean job)
+ * - Gi�?i hạn AI history xu�?ng 60 entry
+ * Trả về s�? bytes tiết ki�?m �?ược.
  */
 function pruneBeforeBackup() {
   let freed = 0;
@@ -5130,10 +5986,10 @@ function pruneBeforeBackup() {
 
 function manualBackup() {
   try {
-    // Bước 1: Tự dịn data nặng (silent) trước khi lưu
+    // Bư�?c 1: Tự d�?n data nặng (silent) trư�?c khi lưu
     pruneBeforeBackup();
 
-    // Bước 2: Cố lưu local backup
+    // Bư�?c 2: C�? lưu local backup
     const snapshot = Store.saveLocalBackup();
     renderBackupList();
     const last = Store.getLastBackupTime();
@@ -5142,28 +5998,28 @@ function manualBackup() {
     updateStorageQuotaInfo();
 
     if(!snapshot) {
-      // Trường hợp localStorage browser đầy (iOS Safari giới hạn ~5-10 MB thực tế)
-      // Không tự động xuất file (gây bối rối) — hỏi người dùng thảy.
+      // Trường hợp localStorage browser �?ầy (iOS Safari gi�?i hạn ~5-10 MB thực tế)
+      // Không tự �?�?ng xuất file (gây b�?i r�?i) �?? hỏi người dùng thảy.
       showToast(
-        '⚠️ Bộ nhớ trình duyệt đầy (iOS/Safari giới hạn ~5–10 MB). ' +
-        'Hãy bấm "📥 Xuất file" để lưu backup ra máy.',
+        '�?�️ B�? nh�? trình duy�?t �?ầy (iOS/Safari gi�?i hạn ~5�??10 MB). ' +
+        'Hãy bấm "�??� Xuất file" �?�? lưu backup ra máy.',
         'warning',
         6000
       );
       return;
     }
-    showToast('💾 Đã backup thành công!', 'success');
+    showToast('�??� Đã backup thành công!', 'success');
   } catch(err) {
-    // Catch lỗi QuotaExceededError bất kỳ cấp độ nào
+    // Catch l�?i QuotaExceededError bất kỳ cấp �?�? nào
     if(err.name === 'QuotaExceededError' || /quota/i.test(err.message || '')) {
       updateStorageQuotaInfo();
       showToast(
-        '⚠️ Bộ nhớ trình duyệt bị đầy. Hãy bấm "📥 Xuất file" hoặc "🧹 Dọn dữ liệu nặng" rồi thử lại.',
+        '�?�️ B�? nh�? trình duy�?t b�? �?ầy. Hãy bấm "�??� Xuất file" hoặc "�?�� Dọn dữ li�?u nặng" r�?i thử lại.',
         'warning',
         6000
       );
     } else {
-      showToast('❌ Backup thất bại: ' + (err.message || err), 'danger');
+      showToast('�? Backup thất bại: ' + (err.message || err), 'danger');
     }
   }
 }
@@ -5180,13 +6036,13 @@ function exportBackup() {
     a.download = `pos_backup_${date}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('📥 Đã xuất file backup!', 'success');
+    showToast('�??� Đã xuất file backup!', 'success');
   } catch(err) {
-    showToast('❌ Xuất thất bại: ' + err.message, 'danger');
+    showToast('�? Xuất thất bại: ' + err.message, 'danger');
   }
 }
 
-/** Xuất chỉ mục cài đặt đã lưu trong bộ nhớ (sau khi bấm Lưu cài đặt), không gồm menu/đơn hàng/... */
+/** Xuất ch�? mục cài �?ặt �?ã lưu trong b�? nh�? (sau khi bấm Lưu cài �?ặt), không g�?m menu/�?ơn hàng/... */
 function exportSettingsBackup() {
   try {
     const settings = Store.getSettings();
@@ -5205,26 +6061,26 @@ function exportSettingsBackup() {
     a.download = `pos_cai_dat_${date}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('📋 Đã xuất file cài đặt đã lưu.', 'success');
+    showToast('�??? Đã xuất file cài �?ặt �?ã lưu.', 'success');
   } catch(err) {
-    showToast('❌ Xuất cài đặt thất bại: ' + (err.message || err), 'danger');
+    showToast('�? Xuất cài �?ặt thất bại: ' + (err.message || err), 'danger');
   }
 }
 
 async function cleanupHeavyData() {
-  if(!confirm('Dọn dữ liệu nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI mới nhất. Tiếp tục?')) return;
+  if(!confirm('Dọn dữ li�?u nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI m�?i nhất. Tiếp tục?')) return;
   try {
     const history = Store.getHistory() || [];
     let removedOrderPhotos = 0;
     
-    // Xóa ảnh của các đơn vị lịch sử khỏi bộ nhớ PhotoDB
+    // Xóa ảnh của các �?ơn v�? l�?ch sử khỏi b�? nh�? PhotoDB
     for(const o of history) {
       if(o && o.historyId) {
          await PhotoDB.remove('history_' + o.historyId);
-         removedOrderPhotos++; // Chấp nhận đếm vo vì không tải dataUrl ra nữa
+         removedOrderPhotos++; // Chấp nhận �?ếm vo vì không tải dataUrl ra nữa
       }
     }
-    // Vẫn cập nhật lại mảng history cho chắc ăn không còn base64 lọt nào
+    // Vẫn cập nhật lại mảng history cho chắc �?n không còn base64 lọt nào
     const nextHistory = history.map(o => {
       if(!o || typeof o !== 'object') return o;
       const photos = Array.isArray(o.photos) ? o.photos : [];
@@ -5248,9 +6104,9 @@ async function cleanupHeavyData() {
     renderBackupList();
     renderOrderHistoryList();
     updateStorageQuotaInfo();
-    showToast(`🧹 Đã dọn dữ liệu nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
+    showToast(`�?�� Đã dọn dữ li�?u nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
   } catch(err) {
-    showToast('❌ Dọn dữ liệu thất bại: ' + (err.message || err), 'danger');
+    showToast('�? Dọn dữ li�?u thất bại: ' + (err.message || err), 'danger');
   }
 }
 
@@ -5346,7 +6202,7 @@ async function exportReportExcel(override = {}) {
 
   const ExcelJSLib = typeof ExcelJS !== 'undefined' ? ExcelJS : (typeof window !== 'undefined' ? window.ExcelJS : undefined);
   if(!ExcelJSLib) {
-    showToast('Không tải được thư viện Excel. Vui lòng tải lại trang.', 'danger');
+    showToast('Không tải �?ược thư vi�?n Excel. Vui lòng tải lại trang.', 'danger');
     return false;
   }
 
@@ -5365,11 +6221,11 @@ async function exportReportExcel(override = {}) {
     if(period === 'today') return 'Hôm nay';
     if(period === 'day' && date) {
       const d = new Date(`${date}T12:00:00`);
-      return Number.isNaN(d.getTime()) ? 'Ngày cụ thể' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
+      return Number.isNaN(d.getTime()) ? 'Ngày cụ th�?' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
     }
-    if(period === 'day') return 'Ngày cụ thể';
+    if(period === 'day') return 'Ngày cụ th�?';
     if(period === 'week') return '7 ngày gần nhất';
-    if(period === 'month') return 'Tháng hiện tại';
+    if(period === 'month') return 'Tháng hi�?n tại';
     return 'Tất cả';
   })();
 
@@ -5401,7 +6257,7 @@ async function exportReportExcel(override = {}) {
     });
     const vatLabel = vatRate > 0 ? `Thuế VAT (${vatRate}%)` : 'Thuế VAT (0%)';
     const headers = [
-      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'Số lượng bán',
+      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'S�? lượng bán',
       'Đơn giá (VND)', 'Thành tiền (VND)', vatLabel, 'Sau VAT (VND)',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
@@ -5450,7 +6306,7 @@ async function exportReportExcel(override = {}) {
 
     ws.mergeCells(r, 1, r, 4);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).value = 'T�?NG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(5).value = totals.qty;
@@ -5478,20 +6334,20 @@ async function exportReportExcel(override = {}) {
     ];
   };
 
-  // Sheet đầy đủ lịch sử đơn hàng (theo đơn, không theo từng món)
+  // Sheet �?ầy �?ủ l�?ch sử �?ơn hàng (theo �?ơn, không theo từng món)
   const fillOrdersSheet = ws => {
     const lastCol = 14;
     applyReportTitleBlock(ws, {
-      title: 'LỊCH SỬ ĐƠN HÀNG (ĐẦY ĐỦ)',
+      title: 'L�?CH SỬ ĐƠN H�?NG (ĐẦY ĐỦ)',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const vatLabel = vatRate > 0 ? `VAT (${vatRate}%)` : 'VAT';
     const headers = [
-      'TT', 'Mã đơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
+      'TT', 'Mã �?ơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
       'Tiền hàng (VND)', 'Giảm giá (VND)', 'Phí ship (VND)', vatLabel,
-      'Tổng cộng (VND)', 'Giá vốn (VND)', 'Lãi gộp (VND)', 'PT Thanh toán', 'Ghi chú',
+      'T�?ng c�?ng (VND)', 'Giá v�?n (VND)', 'Lãi g�?p (VND)', 'PT Thanh toán', 'Ghi chú',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
@@ -5517,8 +6373,8 @@ async function exportReportExcel(override = {}) {
       const cost = Number(o.cost || 0);
       const total = Number(o.total || 0);
       const gross = total - cost;
-      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
-      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}đ)`).join('; ');
+      const payLabel = o.payMethod === 'bank' ? 'Chuy�?n khoản' : 'Tiền mặt';
+      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}�?)`).join('; ');
 
       const row = ws.getRow(r);
       row.getCell(1).value = stt++;
@@ -5562,7 +6418,7 @@ async function exportReportExcel(override = {}) {
     // Total row
     ws.mergeCells(r, 1, r, 5);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = `TỔNG (${orders.length} đơn)`;
+    tr.getCell(1).value = `T�?NG (${orders.length} �?ơn)`;
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(6).value = '';
@@ -5608,7 +6464,7 @@ async function exportReportExcel(override = {}) {
       exportDateStr,
       lastCol,
     });
-    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'Nội dung', 'Danh mục', 'Số tiền (VND)'];
+    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'N�?i dung', 'Danh mục', 'S�? tiền (VND)'];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
     const hr = ws.getRow(HEADER_ROW);
@@ -5638,7 +6494,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 5);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).value = 'T�?NG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(6).value = excelFmtVnInt(total);
@@ -5656,13 +6512,13 @@ async function exportReportExcel(override = {}) {
   const fillPurchaseSheet = ws => {
     const lastCol = 10;
     applyReportTitleBlock(ws, {
-      title: 'BÁO CÁO NHẬP HÀNG',
+      title: 'BÁO CÁO NHẬP H�?NG',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const headers = [
-      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên liệu', 'Số lượng', 'Đơn vị',
+      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên li�?u', 'S�? lượng', 'Đơn v�?',
       'Đơn giá (VND)', 'Thành tiền (VND)', 'Nhà cung cấp', 'Ghi chú',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
@@ -5708,7 +6564,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 4);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).value = 'T�?NG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(5).value = totalQty;
@@ -5736,14 +6592,14 @@ async function exportReportExcel(override = {}) {
   const fillInventorySheet = ws => {
     const lastCol = 9;
     applyReportTitleBlock(ws, {
-      title: 'BÁO CÁO TỒN KHO',
+      title: 'BÁO CÁO T�?N KHO',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const headers = [
-      'TT', 'Mã hàng', 'Tên nguyên liệu', 'Đơn vị', 'Tồn hiện tại', 'Tồn tối thiểu',
-      'Giá vốn (VND)', 'Giá trị tồn (VND)', 'Trạng thái',
+      'TT', 'Mã hàng', 'Tên nguyên li�?u', 'Đơn v�?', 'T�?n hi�?n tại', 'T�?n t�?i thi�?u',
+      'Giá v�?n (VND)', 'Giá tr�? t�?n (VND)', 'Trạng thái',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
@@ -5785,7 +6641,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 7);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).value = 'T�?NG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(8).value = excelFmtVnInt(totalValue);
@@ -5862,7 +6718,7 @@ async function exportReportExcel(override = {}) {
         return false;
       }
       if(s.autoUploadToGoogleDrive && !skipLocalDownload) {
-        showToast('⚠️ Bật tự đẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
+        showToast('�?�️ Bật tự �?ẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
       }
     } else {
       try {
@@ -5880,10 +6736,10 @@ async function exportReportExcel(override = {}) {
         uploadOk = false;
         uploadDriveOpaque = false;
         if(forceUploadToDrive) {
-          showToast('⚠️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
+          showToast('�?�️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
           return false;
         }
-        showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+        showToast('�?�️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
       }
     }
   }
@@ -5891,15 +6747,15 @@ async function exportReportExcel(override = {}) {
   if(!skipLocalDownload) {
     if(uploadOk === true && s.autoUploadToGoogleDrive) {
       showToast(uploadDriveOpaque
-        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive — vui lòng kiểm tra thư mục (trình duyệt có thể không đọc được phản hồi).'
-        : 'Đã xuất file báo cáo Excel và đẩy bản .xlsx lên Google Drive.', 'success');
+        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive �?? vui lòng ki�?m tra thư mục (trình duy�?t có th�? không �?ọc �?ược phản h�?i).'
+        : 'Đã xuất file báo cáo Excel và �?ẩy bản .xlsx lên Google Drive.', 'success');
     } else {
       showToast('Đã xuất file báo cáo Excel.', 'success');
     }
   } else if(uploadOk === true) {
     showToast(uploadDriveOpaque
-      ? '☁️ Đã gửi file .xlsx lên Drive. Mở thư mục đã chọn để xác nhận (chế độ tương thích CORS: không đọc được phản hồi chi tiết).'
-      : '☁️ Đã đẩy file báo cáo (.xlsx) lên thư mục Google Drive đã chọn.', 'success');
+      ? '�?�️ Đã gửi file .xlsx lên Drive. M�? thư mục �?ã chọn �?�? xác nhận (chế �?�? tương thích CORS: không �?ọc �?ược phản h�?i chi tiết).'
+      : '�?�️ Đã �?ẩy file báo cáo (.xlsx) lên thư mục Google Drive �?ã chọn.', 'success');
   }
 
   return true;
@@ -5913,7 +6769,7 @@ async function blobToBase64(blob) {
       const base64 = dataUrl.toString().split(',')[1] || '';
       resolve(base64);
     };
-    reader.onerror = () => reject(new Error('Không đọc được file để upload.'));
+    reader.onerror = () => reject(new Error('Không �?ọc �?ược file �?�? upload.'));
     reader.readAsDataURL(blob);
   });
 }
@@ -5936,8 +6792,8 @@ function isGoogleAppsScriptWebAppUrl(u) {
 
 /**
  * Google Apps Script /exec thường chặn CORS khi POST application/json (preflight OPTIONS).
- * Gửi body là JSON nhưng Content-Type: text/plain để tránh preflight — doPost vẫn JSON.parse(postData.contents).
- * Nếu vẫn Failed to fetch: thử mode no-cors (không đọc được phản hồi, coi như đã gửi).
+ * Gửi body là JSON nhưng Content-Type: text/plain �?�? tránh preflight �?? doPost vẫn JSON.parse(postData.contents).
+ * Nếu vẫn Failed to fetch: thử mode no-cors (không �?ọc �?ược phản h�?i, coi như �?ã gửi).
  */
 async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
   const url = normalizeGoogleScriptWebAppUrl(uploadUrl);
@@ -5948,7 +6804,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
     throw new Error('URL Web App phải dùng https://');
   }
   if(/\/dev($|\?)/i.test(url)) {
-    throw new Error('Không dùng URL /dev. Hãy triển khai Web App và dùng URL kết thúc /exec (hoặc URL triển khai đầy đủ Google cung cấp).');
+    throw new Error('Không dùng URL /dev. Hãy tri�?n khai Web App và dùng URL kết thúc /exec (hoặc URL tri�?n khai �?ầy �?ủ Google cung cấp).');
   }
 
   const base64Data = await blobToBase64(blob);
@@ -5967,7 +6823,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
 
   const assertOk = (data, res) => {
     if(data && data.success === false) {
-      throw new Error(data.message || data.error || 'Google Drive từ chối lưu file.');
+      throw new Error(data.message || data.error || 'Google Drive từ ch�?i lưu file.');
     }
     if(!res.ok) {
       const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
@@ -6007,7 +6863,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
         /* thử Content-Type khác */
       }
     }
-    throw new Error('Không gửi được tới Web App (kiểm tra mạng hoặc URL).');
+    throw new Error('Không gửi �?ược t�?i Web App (ki�?m tra mạng hoặc URL).');
   };
 
   const isNetErr = (err) => {
@@ -6022,22 +6878,22 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
     } catch(err) {
       if(!isNetErr(err)) throw err;
       lastNet = err;
-      console.warn('[Drive] Lỗi mạng/CORS với Content-Type', ct, err);
+      console.warn('[Drive] L�?i mạng/CORS v�?i Content-Type', ct, err);
     }
   }
 
   if(!isGoogleAppsScriptWebAppUrl(url)) {
-    throw new Error('Failed to fetch — URL phải là Web App Google (dạng script.google.com/.../exec). Kiểm tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
+    throw new Error('Failed to fetch �?? URL phải là Web App Google (dạng script.google.com/.../exec). Ki�?m tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
   }
 
-  console.warn('[Drive] Chuyển sang no-cors (chỉ phù hợp với Web App Google):', lastNet);
+  console.warn('[Drive] Chuy�?n sang no-cors (ch�? phù hợp v�?i Web App Google):', lastNet);
   return tryNoCorsPlain();
 }
 
 function getWeekStartKey(d) {
   const x = new Date(d);
   x.setHours(0,0,0,0);
-  // getDay: 0=Sun..6=Sat → chuyển về Monday start
+  // getDay: 0=Sun..6=Sat �?? chuy�?n về Monday start
   const diff = (x.getDay() + 6) % 7;
   x.setDate(x.getDate() - diff);
   return x.toISOString().slice(0,10);
@@ -6084,16 +6940,16 @@ function importBackup() {
       try {
         const backup = JSON.parse(ev.target.result);
         
-        // Khôi phục vào localStorage trước (fallback)
+        // Khôi phục vào localStorage trư�?c (fallback)
         Store.restoreFromBackup(backup);
         
-        // Nếu đang kết nối Cloud và là admin, đồng bộ thẳng lên Cloud
+        // Nếu �?ang kết n�?i Cloud và là admin, �?�?ng b�? thẳng lên Cloud
         if (window.DB && window.appState && window.appState.userDoc?.role === 'admin') {
-           showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
+           showToast('⏳ Đang �?�?ng b�? backup lên Cloud...', 'info');
            await window.DB.migrateJson(backup, false);
-           showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
+           showToast('�?? Đã �?�?ng b�? backup lên Cloud thành công!', 'success');
         } else if (window.appState) {
-           // Nạp tạm vào appState để UI có thể đọc ngay (chế độ offline hoặc local)
+           // Nạp tạm vào appState �?�? UI có th�? �?ọc ngay (chế �?�? offline hoặc local)
            Object.entries(backup.data).forEach(([k, v]) => {
              if (Array.isArray(window.appState[k])) window.appState[k] = v;
              else if (k === 'settings') window.appState.settings = v;
@@ -6104,9 +6960,9 @@ function importBackup() {
         applyStoreSettings();
         renderPage(currentPage);
         updateAlertBadge();
-        showToast(`✅ Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
+        showToast(`�?? Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
       } catch(err) {
-        showToast('❌ File không hợp lệ: ' + err.message, 'danger');
+        showToast('�? File không hợp l�?: ' + err.message, 'danger');
       }
     };
     reader.readAsText(file);
@@ -6120,41 +6976,41 @@ function renderBackupList() {
   if(!el) return;
   el.innerHTML = backups.length ? backups.map((b, i) =>
     `<div class="list-item">
-      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">💾</div>
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">�??�</div>
       <div class="list-item-content">
         <div class="list-item-title">${i === 0 ? '⭐ ' : ''}Backup ${i+1}</div>
         <div class="list-item-sub">${b.label || fmtDate(b.date)} · ${(b.size/1024).toFixed(1)} KB</div>
       </div>
       <div style="display:flex;gap:4px">
-        ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">↩️</button>` : ''}
-        <button class="btn btn-xs btn-danger" onclick="deleteBackup(${i})" title="Xóa backup này">🗑️</button>
+        ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">�?�️</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="deleteBackup(${i})" title="Xóa backup này">�???️</button>
       </div>
     </div>`
   ).join('') : '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">Chưa có backup nào</div>';
 }
 
 function deleteBackup(index) {
-  if(!confirm(`Xóa backup ${index+1}? Hành động này không thể hoàn tác.`)) return;
+  if(!confirm(`Xóa backup ${index+1}? Hành �?�?ng này không th�? hoàn tác.`)) return;
   Store.deleteLocalBackup(index);
   renderBackupList();
-  showToast('🗑️ Đã xóa backup', 'success');
+  showToast('�???️ Đã xóa backup', 'success');
 }
 
 function restoreLatestBackup() {
-  if(!confirm('Khôi phục backup gần nhất? Dữ liệu hiện tại sẽ bị ghi đè.')) return;
+  if(!confirm('Khôi phục backup gần nhất? Dữ li�?u hi�?n tại sẽ b�? ghi �?è.')) return;
   const raw = localStorage.getItem('gkhl_backup_latest');
-  if(!raw) { showToast('❌ Không tìm thấy backup', 'danger'); return; }
+  if(!raw) { showToast('�? Không tìm thấy backup', 'danger'); return; }
   try {
     const backup = JSON.parse(raw);
     
     Store.restoreFromBackup(backup);
     
     if (window.DB && window.appState && window.appState.userDoc?.role === 'admin') {
-       showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
+       showToast('⏳ Đang �?�?ng b�? backup lên Cloud...', 'info');
        window.DB.migrateJson(backup, false).then(() => {
-         showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
+         showToast('�?? Đã �?�?ng b�? backup lên Cloud thành công!', 'success');
        }).catch(err => {
-         showToast('❌ Lỗi đồng bộ: ' + err.message, 'danger');
+         showToast('�? L�?i �?�?ng b�?: ' + err.message, 'danger');
        });
     } else if (window.appState) {
        Object.entries(backup.data).forEach(([k, v]) => {
@@ -6167,1289 +7023,15 @@ function restoreLatestBackup() {
     applyStoreSettings();
     renderPage(currentPage);
     updateAlertBadge();
-    showToast('✅ Đã khôi phục backup!', 'success');
+    showToast('�?? Đã khôi phục backup!', 'success');
   } catch(err) {
-    showToast('❌ Khôi phục thất bại', 'danger');
+    showToast('�? Khôi phục thất bại', 'danger');
   }
 }
+
 
 // ============================================================
-// AI ASSISTANT – Full-featured Chatbot
-// Voice + Camera + Gemini + Google Cloud TTS
-// ============================================================
-let aiRecognition = null;
-let aiIsListening  = false;
-let aiOutputMode = 'voice'; // 'voice' or 'text'
-
-// ------ UI helpers ------
-let aiChatHistoryLoaded = false;
-
-function toggleAIEngine() {
-  const s = Store.getSettings();
-  s.activeAIEngine = (s.activeAIEngine === 'gemma') ? 'gemini' : 'gemma';
-  Store.setSettings(s);
-  updateAIModeUI();
-  
-  const engineBtn = document.getElementById('ai-engine-toggle');
-  if(engineBtn) {
-    if(s.activeAIEngine === 'gemma') {
-      engineBtn.textContent = '🧠 Local AI';
-      engineBtn.className = 'badge badge-info';
-    } else {
-      engineBtn.textContent = '⚡ Gemini';
-      engineBtn.className = 'badge badge-primary';
-    }
-  }
-}
-
-function openAIAssistant() {
-  const modal = document.getElementById('ai-modal');
-  if(!modal) return;
-  modal.classList.add('active');
-  const s = Store.getSettings();
-  const engineBtn = document.getElementById('ai-engine-toggle');
-  if(engineBtn) {
-    if(s.activeAIEngine === 'gemma') {
-      engineBtn.textContent = '🧠 Local AI';
-      engineBtn.className = 'badge badge-info';
-    } else {
-      engineBtn.textContent = '⚡ Gemini';
-      engineBtn.className = 'badge badge-primary';
-    }
-  }
-
-  updateAIModeUI();
-  updateAIOutputToggleUI();
-
-  if (!aiChatHistoryLoaded) {
-    const history = Store.getAIHistory();
-    const container = document.getElementById('ai-chat-messages');
-    const welcomeMsg = document.getElementById('ai-welcome-msg');
-    
-    if (history.length > 0 && container) {
-      container.innerHTML = '';
-      if (welcomeMsg) container.appendChild(welcomeMsg);
-      const recentHistory = history.slice(-10);
-      recentHistory.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = `ai-bubble ai-bubble-${msg.role}`;
-        div.innerHTML = msg.content;
-        container.appendChild(div);
-      });
-      container.scrollTop = container.scrollHeight;
-    }
-    aiChatHistoryLoaded = true;
-  }
-}
-
-function closeAIAssistant() {
-  document.getElementById('ai-modal').classList.remove('active');
-  stopAIListening();
-}
-
-function toggleAIMode() {
-  const s = Store.getSettings();
-  s.forceOffline = !s.forceOffline;
-  Store.setSettings(s);
-  updateAIModeUI();
-}
-
-function updateAIModeUI() {
-  const s = Store.getSettings();
-  const el = document.getElementById('ai-status-text');
-  if(!el) return;
-  const isGemma = (s.activeAIEngine === 'gemma');
-
-  if (s.forceOffline) {
-    el.innerHTML = '📴 Chế độ Offline (Nhanh)';
-    el.style.background = 'var(--bg2)';
-    el.style.color = 'var(--text2)';
-    el.style.border = '1px solid var(--border)';
-  } else {
-    if(isGemma) {
-      const hasUrl = !!s.gemmaEndpoint;
-      el.innerHTML = hasUrl ? '🔌 Connect: Local DB' : '⚠️ Thiếu Endpoint Local';
-      el.style.background = hasUrl ? 'rgba(0,149,255,0.1)' : 'rgba(239,68,68,0.1)';
-      el.style.color = hasUrl ? 'var(--info)' : 'var(--danger)';
-      el.style.border = hasUrl ? '1px solid rgba(0,149,255,0.3)' : '1px solid rgba(239,68,68,0.3)';
-    } else {
-      const hasKey = !!s.geminiApiKey;
-      el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
-      el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-      el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
-      el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
-    }
-  }
-}
-
-// ------ Audio/Text Output Toggle ------
-function toggleAIOutput() {
-  aiOutputMode = aiOutputMode === 'voice' ? 'text' : 'voice';
-  updateAIOutputToggleUI();
-  showToast(aiOutputMode === 'voice' ? '🔊 Đã bật phát âm thanh' : '📝 Chỉ hiển thị văn bản');
-}
-
-function updateAIOutputToggleUI() {
-  const iconSvg = document.getElementById('ai-output-icon-svg');
-  const label = document.getElementById('ai-output-label');
-  if(iconSvg) {
-    if(aiOutputMode === 'voice') {
-      iconSvg.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
-    } else {
-      iconSvg.innerHTML = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>';
-    }
-  }
-  if(label) label.textContent = aiOutputMode === 'voice' ? 'Phát âm thanh' : 'Chỉ văn bản';
-  const btn = document.getElementById('ai-output-toggle');
-  if(btn) btn.classList.toggle('active', aiOutputMode === 'voice');
-}
-
-function clearAIAssistantHistory() {
-  if(!confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện AI?')) return;
-  Store.setAIHistory([]);
-  const container = document.getElementById('ai-chat-messages');
-  const welcomeMsg = document.getElementById('ai-welcome-msg');
-  if (container) {
-    container.innerHTML = '';
-    if (welcomeMsg) container.appendChild(welcomeMsg);
-  }
-}
-
-function openFullAIHistory() {
-  const history = Store.getAIHistory();
-  const list = document.getElementById('ai-history-list');
-  if(!list) return;
-  
-  list.innerHTML = history.length ? history.map(msg => `
-    <div class="history-item">
-      <div class="history-role ${msg.role}">${msg.role === 'user' ? '👤 Bạn' : '🤖 Trợ lý'}</div>
-      <div class="history-content">${msg.content}</div>
-      <div class="history-time">${msg.time ? fmtDateTime(msg.time) : ''}</div>
-    </div>
-  `).reverse().join('') : '<div style="text-align:center;color:var(--text3);padding:20px">Chưa có lịch sử trò chuyện</div>';
-  
-  document.getElementById('ai-history-modal').classList.add('active');
-}
-
-function preprocessAIText(text) {
-  let t = text.toLowerCase().trim();
-  
-  // === Fix Vietnamese speech recognition errors ===
-  // "bàn" is frequently misrecognized as bà, bàng, bằng, bản, bặn, bạn, ban
-  // Pattern: misheard-word + number → "bàn" + number
-  t = t.replace(/\b(?:bà|bàng|bằng|bản|bặn|bạn|ban)\s*((?:số\s*)?\d+)/gi, 'bàn $1');
-  // "bà năm" → "bàn 5", "bà ba" → "bàn 3" etc.
-  const wordToNum = {'một':1,'hai':2,'ba':3,'bốn':4,'bón':4,'năm':5,'sáu':6,'bảy':7,'bẩy':7,'tám':8,'chín':9,'mười':10,
-    'mươi':10,'mười một':11,'mười hai':12,'mười ba':13,'mười bốn':14,'mười lăm':15,'mười sáu':16,'mười bảy':17,'mười tám':18,'mười chín':19,'hai mươi':20};
-  for (const [word, num] of Object.entries(wordToNum)) {
-    // "bà năm" → "bàn 5"
-    t = t.replace(new RegExp(`\\b(?:bà|bàng|bằng|bản|bạn|ban)\\s+${word}\\b`, 'gi'), `bàn ${num}`);
-  }
-  // "bàn số năm" → "bàn số 5" (after the above fix)
-  for (const [word, num] of Object.entries(wordToNum)) {
-    t = t.replace(new RegExp(`\\bbàn\\s+số\\s+${word}\\b`, 'gi'), `bàn số ${num}`);
-    t = t.replace(new RegExp(`\\bbàn\\s+${word}\\b`, 'gi'), `bàn ${num}`);
-  }
-
-  // Menu aliases
-  const aliases = {
-    'cọp trắng': 'tiger bạc',
-    'cọp nâu': 'tiger nâu',
-    'ken lùn': 'ken lớn',
-    'đào': 'trà đào',
-    'tắc': 'trà tắc',
-    'set 1': 'hoàng hôn trên biển',
-    'set 2': 'đêm huyền diệu',
-    'set 3': 'không say không về',
-    'cút': 'trứng cút thảo mộc',
-    'trứng cút': 'trứng cút thảo mộc',
-    'ngọt': 'sting'
-  };
-  
-  for (const [alias, realName] of Object.entries(aliases)) {
-    const regex = new RegExp(`(^|\\s)${alias}(?=\\s|$)`, 'gi');
-    t = t.replace(regex, `$1${realName}`);
-  }
-  return t;
-}
-
-function addAIBubble(text, role = 'bot') {
-  const container = document.getElementById('ai-chat-messages');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = `ai-bubble ai-bubble-${role}`;
-  div.innerHTML = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  
-  if (role !== 'thinking') {
-    const history = Store.getAIHistory();
-    history.push({ role, content: text, time: new Date().toISOString() });
-    if (history.length > 200) history.shift();
-    Store.setAIHistory(history);
-  }
-  
-  return div;
-}
-
-function removeThinkingBubble() {
-  const t = document.getElementById('ai-thinking-bubble');
-  if (t) t.remove();
-}
-
-// ------ Voice Input (Web Speech API) ------
-function toggleAIVoice() {
-  if (aiIsListening) {
-    stopAIListening();
-  } else {
-    startAIListening();
-  }
-}
-
-const ICON_MIC = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
-const ICON_STOP = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>`;
-
-function startAIListening() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    addAIBubble('⚠️ Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Safari trên iPhone.', 'error');
-    return;
-  }
-
-  aiRecognition = new SpeechRecognition();
-  aiRecognition.lang = 'vi-VN';
-  aiRecognition.continuous = false;
-  aiRecognition.interimResults = false;
-
-  aiRecognition.onstart = () => {
-    aiIsListening = true;
-    const btn = document.getElementById('ai-voice-btn');
-    const ind = document.getElementById('ai-listening-indicator');
-    if (btn) { btn.innerHTML = ICON_STOP; btn.classList.add('recording'); }
-    if (ind) ind.style.display = 'block';
-  };
-
-  aiRecognition.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    stopAIListening();
-    document.getElementById('ai-text-input').value = text;
-    sendAIText(true);
-  };
-
-  aiRecognition.onerror = (e) => {
-    stopAIListening();
-    const msgs = {
-      'not-allowed': '🔒 Bạn chưa cho phép truy cập micro. Vào Cài đặt iPhone → Safari → Micro.',
-      'no-speech'  : '🎙️ Không nghe thấy gì. Thử lại nhé!',
-      'network'    : '🌐 Lỗi mạng khi nhận giọng nói.',
-    };
-    addAIBubble(msgs[e.error] || `Lỗi ghi âm: ${e.error}`, 'error');
-  };
-
-  aiRecognition.onend = () => stopAIListening();
-  aiRecognition.start();
-}
-
-function stopAIListening() {
-  aiIsListening = false;
-  if (aiRecognition) { try { aiRecognition.stop(); } catch(_){} aiRecognition = null; }
-  const btn = document.getElementById('ai-voice-btn');
-  const ind = document.getElementById('ai-listening-indicator');
-  if (btn) { btn.innerHTML = ICON_MIC; btn.classList.remove('recording'); }
-  if (ind) ind.style.display = 'none';
-}
-
-// ------ Camera Capture → Gemini Vision ------
-async function handleAICameraCapture(event) {
-  const file = event.target.files[0];
-  if(!file) return;
-  
-  const s = Store.getSettings();
-  if(!s.geminiApiKey) {
-    addAIBubble('⚠️ Cần có Gemini API Key để sử dụng chức năng nhận diện ảnh. Vào <strong>Cài đặt</strong> để cấu hình.', 'error');
-    event.target.value = '';
-    return;
-  }
-
-  // Show preview
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const base64 = e.target.result.split(',')[1];
-    const mimeType = file.type || 'image/jpeg';
-    
-    addAIBubble(`📷 <img src="${e.target.result}" style="max-width:200px;max-height:150px;border-radius:8px;margin-top:6px;display:block">`, 'user');
-    
-    const thinking = addAIBubble('⏳ Đang nhận diện ảnh...', 'thinking');
-    if(thinking) thinking.id = 'ai-thinking-bubble';
-
-    try {
-      const menu = Store.getMenu();
-      const menuNames = menu.map(m => `${m.name} (${m.price}đ)`).join(', ');
-      
-      const prompt = `Bạn là trợ lý AI của quán ăn "Gánh Khô Chữa Lành". Hãy phân tích ảnh này:
-- Nếu là hình ảnh thực đơn/menu: liệt kê các món nhìn thấy
-- Nếu là hình ảnh hóa đơn/bill: đọc các món + số lượng + giá
-- Nếu là hình ảnh món ăn: nhận diện tên món
-
-Thực đơn quán: ${menuNames}
-
-Trả về JSON: { "actions": [{ "type": "order", "tableId": "1", "items": [{"id":"<id>","qty":1}] }], "reply": "..." }
-Nếu không liên quan đến đặt hàng, trả: { "actions": [], "reply": "Mô tả ảnh..." }
-CHỈ trả JSON, không markdown.`;
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${s.geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: base64 } }
-              ]
-            }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
-          }),
-          signal: AbortSignal.timeout(15000)
-        }
-      );
-      
-      const data = await res.json();
-      removeThinkingBubble();
-      
-      if(data.error) {
-        addAIBubble(`❌ Lỗi Gemini: ${data.error.message}`, 'error');
-        return;
-      }
-      
-      let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      
-      try {
-        const parsed = JSON.parse(raw);
-        const reply = executeAIActions(parsed, menu, '');
-        addAIBubble(reply, 'bot');
-        if(aiOutputMode === 'voice') speakText(reply);
-      } catch(_) {
-        addAIBubble(raw || 'Không nhận diện được ảnh.', 'bot');
-      }
-    } catch(err) {
-      removeThinkingBubble();
-      addAIBubble(`❌ Lỗi xử lý ảnh: ${err.message}`, 'error');
-    }
-  };
-  reader.readAsDataURL(file);
-  event.target.value = '';
-}
-
-// ------ Text send ------
-function sendAIText(isVoice = false) {
-  const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? inp.value.trim() : '';
-  if (!rawText) return;
-  if(inp) inp.value = '';
-  
-  addAIBubble(rawText, 'user');
-  const text = preprocessAIText(rawText);
-
-  const isOnline = navigator.onLine;
-  const s = Store.getSettings();
-  const hasKey = !!s.geminiApiKey;
-
-  const modeLabel = (!s.forceOffline && isOnline && hasKey)
-    ? '🌐 Gemini AI'
-    : '📱 Offline Engine';
-  const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
-  if (thinking) thinking.id = 'ai-thinking-bubble';
-
-  processAICommand(text).then(reply => {
-    removeThinkingBubble();
-    addAIBubble(reply, 'bot');
-    // Auto speak if voice input OR output mode is voice
-    if (isVoice || aiOutputMode === 'voice') speakText(reply);
-  }).catch(err => {
-    removeThinkingBubble();
-    addAIBubble(`❌ ${err.message || 'Lỗi không xác định'}`, 'error');
-  });
-}
-
-// ------ TTS: Google Cloud TTS (premium) + SpeechSynthesis (fallback) ------
-async function speakText(text) {
-  if (!text) return;
-  const plain = (text || '').replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵📷📅📆🔊📝]/gu, '').trim();
-  if (!plain) return;
-
-  const s = Store.getSettings();
-  
-  // Try Google Cloud TTS first (natural voice)
-  if (s.googleTTSKey && navigator.onLine) {
-    try {
-      const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${s.googleTTSKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { text: plain.slice(0, 500) }, // Limit to 500 chars
-          voice: {
-            languageCode: 'vi-VN',
-            name: 'vi-VN-Neural2-A', // Premium neural voice
-            ssmlGender: 'FEMALE'
-          },
-          audioConfig: {
-            audioEncoding: 'MP3',
-            speakingRate: 1.05,
-            pitch: 1.0
-          }
-        }),
-        signal: AbortSignal.timeout(5000)
-      });
-      
-      const data = await response.json();
-      if (data.audioContent) {
-        const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
-        audio.playbackRate = 1.0;
-        await audio.play();
-        return; // Success, no need for fallback
-      }
-    } catch(e) {
-      console.warn('Google TTS failed, falling back to browser TTS:', e.message);
-    }
-  }
-  
-  // Fallback: Browser SpeechSynthesis
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const msg = new SpeechSynthesisUtterance(plain);
-  msg.lang = 'vi-VN';
-  msg.rate = 1.05;
-
-  const voices = window.speechSynthesis.getVoices();
-  // Prefer Google Vietnamese voice if available
-  const viVoice = voices.find(v => v.lang.startsWith('vi') && v.name.includes('Google'))
-    || voices.find(v => v.lang.startsWith('vi'))
-    || voices.find(v => v.lang.includes('vi'));
-  if (viVoice) msg.voice = viVoice;
-
-  window.speechSynthesis.speak(msg);
-}
-
-if (window.speechSynthesis) window.speechSynthesis.getVoices();
-
-// ============================================================
-// HYBRID AI ENGINE: Gemini (online) + Local NLP (offline)
-// ============================================================
-
-const GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.5-flash-preview-04-17',
-  'gemini-2.0-flash-lite',
-];
-
-async function callGemini(apiKey, systemPrompt) {
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
-          }),
-          signal: AbortSignal.timeout(8000)
-        }
-      );
-      const data = await res.json();
-      if (data.error) {
-        if (data.error.code === 404 || data.error.code === 400 ||
-            (data.error.message || '').includes('no longer available') ||
-            (data.error.message || '').includes('deprecated')) {
-          lastError = new Error(data.error.message);
-          continue;
-        }
-        throw new Error(data.error.message);
-      }
-      if (!data.candidates?.length) throw new Error('Gemini không trả về kết quả.');
-      return data.candidates[0].content.parts[0].text;
-    } catch(e) {
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
-      lastError = e;
-    }
-  }
-  throw lastError || new Error('Tất cả Gemini models đều không khả dụng.');
-}
-
-async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
-  const url = endpoint || 'http://127.0.0.1:11434/v1/chat/completions';
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: model || 'gemma2:latest',
-      messages: [{ role: 'user', content: systemPrompt }],
-      response_format: { type: "json_object" },
-      temperature: 0.1
-    }),
-    signal: AbortSignal.timeout(15000)
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Lỗi từ Local API');
-  if (!data.choices || !data.choices.length) throw new Error('Local AI không trả về kết quả.');
-
-  return data.choices[0].message.content;
-}
-
-// --- Main processor: Hybrid Failover ---
-async function processAICommand(text) {
-  const s = Store.getSettings();
-  const menu       = Store.getMenu();
-  const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
-
-  const isGemma = (s.activeAIEngine === 'gemma');
-  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey && !isGemma;
-  const canUseGemma = !s.forceOffline && isGemma && s.gemmaEndpoint;
-
-  let parsed;
-  let modeColor = '';
-
-  if (canUseGemma) {
-    try {
-      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
-      const prompt = buildGemmaPrompt(text, tablesInfo, menuForAI);
-      let raw = await callLocalGemma(s.gemmaEndpoint, s.gemmaApiKey, s.gemmaModel, prompt);
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      try { parsed = JSON.parse(raw); }
-      catch(_) { return raw; }
-      modeColor = 'var(--info)';
-    } catch(e) {
-      console.warn('Gemma Local failed:', e.message);
-      const offlineResult = localNLPEngine(text, menu, tablesInfo);
-      if (offlineResult) {
-        parsed = offlineResult;
-        modeColor = 'var(--warning)';
-      } else {
-        return `⚠️ Kết nối Local Server thất bại (${e.message}). Đang dùng NLP Offline nhưng không hiểu lệnh.`;
-      }
-    }
-  } else if (canUseGemini) {
-    try {
-      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
-      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
-      let raw = await callGemini(s.geminiApiKey, prompt);
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      try { parsed = JSON.parse(raw); }
-      catch(_) { return raw; }
-      modeColor = 'var(--success)';
-    } catch(e) {
-      console.warn('Gemini failed, switching to Local NLP:', e.message);
-      const offlineResult = localNLPEngine(text, menu, tablesInfo);
-      if (offlineResult) {
-        parsed = offlineResult;
-        modeColor = 'var(--warning)';
-      } else {
-        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
-      }
-    }
-  } else {
-    if (!s.geminiApiKey) {
-      parsed = localNLPEngine(text, menu, tablesInfo);
-      if (!parsed) {
-        return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
-      }
-      modeColor = 'var(--warning)';
-    } else {
-      parsed = localNLPEngine(text, menu, tablesInfo);
-      if (!parsed) {
-        return '📵 Đang mất mạng và không nhận ra lệnh. Thử: "bàn 1 đặt 3 bia"';
-      }
-      modeColor = 'var(--warning)';
-    }
-  }
-
-  let finalReply = executeAIActions(parsed, menu, text);
-  if (typeof finalReply === 'string' && modeColor) {
-    finalReply = `<span style="color:${modeColor}">${finalReply}</span>`;
-  }
-  
-  return finalReply;
-}
-
-function buildGemmaPrompt(text, tablesInfo, menu) {
-  // Add current orders context just to make Gemma smarter
-  const currentOrders = {};
-  const orders = Store.getOrders();
-  Object.keys(orders).forEach(tid => {
-    if(orders[tid] && orders[tid].length > 0) {
-      currentOrders[tid] = orders[tid].map(i => `${i.qty}x ${i.name}`);
-    }
-  });
-
-  return `Bạn là trợ lý AI nội bộ cho hệ thống POS nhà hàng/quán ăn.
-
-Nguyên tắc bắt buộc:
-1. Bạn KHÔNG được tự ý thay đổi dữ liệu.
-2. Bạn chỉ được trả về JSON hợp lệ theo schema.
-3. Nếu không chắc chắn về tên món, số lượng, bàn, hoặc ý định người dùng, phải đặt needs_confirmation=true.
-4. Không tự suy đoán SKU nếu chưa đủ chắc chắn.
-5. Ưu tiên an toàn dữ liệu hơn sự tiện lợi.
-6. Chỉ sử dụng thông tin nằm trong ngữ cảnh mà app cung cấp.
-7. Nếu người dùng hỏi báo cáo, chỉ tóm tắt từ số liệu được truyền vào.
-8. Nếu câu hỏi ngoài phạm vi POS, trả lời ngắn rằng yêu cầu không thuộc nghiệp vụ POS.
-
-Quy tắc ánh xạ (Action Mapping):
-- "thêm", "cho thêm", "order thêm", "đặt", "gọi" => order
-- "bớt", "giảm", "huỷ 1 món", "xóa" => remove 
-- "ghi chú", "nhắc bếp", "ít cay", "không đá" => note
-- "tính tiền", "thanh toán", "bill" => pay
-- "báo cáo", "hôm nay bán được" => insight
-
-Đầu ra bắt buộc là JSON Object KHÔNG kèm giải thích:
-{
-  "type": "order|remove|pay|insight|unknown",
-  "tableId": "ID bàn (Ví dụ: 1, 2, 3... Hoặc 'null' nếu không đề cập)",
-  "items": [{"name": "Tên món", "qty": 1}],
-  "needs_confirmation": false
-}
-
-Dữ liệu ngữ cảnh:
-- Danh sách bàn: ${JSON.stringify(tablesInfo)}
-- Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
-- Thực đơn: ${JSON.stringify(menu)}
-
-Câu lệnh người dùng: "${text}"`;
-}
-
-function buildGeminiPrompt(text, tablesInfo, menu) {
-  const inventoryInfo = Store.getInventory().map(i => ({ id: i.id, name: i.name, qty: i.qty, unit: i.unit }));
-  
-  // Add current orders context
-  const currentOrders = {};
-  const orders = Store.getOrders();
-  Object.keys(orders).forEach(tid => {
-    if(orders[tid] && orders[tid].length > 0) {
-      currentOrders[tid] = orders[tid].map(i => `${i.qty}x ${i.name}`);
-    }
-  });
-
-  // Add today's summary
-  const todayRev = getRevenueSummary('today');
-  
-  return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
-Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
-
-Danh sách bàn: ${JSON.stringify(tablesInfo)}
-Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
-Danh sách thực đơn: ${JSON.stringify(menu)}
-Kho hàng hóa: ${JSON.stringify(inventoryInfo)}
-Doanh thu hôm nay: ${todayRev.orders} đơn, ${todayRev.revenue}đ doanh thu, ${todayRev.expenseTotal}đ chi phí, lãi gộp ${todayRev.gross}đ
-
-ACTION hỗ trợ:
-1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
-2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
-3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
-4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
-5. "report" – Báo cáo doanh thu: { type:"report", date:"YYYY-MM-DD" } (nếu người dùng hỏi ngày khác. VD: "báo cáo hôm qua" trả về date của hôm qua. Hôm nay là: ${new Date().toISOString().split('T')[0]})
-6. "restock"– Nhập thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
-7. "unknown" - Khi không rõ hoặc món không có: { type:"unknown", tableId:"1" }
-
-Quy tắc:
-- Khớp tên món/nguyên liệu GẦN ĐÚNG (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger, mực ≈ Mực khô nướng).
-- Nếu người dùng gọi món KHÔNG CÓ trong thực đơn, dùng "unknown".
-- "report" cho câu hỏi: doanh thu, bán được bao nhiêu, báo cáo, tổng kết, tồn kho thế nào, v.v.
-- "restock" cho: nhập thêm đồ, mua thêm hàng vào kho.
-- reply: ngắn gọn, thân thiện, xưng "em". Nếu report, tóm tắt: doanh thu, lãi, chi phí, đơn, tồn kho cần nhập.
-
-Câu lệnh: "${text}"
-
-CHỈ trả về JSON: { "actions": [...], "reply": "..." }`;
-}
-
-// ============================================================
-// LOCAL NLP ENGINE (Offline Fallback)
-// Pattern matching for Vietnamese POS commands
-// ============================================================
-function localNLPEngine(text, menu, tables) {
-  const t = text.toLowerCase()
-    .replace(/[.,!?]/g, '')
-    .normalize('NFC');
-
-  // --- Extract table number ---
-  // Handles: bàn 5, bàn số 5, ban 5, bà 5 (speech errors already fixed in preprocessor)
-  let tableId = null;
-  const tableMatch = t.match(/(?:b[àaằảãạăắặẳẵâấầẩẫậ]n?g?\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
-  if (tableMatch) {
-    if (tableMatch[1]) {
-      tableId = tableMatch[1];
-    } else if (tableMatch[2]) {
-      tableId = 'takeaway';
-    }
-  }
-
-  // --- Detect intent ---
-  const isOrder  = /đặt|gọi|th[eê]m|lên|cho|order/i.test(t);
-  const isRemove = /b[oó]t|x[oó]a|hủy|cancel|bỏ/i.test(t);
-  const isPay    = /t[íi]nh ti[eề]n|thanh to[aá]n|check|bill|xu[aâ]t bill/i.test(t);
-  const isView   = /m[oở] b[aà]n|xem b[aà]n|qu[aả]n l[yý] b[aà]n|v[aà]o b[aà]n/i.test(t);
-  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c|tồn kho|nhập hàng gần đây/i.test(t);
-  const isRestock = /nh[aậ]p (?:h[aà]ng|th[eê]m)|nh[aậ]p|m[uụ]c nh[aậ]p/i.test(t);
-
-  // --- View / Manage Table ---
-  if (isView && tableId) {
-    return {
-      actions: [{ type: 'view', tableId }],
-      reply: `Dạ em mở bàn ${tableId} rồi ạ!`
-    };
-  }
-
-  // --- Pay / Bill ---
-  if (isPay) {
-    if (tableId) {
-      return {
-        actions: [{ type: 'pay', tableId }],
-        reply: `Dạ em mở bill bàn ${tableId} cho anh chị ạ!`
-      };
-    } else {
-      // No table specified → ask
-      return {
-        actions: [],
-        reply: `Dạ anh chị muốn tính tiền bàn nào ạ? Ví dụ: "Tính tiền bàn 5"`
-      };
-    }
-  }
-
-  // --- Query / Báo cáo ---
-  // Nhận diện báo cáo doanh thu: "báo cáo doanh thu ngày...", "hôm ... bán được", "ngày ... bán thế nào", "tháng ... bán thế nào/bao nhiêu"
-  const isRevReport = /b[aá]o c[aá]o doanh thu|doanh thu ng[aà]y|doanh thu tuần|doanh thu tháng|doanh thu năm|b[aá]n đ[uược]c bao nhi[eê]u|b[aá]n th[eế] n[aà]o|b[aá]n đ[uược] kh[oô]ng|hôm.*b[aá]n|ng[aà]y.*b[aá]n|tuần.*b[aá]n|tháng.*b[aá]n/i.test(t);
-  const isPurchaseReport = /b[aá]o c[aá]o nh[aậ]p h[aà]ng|nh[aậ]p h[aà]ng ng[aà]y|nh[aậ]p h[aà]ng tuần|nh[aậ]p h[aà]ng tháng/i.test(t);
-  const isExpenseReport  = /b[aá]o c[aá]o chi ph[íi]|chi ph[íi] ng[aà]y|chi ph[íi] tuần|chi ph[íi] tháng/i.test(t);
-  const isFinanceReport  = /b[aá]o c[aá]o t[aà]i ch[íi]nh|t[aà]i ch[íi]nh ng[aà]y|t[aà]i ch[íi]nh tuần|t[aà]i ch[íi]nh tháng|t[aà]i ch[íi]nh năm/i.test(t);
-
-  if (isRevReport || isPurchaseReport || isExpenseReport || isFinanceReport) {
-    const pi = parseViDateFromText(t);
-    const type = isFinanceReport ? 'finance' : isPurchaseReport ? 'purchase' : isExpenseReport ? 'expense' : 'revenue';
-    return buildDetailedReportReply(type, pi || { period: 'today', label: 'hôm nay' });
-  }
-
-  if (isQuery) {
-    if (/b[aà]n n[aà]o.*tr[oố]ng|tr[oố]ng.*b[aà]n/i.test(t)) {
-      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `Bàn ${tb.id}`);
-      return {
-        actions: [],
-        reply: emptyTables.length
-          ? `Hiện đang trống: ${emptyTables.join(', ')} ạ!`
-          : 'Hiện tại tất cả các bàn đều đang có khách ạ!'
-      };
-    }
-    if (/menu|th[uú]c đ[oơ]n|c[oò]n m[oó]n/i.test(t)) {
-      const names = menu.slice(0, 8).map(m => m.name).join(', ');
-      return {
-        actions: [],
-        reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
-      };
-    }
-    if (/doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c|tồn kho/i.test(t)) {
-      return buildReportReply();
-    }
-    return null;
-  }
-
-  // --- Restock ---
-  if (isRestock) {
-    const matchedInv = extractMenuItems(t, Store.getInventory());
-    if (matchedInv.length > 0) {
-      return {
-        actions: [{ type: 'restock', items: matchedInv.map(it => ({ name: it.name, qty: it.qty })) }],
-        reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
-      };
-    }
-    return null;
-  }
-
-  // --- Remove items: handle even without tableId feedback ---
-  if (isRemove) {
-    if (!tableId) {
-      return {
-        actions: [],
-        reply: `Dạ anh chị muốn bớt món ở bàn nào ạ? Ví dụ: "Bớt 1 bia bàn 2"`
-      };
-    }
-    const matchedItems = extractMenuItems(t, menu);
-    if (matchedItems.length > 0) {
-      const actions = matchedItems.map(it => ({ type: 'remove', tableId, itemId: it.id, qty: it.qty }));
-      const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
-      return {
-        actions,
-        reply: `Dạ em đã bớt ${names} ở bàn ${tableId} ạ!`
-      };
-    }
-    return {
-      actions: [{ type: 'view', tableId }],
-      reply: `Dạ em chưa xác định được món cần bớt, mở bàn ${tableId} để anh chị chỉnh thủ công ạ!`
-    };
-  }
-
-  // --- Order: need tableId ---
-  if (!tableId) return null;
-  
-  const matchedItems = extractMenuItems(t, menu);
-  
-  if (isOrder) {
-    if (matchedItems.length === 0) {
-      return {
-        actions: [{ type: 'unknown', tableId }],
-        reply: `Dạ em chưa nghe rõ tên món, mời anh chị chọn món thủ công cho bàn ${tableId} ạ!`
-      };
-    }
-    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
-    const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
-    return {
-      actions,
-      reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ! Nếu thiếu món nào anh chị chọn thêm trong menu nhé.`
-    };
-  }
-
-  // If we have tableId but no clear intent, try matching items as an order
-  if (matchedItems.length > 0) {
-    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
-    const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
-    return {
-      actions,
-      reply: `Dạ em lên ${names} cho bàn ${tableId} ạ!`
-    };
-  }
-}
-
-// Định dạng số tiền đầy đủ, dùng "đồng" thay "đ" cho chatbot
-function fmtDong(n) {
-  return n.toLocaleString('vi-VN') + ' đồng';
-}
-
-// Phân tích ngày tháng tiếng Việt từ văn bản
-// Trả về { period, dateStr, label } hoặc null
-function parseViDateFromText(text) {
-  const t = text.toLowerCase().normalize('NFC');
-  const now = new Date();
-
-  // "hôm nay" / "hôm nay"
-  if (/hôm nay|hom nay/i.test(t)) {
-    return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
-  }
-  // "hôm qua"
-  if (/hôm qua|hom qua/i.test(t)) {
-    const d = new Date(now); d.setDate(d.getDate()-1);
-    return { period: 'day', dateStr: d.toISOString().split('T')[0], label: 'hôm qua' };
-  }
-  // "tuần này" / "tuần nay"
-  if (/tuần này|tuan nay|tuan nay|tuần nay/i.test(t)) {
-    return { period: 'week', label: 'tuần này' };
-  }
-  // "tuần trước"
-  if (/tuần trước|tuan truoc/i.test(t)) {
-    const from = new Date(now); from.setDate(from.getDate()-14);
-    const to   = new Date(now); to.setDate(to.getDate()-7);
-    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: 'tuần trước' };
-  }
-  // "tháng này"
-  if (/tháng này|thang nay|tháng nay/i.test(t)) {
-    return { period: 'month', label: 'tháng này' };
-  }
-  // "tháng trước"
-  if (/tháng trước|thang truoc/i.test(t)) {
-    const d = new Date(now.getFullYear(), now.getMonth()-1, 1);
-    const from = d.toISOString().split('T')[0];
-    const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-    const to = lastDay.toISOString().split('T')[0];
-    return { period: 'range', fromDate: from, toDate: to, label: 'tháng trước' };
-  }
-  // "năm nay"
-  if (/năm nay|nam nay/i.test(t)) {
-    const from = `${now.getFullYear()}-01-01`;
-    const to   = `${now.getFullYear()}-12-31`;
-    return { period: 'range', fromDate: from, toDate: to, label: `năm ${now.getFullYear()}` };
-  }
-
-  // Ngày cụ thể: "ngày 7/4", "7 tháng 4", "ngày 7 tháng 4"
-  const dayMonthMatch = t.match(/ng[àa]y\s*(\d{1,2})[\/-](\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*tháng\s*(\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/);
-  if (dayMonthMatch) {
-    const day = parseInt(dayMonthMatch[1]);
-    const month = parseInt(dayMonthMatch[2]);
-    const year = now.getFullYear();
-    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-      const d = new Date(year, month-1, day);
-      return { period: 'day', dateStr: d.toISOString().split('T')[0], label: `ngày ${day}/${month}` };
-    }
-  }
-
-  // Tháng cụ thể: "tháng 3", "tháng 12"
-  const monthMatch = t.match(/tháng\s*(\d{1,2})|thang\s*(\d{1,2})/);
-  if (monthMatch) {
-    const m = parseInt(monthMatch[1] || monthMatch[2]);
-    const year = now.getFullYear();
-    const from = new Date(year, m-1, 1).toISOString().split('T')[0];
-    const lastDay = new Date(year, m, 0);
-    const to = lastDay.toISOString().split('T')[0];
-    return { period: 'range', fromDate: from, toDate: to, label: `tháng ${m}` };
-  }
-
-  // Tuần số cụ thể: "tuần 2", "tuần 15"
-  const weekMatch = t.match(/tuần\s*(\d+)|tuan\s*(\d+)/);
-  if (weekMatch) {
-    const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
-    // Ước tính bắt đầu tuần theo weekNum trong năm hiện tại
-    const jan1 = new Date(now.getFullYear(), 0, 1);
-    const from = new Date(jan1.getTime() + (weekNum-1)*7*86400000);
-    const to   = new Date(from.getTime() + 6*86400000);
-    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: `tuần ${weekNum}` };
-  }
-
-  return null; // Không phân tích được
-}
-
-// Tạo nội dung báo cáo chi tiết không viết tắt
-function buildDetailedReportReply(type, periodInfo) {
-  const pi = periodInfo || { period: 'today', label: 'hôm nay' };
-  const opts = pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {});
-
-  if (type === 'revenue' || type === 'finance') {
-    const s = getRevenueSummary(pi.period, opts);
-    const label = pi.label || 'kỳ này';
-    let reply = `📊 <b>Báo cáo doanh thu ${label}:</b><br>`;
-    reply += `• Doanh thu: <b>${fmtDong(s.revenue)}</b><br>`;
-    reply += `• Số đơn hàng: <b>${s.orders} đơn hàng</b><br>`;
-    reply += `• Tiền mặt: ${fmtDong(s.revenueCash)}<br>`;
-    reply += `• Chuyển khoản: ${fmtDong(s.revenueBank)}<br>`;
-    if (type === 'finance') {
-      reply += `• Giá vốn: ${fmtDong(s.cost)}<br>`;
-      reply += `• Lãi gộp: <b>${fmtDong(s.gross)}</b><br>`;
-      reply += `• Chi phí hoạt động: ${fmtDong(s.expenseTotal)}<br>`;
-      reply += `• Lợi nhuận ròng: <b style="color:var(--success)">${fmtDong(s.profit)}</b><br>`;
-      if (s.discountTotal > 0)
-        reply += `• Tổng giảm giá: ${fmtDong(s.discountTotal)}<br>`;
-    }
-    return { actions: [{ type: 'report' }], reply };
-  }
-
-  if (type === 'purchase') {
-    const opts2 = pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {});
-    const purchases = Store.getPurchases();
-    const label = pi.label || 'kỳ này';
-    const now = new Date();
-    // Lọc nhập hàng theo kỳ
-    const filtered = purchases.filter(p => {
-      const d = new Date(p.date);
-      if (pi.period === 'today') return d.toDateString() === now.toDateString();
-      if (pi.period === 'day' && pi.dateStr) return d.toISOString().split('T')[0] === pi.dateStr;
-      if (pi.period === 'week') return (now - d)/86400000 <= 7;
-      if (pi.period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      if (pi.period === 'range' && pi.fromDate && pi.toDate) {
-        const from = new Date(pi.fromDate); from.setHours(0,0,0,0);
-        const to   = new Date(pi.toDate);   to.setHours(23,59,59,999);
-        return d >= from && d <= to;
-      }
-      return false;
-    });
-    const total = filtered.reduce((s,p) => s + p.price, 0);
-    let reply = `📦 <b>Báo cáo nhập hàng ${label}:</b><br>`;
-    if (filtered.length === 0) {
-      reply += `• Không có lần nhập hàng nào trong ${label}.`;
-    } else {
-      reply += `• Số lần nhập hàng: <b>${filtered.length} lần</b><br>`;
-      reply += `• Tổng tiền nhập hàng: <b>${fmtDong(total)}</b><br>`;
-      const top3 = filtered.slice(0,3);
-      reply += `• Các mặt hàng nhập gần đây: ${top3.map(p => `${p.name} (${p.qty} ${p.unit || 'phần'}, ${fmtDong(p.price)})`).join('; ')}`;
-    }
-    return { actions: [{ type: 'report' }], reply };
-  }
-
-  if (type === 'expense') {
-    const expenses = filterExpenses(pi.period, opts);
-    const label = pi.label || 'kỳ này';
-    const total = expenses.reduce((s,e) => s + e.amount, 0);
-    let reply = `💸 <b>Báo cáo chi phí ${label}:</b><br>`;
-    if (expenses.length === 0) {
-      reply += `• Không có chi phí nào trong ${label}.`;
-    } else {
-      reply += `• Tổng chi phí: <b>${fmtDong(total)}</b><br>`;
-      reply += `• Số khoản chi: <b>${expenses.length} khoản</b><br>`;
-      // Nhóm theo danh mục
-      const bycat = {};
-      expenses.forEach(e => { bycat[e.category] = (bycat[e.category]||0) + e.amount; });
-      Object.entries(bycat).forEach(([cat,amt]) => {
-        reply += `• ${cat}: ${fmtDong(amt)}<br>`;
-      });
-    }
-    return { actions: [{ type: 'report' }], reply };
-  }
-
-  return buildReportReply();
-}
-
-// Build basic report reply (today, no abbreviations)
-function buildReportReply() {
-  const todayRev = getRevenueSummary('today');
-  const weekRev = getRevenueSummary('week');
-  const alerts = getInventoryAlerts();
-  const needRestock = alerts.critical.length + alerts.low.length;
-  
-  let reply = `📊 <b>Báo cáo hôm nay:</b><br>`;
-  reply += `• Doanh thu: <b>${fmtDong(todayRev.revenue)}</b> (${todayRev.orders} đơn hàng)<br>`;
-  reply += `• Lãi gộp: <b>${fmtDong(todayRev.gross)}</b><br>`;
-  reply += `• Chi phí: ${fmtDong(todayRev.expenseTotal)}<br>`;
-  reply += `• Lợi nhuận: <b>${fmtDong(todayRev.profit)}</b><br>`;
-  reply += `• Tiền mặt: ${fmtDong(todayRev.revenueCash)} | Chuyển khoản: ${fmtDong(todayRev.revenueBank)}<br>`;
-  
-  if(weekRev.orders > 0) {
-    const avgDaily = Math.round(weekRev.revenue / 7);
-    reply += `<br>📈 <b>7 ngày qua:</b> ${fmtDong(weekRev.revenue)} (Trung bình: ${fmtDong(avgDaily)}/ngày)<br>`;
-  }
-  
-  if(needRestock > 0) {
-    reply += `<br>⚠️ <b>Tồn kho:</b> ${alerts.critical.length} mặt hàng cần nhập gấp, ${alerts.low.length} mặt hàng sắp hết`;
-    if(alerts.critical.length > 0) {
-      reply += `<br>🚨 ${alerts.critical.slice(0,3).map(i => i.name).join(', ')}`;
-    }
-  } else {
-    reply += `<br>✅ Tồn kho ổn định`;
-  }
-  
-  return {
-    actions: [{ type: 'report' }],
-    reply
-  };
-}
-
-// Fuzzy menu matcher: tìm món trong text + số lượng
-function extractMenuItems(text, menu) {
-  const results = [];
-
-  const norm = s => s.toLowerCase()
-    .replace(/[àáạảãăắặẳẵặâấầẩẫậ]/g, 'a')
-    .replace(/[èéẹẻẽêếềểễệ]/g, 'e')
-    .replace(/[ìíịỉĩ]/g, 'i')
-    .replace(/[òóọỏõôốồổỗộơớờởỡợ]/g, 'o')
-    .replace(/[ùúụủũưứừựửữ]/g, 'u')
-    .replace(/[ỳýỵỷỹ]/g, 'y')
-    .replace(/[đ]/g, 'd')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ').trim();
-
-  const normText = norm(text);
-
-  const sortedMenu = [...menu].sort((a, b) => b.name.length - a.name.length);
-
-  let remaining = normText;
-
-  for (const item of sortedMenu) {
-    const normName = norm(item.name);
-    const keywords = [normName];
-    
-    let stripped = normName.replace(/^(kho |bia |tra |ruou |combo )/i, '').trim();
-    if (stripped !== normName && stripped.length > 2) {
-      keywords.push(stripped);
-    }
-    
-    const noSuffix = stripped.replace(/( nuong| chien gion| chien bo toi| chien bo| om bau)$/i, '').trim();
-    if (noSuffix !== stripped && noSuffix.length > 2) {
-      keywords.push(noSuffix);
-    }
-    
-    if (normName.includes('tiger nau')) keywords.push('tiger nau', 'tiger');
-    if (normName.includes('tiger bac')) keywords.push('tiger bac');
-    if (normName.includes('sai gon')) keywords.push('sai gon');
-    if (normName.includes('ken lon')) keywords.push('ken', 'heineken');
-
-    const finalKeywords = [...new Set(keywords)].sort((a,b) => b.length - a.length);
-
-    let found = false;
-    for (const kw of finalKeywords) {
-      const idx = remaining.indexOf(kw);
-      if (idx === -1) continue;
-
-      const beforeStr = remaining.slice(0, idx);
-      const afterStr  = remaining.slice(idx + kw.length);
-
-      const numBefore = beforeStr.match(/(\d+)\s*$/);
-      const numAfter  = afterStr.match(/^\s*(\d+)/);
-      const wordNum   = /(?:hai|ba|b[óo]n|năm|s[aá]u|bảy|tám|ch[íi]n|mười)\s*$/i.exec(beforeStr);
-
-      const wordNumMap = { hai:2, ba:3, bon:4, bón:4, bốn:4, nam:5, năm:5, sau:6, sáu:6, bay:7, bảy:7, tam:8, tám:8, chin:9, chín:9, muoi:10, mười:10 };
-
-      let qty = 1;
-      if (numBefore) qty = parseInt(numBefore[1]);
-      else if (numAfter) qty = parseInt(numAfter[1]);
-      else if (wordNum) qty = wordNumMap[norm(wordNum[0].trim())] || 1;
-
-      results.push({ id: item.id, name: item.name, qty: Math.max(1, qty) });
-      remaining = remaining.replace(kw, '   ');
-      found = true;
-      break;
-    }
-  }
-
-  return results;
-}
-
-// --- Execute parsed actions (shared between Gemini and Local NLP) ---
-function executeAIActions(parsed, menuFull, userText = '') {
-  if (!parsed) return 'Không nhận ra lệnh này ạ.';
-
-  if (parsed.actions?.length) {
-    for (const a of parsed.actions) {
-      if (a.type === 'order') {
-        const tid = String(a.tableId);
-        if (!orderItems[tid]) {
-          const saved = Store.getOrders()[tid];
-          orderItems[tid] = saved ? [...saved] : [];
-        }
-        for (const it of (a.items || [])) {
-          const m = menuFull.find(x => x.id === it.id);
-          if (!m) continue;
-          const ex = orderItems[tid].find(x => x.id === m.id);
-          if (ex) ex.qty += it.qty;
-          else    orderItems[tid].push({ id: m.id, name: m.name, price: m.price, cost: m.cost || 0, qty: it.qty });
-        }
-        // Persist + update table status for correct coloring
-        try { saveOrderForTable(tid); } catch(_) {}
-
-        // Tự động mở bàn để xác nhận
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(Number(tid));
-        }, 300);
-
-      } else if (a.type === 'remove') {
-        const tid = String(a.tableId);
-        if (!orderItems[tid]) {
-          const saved = Store.getOrders()[tid];
-          orderItems[tid] = saved ? [...saved] : [];
-        }
-        if (orderItems[tid]) {
-          const ex = orderItems[tid].find(x => x.id === a.itemId);
-          if (ex) {
-            ex.qty -= (a.qty || 1);
-            if (ex.qty <= 0) orderItems[tid] = orderItems[tid].filter(x => x.id !== a.itemId);
-          }
-        }
-        // Persist + update table status for correct coloring
-        try { saveOrderForTable(tid); } catch(_) {}
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(Number(tid));
-        }, 300);
-
-      } else if (a.type === 'pay') {
-        const tid = String(a.tableId);
-        // Mở bàn trước rồi mở bill modal
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(Number(tid));
-          // Mở bill sau khi bàn đã mở
-          setTimeout(() => {
-            if ((orderItems[tid] || []).length > 0) {
-              openBillModal();
-            }
-          }, 400);
-        }, 200);
-
-      } else if (a.type === 'view') {
-        const tid = String(a.tableId);
-        closeAIAssistant();
-        setTimeout(() => {
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(Number(tid));
-        }, 200);
-      } else if (a.type === 'report') {
-        if (!parsed.reply || parsed.reply.length < 30) {
-          let reqDate = a.date ? new Date(a.date) : new Date();
-          let dateObj = a.date ? { label:`Ngày ${reqDate.getDate()}/${reqDate.getMonth()+1}`, date:a.date } : null;
-          const report = buildReportReply(dateObj);
-          parsed.reply = report.reply;
-        }
-        
-        setTimeout(() => {
-          closeAIAssistant();
-          navigate('finance');
-          if (a.date) {
-            const dateInput = document.getElementById('finance-single-date');
-            if (dateInput) {
-              dateInput.value = a.date;
-              setFinancePeriod('day');
-            }
-          } else {
-            setFinancePeriod('today');
-          }
-        }, 500);
-
-      } else if (a.type === 'restock') {
-        const inv = Store.getInventory();
-        let addedNames = [];
-        const rawCmd = String(userText || '').trim();
-        const noteText = rawCmd ? rawCmd.slice(0, 500) : 'Nhap kho qua tro ly AI';
-        for (const it of (a.items || [])) {
-          const stock = inv.find(x => x.id === it.id || x.name === it.name);
-          if (!stock) continue;
-          stock.qty += it.qty;
-          Store.addPurchase({ 
-            id: uid(), 
-            name: stock.name, 
-            qty: it.qty, 
-            unit: stock.unit, 
-            price: (stock.costPerUnit || 0) * it.qty, 
-            costPerUnit: stock.costPerUnit || 0, 
-            date: new Date().toISOString(), 
-            supplier: '',
-            supplierId: null,
-            supplierPhone: '',
-            supplierAddress: '',
-            note: noteText,
-          });
-          addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
-        }
-        if (addedNames.length) {
-          Store.setInventory(inv);
-          updateAlertBadge();
-          if (currentPage === 'inventory') renderInventory();
-          if (!parsed.reply || parsed.reply.length < 10) {
-            parsed.reply = `Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`;
-          }
-          
-          setTimeout(() => {
-            closeAIAssistant();
-            navigate('inventory');
-            switchInvTab('purchase', document.querySelectorAll('.tab-btn')[1]);
-          }, 500);
-        }
-      } else if (a.type === 'unknown') {
-        const tid = String(a.tableId);
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(Number(tid));
-        }, 500);
-      }
-    }
-    if (currentPage === 'orders') renderCart();
-    if (currentPage === 'tables') renderTables();
-  }
-
-  return parsed.reply || 'Xong rồi ạ!';
-}
-
-// ============================================================
-// PAGE: NCC (NHÀ CUNG CẤP)
+// PAGE: NCC (NH�? CUNG CẤP)
 // ============================================================
 function renderNCC() {
   const suppliers = Store.getSuppliers();
@@ -7458,12 +7040,12 @@ function renderNCC() {
   if (!el) return;
 
   if (suppliers.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-text">Chưa có nhà cung cấp nào<br><small>Nhấn "+ Thêm NCC" để bắt đầu</small></div></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">�?��</div><div class="empty-text">Chưa có nhà cung cấp nào<br><small>Nhấn "+ Thêm NCC" �?�? bắt �?ầu</small></div></div>`;
     return;
   }
 
   el.innerHTML = suppliers.map(s => {
-    // Tính doanh số nhập theo từng NCC
+    // Tính doanh s�? nhập theo từng NCC
     const myPurchases = purchases.filter(p => p.supplierId === s.id || p.supplier === s.name);
     const totalAmount = myPurchases.reduce((sum, p) => sum + p.price, 0);
     const thisMonth = myPurchases.filter(p => {
@@ -7471,25 +7053,25 @@ function renderNCC() {
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).reduce((sum, p) => sum + p.price, 0);
 
-    const debtLabels = { immediate: 'Tiền ngay', weekly: 'Gối tuần', monthly: 'Gối tháng', credit: 'Công nợ dài hạn' };
+    const debtLabels = { immediate: 'Tiền ngay', weekly: 'G�?i tuần', monthly: 'G�?i tháng', credit: 'Công nợ dài hạn' };
     const debtLabel = debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ';
 
     return `<div class="list-item" style="flex-direction:column;align-items:flex-start;gap:6px;cursor:pointer" onclick="openNCCDetail('${s.id}')">
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
         <div>
           <div class="list-item-title" style="font-size:15px">${s.name}</div>
-          ${s.phone ? `<div class="list-item-sub">📞 ${s.phone}</div>` : ''}
+          ${s.phone ? `<div class="list-item-sub">�??? ${s.phone}</div>` : ''}
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editNCC('${s.id}')">✏️</button>
-          <button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteNCC('${s.id}')">🗑️</button>
+          <button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editNCC('${s.id}')">�?�️</button>
+          <button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteNCC('${s.id}')">�???️</button>
         </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text2)">
-        ${s.address ? `<span>📍 ${s.address}</span>` : ''}
-        <span>💳 ${debtLabel}</span>
-        <span>📦 Tháng này: <b style="color:var(--primary)">${fmt(thisMonth)}đ</b></span>
-        <span>🔄 Tổng: ${fmt(totalAmount)}đ</span>
+        ${s.address ? `<span>�??� ${s.address}</span>` : ''}
+        <span>�??� ${debtLabel}</span>
+        <span>�??� Tháng này: <b style="color:var(--primary)">${fmt(thisMonth)}�?</b></span>
+        <span>�??? T�?ng: ${fmt(totalAmount)}�?</span>
       </div>
       ${s.products && s.products.length ? `<div style="font-size:11px;color:var(--text3)">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
     </div>`;
@@ -7501,7 +7083,7 @@ function openAddNCCModal() {
   if (!form) return;
   delete form.dataset.editId;
   form.reset();
-  document.getElementById('ncc-modal-title').textContent = '🏭 Thêm Nhà Cung Cấp';
+  document.getElementById('ncc-modal-title').textContent = '�?�� Thêm Nhà Cung Cấp';
   document.getElementById('ncc-modal').classList.add('active');
 }
 
@@ -7515,7 +7097,7 @@ function editNCC(id) {
   document.getElementById('ncc-edit-debt').value = s.debtPolicy || 'immediate';
   document.getElementById('ncc-edit-products').value = (s.products || []).join(', ');
   document.getElementById('ncc-edit-notes').value = s.notes || '';
-  document.getElementById('ncc-modal-title').textContent = '✏️ Sửa Nhà Cung Cấp';
+  document.getElementById('ncc-modal-title').textContent = '�?�️ Sửa Nhà Cung Cấp';
   document.getElementById('ncc-modal').classList.add('active');
 }
 
@@ -7534,10 +7116,10 @@ function submitNCC(e) {
 
   if (editId) {
     Store.updateSupplier(editId, { name, phone, address, debtPolicy, products, notes });
-    showToast('✅ Đã cập nhật nhà cung cấp!', 'success');
+    showToast('�?? Đã cập nhật nhà cung cấp!', 'success');
   } else {
     Store.addSupplier({ id: uid(), name, phone, address, debtPolicy, products, notes });
-    showToast('✅ Đã thêm nhà cung cấp!', 'success');
+    showToast('�?? Đã thêm nhà cung cấp!', 'success');
     // Cập nhật dropdown trong purchase modal
     renderPurchaseSupplierDropdown();
   }
@@ -7550,14 +7132,14 @@ function deleteNCC(id) {
   if (!confirm(`Xoá nhà cung cấp "${s?.name}"?`)) return;
   Store.deleteSupplier(id);
   renderNCC();
-  showToast('🗑️ Đã xoá nhà cung cấp', 'success');
+  showToast('�???️ Đã xoá nhà cung cấp', 'success');
 }
 
 function openNCCDetail(id) {
   const s = Store.getSuppliers().find(x => x.id === id);
   if (!s) return;
   const purchases = Store.getPurchases().filter(p => p.supplierId === id || p.supplier === s.name);
-  const debtLabels = { immediate: 'Tiền ngay', weekly: 'Gối đầu theo tuần', monthly: 'Gối đầu theo tháng', credit: 'Công nợ dài hạn' };
+  const debtLabels = { immediate: 'Tiền ngay', weekly: 'G�?i �?ầu theo tuần', monthly: 'G�?i �?ầu theo tháng', credit: 'Công nợ dài hạn' };
 
   const now = new Date();
   const thisMonth = purchases.filter(p => { const d = new Date(p.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
@@ -7571,35 +7153,35 @@ function openNCCDetail(id) {
   detailEl.innerHTML = `
     <div style="margin-bottom:16px">
       <div style="font-size:18px;font-weight:800">${s.name}</div>
-      ${s.phone ? `<div style="color:var(--text2);margin-top:4px">📞 ${s.phone}</div>` : ''}
-      ${s.address ? `<div style="color:var(--text2)">📍 ${s.address}</div>` : ''}
-      <div style="color:var(--text2)">💳 Chính sách: ${debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ'}</div>
+      ${s.phone ? `<div style="color:var(--text2);margin-top:4px">�??? ${s.phone}</div>` : ''}
+      ${s.address ? `<div style="color:var(--text2)">�??� ${s.address}</div>` : ''}
+      <div style="color:var(--text2)">�??� Chính sách: ${debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ'}</div>
       ${s.products?.length ? `<div style="color:var(--text3);font-size:12px;margin-top:6px">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
       ${s.notes ? `<div style="color:var(--text3);font-size:12px;margin-top:4px;border-left:2px solid var(--border);padding-left:8px">${s.notes}</div>` : ''}
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
       <div class="stat-card" style="padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text3)">Tuần này</div>
-        <div style="font-size:15px;font-weight:700;color:var(--primary)">${fmt(weekAmt)}đ</div>
+        <div style="font-size:15px;font-weight:700;color:var(--primary)">${fmt(weekAmt)}�?</div>
       </div>
       <div class="stat-card" style="padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text3)">Tháng này</div>
-        <div style="font-size:15px;font-weight:700;color:var(--info)">${fmt(monthAmt)}đ</div>
+        <div style="font-size:15px;font-weight:700;color:var(--info)">${fmt(monthAmt)}�?</div>
       </div>
       <div class="stat-card" style="padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--text3)">Tổng cộng</div>
-        <div style="font-size:15px;font-weight:700;color:var(--success)">${fmt(total)}đ</div>
+        <div style="font-size:11px;color:var(--text3)">T�?ng c�?ng</div>
+        <div style="font-size:15px;font-weight:700;color:var(--success)">${fmt(total)}�?</div>
       </div>
     </div>
-    <div style="font-weight:600;margin-bottom:8px">📋 Lịch sử nhập hàng (${purchases.length} lần)</div>
+    <div style="font-weight:600;margin-bottom:8px">�??? L�?ch sử nhập hàng (${purchases.length} lần)</div>
     ${purchases.slice(0,10).map(p => `
       <div class="list-item" style="padding:8px 0">
         <div class="list-item-content">
           <div class="list-item-title">${p.name}</div>
           <div class="list-item-sub">${p.qty} ${p.unit||'phần'} · ${fmtDate(p.date)}</div>
         </div>
-        <div class="list-item-right"><div class="list-item-amount">${fmt(p.price)}đ</div></div>
-      </div>`).join('') || '<div style="color:var(--text3);text-align:center;padding:12px">Chưa có lịch sử nhập hàng</div>'}
+        <div class="list-item-right"><div class="list-item-amount">${fmt(p.price)}�?</div></div>
+      </div>`).join('') || '<div style="color:var(--text3);text-align:center;padding:12px">Chưa có l�?ch sử nhập hàng</div>'}
   `;
   document.getElementById('ncc-detail-modal').classList.add('active');
 }
@@ -7652,676 +7234,4 @@ function syncPurchaseSupplierSelectFromPurchase(p) {
   sel.value = '';
 }
 
-/* --- ORPHANED DUPLICATE CODE COMMENTED OUT ---
-
-
-      const recentHistory = history.slice(-10);
-      recentHistory.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = `ai-bubble ai-bubble-${msg.role}`;
-        div.innerHTML = msg.content;
-        container.appendChild(div);
-      });
-      container.scrollTop = container.scrollHeight;
-    }
-    aiChatHistoryLoaded = true;
-  }
-}
-
-function closeAIAssistant() {
-  document.getElementById('ai-modal').classList.remove('active');
-  stopAIListening();
-}
-
-function toggleAIMode() {
-  const s = Store.getSettings();
-  s.forceOffline = !s.forceOffline;
-  Store.setSettings(s);
-  updateAIModeUI();
-}
-
-function updateAIModeUI() {
-  const s = Store.getSettings();
-  const el = document.getElementById('ai-status-text');
-  if(!el) return;
-  if (s.forceOffline) {
-    el.innerHTML = '📴 Chế độ Offline (Nhanh)';
-    el.style.background = 'var(--bg2)';
-    el.style.color = 'var(--text2)';
-    el.style.border = '1px solid var(--border)';
-  } else {
-    const hasKey = !!s.geminiApiKey;
-    el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
-    el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-    el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
-    el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
-  }
-}
-
-function clearAIAssistantHistory() {
-  if(!confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện AI?')) return;
-  Store.setAIHistory([]);
-  const container = document.getElementById('ai-chat-messages');
-  const welcomeMsg = document.getElementById('ai-welcome-msg');
-  if (container) {
-    container.innerHTML = '';
-    if (welcomeMsg) container.appendChild(welcomeMsg);
-  }
-}
-
-function openFullAIHistory() {
-  const history = Store.getAIHistory();
-  const list = document.getElementById('ai-history-list');
-  if(!list) return;
-  
-  list.innerHTML = history.length ? history.map(msg => `
-    <div class="history-item">
-      <div class="history-role ${msg.role}">${msg.role === 'user' ? '👤 Bạn' : '🤖 Trợ lý'}</div>
-      <div class="history-content">${msg.content}</div>
-      <div class="history-time">${msg.time ? fmtDateTime(msg.time) : ''}</div>
-    </div>
-  `).reverse().join('') : '<div style="text-align:center;color:var(--text3);padding:20px">Chưa có lịch sử trò chuyện</div>';
-  
-  document.getElementById('ai-history-modal').classList.add('active');
-}
-
-function preprocessAIText(text) {
-  let t = text.toLowerCase().trim();
-  // Map từ lóng / biệt danh sang tên món chuẩn trong hệ thống
-  const aliases = {
-    'cọp trắng': 'tiger bạc',
-    'cọp nâu': 'tiger nâu',
-    'đào': 'trà đào',
-    'tắc': 'trà tắc',
-    'set 1': 'hoàng hôn trên biển',
-    'set 2': 'đêm huyền diệu',
-    'set 3': 'không say không về',
-    'cút': 'trứng cút thảo mộc',
-    'trứng cút': 'trứng cút thảo mộc',
-    'ngọt': 'sting'
-  };
-  
-  for (const [alias, realName] of Object.entries(aliases)) {
-    // Sử dụng regex hỗ trợ tiếng Việt thay cho \b
-    const regex = new RegExp(`(^|\\s)${alias}(?=\\s|$)`, 'gi');
-    t = t.replace(regex, `$1${realName}`);
-  }
-  return t;
-}
-
-function addAIBubble(text, role = 'bot') {
-  const container = document.getElementById('ai-chat-messages');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = `ai-bubble ai-bubble-${role}`;
-  div.innerHTML = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  
-  if (role !== 'thinking') {
-    const history = Store.getAIHistory();
-    history.push({ role, content: text, time: new Date().toISOString() });
-    if (history.length > 200) history.shift(); // Lưu nhiều hơn trong bộ nhớ (200 tin)
-    Store.setAIHistory(history);
-  }
-  
-  return div;
-}
-
-function removeThinkingBubble() {
-  const t = document.getElementById('ai-thinking-bubble');
-  if (t) t.remove();
-}
-
-// ------ Voice Input (Web Speech API) ------
-function toggleAIVoice() {
-  if (aiIsListening) {
-    stopAIListening();
-  } else {
-    startAIListening();
-  }
-}
-
-const ICON_MIC = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
-const ICON_STOP = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>`;
-
-function startAIListening() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    addAIBubble('⚠️ Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Safari trên iPhone.', 'error');
-    return;
-  }
-
-  aiRecognition = new SpeechRecognition();
-  aiRecognition.lang = 'vi-VN';
-  aiRecognition.continuous = false;
-  aiRecognition.interimResults = false;
-
-  aiRecognition.onstart = () => {
-    aiIsListening = true;
-    const btn = document.getElementById('ai-voice-btn');
-    const ind = document.getElementById('ai-listening-indicator');
-    if (btn) { btn.innerHTML = ICON_STOP; btn.classList.add('recording'); }
-    if (ind) ind.style.display = 'block';
-  };
-
-  aiRecognition.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    stopAIListening();
-    document.getElementById('ai-text-input').value = text;
-    sendAIText(true);
-  };
-
-  aiRecognition.onerror = (e) => {
-    stopAIListening();
-    const msgs = {
-      'not-allowed': '🔒 Bạn chưa cho phép truy cập micro. Vào Cài đặt iPhone → Safari → Micro.',
-      'no-speech'  : '🎙️ Không nghe thấy gì. Thử lại nhé!',
-      'network'    : '🌐 Lỗi mạng khi nhận giọng nói.',
-    };
-    addAIBubble(msgs[e.error] || `Lỗi ghi âm: ${e.error}`, 'error');
-  };
-
-  aiRecognition.onend = () => stopAIListening();
-  aiRecognition.start();
-}
-
-function stopAIListening() {
-  aiIsListening = false;
-  if (aiRecognition) { try { aiRecognition.stop(); } catch(_){} aiRecognition = null; }
-  const btn = document.getElementById('ai-voice-btn');
-  const ind = document.getElementById('ai-listening-indicator');
-  if (btn) { btn.innerHTML = ICON_MIC; btn.classList.remove('recording'); }
-  if (ind) ind.style.display = 'none';
-}
-
-// ------ Text send ------
-function sendAIText(isVoice = false) {
-  const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? inp.value.trim() : '';
-  if (!rawText) return;
-  if(inp) inp.value = '';
-  
-  // Hiển thị text gốc của user
-  addAIBubble(rawText, 'user');
-
-  // Xử lý tiền xử lý (từ lóng) trước khi gửi cho engine
-  const text = preprocessAIText(rawText);
-
-  const isOnline = navigator.onLine;
-  const s = Store.getSettings();
-  const hasKey = !!s.geminiApiKey;
-
-  // Status badge
-  const modeLabel = (!s.forceOffline && isOnline && hasKey)
-    ? '🌐 Gemini AI'
-    : '📱 Offline Engine';
-  const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
-  if (thinking) thinking.id = 'ai-thinking-bubble';
-
-  processAICommand(text).then(reply => {
-    removeThinkingBubble();
-    addAIBubble(reply, 'bot');
-    if (isVoice) speakText(reply);
-  }).catch(err => {
-    removeThinkingBubble();
-    addAIBubble(`❌ ${err.message || 'Lỗi không xác định'}`, 'error');
-  });
-}
-
-// ------ TTS ------
-function speakText(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const plain = (text || '').replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵]/gu, '');
-  const msg   = new SpeechSynthesisUtterance(plain);
-  msg.lang    = 'vi-VN';
-  msg.rate    = 1.05;
-
-  const voices = window.speechSynthesis.getVoices();
-  const viVoice = voices.find(v => v.lang.startsWith('vi'));
-  if (viVoice) msg.voice = viVoice;
-
-  window.speechSynthesis.speak(msg);
-}
-
-if (window.speechSynthesis) window.speechSynthesis.getVoices();
-
-// ============================================================
-// HYBRID AI ENGINE: Gemini (online) + Local NLP (offline)
-// ============================================================
-
-// --- Model list: Try newer models first, auto-fallback ---
-const GEMINI_MODELS = [
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-latest',
-  'gemini-1.5-pro',
-];
-
-async function callGemini(apiKey, systemPrompt) {
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
-          }),
-          signal: AbortSignal.timeout(8000)  // 8s timeout
-        }
-      );
-      const data = await res.json();
-      if (data.error) {
-        // Model not available → try next
-        if (data.error.code === 404 || data.error.code === 400 ||
-            (data.error.message || '').includes('no longer available') ||
-            (data.error.message || '').includes('deprecated')) {
-          lastError = new Error(data.error.message);
-          continue;
-        }
-        throw new Error(data.error.message);
-      }
-      if (!data.candidates?.length) throw new Error('Gemini không trả về kết quả.');
-      return data.candidates[0].content.parts[0].text;
-    } catch(e) {
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
-      lastError = e;
-    }
-  }
-  throw lastError || new Error('Tất cả Gemini models đều không khả dụng.');
-}
-
-// --- Main processor: Hybrid Failover ---
-async function processAICommand(text) {
-  const s = Store.getSettings();
-  const menu       = Store.getMenu();
-  const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
-
-  // Route: Online + has key + not forced offline → Gemini; otherwise → Local NLP
-  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey;
-
-  let parsed;
-
-  if (canUseGemini) {
-    try {
-      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
-      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
-      let raw = await callGemini(s.geminiApiKey, prompt);
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      try { parsed = JSON.parse(raw); }
-      catch(_) { return raw; }
-    } catch(e) {
-      // Network fail or all models fail → fallback to local NLP
-      console.warn('Gemini failed, switching to Local NLP:', e.message);
-      const offlineResult = localNLPEngine(text, menu, tablesInfo);
-      if (offlineResult) {
-        parsed = offlineResult;
-        // Annotate that it used offline mode
-        parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
-      } else {
-        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
-      }
-    }
-  } else {
-    // No key or offline → local NLP
-    if (!s.geminiApiKey) {
-      // Thử local NLP trước
-      parsed = localNLPEngine(text, menu, tablesInfo);
-      if (!parsed) {
-        return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
-      }
-      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline Engine]</span>';
-    } else {
-      // Has key but offline
-      parsed = localNLPEngine(text, menu, tablesInfo);
-      if (!parsed) {
-        return '📵 Đang mất mạng và không nhận ra lệnh. Thử: "bàn 1 đặt 3 bia"';
-      }
-      parsed.reply = (parsed.reply || '') + ' <span style="font-size:10px;opacity:0.6">[Offline]</span>';
-    }
-  }
-
-  // Execute parsed actions
-  return executeAIActions(parsed, menu);
-}
-
-function buildGeminiPrompt(text, tablesInfo, menu) {
-  const inventoryInfo = Store.getInventory().map(i => ({ id: i.id, name: i.name, unit: i.unit }));
-  return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
-Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
-
-Danh sách bàn: ${JSON.stringify(tablesInfo)}
-Danh sách thực đơn: ${JSON.stringify(menu)}
-Kho hàng hóa: ${JSON.stringify(inventoryInfo)}
-
-ACTION hỗ trợ:
-1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
-2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
-3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
-4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
-5. "report" – Báo cáo doanh thu và tổng kết: { type:"report" }
-6. "restock"– Nhập thêm/mua thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
-7. "unknown" - Sử dụng khi người dùng nhắc món không có trong thực đơn hoặc không rõ: { type:"unknown", tableId:"1" }
-
-Quy tắc:
-- Khớp tên món/nguyên liệu gần đúng (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger).
-- Nếu người dùng gọi món KHÔNG CÓ hoặc KHÔNG RÕ trong thực đơn, hãy dùng action "unknown" và phản hồi lịch sự mời họ chọn thủ công.
-- Hành động "report" dùng để hỏi xem hôm nay bán được bao nhiêu, báo cáo thế nào.
-- Hành động "restock" dùng để nhập thêm đồ vào kho.
-- reply: ngắn gọn, thân thiện, xưng "em".
-
-Câu lệnh: "${text}"
-
-Trí tuệ nhân tạo CHỈ trả về một chuỗi JSON hợp lệ với format:
-{ "actions": [...], "reply": "..." }`;
-}
-
-// ============================================================
-// LOCAL NLP ENGINE (Offline Fallback)
-// Pattern matching for Vietnamese POS commands
-// ============================================================
-function localNLPEngine(text, menu, tables) {
-  const t = text.toLowerCase()
-    .replace(/[.,!?]/g, '')
-    .normalize('NFC');
-
-  // --- Extract table number ---
-  let tableId = null;
-  const tableMatch = t.match(/(?:b[àa]n\s*(?:s[ốo]\s*)?(\d+))|(?:kh[aá]ch\s*)?(mang v[eề]|takeaway)/i);
-  if (tableMatch) {
-    if (tableMatch[1]) {
-      tableId = tableMatch[1];
-    } else {
-      tableId = 'takeaway';
-    }
-  }
-
-  // --- Detect intent ---
-  const isOrder  = /đặt|gọi|th[eê]m|lên|cho|order/i.test(t);
-  const isRemove = /b[oó]t|x[oó]a|hủy|cancel|bỏ/i.test(t);
-  const isPay    = /t[íi]nh ti[eề]n|thanh to[aá]n|check|bill|xu[aâ]t bill/i.test(t);
-  const isView   = /m[oở] b[aà]n|xem b[aà]n|qu[aả]n l[yý] b[aà]n|v[aà]o b[aà]n/i.test(t);
-  const isQuery  = /c[oò]n m[oó]n|th[uú]c đ[oơ]n|menu|b[aà]n n[aà]o|doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c/i.test(t);
-  const isRestock = /nh[aậ]p (?:h[aà]ng|th[eê]m)|nh[aậ]p|m[uụ]c nh[aậ]p/i.test(t);
-
-  // --- View / Manage Table ---
-  if (isView && tableId) {
-    return {
-      actions: [{ type: 'view', tableId }],
-      reply: `Dạ em mở bàn ${tableId} rồi ạ!`
-    };
-  }
-
-  // --- Pay / Bill ---
-  if (isPay && tableId) {
-    return {
-      actions: [{ type: 'pay', tableId }],
-      reply: `Dạ em mở bill bàn ${tableId} cho anh chị ạ!`
-    };
-  }
-
-  // --- Query ---
-  if (isQuery) {
-    if (/b[aà]n n[aà]o.*tr[oố]ng|tr[oố]ng.*b[aà]n/i.test(t)) {
-      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `Bàn ${tb.id}`);
-      return {
-        actions: [],
-        reply: emptyTables.length
-          ? `Hiện đang trống: ${emptyTables.join(', ')} ạ!`
-          : 'Hiện tại tất cả các bàn đều đang có khách ạ!'
-      };
-    }
-    if (/menu|th[uú]c đ[oơ]n|c[oò]n m[oó]n/i.test(t)) {
-      const names = menu.slice(0, 8).map(m => m.name).join(', ');
-      return {
-        actions: [],
-        reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
-      };
-    }
-    if (/doanh thu|b[aà]o c[aá]o|t[oổ]ng k[eế]t|b[aá]n đ[uượ]c/i.test(t)) {
-      const todayRev = getRevenueSummary('today');
-      const alerts = getInventoryAlerts();
-      const needRestock = alerts.critical.length + alerts.low.length;
-      return {
-        actions: [{ type: 'report' }],
-        reply: `Hôm nay bán được ${todayRev.orders} đơn, doanh thu ${fmt(todayRev.revenue)}đ, chi phí ${fmt(todayRev.expenseTotal)}đ. Hiện có ${needRestock} nguyên liệu cần nhập ạ!`
-      };
-    }
-    return null;
-  }
-
-  // --- Restock ---
-  if (isRestock) {
-    const matchedInv = extractMenuItems(t, Store.getInventory());
-    if (matchedInv.length > 0) {
-      return {
-        actions: [{ type: 'restock', items: matchedInv.map(it => ({ name: it.name, qty: it.qty })) }],
-        reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
-      };
-    }
-    return null;
-  }
-
-  // --- Order / Remove: need tableId ---
-  if (!tableId) return null;
-  
-  // --- Match menu items using fuzzy matching ---
-  const matchedItems = extractMenuItems(t, menu);
-  
-  if (isOrder) {
-    if (matchedItems.length === 0) {
-      return {
-        actions: [{ type: 'unknown', tableId }],
-        reply: `Dạ em chưa nghe rõ tên món, mời anh chị chọn món thủ công cho bàn ${tableId} ạ!`
-      };
-    }
-    const actions = [{ type: 'order', tableId, items: matchedItems.map(it => ({ id: it.id, qty: it.qty })) }];
-    const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
-    return {
-      actions,
-      reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ! Nếu thiếu món nào anh chị chọn thêm trong menu nhé.`
-    };
-  }
-}
-
-// Fuzzy menu matcher: tìm món trong text + số lượng
-function extractMenuItems(text, menu) {
-  const results = [];
-
-  // Normalize text for matching
-  const norm = s => s.toLowerCase()
-    .replace(/[àáạảãăắặẳẵặâấầẩẫậ]/g, 'a')
-    .replace(/[èéẹẻẽêếềểễệ]/g, 'e')
-    .replace(/[ìíịỉĩ]/g, 'i')
-    .replace(/[òóọỏõôốồổỗộơớờởỡợ]/g, 'o')
-    .replace(/[ùúụủũưứừựửữ]/g, 'u')
-    .replace(/[ỳýỵỷỹ]/g, 'y')
-    .replace(/[đ]/g, 'd')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ').trim();
-
-  const normText = norm(text);
-
-  // Sort menu by name length DESC so longer names match first
-  const sortedMenu = [...menu].sort((a, b) => b.name.length - a.name.length);
-
-  let remaining = normText;
-
-  for (const item of sortedMenu) {
-    const normName = norm(item.name);
-    const keywords = [normName];
-    
-    // Add safe subset keywords by stripping common generic words
-    let stripped = normName.replace(/^(kho |bia |tra |ruou |combo )/i, '').trim();
-    if (stripped !== normName && stripped.length > 2) {
-      keywords.push(stripped);
-    }
-    
-    // Also strip generic suffixes like " nuong", " chien gion"
-    const noSuffix = stripped.replace(/( nuong| chien gion| chien bo toi| chien bo| om bau)$/i, '').trim();
-    if (noSuffix !== stripped && noSuffix.length > 2) {
-      keywords.push(noSuffix);
-    }
-    
-    // Common mappings
-    if (normName.includes('tiger nau')) keywords.push('tiger nau', 'tiger');
-    if (normName.includes('tiger bac')) keywords.push('tiger bac');
-    if (normName.includes('sai gon')) keywords.push('sai gon');
-    if (normName.includes('ken lon')) keywords.push('ken', 'heineken');
-
-    // Remove duplicates and sort by length DESC
-    const finalKeywords = [...new Set(keywords)].sort((a,b) => b.length - a.length);
-
-    let found = false;
-    for (const kw of finalKeywords) {
-      const idx = remaining.indexOf(kw);
-      if (idx === -1) continue;
-
-      // Extract quantity: look for number before or after keyword
-      const beforeStr = remaining.slice(0, idx);
-      const afterStr  = remaining.slice(idx + kw.length);
-
-      const numBefore = beforeStr.match(/(\d+)\s*$/);
-      const numAfter  = afterStr.match(/^\s*(\d+)/);
-      const wordNum   = /(?:hai|ba|b[óo]n|năm|s[aá]u|bảy|tám|ch[íi]n|mười)\s*$/i.exec(beforeStr);
-
-      const wordNumMap = { hai:2, ba:3, bon:4, bón:4, bốn:4, nam:5, năm:5, sau:6, sáu:6, bay:7, bảy:7, tam:8, tám:8, chin:9, chín:9, muoi:10, mười:10 };
-
-      let qty = 1;
-      if (numBefore) qty = parseInt(numBefore[1]);
-      else if (numAfter) qty = parseInt(numAfter[1]);
-      else if (wordNum) qty = wordNumMap[norm(wordNum[0].trim())] || 1;
-
-      results.push({ id: item.id, name: item.name, qty: Math.max(1, qty) });
-      remaining = remaining.replace(kw, '   ');
-      found = true;
-      break;
-    }
-  }
-
-  return results;
-}
-
-// --- Execute parsed actions (shared between Gemini and Local NLP) ---
-function executeAIActions(parsed, menuFull, userText = '') {
-  if (!parsed) return 'Không nhận ra lệnh này ạ.';
-
-  if (parsed.actions?.length) {
-    for (const a of parsed.actions) {
-      if (a.type === 'order') {
-        const tid = String(a.tableId);
-        if (!orderItems[tid]) {
-          const saved = Store.getOrders()[tid];
-          orderItems[tid] = saved ? [...saved] : [];
-        }
-        for (const it of (a.items || [])) {
-          const m = menuFull.find(x => x.id === it.id);
-          if (!m) continue;
-          const ex = orderItems[tid].find(x => x.id === m.id);
-          if (ex) ex.qty += it.qty;
-          else    orderItems[tid].push({ id: m.id, name: m.name, price: m.price, cost: m.cost || 0, qty: it.qty });
-        }
-
-        // Tự động mở bàn để xác nhận thay vì lưu ngay
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
-        }, 300);
-
-      } else if (a.type === 'remove') {
-        const tid = String(a.tableId);
-        if (orderItems[tid]) {
-          const ex = orderItems[tid].find(x => x.id === a.itemId);
-          if (ex) {
-            ex.qty -= (a.qty || 1);
-            if (ex.qty <= 0) orderItems[tid] = orderItems[tid].filter(x => x.id !== a.itemId);
-          }
-        }
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
-        }, 300);
-
-      } else if (a.type === 'pay') {
-        const tid = String(a.tableId);
-        closeAIAssistant();
-        setTimeout(() => {
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
-        }, 200);
-
-      } else if (a.type === 'view') {
-        const tid = String(a.tableId);
-        closeAIAssistant();
-        setTimeout(() => {
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
-        }, 200);
-      } else if (a.type === 'report') {
-        const todayRev = getRevenueSummary('today');
-        const alerts = getInventoryAlerts();
-        const needRestock = alerts.critical.length + alerts.low.length;
-        parsed.reply = `Hôm nay bán được ${todayRev.orders} đơn, doanh thu ${fmt(todayRev.revenue)}đ, chi phí ${fmt(todayRev.expenseTotal)}đ. Hiện có ${needRestock} nguyên liệu cần nhập ạ!`;
-        
-        // Tự động chuyển trang báo cáo
-        setTimeout(() => {
-          closeAIAssistant();
-          navigate('finance');
-        }, 500);
-
-      } else if (a.type === 'restock') {
-        const inv = Store.getInventory();
-        let addedNames = [];
-        for (const it of (a.items || [])) {
-          const stock = inv.find(x => x.id === it.id || x.name === it.name);
-          if (!stock) continue;
-          stock.qty += it.qty;
-          Store.addPurchase({ 
-            id: uid(), 
-            name: stock.name, 
-            qty: it.qty, 
-            unit: stock.unit, 
-            price: (stock.costPerUnit || 0) * it.qty, 
-            costPerUnit: stock.costPerUnit || 0, 
-            date: new Date().toISOString(), 
-            supplier: 'AI Assistant' 
-          });
-          addedNames.push(it.qty + ' ' + stock.unit + ' ' + stock.name);
-        }
-        if (addedNames.length) {
-          Store.setInventory(inv);
-          updateAlertBadge();
-          if (currentPage === 'inventory') renderInventory();
-          if (!parsed.reply || parsed.reply.length < 10) {
-            parsed.reply = `Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`;
-          }
-          
-          // Tự động chuyển sang trang kho -> Tab Nhập hàng
-          setTimeout(() => {
-            closeAIAssistant();
-            navigate('inventory');
-            switchInvTab('purchase', document.querySelectorAll('.tab-btn')[1]);
-          }, 500);
-        }
-      } else if (a.type === 'unknown') {
-        const tid = String(a.tableId);
-        setTimeout(() => {
-          closeAIAssistant();
-          if (tid === 'takeaway') openTakeaway();
-          else openTable(tid);
-        }, 500);
-      }
-    }
-    if (currentPage === 'orders') renderCart();
-    if (currentPage === 'tables') renderTables();
-  }
-
-  return parsed.reply || 'Xong rồi ạ!';
-}
-*/
+// Legacy duplicate AI block removed for maintainability.
