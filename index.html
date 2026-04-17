@@ -55,6 +55,14 @@
           <span id="alert-badge-header"
             style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
         </button>
+        <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
+          <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -1801,7 +1809,36 @@
     </div>
   </div>
 
-  <!-- Login screen removed by user request -->
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen active">
+    <div class="login-shell">
+      <div class="login-brand">
+        <div class="login-logo">🍜</div>
+        <div>
+          <div class="login-title">Gánh Khô Chữa Lành</div>
+          <div class="login-sub">POS System</div>
+        </div>
+      </div>
+
+      <div class="login-card">
+        <div class="card-title" style="font-size:18px;margin-bottom:6px">Đăng nhập hệ thống</div>
+        <div class="card-sub" style="margin-bottom:14px">Nhập tài khoản nhân sự để tiếp tục</div>
+
+        <form id="login-form" onsubmit="handleLoginSubmit(event)">
+          <div class="input-group">
+            <label class="input-label">Tài khoản</label>
+            <input id="login-username" class="input" placeholder="admin hoặc email" autocomplete="username" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Mật khẩu</label>
+            <input id="login-password" type="password" class="input" placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+          <button id="login-submit-btn" type="submit" class="btn btn-primary btn-block">Đăng nhập</button>
+        </form>
+
+      </div>
+    </div>
+  </div>
 
   <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

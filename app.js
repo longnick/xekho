@@ -279,23 +279,77 @@ const ImgZoom = (() => {
 // ============================================================
 // LOGIN & USER MANAGEMENT
 // ============================================================
-let currentUser = { username: 'admin', role: 'admin' }; // Mặc �?�?nh là admin khi bỏ giao di�?n �?�?ng nhập
+let currentUser = { username: 'admin', role: 'admin' };
 
-// Ch�? dùng biến trên RAM, tuy�?t �?�?i không lấy từ LocalStorage
 function checkLoginState() {
-  return true; // Bỏ qua check login
+  const hasSession = !!sessionStorage.getItem('gkhl_current_session');
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) {
+    if (hasSession) loginScreen.classList.remove('active');
+    else loginScreen.classList.add('active');
+  }
+  return hasSession;
 }
 
 async function handleLoginSubmit(e) {
   e.preventDefault();
+  const username = (document.getElementById('login-username')?.value || '').trim();
+  const password = (document.getElementById('login-password')?.value || '').trim();
+  if (!username || !password) {
+    showToast('Vui lòng nhập đầy đủ tài khoản và mật khẩu.', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('login-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang đăng nhập...';
+  }
+
+  try {
+    const email = username.includes('@') ? username : `${username}@ganhkho.vn`;
+    if (window.DB?.login) {
+      const result = await window.DB.login(email, password);
+      if (!result?.success) throw new Error(result?.error || 'Đăng nhập thất bại');
+    }
+    sessionStorage.setItem('gkhl_current_session', JSON.stringify({ username, at: Date.now() }));
+    const loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.classList.remove('active');
+    showToast('✅ Đăng nhập thành công', 'success');
+  } catch (err) {
+    showToast(`Lỗi đăng nhập: ${err?.message || err}`, 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Đăng nhập';
+    }
+  }
+}
+
+function continueLocalMode() {
+  sessionStorage.setItem('gkhl_current_session', JSON.stringify({ username: 'admin', local: true, at: Date.now() }));
+  currentUser = { username: 'admin', role: 'admin' };
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) loginScreen.classList.remove('active');
+  applyRoleRights();
+  showToast('⚡ Đã vào chế độ nội bộ', 'success');
 }
 
 function handleLogout() {
+  const ok = confirm('Bạn có chắc muốn đăng xuất không?');
+  if (!ok) return;
+
+  sessionStorage.removeItem('gkhl_current_session');
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) loginScreen.classList.add('active');
+
+  const userInp = document.getElementById('login-username');
+  const passInp = document.getElementById('login-password');
+  if (userInp) userInp.value = '';
+  if (passInp) passInp.value = '';
+
   if (window.DB && window.DB.logout) {
-    window.DB.logout();
-  } else {
-    sessionStorage.removeItem('gkhl_current_session');
-    location.reload();
+    window.DB.logout().catch(() => {});
   }
 }
 
@@ -307,14 +361,16 @@ function applyRoleRights() {
     userDisplay.innerHTML = `<span style="margin-right:4px">👤</span>${currentUser.username}`;
   }
 
-  const isStaff = currentUser.role === 'staff';
-  
-  // Hide restricted tabs for Staff
-  const restrictedTabs = ['inventory', 'finance', 'reports', 'insights', 'menu', 'settings'];
-  restrictedTabs.forEach(tab => {
-    const el = document.querySelector(`.nav-item[data-page="${tab}"]`);
-    if(el) el.style.display = isStaff ? 'none' : '';
+  const role = String(currentUser.role || '').toLowerCase();
+  const isStaff = role === 'staff';
+
+  // Staff: chỉ hiển thị tab Bàn
+  document.querySelectorAll('.bottom-nav .nav-item[data-page]').forEach(el => {
+    const page = el.getAttribute('data-page');
+    el.style.display = (isStaff && page !== 'tables') ? 'none' : '';
   });
+  const navMore = document.getElementById('nav-more');
+  if (navMore) navMore.style.display = isStaff ? 'none' : '';
   
   // Hide UI parts for Staff
   const revCard = document.getElementById('staff-hide-rev');
@@ -328,6 +384,8 @@ function applyRoleRights() {
   if(aimic) aimic.style.display = isStaff ? 'none' : '';
   const mainFab = document.getElementById('main-fab');
   if(mainFab) mainFab.style.display = isStaff ? 'none' : '';
+  const aiPanel = document.getElementById('ai-assistant-panel');
+  if (aiPanel && isStaff) aiPanel.classList.remove('active');
 
   // Hide delete buttons inside Order Page
   const orderDelBtns = document.querySelectorAll('.delete-order-btn'); 
@@ -335,6 +393,11 @@ function applyRoleRights() {
   
   const clearTableBtn = document.getElementById('btn-clear-table');
   if(clearTableBtn) clearTableBtn.style.display = isStaff ? 'none' : '';
+
+  // Nếu staff đang ở trang khác thì quay về bàn
+  if (isStaff && currentPage !== 'tables') {
+    navigate('tables');
+  }
 }
 
 // ==== Quản lý người dùng ====
@@ -600,23 +663,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ud = e.detail && e.detail.userDoc;
     if (ud) {
       currentUser = { username: ud.displayName || ud.username || ud.email, role: ud.role };
-      // Ẩn màn hình �?�?ng nhập nếu �?ẫ load xong Auth
+      // Chỉ ẩn login khi đã có session hoặc là user cloud thực (không phải local-admin fallback)
       const loginScreen = document.getElementById('login-screen');
-      if (loginScreen) loginScreen.classList.remove('active');
+      const hasSession = !!sessionStorage.getItem('gkhl_current_session');
+      const isLocalFallback = String(ud.uid || '') === 'local-admin';
+      if (loginScreen && (hasSession || !isLocalFallback)) loginScreen.classList.remove('active');
       applyRoleRights();
       console.log('[Bridge] db:signedIn ->', ud.role, ud.email);
     }
   });
 
-  // Khi db.js báo signedOut �?? ch�? reload nếu TRƯ�?C Đ�? có session (tránh vòng lặp reload)
+  // Khi db.js báo signedOut: luôn đưa về màn hình đăng nhập
   window.addEventListener('db:signedOut', () => {
-    const hadSession = !!sessionStorage.getItem('gkhl_current_session');
     sessionStorage.removeItem('gkhl_current_session');
-    if (hadSession) {
-      // Người dùng �?ang dùng app r�?i b�? �?�?ng xuất �?? reload về login
-      location.reload();
-    }
-    // Nếu chưa có session (lần �?ầu load, chưa �?�?ng nhập) �?? không làm gì
+    const loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.classList.add('active');
   });
 
   // Khi Firebase �?ã ready (tất cả snapshot �?ã về)
