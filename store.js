@@ -22,7 +22,63 @@ const KEYS = {
   users: 'gkhl_users',
   unitConversions: 'gkhl_unit_conversions',
   currentShift: 'gkhl_current_shift',
+  itemMergeRequests: 'gkhl_item_merge_requests',
 };
+
+const ITEM_TYPES = {
+  RETAIL: 'retail_item',
+  RAW: 'raw_material',
+  FINISHED: 'finished_good',
+};
+
+function _slugVi(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function _inferInventoryItemType(item = {}) {
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
+  if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
+  return ITEM_TYPES.RAW;
+}
+
+function _normalizeInventoryItem(item = {}) {
+  return {
+    ...item,
+    itemType: _inferInventoryItemType(item),
+    qty: Number(item.qty || 0),
+    minQty: Number(item.minQty || 0),
+    costPerUnit: Number(item.costPerUnit || 0),
+    hidden: !!item.hidden,
+    mergedInto: item.mergedInto || null,
+  };
+}
+
+function _inferMenuItemType(item = {}) {
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.FINISHED) return item.itemType;
+  return Array.isArray(item.ingredients) && item.ingredients.length > 0 ? ITEM_TYPES.FINISHED : ITEM_TYPES.RETAIL;
+}
+
+function _resolveLinkedInventoryId(item = {}, inventory = []) {
+  if (item.linkedInventoryId && inventory.some(inv => inv.id === item.linkedInventoryId)) return item.linkedInventoryId;
+  const exact = inventory.find(inv => _slugVi(inv.name) === _slugVi(item.name));
+  return exact ? exact.id : null;
+}
+
+function _normalizeMenuItem(item = {}, inventory = []) {
+  const itemType = _inferMenuItemType(item);
+  return {
+    ...item,
+    itemType,
+    linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? _resolveLinkedInventoryId(item, inventory) : null,
+    ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
+  };
+}
 
 const Store = {
   get(key) {
@@ -33,8 +89,14 @@ const Store = {
   },
 
   // MENU – Không fallback về data giả, ứng dụng chờ Firestore qua window.appState
-  getMenu() { return this.get(KEYS.menu) || []; },
-  setMenu(m) { this.set(KEYS.menu, m); },
+  getMenu() {
+    const inventory = this.getInventory();
+    return (this.get(KEYS.menu) || []).map(item => _normalizeMenuItem(item, inventory));
+  },
+  setMenu(m) {
+    const inventory = this.getInventory();
+    this.set(KEYS.menu, (m || []).map(item => _normalizeMenuItem(item, inventory)));
+  },
 
   // USERS
   getUsers() { 
@@ -49,8 +111,8 @@ const Store = {
   setUsers(users) { this.set(KEYS.users, users); },
 
   // INVENTORY – Không fallback về data giả, ứng dụng chờ Firestore qua window.appState
-  getInventory() { return this.get(KEYS.inventory) || []; },
-  setInventory(inv) { this.set(KEYS.inventory, inv); },
+  getInventory() { return (this.get(KEYS.inventory) || []).map(_normalizeInventoryItem); },
+  setInventory(inv) { this.set(KEYS.inventory, (inv || []).map(_normalizeInventoryItem)); },
 
   // TABLES
   getTables() {
@@ -113,6 +175,7 @@ const Store = {
 
   // EXPENSES
   getExpenses() { return this.get(KEYS.expenses) || []; },
+  setExpenses(arr) { this.set(KEYS.expenses, arr || []); },
   addExpense(e) {
     const exp = this.getExpenses();
     exp.unshift(e);
@@ -161,6 +224,13 @@ const Store = {
       storageQuotaMb: 500,
       ocrMode: 'auto',
       photoRetentionDays: 0,
+      activeAIEngine: 'gemini',
+      forceOffline: false,
+      geminiApiKey: '',
+      googleTTSKey: '',
+      gemmaEndpoint: 'http://127.0.0.1:11434/v1/chat/completions',
+      gemmaModel: 'gemma2:9b',
+      gemmaApiKey: '',
       autoExportWeekly: false,
       autoExportMonthly: false,
       autoPushWeeklyReportToGoogleDrive: false,
@@ -378,7 +448,15 @@ const Store = {
 
     items.forEach(item => {
       const dish = menu.find(m => m.id === item.id);
-      if (!dish || !Array.isArray(dish.ingredients)) return;
+      if (!dish) return;
+
+      if (dish.itemType === ITEM_TYPES.RETAIL) {
+        const stock = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => _slugVi(i.name) === _slugVi(dish.name));
+        if (stock) stock.qty = Math.max(0, stock.qty - item.qty);
+        return;
+      }
+
+      if (!Array.isArray(dish.ingredients)) return;
 
       dish.ingredients.forEach(ing => {
         const stock = inv.find(i => i.name === ing.name);
@@ -429,6 +507,9 @@ const Store = {
     const list = this.getSuppliers().filter(s => s.id !== id);
     this.set(KEYS.suppliers, list);
   },
+
+  getItemMergeRequests() { return this.get(KEYS.itemMergeRequests) || []; },
+  setItemMergeRequests(arr) { this.set(KEYS.itemMergeRequests, arr || []); },
 
   // UNIT CONVERSIONS (Quy đổi đơn vị: đơn vị mua → đơn vị công thức)
   // Structure: { id, ingredientName, purchaseUnit, purchaseQty, recipeUnit, recipeQty, note }
@@ -547,6 +628,31 @@ function getRevenueSummary(period, opts) {
   const expenses = filterExpenses(period, opts);
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   
+  // Tính tổng purchase cho biểu đồ "Chi phí" (bao gồm expense + purchase)
+  const p = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
+    ? window.appState.purchases
+    : Store.getPurchases();
+  
+  const purchases = p.filter(p => {
+    const d = new Date(p.date);
+    const now = new Date();
+    if(period === 'today') return d.toDateString() === now.toDateString();
+    if(period === 'day' && opts && opts.date) {
+      const target = new Date(opts.date);
+      return d.toDateString() === target.toDateString();
+    }
+    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
+      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
+      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
+      return d >= from && d <= to;
+    }
+    if(period === 'week') return (now - d) / 86400000 <= 7;
+    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return true;
+  });
+  const purchaseTotal = purchases.reduce((s,p) => s + p.price, 0);
+  const totalExpenseAndPurchase = expenseTotal + purchaseTotal;
+
   // Lợi nhuận ròng (Net Profit) = Lợi nhuận gộp - OPEX
   const profit = gross - expenseTotal;
   
@@ -556,7 +662,7 @@ function getRevenueSummary(period, opts) {
     grossSales,
     cost, 
     gross, 
-    expenseTotal, 
+    expenseTotal: totalExpenseAndPurchase, // Trả ra tổng chi phí + nhập hàng cho fin-expense
     profit, 
     orders: orders.length, 
     revenueBank, 

@@ -99,12 +99,17 @@
         <div class="order-header">
           <button class="back-btn" onclick="navigate('tables')">←</button>
           <div class="order-table-name" id="order-table-title">Bàn –</div>
-          <button class="order-cart-pill" id="order-cart-pill" onclick="openBillModal()">
-            <span class="order-cart-pill-icon">🛒</span>
-            <span class="order-cart-pill-count" id="order-cart-pill-count">0</span>
-            <span class="order-cart-pill-dot">•</span>
-            <span class="order-cart-pill-total" id="order-cart-pill-total">0đ</span>
-          </button>
+          <div class="order-cart-pill" id="order-cart-pill" style="padding:0; gap:0; overflow:hidden;">
+            <button onclick="openCartSheet()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+              <span class="order-cart-pill-icon">🛒</span>
+              <span class="order-cart-pill-count" id="order-cart-pill-count">0</span>
+            </button>
+            <div style="width:1.5px; height:20px; background:var(--border); opacity:0.8;"></div>
+            <button onclick="openBillModal()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+              <span class="order-cart-pill-total" id="order-cart-pill-total">0đ</span>
+              <span style="font-size:16px;">🧾</span>
+            </button>
+          </div>
           <button id="btn-clear-table" class="btn btn-sm btn-secondary" onclick="clearTable()"
             style="margin-left:auto">🗑️ Huỷ bàn</button>
         </div>
@@ -147,7 +152,7 @@
                 </div>
                 <div id="order-photo-thumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;"></div>
               </div>
-              <div class="cart-items" id="cart-items"></div>
+              <div class="cart-items" id="cart-items" style="flex:1;overflow-y:auto;"></div>
               <div
                 style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;background:var(--bg3);border-bottom:1px solid var(--border)">
                 <div style="display:flex;gap:10px;align-items:center;">
@@ -189,7 +194,7 @@
             <div class="modal-title">🛒 Giỏ hàng</div>
             <button class="modal-close" onclick="closeCartSheet()">✕</button>
           </div>
-          <div class="modal-body" id="cart-sheet-body" style="padding: 0;"></div>
+          <div class="modal-body" id="cart-sheet-body" style="padding: 0; display:flex; flex-direction:column; height: 75vh;"></div>
         </div>
       </div>
 
@@ -197,7 +202,7 @@
       <div id="page-inventory" class="page">
         <!-- Tabs -->
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 Kho</button>
+          <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 TỒN KHO</button>
           <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập</button>
           <button class="tab-btn" onclick="switchInvTab('ledger',this)">📓 Thẻ kho</button>
           <button class="tab-btn" onclick="switchInvTab('stocktake',this)">📋 Kiểm kê</button>
@@ -207,6 +212,10 @@
         <!-- STOCK TAB -->
         <div id="inv-tab-stock">
           <div id="inv-alerts"></div>
+          <div class="card" style="padding:12px 16px; margin-bottom:12px; background:var(--bg2); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:600; color:var(--text2)">Tổng tiền tồn kho:</div>
+            <div id="total-inventory-value" style="font-size:18px; font-weight:700; color:var(--primary)">0đ</div>
+          </div>
           <div class="search-wrap" style="display:flex;gap:8px">
             <div style="flex:1;position:relative">
               <span class="search-icon">🔍</span>
@@ -215,6 +224,28 @@
           </div>
           <div class="card" style="padding:0 16px">
             <div id="stock-list"></div>
+          </div>
+          <div class="card" style="padding:12px 16px; margin-top:12px">
+            <div class="card-header" style="margin-bottom:8px">
+              <div class="card-title">🧩 Gợi ý gộp nguyên liệu</div>
+              <div class="card-sub" style="margin-left:auto;font-size:11px;color:var(--text3)">Cần phê duyệt admin</div>
+            </div>
+            <div id="ingredient-merge-board"></div>
+            <div class="card" style="margin-top:12px;padding:16px;">
+              <div class="card-header" style="margin-bottom:12px;padding:0;border:none;">
+                <div class="card-title" style="font-size:14px;font-weight:600;">🛠️ Merge thủ công</div>
+                <div class="card-sub" style="font-size:11px;color:var(--text3)">Chọn nguyên liệu để gộp thủ công</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                <select id="manual-merge-source" class="select select-sm" style="flex:1;min-width:140px;">
+                  <option value="">-- Chọn nguyên liệu nguồn --</option>
+                </select>
+                <select id="manual-merge-target" class="select select-sm" style="flex:1;min-width:140px;">
+                  <option value="">-- Chọn nguyên liệu đích --</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" onclick="initiateManualMerge()" style="width:100%">🚀 Bắt đầu Merge</button>
+            </div>
           </div>
         </div>
 
@@ -430,7 +461,7 @@
             title="Đến Báo Cáo Chi Phí (Nhập hàng, Khác)">
             <div class="stat-icon">💸</div>
             <div class="stat-value" id="fin-expense">0đ</div>
-            <div class="stat-label">Chi phí vận hành</div>
+            <div class="stat-label">CHI PHÍ</div>
           </div>
           <div class="stat-card yellow">
             <div class="stat-icon">🏆</div>
@@ -719,10 +750,71 @@
       <div id="page-settings" class="page">
         <div class="tab-bar">
           <button class="tab-btn active" onclick="switchSettingsTab('store',this)">🏪 Cửa hàng</button>
+          <button class="tab-btn" onclick="switchSettingsTab('theme',this)">🎨 Giao diện</button>
           <button class="tab-btn" onclick="switchSettingsTab('users',this)">👥 Nhân sự</button>
           <button class="tab-btn" onclick="switchSettingsTab('payment',this)">💳 Thanh toán</button>
           <button class="tab-btn" onclick="switchSettingsTab('ai',this)">🤖 Hệ thống AI</button>
           <button class="tab-btn" onclick="switchSettingsTab('data',this)">💾 Dữ liệu</button>
+        </div>
+
+        <div id="set-tab-theme" class="settings-tab-content" style="display:none;">
+          <form id="settings-form-theme" onsubmit="submitSettings(event)">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">🎨 Chủ đề màu sắc (Theme)</div>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Chọn giao diện yêu thích</label>
+                <div style="display:grid; grid-template-columns:1fr; gap:10px; margin-top:8px;">
+                  <label class="card card-sm" style="display:flex; align-items:center; gap:12px; cursor:pointer; border:1px solid var(--border)">
+                    <input type="radio" name="appTheme" value="hien-dai" style="width:18px;height:18px">
+                    <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, #FF6B35, #FFD700)"></div>
+                    <div style="flex:1">
+                      <div style="font-weight:600">Hiện đại (Mặc định)</div>
+                      <div style="font-size:11px; color:var(--text2)">Tông cam đen mạnh mẽ, chuyên nghiệp</div>
+                    </div>
+                  </label>
+
+                  <label class="card card-sm" style="display:flex; align-items:center; gap:12px; cursor:pointer; border:1px solid var(--border)">
+                    <input type="radio" name="appTheme" value="nang-dong" style="width:18px;height:18px">
+                    <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, #FF3D71, #FFAA00)"></div>
+                    <div style="flex:1">
+                      <div style="font-weight:600">Năng động</div>
+                      <div style="font-size:11px; color:var(--text2)">Tông hồng neon rực cháy, nổi bật</div>
+                    </div>
+                  </label>
+
+                  <label class="card card-sm" style="display:flex; align-items:center; gap:12px; cursor:pointer; border:1px solid var(--border)">
+                    <input type="radio" name="appTheme" value="nhe-nhang" style="width:18px;height:18px">
+                    <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, #5A8F7B, #E8D5B5)"></div>
+                    <div style="flex:1">
+                      <div style="font-weight:600">Nhẹ nhàng</div>
+                      <div style="font-size:11px; color:var(--text2)">Tông xanh pastel sáng, thư giãn (Sáng)</div>
+                    </div>
+                  </label>
+
+                  <label class="card card-sm" style="display:flex; align-items:center; gap:12px; cursor:pointer; border:1px solid var(--border)">
+                    <input type="radio" name="appTheme" value="chill" style="width:18px;height:18px">
+                    <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, #8C72CB, #7AC2C8)"></div>
+                    <div style="flex:1">
+                      <div style="font-weight:600">Chill</div>
+                      <div style="font-size:11px; color:var(--text2)">Tông tím mộng mơ, lofi thư thái</div>
+                    </div>
+                  </label>
+
+                  <label class="card card-sm" style="display:flex; align-items:center; gap:12px; cursor:pointer; border:1px solid var(--border)">
+                    <input type="radio" name="appTheme" value="ruc-ro" style="width:18px;height:18px">
+                    <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, #00D68F, #FFD700)"></div>
+                    <div style="flex:1">
+                      <div style="font-weight:600">Rực rỡ</div>
+                      <div style="font-size:11px; color:var(--text2)">Tông xanh ngọc rực sáng, tươi mới</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" style="margin-bottom:12px">✅ Lưu cài đặt</button>
+          </form>
         </div>
 
         <div id="set-tab-users" class="settings-tab-content" style="display:none;">
@@ -1172,6 +1264,7 @@
                   <option value="">-- Chọn nguyên liệu --</option>
                 </select>
                 <div id="pur-last-price-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
+                <div id="pur-price-compare-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
               </div>
               <div class="form-row">
                 <div class="input-group" style="flex:2">
@@ -1343,6 +1436,13 @@
               <input class="input" id="inv-edit-unit" required>
             </div>
           </div>
+          <div class="input-group">
+            <label class="input-label">Loại hàng *</label>
+            <select class="select" id="inv-edit-type" required>
+              <option value="raw_material">🧄 Nguyên vật liệu</option>
+              <option value="retail_item">🥤 Hàng bán thẳng</option>
+            </select>
+          </div>
           <div class="form-row">
             <div class="input-group">
               <label class="input-label">SL Tồn (Hệ thống)</label>
@@ -1415,6 +1515,13 @@
               <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
             </div>
             <div class="input-group">
+              <label class="input-label">Loại hàng *</label>
+              <select class="select" id="menu-item-type" onchange="toggleMenuItemTypeUI()">
+                <option value="finished_good">🍳 Thành phẩm / Món ăn</option>
+                <option value="retail_item">🥤 Hàng bán thẳng</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label class="input-label">Danh mục</label>
               <select class="select" id="menu-item-category">
                 <option>Khô Nướng</option>
@@ -1427,8 +1534,15 @@
               </select>
             </div>
           </div>
+          <div class="input-group" id="menu-linked-inventory-wrap" style="display:none">
+            <label class="input-label">Liên kết tồn kho bán thẳng *</label>
+            <select class="select" id="menu-linked-inventory-id">
+              <option value="">-- Chọn hàng tồn kho --</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Bán 1 món sẽ trừ đúng 1 đơn vị tồn kho của hàng liên kết.</div>
+          </div>
           <div class="section-header" style="margin-top:16px; margin-bottom:8px;">
-            <div class="card-title" style="font-size:14px;">Công thức (Nguyên liệu)</div>
+            <div class="card-title" id="menu-ingredients-title" style="font-size:14px;">Công thức (Nguyên liệu)</div>
             <button type="button" class="btn btn-sm btn-outline" onclick="addIngredientRow()">+ Thêm</button>
           </div>
           <div id="menu-ingredients-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
@@ -1465,6 +1579,7 @@
             <div
               style="font-size:11px; font-weight:600; cursor:pointer; display:inline-block; margin-top:1px; padding:2px 6px; border-radius:4px; user-select:none; transition:all 0.2s"
               id="ai-status-text" onclick="toggleAIMode()" title="Bấm để chuyển chế độ Online/Offline">Đang tải...</div>
+            <div id="ai-latency-text" style="font-size:10px; color:var(--text3); margin-left:8px; display:inline-block;"></div>
           </div>
         </div>
         <div style="display:flex;gap:8px">
@@ -1696,7 +1811,11 @@
   <script src="store.js"></script>
   <!-- ✅ Bước 1: db.js (Firebase Data Layer) phải load TRƯỚC app.js -->
   <script type="module" src="db.js"></script>
-  <!-- ✅ Bước 2: app.js phải chạy TRƯỚC inline script ở cuối body -->
+  <!-- ✅ Bước 2: Load AI modules -->
+  <script src="ai-core.js"></script>
+  <script src="ai-actions.js"></script>
+  <script src="ai-ui.js"></script>
+  <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
   <script src="app.js"></script>
   <script>
     // Extra helpers that reference DOM
@@ -1707,27 +1826,39 @@
       navigate('tables');
     }
 
-    function clearTable() {
+    async function clearTableLegacyFallback() {
       if (!confirm('Huỷ tất cả món ở bàn này?')) return;
-      delete orderItems[currentTable];
-      if (typeof orderExtras !== 'undefined') delete orderExtras[currentTable];
-      // Xoá ảnh ghi nhận bàn trong Store
+      
       try {
-        const photoMap = orderPhotoCache || {};
-        if (photoMap && currentTable && photoMap[currentTable]) {
-          delete photoMap[currentTable];
-          Store.setOrderPhotosAsync(photoMap);
+        const order = window.DB.Orders.forTable(currentTable);
+        if (order && order.id) {
+          await window.DB.Orders.cancel(order.id);
+        } else {
+          // Fallback if somehow order is not in appState
+          const tables = window.appState.tables;
+          const t = tables.find(t => t.id === currentTable);
+          if (t && t.orderId) {
+            await window.DB.Orders.cancel(t.orderId);
+          }
         }
-      } catch (_) { }
-      const orders = Store.getOrders();
-      delete orders[currentTable];
-      Store.setOrders(orders);
-      const tables = Store.getTables();
-      const t = tables.find(t => t.id === currentTable);
-      if (t) { t.status = 'empty'; t.openTime = null; }
-      Store.setTables(tables);
-      navigate('tables');
-      showToast('🗑️ Đã huỷ bàn ' + currentTable);
+        
+        // Dọn bộ nhớ tạm (nếu còn dùng)
+        delete orderItems[currentTable];
+        if (typeof orderExtras !== 'undefined') delete orderExtras[currentTable];
+        try {
+          const photoMap = orderPhotoCache || {};
+          if (photoMap && currentTable && photoMap[currentTable]) {
+            delete photoMap[currentTable];
+            Store.setOrderPhotosAsync(photoMap);
+          }
+        } catch (_) { }
+
+        navigate('tables');
+        showToast('🗑️ Đã huỷ bàn ' + currentTable);
+      } catch (err) {
+        console.error(err);
+        alert('Lỗi khi huỷ bàn: ' + err.message);
+      }
     }
 
     function switchInvTab(tab, el) {
@@ -1767,13 +1898,23 @@
         const dl = document.getElementById('inv-names');
         if (dl) dl.innerHTML = inv.map(i => `<option value="${i.name}">`).join('');
         const convDl = document.getElementById('conv-ingredient');
-        if (convDl) convDl.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' + inv.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+        if (convDl) {
+          const sortedConv = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+          convDl.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' + sortedConv.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+        }
         const wastageDl = document.getElementById('wastage-name');
-        if (wastageDl) wastageDl.innerHTML = '<option value="">-- Chọn --</option>' + inv.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+        if (wastageDl) {
+          const sortedWastage = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+          wastageDl.innerHTML = '<option value="">-- Chọn --</option>' + sortedWastage.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+        }
         const select = document.getElementById('ledger-item-select');
         if (select && select.children.length <= 1) {
-          const allInv = Store.getInventory();
-          select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + allInv.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
+          // Use synchronized inventory (same as _getInventory())
+          const allInv = (window.appState && window.appState.inventory && window.appState.inventory.length > 0)
+            ? window.appState.inventory
+            : Store.getInventory();
+          const sortedInv = allInv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+          select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + sortedInv.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
           document.getElementById('ledger-month').value = new Date().toISOString().slice(0, 7);
         }
       }
@@ -1805,20 +1946,27 @@
       else navigate('tables');
     }
 
-    // Update FAB icon based on page
-    const _origNavigate = navigate;
-    // Patch navigate to update FAB
-    const origNavigate = navigate;
-    window.navigate = function (page) {
-      origNavigate(page);
-      const fab = document.getElementById('main-fab');
-      if (!fab) return;
-      const icons = { inventory: '+', finance: '+', menu: '+', tables: '🪑', reports: '📊', insights: '🔄', orders: '🛒' };
-      fab.textContent = icons[page] || '+';
-    };
+
 
     // Category chart select colors fill
     Chart.defaults.color = '#A0A0B5';
+  </script>
+
+  <script>
+    // Wait for all scripts to load before accessing navigate function
+    document.addEventListener('DOMContentLoaded', function() {
+      // Update FAB icon based on page
+      const _origNavigate = navigate;
+      // Patch navigate to update FAB
+      const origNavigate = navigate;
+      window.navigate = function (page) {
+        origNavigate(page);
+        const fab = document.getElementById('main-fab');
+        if (!fab) return;
+        const icons = { inventory: '+', finance: '+', menu: '+', tables: '🪑', reports: '📊', insights: '🔄', orders: '🛒' };
+        fab.textContent = icons[page] || '+';
+      };
+    });
   </script>
 
   <!-- NCC Add/Edit Modal -->
