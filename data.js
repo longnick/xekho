@@ -109,6 +109,12 @@ const PAYMENT_INFO = {
   name: 'Gánh Khô Chữa Lành',
 };
 
+// Expose canonical data for runtime repair/normalization layers.
+window.DEFAULT_MENU = DEFAULT_MENU;
+window.DEFAULT_INVENTORY = DEFAULT_INVENTORY;
+window.DEFAULT_CATEGORIES = CATEGORIES;
+window.PAYMENT_INFO = PAYMENT_INFO;
+
 // VietQR template
 function getVietQR(amount, desc) {
   const acc = PAYMENT_INFO.account;
