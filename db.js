@@ -136,6 +136,301 @@ window.appState = {
   presence:   {},      // { [uid]: { displayName, online, lastSeen } }
 };
 
+function _hasBrokenVietnamese(text) {
+  const s = String(text || '');
+  if (!s) return false;
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+  return badTokens.some(t => s.includes(t));
+}
+
+function _slugRepairKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function _consonantSkeleton(text) {
+  return _slugRepairKey(text)
+    .replace(/[aeiouy]/g, '')
+    .replace(/\s+/g, '');
+}
+
+function _levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + c);
+    }
+  }
+  return dp[m][n];
+}
+
+function _bestCanonicalMatch(raw, candidates = []) {
+  const repairedRaw = _repairVietnameseString(raw);
+  const key = _slugRepairKey(repairedRaw || raw);
+  if (!key) return null;
+
+  // 1) Ưu tiên match theo "xương phụ âm" (rất hiệu quả cho chuỗi mất nguyên âm kiểu "kh c m i")
+  const sk = _consonantSkeleton(repairedRaw || raw);
+  if (sk) {
+    const sameSkeleton = candidates.filter(name => _consonantSkeleton(name) === sk);
+    if (sameSkeleton.length === 1) return sameSkeleton[0];
+    if (sameSkeleton.length > 1) {
+      let best = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+      sameSkeleton.forEach(name => {
+        const score = _levenshtein(key, _slugRepairKey(name)) / Math.max(_slugRepairKey(name).length, 1);
+        if (score < bestScore) {
+          bestScore = score;
+          best = name;
+        }
+      });
+      if (best) return best;
+    }
+  }
+
+  let best = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  candidates.forEach(name => {
+    const ck = _slugRepairKey(name);
+    const dist = _levenshtein(key, ck);
+    const score = dist / Math.max(ck.length, 1);
+    if (score < bestScore) {
+      bestScore = score;
+      best = name;
+    }
+  });
+  return bestScore <= 0.58 ? best : null;
+}
+
+function _repairAppStateData(kind, rows, options = {}) {
+  const forceCanonicalIds = options.forceCanonicalIds !== false;
+  if (!Array.isArray(rows)) return rows;
+  const canonicalMenu = Array.isArray(window.DEFAULT_MENU) ? window.DEFAULT_MENU : [];
+  const canonicalInv = Array.isArray(window.DEFAULT_INVENTORY) ? window.DEFAULT_INVENTORY : [];
+  const categories = Array.isArray(window.DEFAULT_CATEGORIES) ? window.DEFAULT_CATEGORIES : [];
+
+  const menuById = Object.fromEntries(canonicalMenu.map(x => [x.id, x]));
+  const invById = Object.fromEntries(canonicalInv.map(x => [x.id, x]));
+  const invCandidates = canonicalInv.map(x => x.name);
+  const menuCandidates = canonicalMenu.map(x => x.name);
+  const categoryCandidates = categories;
+  const invNameByKey = Object.fromEntries(canonicalInv.map(x => [_slugRepairKey(x.name), x.name]));
+
+  if (kind === 'inventory') {
+    return rows.map(item => {
+      const next = { ...item };
+      const byId = invById[next.id];
+      if (forceCanonicalIds && byId?.name) {
+        next.name = byId.name;
+        return next;
+      }
+      if (_hasBrokenVietnamese(next.name)) {
+        next.name = byId?.name || invNameByKey[_slugRepairKey(next.name)] || _bestCanonicalMatch(next.name, invCandidates) || next.name;
+      }
+      return next;
+    });
+  }
+
+  if (kind === 'menu') {
+    return rows.map(item => {
+      const next = { ...item };
+      const byId = menuById[next.id];
+      if (forceCanonicalIds && byId) {
+        next.name = byId.name || next.name;
+        next.category = byId.category || next.category;
+      }
+      if (_hasBrokenVietnamese(next.name)) {
+        next.name = byId?.name || _bestCanonicalMatch(next.name, menuCandidates) || next.name;
+      }
+      if (_hasBrokenVietnamese(next.category)) {
+        next.category = byId?.category || _bestCanonicalMatch(next.category, categoryCandidates) || next.category;
+      }
+      if (Array.isArray(next.ingredients)) {
+        next.ingredients = next.ingredients.map(ing => {
+          const n = { ...ing };
+          if (forceCanonicalIds && byId?.ingredients?.length) {
+            const hit = byId.ingredients.find(x => _slugRepairKey(x.name) === _slugRepairKey(n.name));
+            if (hit?.name) n.name = hit.name;
+          }
+          if (_hasBrokenVietnamese(n.name)) {
+            n.name = invNameByKey[_slugRepairKey(n.name)] || _bestCanonicalMatch(n.name, invCandidates) || n.name;
+          }
+          return n;
+        });
+      }
+      return next;
+    });
+  }
+
+  return rows;
+}
+
+function _repairSettingsText(settings = {}) {
+  const next = { ...settings };
+  if (_hasBrokenVietnamese(next.storeName)) next.storeName = 'Gánh Khô Chữa Lành';
+  if (_hasBrokenVietnamese(next.bankOwner)) next.bankOwner = 'Gánh Khô Chữa Lành';
+  if (_hasBrokenVietnamese(next.storeSlogan)) next.storeSlogan = 'Ăn là nhớ, nhớ là ghiền!';
+  return next;
+}
+
+function _repairVietnameseString(input) {
+  let s = String(input ?? '');
+  if (!_hasBrokenVietnamese(s)) return s;
+
+  try { s = decodeURIComponent(escape(s)); } catch (_) {}
+  try {
+    const bytes = Uint8Array.from(s, ch => ch.charCodeAt(0) & 0xFF);
+    const fixed = new TextDecoder('utf-8').decode(bytes);
+    if (fixed) s = fixed;
+  } catch (_) {}
+
+  const dict = [
+    [/h�m/gi, 'hôm'],
+    [/h�m nay/gi, 'hôm nay'],
+    [/h�m qua/gi, 'hôm qua'],
+    [/v�i/gi, 'với'],
+    [/gi�m/gi, 'giảm'],
+    [/kh�ng/gi, 'không'],
+    [/n�ng/gi, 'nướng'],
+    [/th�nh ph?m/gi, 'thành phẩm'],
+    [/�\s*�ng/gi, 'đồng'],
+  ];
+  dict.forEach(([re, val]) => { s = s.replace(re, val); });
+  return s;
+}
+
+function _deepRepairVietnameseValue(val) {
+  if (Array.isArray(val)) return val.map(_deepRepairVietnameseValue);
+  if (val && typeof val === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) out[k] = _deepRepairVietnameseValue(v);
+    return out;
+  }
+  if (typeof val === 'string') return _repairVietnameseString(val);
+  return val;
+}
+
+async function _commitUpdatesInChunks(updates, chunkSize = 380) {
+  if (!updates.length) return 0;
+  let committed = 0;
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    const chunk = updates.slice(i, i + chunkSize);
+    const batch = writeBatch(_db);
+    chunk.forEach(({ ref, data }) => batch.update(ref, sanitize(data)));
+    await batch.commit();
+    committed += chunk.length;
+  }
+  return committed;
+}
+
+async function repairVietnameseNow(options = {}) {
+  const dryRun = !!options.dryRun;
+  const forceCanonicalIds = options.forceCanonicalIds !== false;
+  const ud = window.appState.userDoc;
+  if (!ud || !['admin', 'owner', 'superadmin'].includes(String(ud.role || '').toLowerCase())) {
+    throw new Error('Chỉ admin mới được phép chạy sửa dữ liệu Cloud.');
+  }
+
+  const report = {
+    dryRun,
+    startedAt: new Date().toISOString(),
+    collections: {
+      settings: 0,
+      menu: 0,
+      inventory: 0,
+      suppliers: 0,
+      purchases: 0,
+      expenses: 0,
+      history: 0,
+    },
+    totalUpdates: 0,
+  };
+
+  const updates = [];
+
+  // 1) Settings
+  const settingsSnap = await getDoc(_settingsDoc());
+  if (settingsSnap.exists()) {
+    const saved = settingsSnap.data() || {};
+    const repaired = _repairSettingsText({ ...SETTINGS_DEFAULTS, ...saved });
+    if (JSON.stringify(saved) !== JSON.stringify(repaired)) {
+      report.collections.settings++;
+      updates.push({ ref: _settingsDoc(), data: repaired });
+    }
+  }
+
+  // 2) Menu
+  {
+    const snap = await getDocs(_col('menu'));
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = _repairAppStateData('menu', raw, { forceCanonicalIds });
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      const ing = Array.isArray(item.ingredients) ? item.ingredients : [];
+      const needs = _hasBrokenVietnamese(item.name) ||
+        _hasBrokenVietnamese(item.category) ||
+        ing.some(x => _hasBrokenVietnamese(x?.name));
+      if (!needs) return;
+      report.collections.menu++;
+      updates.push({
+        ref: _doc('menu', fixed.id),
+        data: {
+          name: fixed.name,
+          category: fixed.category,
+          ingredients: fixed.ingredients || [],
+        }
+      });
+    });
+  }
+
+  // 3) Inventory
+  {
+    const snap = await getDocs(_col('inventory'));
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = _repairAppStateData('inventory', raw, { forceCanonicalIds });
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      if (!_hasBrokenVietnamese(item.name)) return;
+      report.collections.inventory++;
+      updates.push({ ref: _doc('inventory', fixed.id), data: { name: fixed.name } });
+    });
+  }
+
+  // 4) Generic collections (text fields only)
+  for (const colName of ['suppliers', 'purchases', 'expenses', 'history']) {
+    const snap = await getDocs(_col(colName));
+    snap.docs.forEach(docSnap => {
+      const raw = _fromDoc(docSnap);
+      if (!raw) return;
+      const repaired = _deepRepairVietnameseValue(raw);
+      if (JSON.stringify(raw) !== JSON.stringify(repaired)) {
+        report.collections[colName]++;
+        updates.push({ ref: _doc(colName, docSnap.id), data: repaired });
+      }
+    });
+  }
+
+  report.totalUpdates = updates.length;
+  if (!dryRun && updates.length > 0) {
+    await _commitUpdatesInChunks(updates);
+  }
+  report.finishedAt = new Date().toISOString();
+  return report;
+}
+
 // Đếm số snapshot đã ready để biết khi nào appState.ready = true
 let _snapshotReadyCount  = 0;
 const TOTAL_SNAPSHOTS    = 9;   // tables, orders, menu, inventory, settings, users, history, expenses, purchases
@@ -261,9 +556,14 @@ function _listen() {
   // 5a. Settings (single doc trong collection 'config')
   _unsubs.push(onSnapshot(_settingsDoc(), snap => {
     const saved = snap.exists() ? snap.data() : {};
-    window.appState.settings = { ...SETTINGS_DEFAULTS, ...saved };
+    const repaired = _repairSettingsText({ ...SETTINGS_DEFAULTS, ...saved });
+    window.appState.settings = repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'settings' });
+
+    if (snap.exists() && JSON.stringify(repaired) !== JSON.stringify({ ...SETTINGS_DEFAULTS, ...saved })) {
+      Settings.save(repaired).catch(err => console.warn('[db:repair] settings warning', err));
+    }
   }, _snapErr('settings')));
 
   // 5b. Tables  (sắp xếp theo id)
@@ -290,16 +590,58 @@ function _listen() {
 
   // 5d. Menu
   _unsubs.push(onSnapshot(_col('menu'), snap => {
-    window.appState.menu = snap.docs.map(_fromDoc).filter(Boolean);
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = _repairAppStateData('menu', raw);
+    window.appState.menu = repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'menu' });
+
+    let needCommit = 0;
+    const batch = writeBatch(_db);
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      const ing = Array.isArray(item.ingredients) ? item.ingredients : [];
+      const needs = _hasBrokenVietnamese(item.name) ||
+        _hasBrokenVietnamese(item.category) ||
+        ing.some(x => _hasBrokenVietnamese(x?.name));
+      if (!needs) return;
+      needCommit++;
+      batch.update(_doc('menu', fixed.id), sanitize({
+        name: fixed.name,
+        category: fixed.category,
+        ingredients: fixed.ingredients || [],
+      }));
+    });
+    if (needCommit > 0) {
+      batch.commit().then(() => {
+        console.log(`[db:repair] ✅ menu repaired: ${needCommit} items`);
+      }).catch(err => console.warn('[db:repair] menu warning', err));
+    }
   }, _snapErr('menu')));
 
   // 5e. Inventory
   _unsubs.push(onSnapshot(query(_col('inventory'), orderBy('name')), snap => {
-    window.appState.inventory = snap.docs.map(_fromDoc).filter(Boolean);
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = _repairAppStateData('inventory', raw);
+    window.appState.inventory = repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'inventory' });
+
+    let needCommit = 0;
+    const batch = writeBatch(_db);
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      if (!_hasBrokenVietnamese(item.name)) return;
+      needCommit++;
+      batch.update(_doc('inventory', fixed.id), sanitize({ name: fixed.name }));
+    });
+    if (needCommit > 0) {
+      batch.commit().then(() => {
+        console.log(`[db:repair] ✅ inventory repaired: ${needCommit} items`);
+      }).catch(err => console.warn('[db:repair] inventory warning', err));
+    }
   }, _snapErr('inventory')));
 
   // 5f. Users
@@ -1023,6 +1365,42 @@ const Presence = {
       .filter(([, v]) => v && v.online)
       .map(([uid, v]) => ({ uid, ...v }));
   },
+
+  /** Xóa toàn bộ presence của user offline */
+  async clearOffline() {
+    const all = window.appState.presence || {};
+    const offlineUids = Object.entries(all)
+      .filter(([, v]) => !v || !v.online)
+      .map(([uid]) => uid);
+
+    for (const uid of offlineUids) {
+      await rtSet(rtRef(_rtdb, `presence/${uid}`), null);
+    }
+    return { removed: offlineUids.length, removedUids: offlineUids };
+  },
+
+  /** Xóa presence offline cũ hơn N giờ */
+  async clearStale(hours = 24) {
+    const all = window.appState.presence || {};
+    const threshold = Date.now() - Math.max(1, Number(hours || 24)) * 3600000;
+    const removed = [];
+
+    for (const [uid, v] of Object.entries(all)) {
+      if (v && v.online) continue;
+      const ts = Number(v?.lastSeen || 0);
+      if (ts > 0 && ts < threshold) {
+        await rtSet(rtRef(_rtdb, `presence/${uid}`), null);
+        removed.push(uid);
+      }
+    }
+    return { removed: removed.length, removedUids: removed, threshold };
+  },
+
+  /** Xóa toàn bộ presence (cẩn thận) */
+  async clearAll() {
+    await rtSet(rtRef(_rtdb, 'presence'), null);
+    return { removedAll: true };
+  },
 };
 
 
@@ -1620,6 +1998,7 @@ window.DB = {
   migrateJson: migrateFromBackupJson,
   seedTables:  seedTablesIfEmpty,
   forceMigrateToCloud: forceMigrateToCloud,
+  repairVietnameseNow: repairVietnameseNow,
 
   // Tiện ích đọc nhanh
   get ready()   { return window.appState.ready; },
@@ -1628,6 +2007,54 @@ window.DB = {
 };
 
 console.log('✅ [DB] window.DB đã được bơm đầy đủ hàm! Sẵn sàng cho test Console.');
+
+window.__viDiag = {
+  hasBroken: _hasBrokenVietnamese,
+  check() {
+    const st = window.appState || {};
+    const menu = Array.isArray(st.menu) ? st.menu : [];
+    const inv = Array.isArray(st.inventory) ? st.inventory : [];
+    const settings = st.settings || {};
+
+    const menuDirty = menu.filter(m =>
+      _hasBrokenVietnamese(m?.name) ||
+      _hasBrokenVietnamese(m?.category) ||
+      (Array.isArray(m?.ingredients) && m.ingredients.some(ig => _hasBrokenVietnamese(ig?.name)))
+    );
+
+    const invDirty = inv.filter(i => _hasBrokenVietnamese(i?.name));
+
+    const settingsDirty = {
+      storeName: _hasBrokenVietnamese(settings.storeName),
+      bankOwner: _hasBrokenVietnamese(settings.bankOwner),
+      storeSlogan: _hasBrokenVietnamese(settings.storeSlogan),
+    };
+
+    return {
+      ready: !!st.ready,
+      counts: {
+        menuTotal: menu.length,
+        menuDirty: menuDirty.length,
+        inventoryTotal: inv.length,
+        inventoryDirty: invDirty.length,
+      },
+      settingsDirty,
+      sample: {
+        menu: menuDirty.slice(0, 10).map(x => ({ id: x.id, name: x.name, category: x.category })),
+        inventory: invDirty.slice(0, 10).map(x => ({ id: x.id, name: x.name })),
+      }
+    };
+  },
+  onlineUsers() {
+    const p = (window.appState && window.appState.presence) || {};
+    return Object.entries(p).map(([uid, v]) => ({
+      uid,
+      displayName: v?.displayName,
+      online: !!v?.online,
+      lastSeen: v?.lastSeen,
+    }));
+  }
+};
 
 // ✅ Debug checkpoint – nếu bạn thấy dòng này trong F12 là db.js đã load đúng
 console.log('%c✅ Firebase Bridge Ready – window.DB đã sẵn sàng', 'color:#00D68F;font-weight:bold;font-size:13px');

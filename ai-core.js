@@ -8,9 +8,15 @@ const GEMINI_MODELS = [
   'gemini-2.0-flash-lite',
 ];
 
+const DEEPSEEK_MODELS = [
+  'deepseek-chat',
+  'deepseek-reasoner',
+];
+
 function _repairAIText(input) {
   const str = String(input ?? '');
-  if (!/[ÃÂâðáÄÆ]/.test(str)) return str;
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ', 'á»', 'áº'];
+  if (!badTokens.some(t => str.includes(t))) return str;
   try {
     return decodeURIComponent(escape(str));
   } catch (_) {}
@@ -21,10 +27,13 @@ function _repairAIText(input) {
   return str;
 }
 
-async function callGemini(apiKey, systemPrompt) {
+async function callGemini(apiKey, systemPrompt, options = {}) {
+  const forceJson = options.forceJson !== false;
   let lastError = null;
   for (const model of GEMINI_MODELS) {
     try {
+      const generationConfig = { temperature: 0.2, maxOutputTokens: forceJson ? 700 : 900 };
+      if (forceJson) generationConfig.response_mime_type = 'application/json';
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
@@ -32,7 +41,7 @@ async function callGemini(apiKey, systemPrompt) {
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
+            generationConfig
           }),
           signal: AbortSignal.timeout(8000)
         }
@@ -81,6 +90,218 @@ async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
   return data.choices[0].message.content;
 }
 
+async function callDeepSeek(apiKey, systemPrompt, options = {}) {
+  const endpoint = options.endpoint || 'https://api.deepseek.com/v1/chat/completions';
+  const forceJson = options.forceJson !== false;
+  let lastError = null;
+  const models = [options.model, ...DEEPSEEK_MODELS].filter(Boolean);
+
+  for (const model of models) {
+    try {
+      const payload = {
+        model,
+        messages: [{ role: 'user', content: systemPrompt }],
+        temperature: 0.2,
+        max_tokens: forceJson ? 700 : 900,
+      };
+      if (forceJson) payload.response_format = { type: 'json_object' };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(12000),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || 'DeepSeek API error');
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error('DeepSeek không trả về nội dung.');
+      return content;
+    } catch (e) {
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('DeepSeek không khả dụng.');
+}
+
+function _normalizeQueryKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFC')
+    .replace(/[àáạảãăắặẳẵâấầẩẫậ]/g, 'a')
+    .replace(/[èéẹẻẽêếềểễệ]/g, 'e')
+    .replace(/[ìíịỉĩ]/g, 'i')
+    .replace(/[òóọỏõôốồổỗộơớờởỡợ]/g, 'o')
+    .replace(/[ùúụủũưứừựửữ]/g, 'u')
+    .replace(/[ỳýỵỷỹ]/g, 'y')
+    .replace(/[đ]/g, 'd')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _getDateRangeFromPeriodInfo(periodInfo) {
+  const pi = periodInfo || { period: 'today' };
+  const now = new Date();
+  const fmt = (d) => d.toISOString().split('T')[0];
+
+  if (pi.dateStr) return { fromDate: pi.dateStr, toDate: pi.dateStr };
+  if (pi.fromDate && pi.toDate) return { fromDate: pi.fromDate, toDate: pi.toDate };
+  if (pi.period === 'day' && pi.dateStr) return { fromDate: pi.dateStr, toDate: pi.dateStr };
+  if (pi.period === 'today') {
+    const d = fmt(now);
+    return { fromDate: d, toDate: d };
+  }
+  if (pi.period === 'week') {
+    const to = fmt(now);
+    const fromD = new Date(now);
+    fromD.setDate(fromD.getDate() - 6);
+    return { fromDate: fmt(fromD), toDate: to };
+  }
+  if (pi.period === 'month') {
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { fromDate: fmt(from), toDate: fmt(to) };
+  }
+  const d = fmt(now);
+  return { fromDate: d, toDate: d };
+}
+
+function _collectItemSalesInRange(fromDate, toDate) {
+  const history = Store.getHistory() || [];
+  const map = {};
+  const from = new Date(fromDate); from.setHours(0, 0, 0, 0);
+  const to = new Date(toDate); to.setHours(23, 59, 59, 999);
+
+  history.forEach(h => {
+    const paidAt = h?.paidAt ? new Date(h.paidAt) : null;
+    if (!paidAt || paidAt < from || paidAt > to) return;
+    (h.items || []).forEach(it => {
+      const name = it?.name || it?.id || 'Không rõ';
+      const qty = Number(it?.qty || 0);
+      if (!qty) return;
+      map[name] = (map[name] || 0) + qty;
+    });
+  });
+  return map;
+}
+
+function _pickMentionedItem(text, menu) {
+  try {
+    const exact = extractMenuItems(text, menu || []);
+    if (Array.isArray(exact) && exact.length) return exact[0].name;
+  } catch (_) {}
+
+  const q = _normalizeQueryKey(text);
+  const aliases = [
+    ['ken lon', ['ken lon', 'heineken', 'ken']],
+    ['bia sai gon', ['sai gon', 'bia sai gon', 'saigon']],
+    ['bia tiger', ['tiger', 'bia tiger']],
+  ];
+  for (const [label, kws] of aliases) {
+    if (kws.some(k => q.includes(k))) return label;
+  }
+  return null;
+}
+
+function _isOpenAnalyticsQuestion(text) {
+  const t = _normalizeQueryKey(text);
+  if (!t) return false;
+
+  // Không can thiệp các lệnh thao tác đơn hàng
+  if (/(dat|goi|them|bot|xoa|huy|thanh toan|tinh tien|mo ban|xem ban|nhap hang)\b/.test(t)) return false;
+
+  return /(hom qua|hom nay|so voi|so sanh|ban duoc|doanh thu|mon nao|ban nhieu nhat|top|bao nhieu|nhieu nhat)/.test(t);
+}
+
+async function tryAnswerOpenAnalyticsQuestion(text, settings, menu) {
+  if (!_isOpenAnalyticsQuestion(text)) return null;
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  const yStr = y.toISOString().split('T')[0];
+
+  const pi = parseViDateFromText(text) || { period: 'today', label: 'hôm nay' };
+  const range = _getDateRangeFromPeriodInfo(pi);
+  const salesMap = _collectItemSalesInRange(range.fromDate, range.toDate);
+  const topItems = Object.entries(salesMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, qty]) => ({ name, qty }));
+
+  const mention = _pickMentionedItem(text, menu || []);
+  const mentionQty = mention
+    ? Object.entries(salesMap).filter(([n]) => _normalizeQueryKey(n).includes(_normalizeQueryKey(mention))).reduce((s, [, q]) => s + q, 0)
+    : 0;
+
+  const today = getRevenueSummary('day', { date: todayStr });
+  const yesterday = getRevenueSummary('day', { date: yStr });
+  const target = (pi.period === 'today' || (pi.period === 'day' && pi.dateStr === todayStr))
+    ? today
+    : (pi.period === 'day' && pi.dateStr === yStr)
+      ? yesterday
+      : getRevenueSummary(pi.period, pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {}));
+
+  const question = String(text || '');
+  const context = {
+    question,
+    today: { date: todayStr, revenue: today.revenue, orders: today.orders, profit: today.profit },
+    yesterday: { date: yStr, revenue: yesterday.revenue, orders: yesterday.orders, profit: yesterday.profit },
+    targetPeriod: { label: pi.label || 'kỳ được hỏi', fromDate: range.fromDate, toDate: range.toDate, revenue: target.revenue, orders: target.orders, profit: target.profit },
+    mentionItem: mention ? { key: mention, soldQty: mentionQty } : null,
+    topItems,
+  };
+
+  const prompt = `Bạn là trợ lý phân tích dữ liệu POS. Trả lời tiếng Việt ngắn gọn, chính xác theo số liệu sau.
+Nếu người dùng hỏi so sánh thì nêu chênh lệch tuyệt đối và % khi có thể.
+Nếu hỏi món bán nhiều nhất thì trả đúng top 1 theo số lượng.
+Nếu hỏi một sản phẩm cụ thể (ví dụ lon ken) thì trả đúng số lượng đã bán trong kỳ được hỏi.
+Không bịa dữ liệu ngoài context.
+
+Context JSON:
+${JSON.stringify(context)}
+
+Chỉ trả về câu trả lời tự nhiên (không markdown JSON).`;
+
+  const canOnline = !settings.forceOffline && navigator.onLine;
+  try {
+    if (canOnline && settings.geminiApiKey) {
+      return _repairAIText(await callGemini(settings.geminiApiKey, prompt, { forceJson: false })).replace(/```json/gi, '').replace(/```/g, '').trim();
+    }
+    if (canOnline && settings.deepseekApiKey) {
+      return _repairAIText(await callDeepSeek(settings.deepseekApiKey, prompt, {
+        endpoint: settings.deepseekEndpoint,
+        model: settings.deepseekModel,
+        forceJson: false,
+      })).trim();
+    }
+  } catch (_) {}
+
+  // Fallback local khi không có API
+  const q = _normalizeQueryKey(question);
+  if (q.includes('so voi') || q.includes('so sanh') || (q.includes('hom qua') && q.includes('hom nay'))) {
+    const diff = today.revenue - yesterday.revenue;
+    const pct = yesterday.revenue > 0 ? ((diff / yesterday.revenue) * 100) : 0;
+    const trend = diff >= 0 ? 'tăng' : 'giảm';
+    return `So với hôm qua, hôm nay ${trend} ${fmtDong(Math.abs(diff))} doanh thu (${Math.abs(pct).toFixed(1)}%). Hôm nay: ${fmtDong(today.revenue)} (${today.orders} đơn), hôm qua: ${fmtDong(yesterday.revenue)} (${yesterday.orders} đơn).`;
+  }
+  if (q.includes('nhieu nhat') || q.includes('ban chay')) {
+    const top = topItems[0];
+    if (!top) return `Kỳ ${pi.label || 'được hỏi'} chưa có dữ liệu bán hàng.`;
+    return `Món bán nhiều nhất ${pi.label || 'kỳ này'} là ${top.name} với ${top.qty} phần/lon/chai đã bán.`;
+  }
+  if ((q.includes('bao nhieu') || q.includes('ban duoc')) && mention) {
+    return `${pi.label || 'Kỳ được hỏi'}, ${mention} bán được ${mentionQty} đơn vị.`;
+  }
+  return null;
+}
+
 // --- Main processor: Hybrid Failover ---
 // Context memory for short-term session
 const aiSessionContext = {
@@ -95,7 +316,14 @@ async function processAICommand(text) {
 
   const isGemma = (s.activeAIEngine === 'gemma');
   const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey && !isGemma;
+  const canUseDeepSeek = !s.forceOffline && navigator.onLine && s.deepseekApiKey && !isGemma;
   const canUseGemma = !s.forceOffline && isGemma && s.gemmaEndpoint;
+
+  // Câu hỏi mở phân tích số liệu: ưu tiên Gemini/DeepSeek để suy luận chính xác.
+  const openAnswer = await tryAnswerOpenAnalyticsQuestion(text, s, menu);
+  if (openAnswer) {
+    return { reply: _repairAIText(openAnswer), intent: 'report' };
+  }
 
   let parsed;
   let modeColor = '';
@@ -138,11 +366,34 @@ async function processAICommand(text) {
         return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
       }
     }
+  } else if (canUseDeepSeek) {
+    try {
+      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
+      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
+      let raw = await callDeepSeek(s.deepseekApiKey, prompt, {
+        endpoint: s.deepseekEndpoint,
+        model: s.deepseekModel,
+        forceJson: true,
+      });
+      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try { parsed = JSON.parse(raw); }
+      catch(_) { return _repairAIText(raw); }
+      modeColor = 'var(--success)';
+    } catch(e) {
+      console.warn('DeepSeek failed, switching to Local NLP:', e.message);
+      const offlineResult = localNLPEngine(text, menu, tablesInfo);
+      if (offlineResult) {
+        parsed = offlineResult;
+        modeColor = 'var(--warning)';
+      } else {
+        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
+      }
+    }
   } else {
-    if (!s.geminiApiKey) {
+    if (!s.geminiApiKey && !s.deepseekApiKey) {
       parsed = localNLPEngine(text, menu, tablesInfo);
       if (!parsed) {
-        return '⚠️ Chưa có Gemini API Key. Vào <strong>Cài đặt → Gemini API Key</strong> để dùng AI đầy đủ. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
+        return '⚠️ Chưa có API Key cho Gemini/DeepSeek. Vào <strong>Cài đặt → AI</strong> để cấu hình. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
       }
       modeColor = 'var(--warning)';
     } else {

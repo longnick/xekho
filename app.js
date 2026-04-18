@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // WASTAGE (Xuất hủy / Hao hụt)
 // ============================================================
 function renderWastageTab() {
@@ -23,15 +23,15 @@ function renderWastageTab() {
 
 function submitWastage(e) {
   e.preventDefault();
-  const name = document.getElementById('wastage-name').value.trim();
+  const itemId = document.getElementById('wastage-name').value;
   const qty = parseFloat(document.getElementById('wastage-qty').value);
   const reason = document.getElementById('wastage-reason').value;
   const note = document.getElementById('wastage-note').value.trim();
 
-  if(!name || isNaN(qty) || qty <= 0) return;
+  if(!itemId || isNaN(qty) || qty <= 0) return;
 
-  const inv = Store.getInventory();
-  const item = inv.find(i => i.name.toLowerCase() === name.toLowerCase());
+  const liveInv = _getInventory();
+  const item = liveInv.find(i => i.id === itemId);
 
   if(!item) {
     showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
@@ -43,35 +43,38 @@ function submitWastage(e) {
   }
 
   const cost = (item.costPerUnit || 0) * qty;
+  const exp = {
+    id: uid(),
+    name: `Hủy: ${qty} ${item.unit} ${item.name}`,
+    amount: cost,
+    category: 'Chi phí hao hụt',
+    date: new Date().toISOString(),
+    note: reason + (note ? ` - ${note}` : '')
+  };
 
   if (window.DB && window.DB.Inventory) {
     window.DB.Inventory.update(item.id, { qty: item.qty - qty })
       .then(() => {
-        Store.addExpense({
-          id: uid(),
-          name: `Hủy: ${qty} ${item.unit} ${item.name}`,
-          amount: cost,
-          category: 'Chi phí hao hụt',
-          date: new Date().toISOString(),
-          note: reason + (note ? ` - ${note}` : '')
-        });
+        Store.addExpense(exp);
+        if (window.DB.Expenses?.add) window.DB.Expenses.add(exp).catch(() => {});
         document.getElementById('wastage-form').reset();
-        renderInventory();
+        refreshIngredientDependentViews();
+        renderWastageTab();
         showToast('✅ Đã ghi nhận xuất hủy!', 'success');
       }).catch(err => showToast('Lỗi xuất hủy: ' + err.message, 'danger'));
   } else {
-    item.qty -= qty;
+    const inv = Store.getInventory();
+    const localItem = inv.find(i => i.id === itemId);
+    if (!localItem) {
+      showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
+      return;
+    }
+    localItem.qty -= qty;
     Store.setInventory(inv);
-    Store.addExpense({
-      id: uid(),
-      name: `Hủy: ${qty} ${item.unit} ${item.name}`,
-      amount: cost,
-      category: 'Chi phí hao hụt',
-      date: new Date().toISOString(),
-      note: reason + (note ? ` - ${note}` : '')
-    });
+    Store.addExpense(exp);
     document.getElementById('wastage-form').reset();
-    renderInventory();
+    refreshIngredientDependentViews();
+    renderWastageTab();
     showToast('✅ Đã ghi nhận xuất hủy!', 'success');
   }
 }
@@ -89,12 +92,12 @@ let chartInstances = {};
 
 // Photos & OCR state
 let orderPhotoCache = null;           // lazy: Store.getOrderPhotos()
-let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng �?ang m�?
-let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" �?�? gom ảnh
-let purchasePhotoCache = null;        // RAM cache cho b�? nh�? thiết b�?
+let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng đang làm
+let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
+let purchasePhotoCache = null;        // RAM cache cho bộ nhớ thiết bị
 let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
 let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
-const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong l�?ch sử 3 ngày
+const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
 
 function applyTheme(themeName) {
   const body = document.body;
@@ -310,14 +313,14 @@ async function handleLoginSubmit(e) {
     const email = username.includes('@') ? username : `${username}@ganhkho.vn`;
     if (window.DB?.login) {
       const result = await window.DB.login(email, password);
-      if (!result?.success) throw new Error(result?.error || 'Đăng nhập thất bại');
+      if (!result.success) throw new Error(result.error || 'Đăng nhập thất bại');
     }
     sessionStorage.setItem('gkhl_current_session', JSON.stringify({ username, at: Date.now() }));
     const loginScreen = document.getElementById('login-screen');
     if (loginScreen) loginScreen.classList.remove('active');
     showToast('✅ Đăng nhập thành công', 'success');
   } catch (err) {
-    showToast(`Lỗi đăng nhập: ${err?.message || err}`, 'danger');
+    showToast(`Lỗi đăng nhập: ${err.message || err}`, 'danger');
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -336,7 +339,7 @@ function continueLocalMode() {
 }
 
 function handleLogout() {
-  const ok = confirm('Bạn có chắc muốn đăng xuất không?');
+  const ok = confirm('Bạn có chắc muốn đăng xuất không');
   if (!ok) return;
 
   sessionStorage.removeItem('gkhl_current_session');
@@ -437,7 +440,7 @@ function renderUserManagement() {
     const onlineDot = `<span title="${isOnline ? 'Đang online' : 'Offline'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isOnline ? 'var(--success,#00D68F)' : '#555'};margin-left:6px;vertical-align:middle;"></span>`;
     const roleText = String(u.role || '').toLowerCase();
     const isRootAdmin = uname.toLowerCase() === 'admin' || roleText === 'admin';
-    const isSelf = String(currentUser?.username || '').toLowerCase() === uname.toLowerCase();
+    const isSelf = String(currentUser.username || '').toLowerCase() === uname.toLowerCase();
 
     return `
     <div class="list-item" onclick="editUserById('${uid}')" style="cursor:pointer">
@@ -524,7 +527,7 @@ async function submitUser(e) {
   } else {
     if(!p) return; // Must have password for new user
     const emailStr = u.includes('@') ? u : u + '@ganhkho.vn';
-    // FIX 3: Dùng Users.add (Shadow App) �?? Admin KH�?NG b�? v�?ng phiên
+      // FIX 3: Dùng Users.add (Shadow App) để Admin KHÔNG bị vòng phiên
     if (window.DB && window.DB.Users && window.DB.Users.add) {
       try {
         await window.DB.Users.add(emailStr, p, u, r);
@@ -554,7 +557,7 @@ async function deleteUserById(userId) {
     showToast('Không thể xóa tài khoản quản trị.', 'warning');
     return;
   }
-  if (String(currentUser?.username || '').toLowerCase() === String(uname).toLowerCase()) {
+  if (String(currentUser.username || '').toLowerCase() === String(uname).toLowerCase()) {
     showToast('Không thể tự xóa tài khoản đang đăng nhập.', 'warning');
     return;
   }
@@ -573,7 +576,7 @@ async function deleteUserById(userId) {
       renderUserManagement();
       return;
     } catch (err) {
-      showToast('Lỗi xóa nhân viên: ' + (err?.message || err), 'danger');
+      showToast('Lỗi xóa nhân viên: ' + (err.message || err), 'danger');
       return;
     }
   }
@@ -598,19 +601,19 @@ function deleteUser(username) {
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', async () => {
-  // Chặn �?�?ng nhập (LocalStorage session)
+  // Chặn đăng nhập (LocalStorage session)
   const isLoggedIn = checkLoginState();
   if(!isLoggedIn) {
-    // App vẫn init ngầm phía sau, login xong hi�?n th�? ngay
+    // App vẫn init ngầm phía sau, login xong hiển thị ngay
   }
 
-  // 1. Tải cơ s�? dữ li�?u h�? th�?ng (Bất �?�?ng b�?)
+  // 1. Tải cơ sở dữ liệu hệ thống (Bất đồng bộ)
   await PhotoDB.init();
   await migratePhotosToIndexedDB();
   purchasePhotoCache = await Store.getPurchasePhotosAsync() || {};
   orderPhotoCache    = await Store.getOrderPhotosAsync()   || {};
 
-  // 2. Chạy lu�?ng Main
+  // 2. Chạy luồng Main
   initNav();
   applyStoreSettings();
   
@@ -625,9 +628,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   cleanupOldOrderHistoryPhotos();
   navigate('tables');
   updateAlertBadge();
+  // Không auto-repair toàn DOM để tránh làm hỏng chữ tiếng Việt hợp lệ.
 
   setTimeout(() => {
-    // Ch�? auto-backup LocalStorage khi Firebase chưa sẵn sàng (offline mode)
+    // Chờ auto-backup LocalStorage khi Firebase chưa sẵn sàng (offline mode)
     if (!window.DB || !window.appState || !window.appState.ready) {
       if(Store.autoBackupIfNeeded()) console.log('[POS] Auto backup (offline mode) done');
     } else {
@@ -640,8 +644,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }, 4500);
 
   // 3. ======================== FIREBASE BRIDGE ========================
-  // db.js dùng type="module" nên window.DB gán bất �?�?ng b�?.
-  // Hàm này poll t�?i �?a 5 giây r�?i m�?i �?�?ng ký lắng nghe events.
+  // db.js dùng type="module" nên window.DB gán bất đồng bộ.
+  // Hàm này poll tối đa 5 giây rồi mới đăng ký lắng nghe events.
   function _waitForDB(cb, timeout = 5000) {
     if (window.DB) { cb(); return; }
     const start = Date.now();
@@ -680,18 +684,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (loginScreen) loginScreen.classList.add('active');
   });
 
-  // Khi Firebase �?ã ready (tất cả snapshot �?ã về)
+  // Khi Firebase đã ready (tất cả snapshot đã về)
   window.addEventListener('db:ready', () => {
     console.log('[Bridge] appState.ready - re-render từ Cloud');
+    // Cloud data có thể chứa text lỗi font từ các bản cũ -> chạy migration lại trên dữ liệu cloud.
+    runMigrations();
     applyStoreSettings();
     renderTables();
     updateAlertBadge();
     renderUserManagement();
 
-    // Re-render các màn hình dựa trên current page �?�? tránh b�? tr�?ng
+    // Re-render các màn hình dựa trên current page để tránh bị trống
     if (typeof currentPage !== 'undefined') {
       if (currentPage === 'orders') {
-        renderCatTabs?.();
+        renderCatTabs();
         renderMenuItems();
       } else if (currentPage === 'menu') {
         try { renderMenuAdmin(); } catch(_) {}
@@ -700,7 +706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Kh�?i tạo sơ �?�? bàn nếu collection tables tr�?ng (ch�?ng failed-precondition)
+    // Khởi tạo sơ đồ bàn nếu collection tables trống (chờ failed-precondition)
     if (window.DB && window.DB.seedTables) {
       const s = (window.appState && window.appState.settings) || {};
       const tableCount = s.tableCount || 20;
@@ -718,16 +724,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (key === 'users' || key === 'presence') renderUserManagement();
     if (key === 'menu') {
       renderMenuItems();
-      renderCatTabs?.();
+      renderCatTabs();
       if (typeof currentPage !== 'undefined' && currentPage === 'menu') {
         try { renderMenuAdmin(); } catch(_) {}
       }
     }
-    // Báo cáo: re-render khi l�?ch sử / chi phí / nhập hàng thay �?�?i
+    // Báo cáo: re-render khi lịch sử / chi phí / nhập hàng thay đổi
     if (key === 'history' || key === 'expenses' || key === 'purchases') {
       renderTables();    // cập nhật doanh thu hôm nay trên thẻ
       updateAlertBadge();
-      // Nếu �?ang �? trang reports hoặc finance thì re-render luôn
+      // Nếu đang ở trang reports hoặc finance thì re-render luôn
       if (typeof currentPage !== 'undefined' && currentPage === 'reports') {
         try { renderReports(); } catch(_) {}
       }
@@ -787,10 +793,25 @@ async function pushReportExcelToGoogleDriveManual() {
   });
 }
 
-// Chạy m�?t lần lúc load �?�? tự �?�?ng sửa l�?i chính tả dữ li�?u cũ mà không làm mất trạng thái của người dùng
+// Chạy migration để sửa dữ liệu cũ + lỗi font tiếng Việt trong dữ liệu đã lưu.
 function runMigrations() {
   const s = Store.getSettings();
-  if (s.migratedV2) return; // Prevent multiple runs just in case, or run once
+  const needLegacyPatch = !s.migratedV2;
+  const hasBad = (v) => {
+    const s = String(v || '');
+    const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+    return badTokens.some(t => s.includes(t));
+  };
+  const cloudInv = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
+  const cloudMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
+  const cloudSettings = window.appState?.settings || {};
+  const hasBadCloudData =
+    cloudInv.some(i => hasBad(i?.name)) ||
+    cloudMenu.some(m => hasBad(m.name) || hasBad(m.category) || (m.ingredients || []).some(ig => hasBad(ig.name))) ||
+    hasBad(cloudSettings.storeName) || hasBad(cloudSettings.bankOwner) || hasBad(cloudSettings.storeSlogan);
+
+  const needEncodingPatch = !s.migratedViFixV4 || !s.migratedViFixV3 || hasBadCloudData;
+  if (!needLegacyPatch && !needEncodingPatch) return;
 
   const patchKeys = {
     'Khô cá thiều tâm': 'Khô cá thiều',
@@ -848,8 +869,122 @@ function runMigrations() {
   
   if (mappedMenu) Store.setMenu(menu);
 
-  s.migratedV2 = true;
-  Store.setSettings(s);
+  // ===== Patch lỗi font dữ liệu đã lưu (mojibake) =====
+  if (needEncodingPatch) {
+    const hasBad = (v) => {
+      const s = String(v || '');
+      const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+      return badTokens.some(t => s.includes(t));
+    };
+    const stripKey = (v) => String(v || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]/g, '');
+
+    const defaultMenu = (typeof DEFAULT_MENU !== 'undefined' && Array.isArray(DEFAULT_MENU)) ? DEFAULT_MENU : [];
+    const defaultInv = (typeof DEFAULT_INVENTORY !== 'undefined' && Array.isArray(DEFAULT_INVENTORY)) ? DEFAULT_INVENTORY : [];
+
+    const menuById = Object.fromEntries(defaultMenu.map(x => [x.id, x]));
+    const invById = Object.fromEntries(defaultInv.map(x => [x.id, x]));
+    const invNameByKey = Object.fromEntries(defaultInv.map(x => [stripKey(x.name), x.name]));
+
+    // 1) Settings text
+    const settings = Store.getSettings();
+    let settingsChanged = false;
+    if (hasBad(settings.storeName)) { settings.storeName = 'Gánh Khô Chữa Lành'; settingsChanged = true; }
+    if (hasBad(settings.bankOwner)) { settings.bankOwner = 'Gánh Khô Chữa Lành'; settingsChanged = true; }
+    if (hasBad(settings.storeSlogan)) { settings.storeSlogan = 'Ăn là nhớ, nhớ là ghiền!'; settingsChanged = true; }
+    Store.setSettings(settings);
+    if (window.appState?.settings) window.appState.settings = { ...window.appState.settings, ...settings };
+
+    // 2) Inventory names by id/canonical key
+    let invChanged = false;
+    const activeInv = cloudInv.length ? cloudInv : Store.getInventory();
+    const invFixed = activeInv.map(i => {
+      const next = { ...i };
+      const byId = invById[next.id];
+      if (hasBad(next.name)) {
+        if (byId?.name) next.name = byId.name;
+        else {
+          const key = stripKey(next.name);
+          if (invNameByKey[key]) next.name = invNameByKey[key];
+          else next.name = repairVietnameseText(next.name);
+        }
+        invChanged = true;
+      }
+      return next;
+    });
+    if (invChanged) {
+      Store.setInventory(invFixed);
+      if (window.appState?.inventory) window.appState.inventory = invFixed.map(normalizeInventoryItemModel);
+    }
+
+    // 3) Menu names/categories/ingredients by id
+    let menuChanged = false;
+    const activeMenu = cloudMenu.length ? cloudMenu : Store.getMenu();
+    const menuFixed = activeMenu.map(m => {
+      const next = { ...m };
+      const base = menuById[next.id];
+      if (hasBad(next.name) && base?.name) { next.name = base.name; menuChanged = true; }
+      if (hasBad(next.category) && base?.category) { next.category = base.category; menuChanged = true; }
+      if (Array.isArray(next.ingredients)) {
+        next.ingredients = next.ingredients.map(ig => {
+          const n = { ...ig };
+          if (hasBad(n.name)) {
+            const key = stripKey(n.name);
+            n.name = invNameByKey[key] || repairVietnameseText(n.name);
+            menuChanged = true;
+          }
+          return n;
+        });
+      }
+      return next;
+    });
+    if (menuChanged) {
+      Store.setMenu(menuFixed);
+      if (window.appState?.menu) window.appState.menu = menuFixed;
+    }
+
+    // 4) Sync ngược lên Cloud để lần sau không bị trả dữ liệu lỗi font
+    if (window.DB && (invChanged || menuChanged || settingsChanged)) {
+      (async () => {
+        try {
+          if (settingsChanged) {
+            if (window.DB.Settings?.save) await window.DB.Settings.save(settings);
+          }
+          if (invChanged && window.DB.Inventory?.update) {
+            for (const i of invFixed) await window.DB.Inventory.update(i.id, i);
+          }
+          if (menuChanged && window.DB.Menu?.update) {
+            for (const m of menuFixed) {
+              await window.DB.Menu.update(m.id, {
+                name: m.name,
+                category: m.category,
+                unit: m.unit,
+                price: m.price,
+                cost: m.cost,
+                itemType: m.itemType,
+                linkedInventoryId: m.linkedInventoryId || null,
+                ingredients: m.ingredients || [],
+              });
+            }
+          }
+          console.log('[Migration] ✅ Đã đồng bộ sửa lỗi font lên Cloud');
+        } catch (e) {
+          console.warn('[Migration] Cloud sync warning:', e);
+        }
+      })();
+    }
+  }
+
+  const finalSettings = Store.getSettings();
+  finalSettings.migratedV2 = true;
+  finalSettings.migratedViFixV3 = true;
+  finalSettings.migratedViFixV4 = true;
+  Store.setSettings(finalSettings);
+  if (window.appState?.settings) window.appState.settings = { ...window.appState.settings, ...finalSettings };
 }
 
 function applyStoreSettings() {
@@ -1171,9 +1306,9 @@ function quickAddStockFromAlert(invId) {
 
 /**
  * _getTables() / _getOrders()
- * Luôn ưu tiên dữ li�?u từ Cloud (window.appState).
- * Nếu appState chưa ready hoặc r�?ng �?? fallback LocalStorage.
- * Đây là "L�?p �?�?m Fallback" ch�?ng Race Condition.
+ * Luôn ưu tiên dữ liđu từ Cloud (window.appState).
+ * Nếu appState chưa ready hoặc rđơg để fallback LocalStorage.
+ * Đây là "Lđp đăm Fallback" chđơg Race Condition.
  */
 function _getTables() {
   return (window.appState && window.appState.tables && window.appState.tables.length > 0)
@@ -1183,7 +1318,7 @@ function _getTables() {
 function _getOrders() {
   // appState.orders = { [tableId]: orderObject } (online format)
   // Store.getOrders() = { [tableId]: itemsArray } (offline format)
-  // Trả về offline format �?�? không vỡ các hàm cũ
+  // Trả về offline format đă không vỡ các hàm cũ
   if (window.appState && window.appState.orders && Object.keys(window.appState.orders).length > 0) {
     const map = {};
     Object.entries(window.appState.orders).forEach(([tid, order]) => {
@@ -1205,6 +1340,13 @@ function _getInventory() {
     ? window.appState.inventory
     : Store.getInventory();
   return (inventory || []).map(normalizeInventoryItemModel);
+}
+
+function _getPurchases() {
+  const purchases = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
+    ? window.appState.purchases
+    : Store.getPurchases();
+  return purchases || [];
 }
 
 
@@ -1285,6 +1427,7 @@ function refreshIngredientDependentViews() {
   try { renderInventory(); } catch(_) {}
   try { renderMenuAdmin(); } catch(_) {}
   try { updateAlertBadge(); } catch(_) {}
+  try { refreshInventoryPickers(); } catch(_) {}
   try {
     const purSelect = document.getElementById('pur-name');
     if (purSelect && document.getElementById('purchase-modal')?.classList.contains('active')) {
@@ -1296,6 +1439,42 @@ function refreshIngredientDependentViews() {
       }
     }
   } catch(_) {}
+}
+
+function refreshInventoryPickers() {
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+  const sorted = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+
+  const dl = document.getElementById('inv-names');
+  if (dl) dl.innerHTML = sorted.map(i => `<option value="${i.name}">`).join('');
+
+  const convSel = document.getElementById('conv-ingredient');
+  if (convSel) {
+    const prev = convSel.value;
+    convSel.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' +
+      sorted.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+    if (prev) convSel.value = prev;
+  }
+
+  const wastageSel = document.getElementById('wastage-name');
+  if (wastageSel) {
+    const prev = wastageSel.value;
+    wastageSel.innerHTML = '<option value="">-- Chọn --</option>' +
+      sorted.map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    if (prev) wastageSel.value = prev;
+  }
+
+  const ledgerSel = document.getElementById('ledger-item-select');
+  if (ledgerSel) {
+    const prev = ledgerSel.value;
+    ledgerSel.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' +
+      sorted.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
+    if (prev) ledgerSel.value = prev;
+    const month = document.getElementById('ledger-month');
+    if (month && !month.value) month.value = new Date().toISOString().slice(0, 7);
+  }
+
+  try { populateManualMergeDropdowns(); } catch(_) {}
 }
 
 function propagateInventoryReferenceRename(oldItem, newItem) {
@@ -1467,7 +1646,7 @@ function requestIngredientMerge(sourceId, targetId) {
     targetId,
     sourceName: source.name,
     targetName: target.name,
-    requestedBy: currentUser?.username || 'staff',
+    requestedBy: currentUser.username || 'staff',
     requestedAt: new Date().toISOString(),
     status: 'pending',
   });
@@ -1530,7 +1709,7 @@ async function approveIngredientMerge(sourceId, targetId) {
 
   const requests = Store.getItemMergeRequests().map(r => (
     r.sourceId === sourceId && r.targetId === targetId
-      ? { ...r, status: 'approved', approvedBy: currentUser?.username || 'admin', approvedAt: new Date().toISOString() }
+      ? { ...r, status: 'approved', approvedBy: currentUser.username || 'admin', approvedAt: new Date().toISOString() }
       : r
   ));
   Store.setItemMergeRequests(requests);
@@ -1708,7 +1887,7 @@ function openTable(tableId) {
     const cloudOrder = window.appState && window.appState.orders && window.appState.orders[String(currentTable)];
     if (cloudOrder && cloudOrder.items && cloudOrder.items.length > 0) {
       orderItems[currentTable] = [...cloudOrder.items];
-      // Ghi cư�?c orderId vào b�? nh�? tiền cho phase write
+      // Ghi cưđc orderId vào bđ nhđ tiền cho phase write
       window._currentOrderId = window._currentOrderId || {};
       window._currentOrderId[currentTable] = cloudOrder.id || cloudOrder.orderId;
     } else {
@@ -1736,7 +1915,7 @@ async function clearTable() {
       const orderIdFromCache = (typeof _getCloudOrderId === 'function') ? _getCloudOrderId(key) : null;
       const orderIdFromAppState = window.appState?.orders?.[key]?.id || null;
       const orderIdFromForTable = window.DB?.Orders?.forTable ? (window.DB.Orders.forTable(currentTable)?.id || null) : null;
-      const orderIdFromTable = window.appState?.tables?.find?.(t => String(t.id) === key)?.orderId || null;
+      const orderIdFromTable = window.appState?.tables?.find(t => String(t.id) === key)?.orderId || null;
       const orderId = orderIdFromCache || orderIdFromAppState || orderIdFromForTable || orderIdFromTable;
       if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
         await window.DB.Orders.cancel(orderId);
@@ -1784,11 +1963,11 @@ async function clearTable() {
 }
 
 // ============================================================
-// CLOUD ORDER SYNC HELPERS  �??  Transaction-safe
+// CLOUD ORDER SYNC HELPERS  để  Transaction-safe
 // Thay thế pattern updateMeta({ items }) cũ (race condition)
 // ============================================================
 
-/** Lấy orderId hi�?n tại của 1 bàn từ Cloud (appState hoặc cache) */
+/** Lấy orderId hiđơ tại của 1 bàn từ Cloud (appState hoặc cache) */
 function _getCloudOrderId(key) {
   const ordersMap = window.appState && window.appState.orders;
   return (window._currentOrderId && window._currentOrderId[String(key)])
@@ -1797,8 +1976,8 @@ function _getCloudOrderId(key) {
 }
 
 /**
- * Đảm bảo t�?n tại �?ơn hàng Cloud cho bàn key.
- * Nếu chưa có �?? gọi Orders.open() và cache lại orderId.
+ * Đảm bảo tđơ tại đơn hàng Cloud cho bàn key.
+ * Nếu chưa có để gọi Orders.open() và cache lại orderId.
  * Trả về Promise<orderId|null>
  */
 async function _ensureCloudOrder(key) {
@@ -1818,14 +1997,14 @@ async function _ensureCloudOrder(key) {
  *
  * action = {
  *   type : 'add' | 'change' | 'remove'
- *   item : { id, name, price, cost, qty }   �?� bắt bu�?c khi type='add'
- *   itemId   : string                        �?� bắt bu�?c khi type='change'|'remove'
- *   itemNote : string                        �?� tuỳ chọn
- *   delta    : number                        �?� bắt bu�?c khi type='change'
+ *   item : { id, name, price, cost, qty }   đđ bắt buđc khi type='add'
+ *   itemId   : string                        đđ bắt buđc khi type='change'|'remove'
+ *   itemNote : string                        đđ tuỳ chọn
+ *   delta    : number                        đđ bắt buđc khi type='change'
  * }
  * tableKey = currentTable hoặc tableId của bàn cần sync
  *
- * Không ném exception ra ngoài �?? ch�? log l�?i �?�? UI không b�? block.
+ * Không ném exception ra ngoài để chđ log lđi đă UI không bđ block.
  */
 async function _cloudSyncItem(action, tableKey) {
   if (!window.DB || tableKey === 'takeaway') return;
@@ -1833,12 +2012,12 @@ async function _cloudSyncItem(action, tableKey) {
   try {
     let orderId;
     if (action.type === 'add') {
-      // M�? �?ơn m�?i nếu chưa có
+      // Mđ đơn mđi nếu chưa có
       orderId = await _ensureCloudOrder(key);
       if (!orderId) return;
       await window.DB.Orders.addItem(orderId, action.item);
     } else {
-      // change / remove ch�? thực hi�?n khi �?ơn �?ã t�?n tại
+      // change / remove chđ thực hiđơ khi đơn đã tđơ tại
       orderId = _getCloudOrderId(key);
       if (!orderId) return;
       if (action.type === 'change') {
@@ -1852,7 +2031,7 @@ async function _cloudSyncItem(action, tableKey) {
   }
 }
 
-// Lưu order cho m�?t bàn cụ th�? (dùng cho AI actions)
+// Lưu order cho mđt bàn cụ thđ (dùng cho AI actions)
 function saveOrderForTable(tableId) {
   const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
   const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
@@ -1878,9 +2057,9 @@ function saveOrderForTable(tableId) {
     }
   }
 
-  // --- Firestore (cloud sync �?? AI batch write) ---
-  // saveOrderForTable �?ược gọi từ AI actions khi �?ã build sẵn toàn b�? orderItems[key].
-  // Dùng _ensureCloudOrder + updateMeta là hợp lý vì AI là writer duy nhất tại thời �?i�?m này.
+  // --- Firestore (cloud sync để AI batch write) ---
+  // saveOrderForTable được gọi từ AI actions khi đã build sẵn toàn bđ orderItems[key].
+  // Dùng _ensureCloudOrder + updateMeta là hợp lý vì AI là writer duy nhất tại thời điđm này.
   if (window.DB && key !== 'takeaway') {
     const items = orderItems[key] || [];
     if (items.length > 0) {
@@ -1913,7 +2092,7 @@ function renderOrderPage() {
   renderCatTabs();
   renderMenuItems();
   renderCart();
-  // Khi m�? trang order, �?�?ng b�? UI ảnh bàn
+  // Khi mđ trang order, đăng bđ UI ảnh bàn
   try { updateOrderPhotoUI(); } catch(_) {}
 }
 
@@ -1931,7 +2110,7 @@ function selectCat(cat) {
 }
 
 function renderMenuItems() {
-  const menu  = _getMenu(); // �?� Cloud-first v�?i LocalStorage fallback
+  const menu  = _getMenu(); // đđ Cloud-first vđi LocalStorage fallback
   const items = orderItems[currentTable] || [];
   let filtered = currentCat === 'Tất cả' ? menu : menu.filter(m => m.category === currentCat);
   if(menuSearch) filtered = filtered.filter(m => m.name.toLowerCase().includes(menuSearch.toLowerCase()));
@@ -1947,7 +2126,7 @@ function renderMenuItems() {
 }
 
 function addToOrder(itemId) {
-  const menu = _getMenu(); // �?� Cloud-first
+  const menu = _getMenu(); // đđ Cloud-first
   const dish = menu.find(m => m.id === itemId);
   if(!dish) return;
   if(!orderItems[currentTable]) orderItems[currentTable] = [];
@@ -1987,7 +2166,7 @@ function changeQty(itemId, delta) {
   if(items[idx].qty <= 0) {
     items.splice(idx, 1);
     saveOrder();
-    // Cloud: xóa dòng món khỏi �?ơn
+    // Cloud: xóa dòng món khỏi đơn
     _cloudSyncItem({ type: 'remove', itemId, itemNote: '' }, currentTable);
   } else {
     saveOrder();
@@ -2005,18 +2184,18 @@ function setCartQty(itemId, val) {
   if(!items) return;
   const idx = items.findIndex(i => i.id === itemId);
   if(idx < 0) return;
-  const delta = qty - items[idx].qty; // tính delta �?�? dùng Transaction
+  const delta = qty - items[idx].qty; // tính delta đă dùng Transaction
   items[idx].qty = qty;
   saveOrder();
-  // Cloud: Transaction-based changeQty v�?i delta thực tế
+  // Cloud: Transaction-based changeQty vđi delta thực tế
   if(delta !== 0) _cloudSyncItem({ type: 'change', itemId, itemNote: '', delta }, currentTable);
   renderMenuItems();
   renderCart();
 }
 
 function saveOrder() {
-  // Ch�? ghi LocalStorage + cập nhật trạng thái bàn.
-  // Cloud sync �?ược xử lý riêng b�?i _cloudSyncItem() trong từng hàm
+  // Chđ ghi LocalStorage + cập nhật trạng thái bàn.
+  // Cloud sync được xử lý riêng bđi _cloudSyncItem() trong từng hàm
   // (addToOrder, changeQty, removeCartItem, setCartQty) dùng Transaction-based API.
 
   // --- LocalStorage (offline backup) ---
@@ -2077,7 +2256,7 @@ function renderCart() {
 
   orderExtras[currentTable] = extras;
 
-  // Tính t�?ng có VAT
+  // Tính tđơg có VAT
   const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
   const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
   const total = subtotal + vatAmount;
@@ -2108,7 +2287,7 @@ function renderCart() {
       ).join('');
   }
 
-  // Hi�?n th�? VAT trong t�?ng nếu có
+  // Hiđơ thđ VAT trong tđơg nếu có
   const totalEl = document.getElementById('cart-total');
   if(totalEl) {
     if(vatAmount > 0) {
@@ -2125,7 +2304,7 @@ function renderCart() {
   if (pillTotalEl) pillTotalEl.textContent = fmtFull(total);
   document.getElementById('pay-btn').disabled = items.length === 0;
 
-  // Cập nhật UI ảnh bàn (nếu �?ang �? �?úng trang)
+  // Cập nhật UI ảnh bàn (nếu đang đ đúng trang)
   try {
     updateOrderPhotoUI();
   } catch(_) {}
@@ -2167,12 +2346,12 @@ function openBillModal() {
   const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
   const total = subtotal + vatAmount;
   // Dynamically calculate cost based on current inventory
-  const inv = Store.getInventory();
-  const menu = Store.getMenu();
+  const inv = _getInventory();
+  const menu = _getMenu();
   let cost = 0;
   items.forEach(item => {
     const dish = menu.find(m => m.id === item.id);
-    let dishCost = dish?.cost || 0;
+    let dishCost = dish.cost || 0;
     if (dish && dish.itemType === ITEM_TYPES.RETAIL) {
       const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
       dishCost = linked ? linked.costPerUnit || 0 : dishCost;
@@ -2193,12 +2372,12 @@ function openBillModal() {
   const desc = `Thanh toan ${currentTable === 'takeaway' ? 'Mang ve' : 'Ban ' + currentTable} - ${billNo}`;
   const bank = s.bankAccount || PAYMENT_INFO.account;
   const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
-  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
+  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.pngamount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
 
   // Store bill data for payment confirmation (include VAT)
   window._pendingBill = { billNo, total, cost, extras, tableLabel, vatAmount, taxRate };
 
-  // Lấy ảnh của bàn (t�?i �?a 5 ảnh) �?�? in kèm bill
+  // Lấy ảnh của bàn (tđi đa 5 ảnh) đă in kèm bill
   let orderPhotosHtml = '';
   try {
     if(!orderPhotoCache) orderPhotoCache = {};
@@ -2269,7 +2448,7 @@ function openBillModal() {
 
   document.getElementById('bill-modal').classList.add('active');
 
-  // Bắt �?ầu theo dõi thanh toán tự �?�?ng (nếu �?ã cấu hình Casso)
+  // Bắt đầu theo dõi thanh toán tự đăng (nếu đã cấu hình Casso)
   startPaymentWatcher(total, billNo);
 }
 
@@ -2304,7 +2483,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
   const items      = orderItems[currentTable] || [];
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
-  // --- Ảnh hóa �?ơn ---
+  // --- Ảnh hóa đơn ---
   let orderPhotosForBill = [];
   try {
     if(!orderPhotoCache) orderPhotoCache = {};
@@ -2363,7 +2542,7 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     };
 
     if (orderId && currentTable !== 'takeaway') {
-      // Đóng �?ơn trên Firestore �?? ghi history, xóa order, reset bàn
+      // Đóng đơn trên Firestore để ghi history, xóa order, reset bàn
       window.DB.Orders.close(orderId, payInfo)
         .then(() => window.DB.Inventory.deduct(items))
         .catch(console.error);
@@ -2563,7 +2742,7 @@ async function handlePurchasePhotoCapture(event) {
     const last = currentPurchasePhotos[currentPurchasePhotos.length - 1];
     setPurchasePhotoViewer(last);
     
-    // Áp dụng lưu ngay sau khi chụp �?�? tránh vi�?c chưa submit �?ã mất ảnh
+    // Áp dụng lưu ngay sau khi chụp đă tránh viđc chưa submit đã mất ảnh
     persistCurrentPurchasePhotosBatch();
 
     setPurOcrStatus(added > 1
@@ -2763,7 +2942,7 @@ Trả về JSON dạng:
 Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Không dùng markdown.`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${s.geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContentkey=${s.geminiApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2781,7 +2960,10 @@ Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Kh
   );
   const data = await res.json();
   if(data.error) throw new Error(data.error.message || 'Gemini API error');
-  let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const _gc = data.candidates && data.candidates[0];
+  const _gp = _gc && _gc.content && _gc.content.parts;
+  const _g0 = _gp && _gp[0];
+  let raw = (_g0 && _g0.text) || '';
   raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
   let parsed = null;
   try { parsed = JSON.parse(raw); } catch(e) { throw new Error('Không parse được JSON từ Gemini'); }
@@ -2789,7 +2971,7 @@ Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Kh
 }
 
 function parsePurchaseText(text, source) {
-  // Heuristic �?ơn giản: tìm s�? l�?n nhất làm price, s�? còn lại làm qty
+  // Heuristic đơn giản: tìm sđ lđơ nhất làm price, sđ còn lại làm qty
   const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
   let price = null;
   let qty = null;
@@ -2985,7 +3167,7 @@ function quickAddStock(invId) {
     updateAlertBadge();
     showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
   }
-  // Log purchase (vẫn giữ track�??s purchase record)
+  // Log purchase (vẫn giữ trackđ?s purchase record)
   Store.addPurchase({ id:uid(), name:item.name, qty:amt, unit:item.unit, price:(item.costPerUnit||0)*amt, costPerUnit:item.costPerUnit||0, date:new Date().toISOString(), supplier:'Nhập thủ công' });
 }
 
@@ -3248,7 +3430,7 @@ async function deletePurchasePhotoBatch(batchId) {
   });
   if(changed) Store.setPurchases(purchases);
 
-  // Nếu modal �?ang m�? batch �?ó thì reset
+  // Nếu modal đang mđ batch đó thì reset
   if(String(currentPurchasePhotosBatchId || '') === String(batchId)) {
     currentPurchasePhotosBatchId = null;
     currentPurchasePhotos = [];
@@ -3266,11 +3448,15 @@ async function deletePurchasePhotoBatch(batchId) {
 }
 
 function renderPurchaseList() {
-  const purchases = Store.getPurchases().slice(0, 50);
+  const purchases = _getPurchases()
+    .slice()
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    .slice(0, 50);
   const inv = _getInventory();
+  const isCloud = !!window.DB;
 
   const purchasesHtml = purchases.length ? purchases.map(p => {
-    const invItem = inv.find(i => i.name === p.name);
+    const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
     if (invItem) subInfo += `<br><small style="color:var(--text3)">${ITEM_TYPE_LABELS[invItem.itemType] || 'Nguyên liệu'}</small>`;
     if (p.note) {
@@ -3288,7 +3474,7 @@ function renderPurchaseList() {
       <div class="list-item-right">
         <div class="list-item-amount">-${fmt(p.price)}đ</div>
         <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
-          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')">✏️</button>
+          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')" ${isCloud ? 'disabled' : ''}>✏️</button>
           <button class="btn btn-xs btn-danger" onclick="deletePurchase('${p.id}')">🗑️</button>
         </div>
       </div>
@@ -3301,6 +3487,10 @@ function renderPurchaseList() {
 }
 
 function editPurchase(purchaseId) {
+  if (window.DB) {
+    showToast('⚠️ Tạm thời chưa hỗ trợ sửa phiếu nhập khi đang đồng bộ Cloud.', 'warning');
+    return;
+  }
   const purchases = Store.getPurchases();
   const p = purchases.find(x => x.id === purchaseId);
   if(!p) return;
@@ -3332,19 +3522,28 @@ function editPurchase(purchaseId) {
 
 function deletePurchase(purchaseId) {
   if(!confirm('Xoá bản ghi nhập hàng này?')) return;
+  if (window.DB?.Purchases?.delete) {
+    window.DB.Purchases.delete(purchaseId).then(() => {
+      const purchases = Store.getPurchases().filter(p => p.id !== purchaseId);
+      Store.setPurchases(purchases);
+      renderInventory();
+      showToast('🗑️ Đã xoá bản ghi nhập hàng', 'success');
+    }).catch(err => showToast('Lỗi xoá bản ghi: ' + err.message, 'danger'));
+    return;
+  }
   const purchases = Store.getPurchases().filter(p => p.id !== purchaseId);
   Store.setPurchases(purchases);
   renderInventory();
-  showToast('🗑️ Đã xoá bản ghi nhập hàng');
+  showToast('🗑️ Đã xoá bản ghi nhập hàng', 'success');
 }
 
 function renderForecast() {
   const needs = getForecastNeeds(3);
   document.getElementById('forecast-list').innerHTML = needs.length ? needs.map(n =>
-    `<div class="alert-card ${n.urgent?'danger':'warning'}">
-      <div class="alert-icon">${n.urgent?'🚨':'📦'}</div>
+    `<div class="alert-card ${n.urgent ? 'danger' : 'warning'}">
+      <div class="alert-icon">${n.urgent ? '🚨' : '📦'}</div>
       <div class="alert-content">
-        <div class="alert-title">${n.name} <span class="badge ${n.urgent?'badge-danger':'badge-warning'}">${n.urgent?'KHẨN':'Dự báo'}</span></div>
+        <div class="alert-title">${n.name} <span class="badge ${n.urgent ? 'badge-danger' : 'badge-warning'}">${n.urgent ? 'KHẨN' : 'Dự báo'}</span></div>
         <div class="alert-desc">Tồn: ${n.currentQty} ${n.unit} | Trung bình/ngày: ${n.dailyAvg} ${n.unit}<br>Cần nhập thêm ~${n.need.toFixed(1)} ${n.unit} cho 3 ngày tới</div>
       </div>
     </div>`
@@ -3382,7 +3581,7 @@ function renderLedger() {
 
   const itemName = inv.name;
 
-  // Hi�?n th�? thông tin nguyên li�?u
+  // Hiđơ thđ thông tin nguyên liđu
   if(infoCardEl) {
     infoCardEl.innerHTML = `
       <div class="card" style="padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(0,149,255,0.05),rgba(0,149,255,0.15))">
@@ -3532,7 +3731,7 @@ async function deleteInventoryItemFromLedger(itemId) {
   const relatedConversions = unitConversions.filter(c => c.ingredientName === item.name).length;
 
   const msg = [
-    `Xóa nguyên liệu "${item.name}" khỏi hệ thống?`,
+    `Xóa nguyên liệu "${item.name}" khỏi hệ thống`,
     '',
     '- Nguyên liệu sẽ bị xóa khỏi Thẻ kho và Tồn kho',
     `- Liên kết menu bán thẳng bị ảnh hưởng: ${relatedRetail}`,
@@ -3609,7 +3808,7 @@ function openPurchaseModal() {
   delete form.dataset.editId;
   form.reset();
   resetPurchasePhotoFileInputs();
-  // Reset session ảnh chứng từ cho lần nhập hi�?n tại
+  // Reset session ảnh chứng từ cho lần nhập hiđơ tại
   currentPurchasePhotos = [];
   currentPurchasePhotosBatchId = null;
   const thumbs = document.getElementById('pur-photo-thumbs');
@@ -3668,7 +3867,7 @@ function calcPurUnitPrice() {
 }
 
 function onPurchaseItemSelect() {
-  const inv = Store.getInventory();
+  const inv = _getInventory();
   const select = document.getElementById('pur-name');
   const itemId = select.value;
   const unitInp = document.getElementById('pur-unit');
@@ -3684,10 +3883,10 @@ function onPurchaseItemSelect() {
   if(item) {
     unitInp.value = item.unit || '';
     
-    // Tìm �?ơn giá nhập gần nhất
-    const purchases = Store.getPurchases().filter(p => p.name === item.name);
+    // Tìm đơn giá nhập gần nhất
+    const purchases = ((window.appState && window.appState.purchases) ? window.appState.purchases : Store.getPurchases()).filter(p => p.name === item.name);
     if(purchases.length > 0) {
-      purchases.sort((a,b) => new Date(b.date) - new Date(a.date)); // M�?i nhất lên �?ầu
+      purchases.sort((a,b) => new Date(b.date) - new Date(a.date)); // Mđi nhất lên đầu
       const lastPur = purchases[0];
       const lastPrice = lastPur.qty > 0 ? lastPur.price / lastPur.qty : 0;
       hintEl.innerHTML = `Đơn giá nhập gần nhất: <strong>${fmt(lastPrice)}đ / ${item.unit}</strong>`;
@@ -3705,13 +3904,16 @@ function onPurchaseItemSelect() {
 
 function submitPurchase(e) {
   e.preventDefault();
-  const inv = Store.getInventory();
   const itemId = document.getElementById('pur-name').value;
   if(!itemId) return;
-  let item = inv.find(i => i.id === itemId);
-  if(!item) return;
+  const liveInv = _getInventory();
+  const liveItem = liveInv.find(i => i.id === itemId);
+  if(!liveItem) {
+    showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
+    return;
+  }
 
-  const name = item.name;
+  const name = liveItem.name;
   const qty = parseFloat(document.getElementById('pur-qty').value);
   const price = parseFloat(document.getElementById('pur-price').value);
   const unit = document.getElementById('pur-unit')?.value.trim() || 'đvt';
@@ -3727,6 +3929,62 @@ function submitPurchase(e) {
 
   const form = document.getElementById('purchase-form');
   const editId = form.dataset.editId;
+
+  if (window.DB && window.DB.Inventory) {
+    if (editId) {
+      showToast('⚠️ Tạm thời chưa hỗ trợ sửa phiếu nhập khi đang đồng bộ Cloud.', 'warning');
+      return;
+    }
+
+    persistCurrentPurchasePhotosBatch();
+
+    const currentQty = Number(liveItem.qty || 0);
+    const currentCost = Number(liveItem.costPerUnit || 0);
+    const newQty = currentQty + qty;
+    const newCostPerUnit = newQty > 0 ? ((currentQty * currentCost) + price) / newQty : currentCost;
+
+    const purchaseData = {
+      name,
+      qty,
+      unit: unit || liveItem.unit || 'đvt',
+      itemType: liveItem.itemType,
+      inventoryItemId: liveItem.id,
+      price,
+      costPerUnit: qty > 0 ? price / qty : 0,
+      date: new Date().toISOString(),
+      supplier: supplierName,
+      supplierId: supplierId || null,
+      supplierPhone,
+      supplierAddress: supplierAddr,
+      note,
+      photoBatchId: currentPurchasePhotosBatchId || null
+    };
+
+    Promise.all([
+      window.DB.Inventory.update(liveItem.id, { qty: newQty, costPerUnit: newCostPerUnit, unit: purchaseData.unit }),
+      window.DB.Purchases?.add ? window.DB.Purchases.add(purchaseData) : Promise.resolve(null)
+    ]).then(([_, cloudPurchaseId]) => {
+      const id = cloudPurchaseId || uid();
+      Store.addPurchase({ ...purchaseData, id });
+      showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
+
+      document.getElementById('pur-name').value = '';
+      document.getElementById('pur-qty').value = '';
+      document.getElementById('pur-unit').value = '';
+      document.getElementById('pur-price').value = '';
+      calcPurUnitPrice();
+      if(noteEl) noteEl.value = '';
+      const nameInp = document.getElementById('pur-name');
+      if(nameInp) nameInp.focus();
+
+      refreshIngredientDependentViews();
+    }).catch(err => showToast('Lỗi nhập hàng: ' + err.message, 'danger'));
+    return;
+  }
+
+  const inv = Store.getInventory();
+  let item = inv.find(i => i.id === itemId);
+  if(!item) return;
 
   if(editId) {
     // EDIT MODE: update purchase record
@@ -3761,7 +4019,7 @@ function submitPurchase(e) {
         inv.push(item);
       }
 
-      // Gắn batch ảnh chứng từ (nếu có) cho lần ch�?nh sửa này
+      // Gắn batch ảnh chứng từ (nếu có) cho lần chđơh sửa này
       if(currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
         persistCurrentPurchasePhotosBatch();
       }
@@ -3771,7 +4029,7 @@ function submitPurchase(e) {
     delete form.dataset.editId;
     document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
     
-    // Nếu chi phí �?i kèm, cũng cần update
+    // Nếu chi phí đi kèm, cũng cần update
     const expenses = Store.getExpenses();
     const expIdx = expenses.findIndex(e => e.name === `Nhập hàng: ${oldName}` && Math.abs(e.amount - oldPrice) < 0.1);
     if(expIdx >= 0) {
@@ -3783,7 +4041,7 @@ function submitPurchase(e) {
   showToast('✅ Đã cập nhật nhập hàng!');
 } else {
     // ADD MODE
-    // Lưu batch ảnh chứng từ (nếu có) - ch�? lưu theo batch id �?�? tránh trùng lặp
+    // Lưu batch ảnh chứng từ (nếu có) - chđ lưu theo batch id đă tránh trùng lặp
     persistCurrentPurchasePhotosBatch();
     const purchaseId = uid();
     if(item) {
@@ -3800,13 +4058,13 @@ function submitPurchase(e) {
     }
     Store.setInventory(inv);
     Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, itemType: item.itemType, inventoryItemId: item.id, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress: supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || null });
-    // B�? Tạo bản ghi Expense tự �?�?ng, ch�? lưu Purchase
+    // Bđ Tạo bản ghi Expense tự đăng, chđ lưu Purchase
     // Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
     showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
   }
 
-  // Sau khi bấm "Nhập hàng": giữ modal m�? �?�? tiếp tục nhập nguyên li�?u m�?i
-  // - Reset các field nhập nguyên li�?u, giữ lại NCC + ảnh chứng từ
+  // Sau khi bấm "Nhập hàng": giữ modal mđ đă tiếp tục nhập nguyên liđu mđi
+  // - Reset các field nhập nguyên liđu, giữ lại NCC + ảnh chứng từ
   if(editId) {
     document.getElementById('purchase-modal').classList.remove('active');
     document.getElementById('purchase-form').reset();
@@ -3832,10 +4090,10 @@ function submitPurchase(e) {
 }
 
 // ============================================================
-// STOCKTAKE (Ki�?m kê)
+// STOCKTAKE (Kiđm kê)
 // ============================================================
 function renderStocktakeHistory() {
-  const expenses = Store.getExpenses().filter(e => ['Lãi/Lỗ do kiểm kê', 'Lãi/L�? do ki�?m kê'].includes(e.category));
+  const expenses = Store.getExpenses().filter(e => ['Lãi/Lỗ do kiểm kê', 'Lãi/Lđ do kiđm kê'].includes(e.category));
   const listEl = document.getElementById('stocktake-history-list');
   if(!listEl) return;
 
@@ -3857,7 +4115,7 @@ function renderStocktakeHistory() {
 }
 
 function openStocktakeModal() {
-  const inv = Store.getInventory().filter(i => !i.hidden);
+  const inv = _getInventory().filter(i => !i.hidden);
   const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   const listEl = document.getElementById('stocktake-list');
   if(!listEl) return;
@@ -3878,7 +4136,7 @@ function openStocktakeModal() {
 }
 
 function submitStocktake() {
-  const inv = Store.getInventory();
+  const inv = _getInventory();
   const inputs = document.querySelectorAll('.stocktake-actual-qty');
   let changes = 0;
 
@@ -3895,7 +4153,7 @@ function submitStocktake() {
     if(!isNaN(actual) && actual !== sys) {
       const item = inv.find(i => i.id === id);
       if(item) {
-        const diff = actual - sys; // dương = lãi (dư), âm = l�? (thiếu)
+        const diff = actual - sys; // dương = lãi (dư), âm = lđ (thiếu)
         const diffCost = diff * (item.costPerUnit || 0);
 
         updates.push({
@@ -3936,11 +4194,13 @@ function submitStocktake() {
     Promise.all(promises).then(() => {
       document.getElementById('stocktake-modal').classList.remove('active');
       renderInventory();
+      renderStocktakeHistory();
       showToast('✅ Đã lưu kết quả kiểm kê!', 'success');
     }).catch(err => showToast('Lỗi lưu kiểm kê: ' + err.message, 'danger'));
   } else {
+    const localInv = Store.getInventory();
     updates.forEach(u => {
-      const item = inv.find(i => i.id === u.id);
+      const item = localInv.find(i => i.id === u.id);
       if(item) item.qty = u.newQty;
       Store.addExpense({
         id: uid(),
@@ -3951,9 +4211,10 @@ function submitStocktake() {
         note: `Hệ thống: ${u.newQty - u.diff}, Thực tế: ${u.newQty}`
       });
     });
-    Store.setInventory(inv);
+    Store.setInventory(localInv);
     document.getElementById('stocktake-modal').classList.remove('active');
     renderInventory();
+    renderStocktakeHistory();
     showToast('✅ Đã lưu kết quả kiểm kê!', 'success');
   }
 }
@@ -4006,10 +4267,10 @@ function resetConversionForm() {
   const ingField = document.getElementById('conv-ingredient');
   if(ingField) {
     ingField.focus();
-    // Cập nhật lại �?ơn v�? mua nếu có t�?n kho
+    // Cập nhật lại đơn vđ mua nếu có tđơ kho
     ingField.onchange = function() {
-      const inv = Store.getInventory();
-      const stock = inv.find(i => i.name.toLowerCase() === this.value.toLowerCase());
+      const inv = _getInventory();
+      const stock = inv.find(i => normalizeViKey(i.name) === normalizeViKey(this.value));
       if(stock && stock.unit) {
         document.getElementById('conv-purchase-unit').value = stock.unit;
         updateConvPreview();
@@ -4080,7 +4341,7 @@ function deleteConversion(id) {
 // ============================================================
 // PAGE: FINANCE
 // ============================================================
-let financePeriod = 'month'; // Thay �?�?i mặc �?�?nh thành 'month'
+let financePeriod = 'month'; // Thay đăi mặc đănh thành 'month'
 let financeDateOpts = {};
 
 function renderFinance() {
@@ -4108,7 +4369,7 @@ function setFinancePeriod(p) {
 }
 
 function updateFinanceUI(s) {
-  // Thay �?�?i cách hi�?n th�? các ch�? s�? tài chính
+  // Thay đăi cách hiđơ thđ các chđ sđ tài chính
   document.getElementById('fin-revenue').textContent = fmtFull(s.netSales);
   document.getElementById('fin-cost').textContent = fmtFull(s.cost);
   document.getElementById('fin-gross').textContent = fmtFull(s.gross);
@@ -4137,7 +4398,7 @@ function updateFinanceUI(s) {
       const finVat = document.getElementById('fin-vat');
       if(finVat) finVat.textContent = fmtFull(vatTotal);
       const finRevAfterVat = document.getElementById('fin-revenue-after-vat');
-      // T�?ng thực thu (có VAT và phí ship)
+      // Tđơg thực thu (có VAT và phí ship)
       if(finRevAfterVat) finRevAfterVat.textContent = fmtFull(s.revenue);
     } else {
       vatRow.style.display = 'none';
@@ -4305,18 +4566,18 @@ function renderRevenueChart() {
     
     const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
     
-    // Doanh thu g�?p (chưa trừ chiết khấu)
+    // Doanh thu gộp (chưa trừ chiết khấu)
     const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
     
-    // Tính lại chi phí nguyên li�?u (COGS) dựa trên từng món �?�? tránh dữ li�?u l�?i (cost quá cao) trong l�?ch sử cũ
+    // Tính lại chi phí nguyên liệu (COGS) dựa trên từng món để tránh dữ liệu lỗi (cost quá cao) trong lịch sử cũ
     const dayCost = dayOrders.reduce((s,o) => s + (o.items || []).reduce((ss, i) => ss + (i.cost || 0) * (i.qty || 1), 0), 0);
     const dayDiscount = dayOrders.reduce((s,o) => s + (o.discount || 0), 0); // Chi phí giảm giá
     const dayVat = dayOrders.reduce((s,o) => s + (o.vatAmount || 0), 0); // VAT
     
     const dayExp = e.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0); // Nhân sự, marketing, etc.
-    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0); // Nhập hàng (giá tr�? price lưu t�?ng tiền bill nhập)
+    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0); // Nhập hàng (giá trị price lưu tổng tiền bill nhập)
     
-    // T�?ng CHI PHÍ (lấy tr�? tuy�?t �?�?i �?�? bi�?u �?�? luôn dương)
+    // Tổng CHI PHÍ (lấy trị tuyệt đối để biểu đồ luôn dương)
     const totalOut = dayCost + dayDiscount + dayVat + dayExp + dayPur;
     
     data.push({
@@ -4389,7 +4650,7 @@ function renderRevenueChart() {
 
 // ============================================================
 // ============================================================
-// CHỐT CA  �??  Ghi ShiftLogs lên Firestore
+// CHỐT CA  để  Ghi ShiftLogs lên Firestore
 // ============================================================
 // ============================================================
 // SHIFT MANAGEMENT (Quản lý ca)
@@ -4551,8 +4812,8 @@ function shiftPayInOut(type, expectedCash) {
 
   Store.setCurrentShift(shift);
   
-  // Ghi nhận vào chi phí/thu nhập (dùng Expense cho Pay Out, nhưng không tính vào OPEX P&L nếu là rút tiền �?i chợ, tùy thiết kế. 
-  // �? �?ây ghi lại thành log Expense v�?i category "Rút tiền ca" �?�? tra cứu)
+  // Ghi nhận vào chi phí/thu nhập (dùng Expense cho Pay Out, nhưng không tính vào OPEX P&L nếu là rút tiền đi chợ, tùy thiết kế. 
+  // đ đây ghi lại thành log Expense vđi category "Rút tiền ca" đă tra cứu)
   if(type === 'out') {
     Store.addExpense({
       id: uid(),
@@ -4619,12 +4880,12 @@ async function closeShift(expectedCash) {
     showToast(`✅ Đã đóng ca (Offline)! Chênh lệch: ${fmt(diff)}đ`, 'success');
   }
 
-  // Nếu thiếu/dư tiền mặt, có th�? ghi nhận vào Expense
+  // Nếu thiếu/dư tiền mặt, có thđ ghi nhận vào Expense
   if(diff !== 0) {
     Store.addExpense({
       id: uid(),
       name: `Chênh lệch đóng ca: ${diff > 0 ? 'Dư' : 'Thiếu'} tiền mặt`,
-      amount: -diff, // Nếu dư, diff > 0, amount âm -> Lãi. Nếu thiếu, diff < 0, amount dương -> L�? (Chi phí)
+      amount: -diff, // Nếu dư, diff > 0, amount âm -> Lãi. Nếu thiếu, diff < 0, amount dương -> Lđ (Chi phí)
       category: 'Chênh lệch ca',
       date: new Date().toISOString(),
       note: `Dự kiến: ${expectedCash}, Thực tế: ${actualCash}. Ghi chú: ${note}`
@@ -4639,7 +4900,7 @@ async function closeShift(expectedCash) {
 
 // PAGE: REPORTS
 // ============================================================
-let reportPeriod = 'month'; // Thay �?�?i mặc �?�?nh thành 'month' �?�? hi�?n th�? �?ủ dữ li�?u từ các ngày trư�?c
+let reportPeriod = 'month'; // Thay đăi mặc đănh thành 'month' đă hiđơ thđ đủ dữ liđu từ các ngày trưđc
 let reportDateOpts = {};
 
 function renderReports() {
@@ -4844,7 +5105,7 @@ function renderCategoryChart() {
   const catRevenue = {};
   orders.forEach(o => (o.items||[]).forEach(item => {
     const dish = menu.find(m => m.id === item.id);
-    const cat = dish?.category || 'Khác';
+    const cat = dish.category || 'Khác';
     catRevenue[cat] = (catRevenue[cat]||0) + item.price * item.qty;
   }));
   const labels = Object.keys(catRevenue);
@@ -5163,17 +5424,17 @@ function openAddMenuModal(id) {
   const inventory = _getInventory().filter(i => !i.hidden);
   const dish = id ? menu.find(m => m.id === id) : null;
   document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
-  document.getElementById('menu-item-id').value = dish?.id || '';
-  document.getElementById('menu-item-name').value = dish?.name || '';
-  document.getElementById('menu-item-unit').value = dish?.unit || 'phần';
-  document.getElementById('menu-item-price').value = dish?.price || '';
-  document.getElementById('menu-item-category').value = dish?.category || CATEGORIES[0];
-  document.getElementById('menu-item-type').value = dish?.itemType || ITEM_TYPES.FINISHED;
+  document.getElementById('menu-item-id').value = dish.id || '';
+  document.getElementById('menu-item-name').value = dish.name || '';
+  document.getElementById('menu-item-unit').value = dish.unit || 'phần';
+  document.getElementById('menu-item-price').value = dish.price || '';
+  document.getElementById('menu-item-category').value = dish.category || CATEGORIES[0];
+  document.getElementById('menu-item-type').value = dish.itemType || ITEM_TYPES.FINISHED;
   const linkedSel = document.getElementById('menu-linked-inventory-id');
   if (linkedSel) {
     linkedSel.innerHTML = '<option value="">-- Chọn hàng tồn kho --</option>' + inventory
       .map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
-    linkedSel.value = dish?.linkedInventoryId || '';
+    linkedSel.value = dish.linkedInventoryId || '';
   }
   
   const list = document.getElementById('menu-ingredients-list');
@@ -5409,6 +5670,22 @@ function applyDateFilter(page) {
 // TOAST
 
 // ============================================================
+function repairVietnameseText(input) {
+  let str = String(input ?? '');
+  if (!str) return str;
+
+  // Chỉ sửa khi có dấu hiệu mojibake rõ ràng.
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+  if (badTokens.some(t => str.includes(t))) {
+    try { str = decodeURIComponent(escape(str)); } catch (_) {}
+    try {
+      const bytes = Uint8Array.from(str, ch => ch.charCodeAt(0) & 0xff);
+      str = new TextDecoder('utf-8').decode(bytes) || str;
+    } catch (_) {}
+  }
+  return str;
+}
+
 function showToast(msg, type, duration) {
   let toast = document.getElementById('toast');
   if(!toast) {
@@ -5419,7 +5696,7 @@ function showToast(msg, type, duration) {
   }
   // Clear previous auto-hide timer
   if(toast._hideTimer) clearTimeout(toast._hideTimer);
-  toast.textContent = msg;
+  toast.textContent = repairVietnameseText(msg);
   toast.style.borderColor = type === 'success' ? 'var(--success)' : type === 'danger' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--border)';
   requestAnimationFrame(() => {
     toast.style.opacity = '1';
@@ -5445,7 +5722,7 @@ async function confirmResetData(keepMenu, keepInventory) {
   orderItems = {};
   
   // 2. Reset Cloud Firestore (nếu có kết nối và là Admin)
-  if (window.DB && window.appState && window.appState.userDoc?.role === 'admin') {
+  if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
     showToast('⏳ Đang xóa dữ liệu trên Cloud...', 'info');
     try {
       await window.DB.resetCloudData(keepMenu, keepInventory);
@@ -5454,7 +5731,7 @@ async function confirmResetData(keepMenu, keepInventory) {
       showToast('❌ Lỗi khi xóa dữ liệu Cloud: ' + e.message, 'danger');
     }
   } else if (window.appState) {
-    // Chế �?�? Offline: Cập nhật lại window.appState r�?ng
+    // Chế độ Offline: Cập nhật lại window.appState rỗng
     const fieldsToReset = ['history', 'orders', 'expenses', 'purchases', 'aiHistory'];
     if(!keepMenu) fieldsToReset.push('menu');
     if(!keepInventory) fieldsToReset.push('inventory', 'unitConversions');
@@ -5463,7 +5740,7 @@ async function confirmResetData(keepMenu, keepInventory) {
       if(Array.isArray(window.appState[f])) window.appState[f] = [];
       else if(typeof window.appState[f] === 'object') window.appState[f] = {};
     });
-    showToast('�??? Đã reset dữ li�?u cục b�?! Sẵn sàng hoạt �?�?ng.', 'success');
+    showToast('✅ Đã reset dữ liệu cục bộ! Sẵn sàng hoạt động.', 'success');
   }
 
   document.getElementById('reset-modal').classList.remove('active');
@@ -5486,6 +5763,9 @@ function renderSettings() {
     ['set-bankAccount',  s.bankAccount || ''],
     ['set-bankOwner',    s.bankOwner   || ''],
     ['set-geminiApiKey', s.geminiApiKey|| ''],
+    ['set-deepseekApiKey', s.deepseekApiKey || ''],
+    ['set-deepseekEndpoint', s.deepseekEndpoint || 'https://api.deepseek.com/v1/chat/completions'],
+    ['set-deepseekModel', s.deepseekModel || 'deepseek-chat'],
     ['set-googleTTSKey', s.googleTTSKey|| ''],
     ['set-gemmaEndpoint',s.gemmaEndpoint || 'http://127.0.0.1:11434/v1/chat/completions'],
     ['set-gemmaModel',   s.gemmaModel    || 'gemma2:9b'],
@@ -5533,7 +5813,7 @@ function renderSettings() {
   const gdriveFolderEl = document.getElementById('set-googleDriveFolderId');
   if(gdriveFolderEl) gdriveFolderEl.value = s.googleDriveFolderId || '';
 
-  // Hi�?n th�?/ẩn phần chọn ngày báo cáo theo kỳ
+  // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
   try { toggleReportExportDate(); } catch(_) {}
   try { toggleWeeklyDriveCheckbox(); } catch(_) {}
 
@@ -5561,7 +5841,7 @@ function renderSettings() {
       logoPreview.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;">`;
       if(removeBtn) removeBtn.style.display = 'inline-block';
     } else {
-      logoPreview.innerHTML = '<span style="font-size:20px;">�?��</span>';
+      logoPreview.innerHTML = '<span style="font-size:20px;">🏪</span>';
       if(removeBtn) removeBtn.style.display = 'none';
     }
   }
@@ -5574,7 +5854,7 @@ function renderSettings() {
   if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
   updateStorageQuotaInfo();
   
-  // Hi�?n th�? danh sách user nếu là admin
+  // Hiển thị danh sách user nếu là admin
   try { renderUserManagement(); } catch(e){}
 }
 
@@ -5591,6 +5871,9 @@ function submitSettings(e) {
   const bankAccountEl = document.getElementById('set-bankAccount');
   const bankOwnerEl   = document.getElementById('set-bankOwner');
   const geminiEl      = document.getElementById('set-geminiApiKey');
+  const deepseekKeyEl = document.getElementById('set-deepseekApiKey');
+  const deepseekEndpointEl = document.getElementById('set-deepseekEndpoint');
+  const deepseekModelEl = document.getElementById('set-deepseekModel');
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
   const gemmaEndpointEl = document.getElementById('set-gemmaEndpoint');
   const gemmaModelEl    = document.getElementById('set-gemmaModel');
@@ -5630,6 +5913,9 @@ function submitSettings(e) {
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
     geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
+    deepseekApiKey: (deepseekKeyEl && deepseekKeyEl.value.trim()) || '',
+    deepseekEndpoint: (deepseekEndpointEl && deepseekEndpointEl.value.trim()) || 'https://api.deepseek.com/v1/chat/completions',
+    deepseekModel: (deepseekModelEl && deepseekModelEl.value.trim()) || 'deepseek-chat',
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     gemmaEndpoint:(gemmaEndpointEl&& gemmaEndpointEl.value.trim())|| 'http://127.0.0.1:11434/v1/chat/completions',
     gemmaModel:   (gemmaModelEl  && gemmaModelEl.value.trim())    || 'gemma2:9b',
@@ -5663,7 +5949,7 @@ function submitSettings(e) {
   // Apply theme immediately
   applyTheme(selectedTheme);
   
-  // FIX 4: Ghi settings lên Firestore (�?�?ng b�? �?a thiết b�?)
+  // FIX 4: Ghi settings lên Firestore (đồng bộ đa thiết bị)
   if (window.DB && window.DB.Settings) {
     window.DB.Settings.save(updated).catch(e => console.warn('[Settings] Cloud save error:', e));
   }
@@ -5672,14 +5958,14 @@ function submitSettings(e) {
   const vatDisplay = document.getElementById('vat-current-display');
   if(vatDisplay) vatDisplay.textContent = newTaxRate + '%';
 
-  // Nếu s�? bàn thay �?�?i �?? rebuild danh sách bàn và reset active orders
+  // Nếu số bàn thay đổi: rebuild danh sách bàn và reset active orders
   if(newTableCount !== oldTableCount) {
     Store.rebuildTables(newTableCount);
-    // Cloud sync: kh�?i tạo bàn tr�?ng lên Firestore
+    // Cloud sync: khởi tạo bàn trống lên Firestore
     if (window.DB && window.DB.Tables && window.DB.Tables.initTables) {
       window.DB.Tables.initTables(newTableCount).catch(e => console.warn('[Tables] Cloud init error:', e));
     }
-    // Xoá các order của bàn vượt s�? lượng m�?i (Local)
+    // Xoá các order của bàn vượt số lượng mới (Local)
     const orders = Store.getOrders();
     Object.keys(orders).forEach(tid => {
       if(parseInt(tid) > newTableCount) delete orders[tid];
@@ -5694,7 +5980,7 @@ function submitSettings(e) {
   applyStoreSettings();
   updateStorageQuotaInfo();
   if(storageQuotaEl) storageQuotaEl.value = storageQuotaMb;
-  showToast('�?? Đã lưu cài �?ặt!' + (newTableCount !== oldTableCount ? ` Sơ �?�? bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+  showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
 }
 
 function getLocalStorageUsageBytes() {
@@ -5703,7 +5989,7 @@ function getLocalStorageUsageBytes() {
     for(let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || '';
       const val = localStorage.getItem(key) || '';
-      total += (key.length + val.length) * 2; // UTF-16 (ư�?c lượng)
+      total += (key.length + val.length) * 2; // UTF-16 (ước lượng)
     }
     return total;
   } catch(_) {
@@ -5725,9 +6011,9 @@ function updateStorageQuotaInfo() {
   const usedBytes = getLocalStorageUsageBytes();
   const quotaBytes = quotaMb * 1024 * 1024;
   const usedPercent = quotaBytes > 0 ? Math.min(999, (usedBytes / quotaBytes) * 100) : 0;
-  const status = usedBytes > quotaBytes ? '�?�️ Vượt quota' : (usedPercent >= 85 ? '�?�️ Sắp �?ầy' : '�?? Bình thường');
-  // iOS Safari / WKWebView gi�?i hạn localStorage khoảng 5-10 MB thực tế
-  const BROWSER_LIMIT_NOTE = '�??� Lưu ý: Trình duy�?t iPhone/Safari gi�?i hạn localStorage khoảng <b>5�??10 MB</b>. Quota cài �?ặt ch�? dùng �?�? cảnh báo trư�?c trong app.';
+  const status = usedBytes > quotaBytes ? '⚠️ Vượt quota' : (usedPercent >= 85 ? '⚠️ Sắp đầy' : '✅ Bình thường');
+  // iOS Safari / WKWebView giới hạn localStorage khoảng 5-10 MB thực tế
+  const BROWSER_LIMIT_NOTE = 'ℹ️ Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
   infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
   infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
 }
@@ -5736,7 +6022,7 @@ function handleLogoUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   if (file.size > 2 * 1024 * 1024) {
-    showToast('�? Ảnh quá l�?n. Chọn ảnh < 2MB', 'danger');
+    showToast('⚠️ Ảnh quá lớn. Chọn ảnh < 2MB', 'danger');
     return;
   }
   const reader = new FileReader();
@@ -5747,7 +6033,7 @@ function handleLogoUpload(e) {
     Store.setSettings(s);
     applyStoreSettings();
     renderSettings();
-    showToast('�?? Đã cập nhật logo!', 'success');
+    showToast('✅ Đã cập nhật logo!', 'success');
   };
   reader.readAsDataURL(file);
 }
@@ -5758,16 +6044,16 @@ function removeLogo() {
   Store.setSettings(s);
   applyStoreSettings();
   renderSettings();
-  showToast('�???️ Đã xoá logo!', 'success');
+  showToast('🗑️ Đã xoá logo!', 'success');
 }
 
 // ============================================================
-// PAYMENT WATCHER �?? Tự �?�?ng nhận tiền QR Banking
+// PAYMENT WATCHER để Tự đăng nhận tiền QR Banking
 // ============================================================
 
 /**
  * Phát âm thanh nhận tiền (coin/chime) bằng Web Audio API.
- * Không cần file âm thanh nào �?? t�?ng hợp ngay trên thiết b�?.
+ * Không cần file âm thanh nào đểđơg hợp ngay trên thiết bđ.
  * @param {number} vol - 0..1
  */
 function playPaymentSound(vol = 0.8) {
@@ -5821,18 +6107,18 @@ function testPaySound() {
   const s = Store.getSettings();
   const vol = (Number(s.paySoundVolume ?? 80)) / 100;
   playPaymentSound(vol);
-  showToast('�??? �?m thanh nhận tiền!', 'success');
+  showToast('🔊 Đã thử âm thanh nhận tiền!', 'success');
 }
 
 // ------- Watcher state -------
 let _payWatchTimer    = null;
 let _payWatchAmount   = 0;
-let _payWatchStart    = 0;   // Timestamp khi bắt �?ầu watch (ms)
-let _payWatchSeenTxIds = new Set(); // IDs �?ã xử lý �?�? tránh double-trigger
+let _payWatchStart    = 0;   // Timestamp khi bắt đầu watch (ms)
+let _payWatchSeenTxIds = new Set(); // IDs đã xử lý để tránh double-trigger
 let _payWatchConfirmed = false;
 
 /**
- * Gọi API �?�? lấy 20 giao d�?ch gần nhất.
+ * Gọi API để lấy 20 giao dịch gần nhất.
  */
 async function fetchRecentTransactions(token) {
   if (!token) return [];
@@ -5854,9 +6140,9 @@ async function fetchRecentTransactions(token) {
 }
 
 /**
- * Bắt �?ầu polling khi bill �?ược hi�?n th�?.
- * @param {number} expectedAmount - S�? tiền cần nhận
- * @param {string} billNo        - Mã bill �?�? tham chiếu
+ * Bắt đầu polling khi bill được hiển thị.
+ * @param {number} expectedAmount - Số tiền cần nhận
+ * @param {string} billNo        - Mã bill để tham chiếu
  */
 function startPaymentWatcher(expectedAmount, billNo) {
   const s = Store.getSettings();
@@ -5869,7 +6155,7 @@ function startPaymentWatcher(expectedAmount, billNo) {
   _payWatchSeenTxIds = new Set();
   _payWatchConfirmed = false;
 
-  // Hi�?n th�? trạng thái �?ang chờ
+  // Hiển thị trạng thái đang chờ
   _payWatchUpdateStatus('⏳ Đang chờ thanh toán (SePay)...', 'var(--text3)');
 
   const token = s.sepayToken;
@@ -5878,17 +6164,17 @@ function startPaymentWatcher(expectedAmount, billNo) {
   const poll = async () => {
     if (_payWatchConfirmed) return;
 
-    // Dừng sau 30 phút �?�? không poll mãi
+    // Dừng sau 30 phút để không poll mãi
     if (Date.now() - _payWatchStart > 30 * 60 * 1000) {
       stopPaymentWatcher();
-      _payWatchUpdateStatus('�?? Đã hết thời gian chờ (30 phút)', 'var(--text3)');
+      _payWatchUpdateStatus('Đã hết thời gian chờ (30 phút)', 'var(--text3)');
       return;
     }
 
     try {
       const txns = await fetchRecentTransactions(token);
 
-      // Tìm giao d�?ch kh�?p: �?úng s�? tiền + trong vòng 5 phút k�? từ khi m�? bill
+      // Tìm giao dịch khớp: đúng số tiền + trong vòng 5 phút kể từ khi mở bill
       const match = txns.find(t => {
         if (_payWatchSeenTxIds.has(t.id)) return false;
         if (t.amount !== _payWatchAmount) return false;
@@ -5904,18 +6190,18 @@ function startPaymentWatcher(expectedAmount, billNo) {
         onPaymentReceived(match, billNo, vol);
       }
     } catch (err) {
-      // L�?i mạng thì lặng im, tiếp tục poll
+      // Lỗi mạng thì lặng im, tiếp tục poll
       console.warn('[PayWatcher] poll error:', err.message);
-      _payWatchUpdateStatus('�?�️ Đang ki�?m tra qua SePay... (l�?i kết n�?i tạm thời)', 'var(--warning)');
+      _payWatchUpdateStatus('⚠️ Đang kiểm tra qua SePay... (lỗi kết nối tạm thời)', 'var(--warning)');
     }
 
-    // Đặt l�?ch poll tiếp (5 giây)
+    // Đặt lịch poll tiếp (5 giây)
     if (!_payWatchConfirmed) {
       _payWatchTimer = setTimeout(poll, 5000);
     }
   };
 
-  // Bắt �?ầu poll ngay sau 1 giây (cho QR hi�?n th�? xong)
+  // Bắt đầu poll ngay sau 1 giây (cho QR hiển thị xong)
   _payWatchTimer = setTimeout(poll, 1000);
 }
 
@@ -5928,34 +6214,34 @@ function stopPaymentWatcher() {
 function _payWatchUpdateStatus(text, color) {
   const el = document.getElementById('pay-watch-status');
   if (!el) return;
-  el.textContent = text;
+  el.textContent = repairVietnameseText(text);
   el.style.color = color || 'var(--text3)';
 }
 
 /**
- * Được gọi khi phát hi�?n giao d�?ch kh�?p.
- * Phát âm �?? hi�?n thông báo l�?n �?? tự �?iền phương thức "bank" vào xác nhận.
+ * Được gọi khi phát hiện giao dịch khớp.
+ * Phát âm thanh và hiển thị thông báo lớn để tự điền phương thức "bank" vào xác nhận.
  */
 function onPaymentReceived(tx, billNo, vol) {
-  // 1) �?m thanh
+  // 1) Âm thanh
   playPaymentSound(vol);
 
   // 2) Cập nhật trạng thái trong bill
   _payWatchUpdateStatus(
-    `�?? Đã nhận ${fmtFull(tx.amount)} �?? ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
+    `💸 Đã nhận ${fmtFull(tx.amount)} · ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
     'var(--success)'
   );
 
-  // 3) Nút thanh toán chuy�?n sang màu xanh n�?i bật
+  // 3) Nút thanh toán chuyển sang màu xanh nổi bật
   const payBtn = document.getElementById('bill-pay-btn');
   if (payBtn) {
-    payBtn.textContent = '�??? Xác nhận �?ã nhận tiền';
+    payBtn.textContent = '💳 Xác nhận đã nhận tiền';
     payBtn.classList.remove('btn-success');
     payBtn.classList.add('btn-success');
     payBtn.style.animation = 'pulse-pay 0.8s ease 3';
   }
 
-  // 4) Hi�?n toast toàn màn hình
+  // 4) Hiển thị toast toàn màn hình
   showPaymentBanner(tx.amount, tx.desc);
 
   // 5) Haptic (nếu có)
@@ -5963,7 +6249,7 @@ function onPaymentReceived(tx, billNo, vol) {
 }
 
 /**
- * Hi�?n th�? banner l�?n "Đã nhận tiền" phủ lên màn hình ngắn.
+ * Hiển thị banner lớn "Đã nhận tiền" phủ lên màn hình ngắn.
  */
 function showPaymentBanner(amount, desc) {
   let banner = document.getElementById('pay-received-banner');
@@ -5988,11 +6274,11 @@ function showPaymentBanner(amount, desc) {
 
   banner.innerHTML = `
     <div style="text-align:center;padding:32px;max-width:320px">
-      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">�??�</div>
-      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">Đ�? NHẬN TI�?N!</div>
+      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">💸</div>
+      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">ĐÃ NHẬN TIỀN!</div>
       <div style="font-size:32px;font-weight:900;color:#fff;margin-bottom:12px">${fmtFull(amount)}</div>
       ${desc ? `<div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:20px;line-height:1.4">${desc}</div>` : ''}
-      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm �?�? �?óng</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm để đóng</div>
     </div>
   `;
   banner.style.opacity = '1';
@@ -6013,10 +6299,10 @@ function showPaymentBanner(amount, desc) {
 // ============================================================
 
 /**
- * Tự d�?n nhẹ dữ li�?u nặng trong localStorage (không xóa hản) �?�? giảm dỡng lượng trư�?c khi backup.
- * - Bỏ photos khỏi l�?ch sử �?ơn (nếu còn lưu sau khi clean job)
- * - Gi�?i hạn AI history xu�?ng 60 entry
- * Trả về s�? bytes tiết ki�?m �?ược.
+ * Tự dọn nhẹ dữ liệu nặng trong localStorage (không xóa hẳn) để giảm dung lượng trước khi backup.
+ * - Bỏ photos khỏi lịch sử đơn (nếu còn lưu sau khi clean job)
+ * - Giới hạn AI history xuống 60 entry
+ * Trả về số bytes tiết kiệm được.
  */
 function pruneBeforeBackup() {
   let freed = 0;
@@ -6047,10 +6333,10 @@ function pruneBeforeBackup() {
 
 function manualBackup() {
   try {
-    // Bư�?c 1: Tự d�?n data nặng (silent) trư�?c khi lưu
+    // Bước 1: Tự dọn data nặng (silent) trước khi lưu
     pruneBeforeBackup();
 
-    // Bư�?c 2: C�? lưu local backup
+    // Bước 2: Ghi snapshot backup cục bộ
     const snapshot = Store.saveLocalBackup();
     renderBackupList();
     const last = Store.getLastBackupTime();
@@ -6059,28 +6345,28 @@ function manualBackup() {
     updateStorageQuotaInfo();
 
     if(!snapshot) {
-      // Trường hợp localStorage browser �?ầy (iOS Safari gi�?i hạn ~5-10 MB thực tế)
-      // Không tự �?�?ng xuất file (gây b�?i r�?i) �?? hỏi người dùng thảy.
+      // Trường hợp localStorage browser đầy (iOS Safari giđi hạn ~5-10 MB thực tế)
+      // Không tự động xuất file (gây phiền rồi) — để hỏi người dùng thao tác.
       showToast(
-        '�?�️ B�? nh�? trình duy�?t �?ầy (iOS/Safari gi�?i hạn ~5�??10 MB). ' +
-        'Hãy bấm "�??� Xuất file" �?�? lưu backup ra máy.',
+        '⚠️ Bộ nhớ trình duyệt đầy (iOS/Safari giới hạn ~5–10 MB). ' +
+        'Hãy bấm "📤 Xuất file" để lưu backup ra máy.',
         'warning',
         6000
       );
       return;
     }
-    showToast('�??� Đã backup thành công!', 'success');
+    showToast('✅ Đã backup thành công!', 'success');
   } catch(err) {
-    // Catch l�?i QuotaExceededError bất kỳ cấp �?�? nào
+    // Catch lỗi QuotaExceededError bất kỳ cấp nào
     if(err.name === 'QuotaExceededError' || /quota/i.test(err.message || '')) {
       updateStorageQuotaInfo();
       showToast(
-        '�?�️ B�? nh�? trình duy�?t b�? �?ầy. Hãy bấm "�??� Xuất file" hoặc "�?�� Dọn dữ li�?u nặng" r�?i thử lại.',
+        '⚠️ Bộ nhớ trình duyệt bị đầy. Hãy bấm "📤 Xuất file" hoặc "🧹 Dọn dữ liệu nặng" rồi thử lại.',
         'warning',
         6000
       );
     } else {
-      showToast('�? Backup thất bại: ' + (err.message || err), 'danger');
+      showToast('❌ Backup thất bại: ' + (err.message || err), 'danger');
     }
   }
 }
@@ -6097,13 +6383,13 @@ function exportBackup() {
     a.download = `pos_backup_${date}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('�??� Đã xuất file backup!', 'success');
+    showToast('✅ Đã xuất file backup!', 'success');
   } catch(err) {
-    showToast('�? Xuất thất bại: ' + err.message, 'danger');
+    showToast('❌ Xuất thất bại: ' + err.message, 'danger');
   }
 }
 
-/** Xuất ch�? mục cài �?ặt �?ã lưu trong b�? nh�? (sau khi bấm Lưu cài �?ặt), không g�?m menu/�?ơn hàng/... */
+/** Xuất chỉ mục cài đặt đã lưu trong bộ nhớ (sau khi bấm Lưu cài đặt), không gồm menu/đơn hàng/... */
 function exportSettingsBackup() {
   try {
     const settings = Store.getSettings();
@@ -6122,26 +6408,26 @@ function exportSettingsBackup() {
     a.download = `pos_cai_dat_${date}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('�??? Đã xuất file cài �?ặt �?ã lưu.', 'success');
+    showToast('✅ Đã xuất file cài đặt đã lưu.', 'success');
   } catch(err) {
-    showToast('�? Xuất cài �?ặt thất bại: ' + (err.message || err), 'danger');
+    showToast('❌ Xuất cài đặt thất bại: ' + (err.message || err), 'danger');
   }
 }
 
 async function cleanupHeavyData() {
-  if(!confirm('Dọn dữ li�?u nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI m�?i nhất. Tiếp tục?')) return;
+  if(!confirm('Dọn dữ liệu nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI mới nhất. Tiếp tục')) return;
   try {
     const history = Store.getHistory() || [];
     let removedOrderPhotos = 0;
     
-    // Xóa ảnh của các �?ơn v�? l�?ch sử khỏi b�? nh�? PhotoDB
+    // Xóa ảnh của các đơn và lịch sử khỏi bộ nhớ PhotoDB
     for(const o of history) {
       if(o && o.historyId) {
          await PhotoDB.remove('history_' + o.historyId);
-         removedOrderPhotos++; // Chấp nhận �?ếm vo vì không tải dataUrl ra nữa
+         removedOrderPhotos++; // Chấp nhận đếm vo vì không tải dataUrl ra nữa
       }
     }
-    // Vẫn cập nhật lại mảng history cho chắc �?n không còn base64 lọt nào
+    // Vẫn cập nhật lại mảng history cho chắc đỡ không còn base64 lọt nào
     const nextHistory = history.map(o => {
       if(!o || typeof o !== 'object') return o;
       const photos = Array.isArray(o.photos) ? o.photos : [];
@@ -6165,9 +6451,9 @@ async function cleanupHeavyData() {
     renderBackupList();
     renderOrderHistoryList();
     updateStorageQuotaInfo();
-    showToast(`�?�� Đã dọn dữ li�?u nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
+    showToast(`✅ Đã dọn dữ liệu nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
   } catch(err) {
-    showToast('�? Dọn dữ li�?u thất bại: ' + (err.message || err), 'danger');
+    showToast('❌ Dọn dữ liệu thất bại: ' + (err.message || err), 'danger');
   }
 }
 
@@ -6263,7 +6549,7 @@ async function exportReportExcel(override = {}) {
 
   const ExcelJSLib = typeof ExcelJS !== 'undefined' ? ExcelJS : (typeof window !== 'undefined' ? window.ExcelJS : undefined);
   if(!ExcelJSLib) {
-    showToast('Không tải �?ược thư vi�?n Excel. Vui lòng tải lại trang.', 'danger');
+    showToast('Không tải được thư viđơ Excel. Vui lòng tải lại trang.', 'danger');
     return false;
   }
 
@@ -6282,11 +6568,11 @@ async function exportReportExcel(override = {}) {
     if(period === 'today') return 'Hôm nay';
     if(period === 'day' && date) {
       const d = new Date(`${date}T12:00:00`);
-      return Number.isNaN(d.getTime()) ? 'Ngày cụ th�?' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
+      return Number.isNaN(d.getTime()) ? 'Ngày cụ thể' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
     }
-    if(period === 'day') return 'Ngày cụ th�?';
+    if(period === 'day') return 'Ngày cụ thể';
     if(period === 'week') return '7 ngày gần nhất';
-    if(period === 'month') return 'Tháng hi�?n tại';
+    if(period === 'month') return 'Tháng hiện tại';
     return 'Tất cả';
   })();
 
@@ -6318,7 +6604,7 @@ async function exportReportExcel(override = {}) {
     });
     const vatLabel = vatRate > 0 ? `Thuế VAT (${vatRate}%)` : 'Thuế VAT (0%)';
     const headers = [
-      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'S�? lượng bán',
+      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'Sđ lượng bán',
       'Đơn giá (VND)', 'Thành tiền (VND)', vatLabel, 'Sau VAT (VND)',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
@@ -6367,7 +6653,7 @@ async function exportReportExcel(override = {}) {
 
     ws.mergeCells(r, 1, r, 4);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'T�?NG';
+    tr.getCell(1).value = 'TỔNG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(5).value = totals.qty;
@@ -6395,20 +6681,20 @@ async function exportReportExcel(override = {}) {
     ];
   };
 
-  // Sheet �?ầy �?ủ l�?ch sử �?ơn hàng (theo �?ơn, không theo từng món)
+  // Sheet đầy đủ lịch sử đơn hàng (theo đơn, không theo từng món)
   const fillOrdersSheet = ws => {
     const lastCol = 14;
     applyReportTitleBlock(ws, {
-      title: 'L�?CH SỬ ĐƠN H�?NG (ĐẦY ĐỦ)',
+      title: 'LỊCH SỬ ĐƠN HÀNG (ĐẦY ĐỦ)',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const vatLabel = vatRate > 0 ? `VAT (${vatRate}%)` : 'VAT';
     const headers = [
-      'TT', 'Mã �?ơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
+      'TT', 'Mã đơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
       'Tiền hàng (VND)', 'Giảm giá (VND)', 'Phí ship (VND)', vatLabel,
-      'T�?ng c�?ng (VND)', 'Giá v�?n (VND)', 'Lãi g�?p (VND)', 'PT Thanh toán', 'Ghi chú',
+      'Tổng cộng (VND)', 'Giá vốn (VND)', 'Lãi gộp (VND)', 'PT Thanh toán', 'Ghi chú',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
@@ -6434,8 +6720,8 @@ async function exportReportExcel(override = {}) {
       const cost = Number(o.cost || 0);
       const total = Number(o.total || 0);
       const gross = total - cost;
-      const payLabel = o.payMethod === 'bank' ? 'Chuy�?n khoản' : 'Tiền mặt';
-      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}�?)`).join('; ');
+      const payLabel = o.payMethod === 'bank' ? 'Chuyđơ khoản' : 'Tiền mặt';
+      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}đ)`).join('; ');
 
       const row = ws.getRow(r);
       row.getCell(1).value = stt++;
@@ -6479,7 +6765,7 @@ async function exportReportExcel(override = {}) {
     // Total row
     ws.mergeCells(r, 1, r, 5);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = `T�?NG (${orders.length} �?ơn)`;
+    tr.getCell(1).value = `TỔNG (${orders.length} đơn)`;
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(6).value = '';
@@ -6525,7 +6811,7 @@ async function exportReportExcel(override = {}) {
       exportDateStr,
       lastCol,
     });
-    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'N�?i dung', 'Danh mục', 'S�? tiền (VND)'];
+    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'Nđi dung', 'Danh mục', 'Sđ tiền (VND)'];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
     const hr = ws.getRow(HEADER_ROW);
@@ -6555,7 +6841,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 5);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'T�?NG';
+    tr.getCell(1).value = 'TỔNG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(6).value = excelFmtVnInt(total);
@@ -6573,13 +6859,13 @@ async function exportReportExcel(override = {}) {
   const fillPurchaseSheet = ws => {
     const lastCol = 10;
     applyReportTitleBlock(ws, {
-      title: 'BÁO CÁO NHẬP H�?NG',
+      title: 'BÁO CÁO NHẬP HÀNG',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const headers = [
-      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên li�?u', 'S�? lượng', 'Đơn v�?',
+      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên liệu', 'Số lượng', 'Đơn vị',
       'Đơn giá (VND)', 'Thành tiền (VND)', 'Nhà cung cấp', 'Ghi chú',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
@@ -6625,7 +6911,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 4);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'T�?NG';
+    tr.getCell(1).value = 'TỔNG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(5).value = totalQty;
@@ -6653,14 +6939,14 @@ async function exportReportExcel(override = {}) {
   const fillInventorySheet = ws => {
     const lastCol = 9;
     applyReportTitleBlock(ws, {
-      title: 'BÁO CÁO T�?N KHO',
+      title: 'BÁO CÁO TỒN KHO',
       periodLabel,
       exportDateStr,
       lastCol,
     });
     const headers = [
-      'TT', 'Mã hàng', 'Tên nguyên li�?u', 'Đơn v�?', 'T�?n hi�?n tại', 'T�?n t�?i thi�?u',
-      'Giá v�?n (VND)', 'Giá tr�? t�?n (VND)', 'Trạng thái',
+      'TT', 'Mã hàng', 'Tên nguyên liệu', 'Đơn vị', 'Tồn hiện tại', 'Tồn tối thiểu',
+      'Giá vốn (VND)', 'Giá trị tồn (VND)', 'Trạng thái',
     ];
     headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
     paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
@@ -6702,7 +6988,7 @@ async function exportReportExcel(override = {}) {
     });
     ws.mergeCells(r, 1, r, 7);
     const tr = ws.getRow(r);
-    tr.getCell(1).value = 'T�?NG';
+    tr.getCell(1).value = 'TỔNG';
     tr.getCell(1).font = { bold: true };
     tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     tr.getCell(8).value = excelFmtVnInt(totalValue);
@@ -6779,7 +7065,7 @@ async function exportReportExcel(override = {}) {
         return false;
       }
       if(s.autoUploadToGoogleDrive && !skipLocalDownload) {
-        showToast('�?�️ Bật tự �?ẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
+        showToast('⚠️ Bật tự đẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
       }
     } else {
       try {
@@ -6797,10 +7083,10 @@ async function exportReportExcel(override = {}) {
         uploadOk = false;
         uploadDriveOpaque = false;
         if(forceUploadToDrive) {
-          showToast('�?�️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
+          showToast('⚠️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
           return false;
         }
-        showToast('�?�️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+        showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
       }
     }
   }
@@ -6808,15 +7094,15 @@ async function exportReportExcel(override = {}) {
   if(!skipLocalDownload) {
     if(uploadOk === true && s.autoUploadToGoogleDrive) {
       showToast(uploadDriveOpaque
-        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive �?? vui lòng ki�?m tra thư mục (trình duy�?t có th�? không �?ọc �?ược phản h�?i).'
-        : 'Đã xuất file báo cáo Excel và �?ẩy bản .xlsx lên Google Drive.', 'success');
+        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive — vui lòng kiểm tra thư mục (trình duyệt có thể không đọc được phản hồi).'
+        : 'Đã xuất file báo cáo Excel và đẩy bản .xlsx lên Google Drive.', 'success');
     } else {
       showToast('Đã xuất file báo cáo Excel.', 'success');
     }
   } else if(uploadOk === true) {
     showToast(uploadDriveOpaque
-      ? '�?�️ Đã gửi file .xlsx lên Drive. M�? thư mục �?ã chọn �?�? xác nhận (chế �?�? tương thích CORS: không �?ọc �?ược phản h�?i chi tiết).'
-      : '�?�️ Đã �?ẩy file báo cáo (.xlsx) lên thư mục Google Drive �?ã chọn.', 'success');
+      ? '✅ Đã gửi file .xlsx lên Drive. Mọi thư mục đã chọn đã xác nhận (chế độ tương thích CORS: không đọc được phản hồi chi tiết).'
+      : '✅ Đã đẩy file báo cáo (.xlsx) lên thư mục Google Drive đã chọn.', 'success');
   }
 
   return true;
@@ -6830,7 +7116,7 @@ async function blobToBase64(blob) {
       const base64 = dataUrl.toString().split(',')[1] || '';
       resolve(base64);
     };
-    reader.onerror = () => reject(new Error('Không �?ọc �?ược file �?�? upload.'));
+    reader.onerror = () => reject(new Error('Không đọc được file để upload.'));
     reader.readAsDataURL(blob);
   });
 }
@@ -6853,8 +7139,8 @@ function isGoogleAppsScriptWebAppUrl(u) {
 
 /**
  * Google Apps Script /exec thường chặn CORS khi POST application/json (preflight OPTIONS).
- * Gửi body là JSON nhưng Content-Type: text/plain �?�? tránh preflight �?? doPost vẫn JSON.parse(postData.contents).
- * Nếu vẫn Failed to fetch: thử mode no-cors (không �?ọc �?ược phản h�?i, coi như �?ã gửi).
+ * Gửi body là JSON nhưng Content-Type: text/plain đă tránh preflight để doPost vẫn JSON.parse(postData.contents).
+ * Nếu vẫn Failed to fetch: thử mode no-cors (không đọc được phản hđi, coi như đã gửi).
  */
 async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
   const url = normalizeGoogleScriptWebAppUrl(uploadUrl);
@@ -6865,7 +7151,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
     throw new Error('URL Web App phải dùng https://');
   }
   if(/\/dev($|\?)/i.test(url)) {
-    throw new Error('Không dùng URL /dev. Hãy tri�?n khai Web App và dùng URL kết thúc /exec (hoặc URL tri�?n khai �?ầy �?ủ Google cung cấp).');
+    throw new Error('Không dùng URL /dev. Hãy triđơ khai Web App và dùng URL kết thúc /exec (hoặc URL triđơ khai đầy đủ Google cung cấp).');
   }
 
   const base64Data = await blobToBase64(blob);
@@ -6884,7 +7170,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
 
   const assertOk = (data, res) => {
     if(data && data.success === false) {
-      throw new Error(data.message || data.error || 'Google Drive từ ch�?i lưu file.');
+      throw new Error(data.message || data.error || 'Google Drive từ chđi lưu file.');
     }
     if(!res.ok) {
       const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
@@ -6924,7 +7210,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
         /* thử Content-Type khác */
       }
     }
-    throw new Error('Không gửi �?ược t�?i Web App (ki�?m tra mạng hoặc URL).');
+    throw new Error('Không gửi được tđi Web App (kiđm tra mạng hoặc URL).');
   };
 
   const isNetErr = (err) => {
@@ -6939,22 +7225,22 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
     } catch(err) {
       if(!isNetErr(err)) throw err;
       lastNet = err;
-      console.warn('[Drive] L�?i mạng/CORS v�?i Content-Type', ct, err);
+      console.warn('[Drive] Lđi mạng/CORS vđi Content-Type', ct, err);
     }
   }
 
   if(!isGoogleAppsScriptWebAppUrl(url)) {
-    throw new Error('Failed to fetch �?? URL phải là Web App Google (dạng script.google.com/.../exec). Ki�?m tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
+    throw new Error('Failed to fetch để URL phải là Web App Google (dạng script.google.com/.../exec). Kiđm tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
   }
 
-  console.warn('[Drive] Chuy�?n sang no-cors (ch�? phù hợp v�?i Web App Google):', lastNet);
+  console.warn('[Drive] Chuyđơ sang no-cors (chđ phù hợp vđi Web App Google):', lastNet);
   return tryNoCorsPlain();
 }
 
 function getWeekStartKey(d) {
   const x = new Date(d);
   x.setHours(0,0,0,0);
-  // getDay: 0=Sun..6=Sat �?? chuy�?n về Monday start
+  // getDay: 0=Sun..6=Sat để chuyđơ về Monday start
   const diff = (x.getDay() + 6) % 7;
   x.setDate(x.getDate() - diff);
   return x.toISOString().slice(0,10);
@@ -7001,16 +7287,16 @@ function importBackup() {
       try {
         const backup = JSON.parse(ev.target.result);
         
-        // Khôi phục vào localStorage trư�?c (fallback)
+        // Khôi phục vào localStorage trưđc (fallback)
         Store.restoreFromBackup(backup);
         
-        // Nếu �?ang kết n�?i Cloud và là admin, �?�?ng b�? thẳng lên Cloud
-        if (window.DB && window.appState && window.appState.userDoc?.role === 'admin') {
-           showToast('⏳ Đang �?�?ng b�? backup lên Cloud...', 'info');
+        // Nếu đang kết nối Cloud và là admin, đồng bộ thẳng lên Cloud
+        if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
+           showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
            await window.DB.migrateJson(backup, false);
-           showToast('�?? Đã �?�?ng b�? backup lên Cloud thành công!', 'success');
+           showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
         } else if (window.appState) {
-           // Nạp tạm vào appState �?�? UI có th�? �?ọc ngay (chế �?�? offline hoặc local)
+           // Nạp tạm vào appState để UI có thể đọc ngay (chế độ offline hoặc local)
            Object.entries(backup.data).forEach(([k, v]) => {
              if (Array.isArray(window.appState[k])) window.appState[k] = v;
              else if (k === 'settings') window.appState.settings = v;
@@ -7021,9 +7307,9 @@ function importBackup() {
         applyStoreSettings();
         renderPage(currentPage);
         updateAlertBadge();
-        showToast(`�?? Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
+        showToast(`✅ Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
       } catch(err) {
-        showToast('�? File không hợp l�?: ' + err.message, 'danger');
+        showToast('❌ File không hợp lệ: ' + err.message, 'danger');
       }
     };
     reader.readAsText(file);
@@ -7037,41 +7323,41 @@ function renderBackupList() {
   if(!el) return;
   el.innerHTML = backups.length ? backups.map((b, i) =>
     `<div class="list-item">
-      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">�??�</div>
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">💾</div>
       <div class="list-item-content">
         <div class="list-item-title">${i === 0 ? '⭐ ' : ''}Backup ${i+1}</div>
         <div class="list-item-sub">${b.label || fmtDate(b.date)} · ${(b.size/1024).toFixed(1)} KB</div>
       </div>
       <div style="display:flex;gap:4px">
-        ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">�?�️</button>` : ''}
-        <button class="btn btn-xs btn-danger" onclick="deleteBackup(${i})" title="Xóa backup này">�???️</button>
+        ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">↩️</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="deleteBackup(${i})" title="Xóa backup này">🗑️</button>
       </div>
     </div>`
   ).join('') : '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">Chưa có backup nào</div>';
 }
 
 function deleteBackup(index) {
-  if(!confirm(`Xóa backup ${index+1}? Hành �?�?ng này không th�? hoàn tác.`)) return;
+  if(!confirm(`Xóa backup ${index+1}? Hành động này không thể hoàn tác.`)) return;
   Store.deleteLocalBackup(index);
   renderBackupList();
-  showToast('�???️ Đã xóa backup', 'success');
+  showToast('🗑️ Đã xóa backup', 'success');
 }
 
 function restoreLatestBackup() {
-  if(!confirm('Khôi phục backup gần nhất? Dữ li�?u hi�?n tại sẽ b�? ghi �?è.')) return;
+  if(!confirm('Khôi phục backup gần nhất? Dữ liệu hiện tại sẽ bị ghi đè.')) return;
   const raw = localStorage.getItem('gkhl_backup_latest');
-  if(!raw) { showToast('�? Không tìm thấy backup', 'danger'); return; }
+  if(!raw) { showToast('❌ Không tìm thấy backup', 'danger'); return; }
   try {
     const backup = JSON.parse(raw);
     
     Store.restoreFromBackup(backup);
     
-    if (window.DB && window.appState && window.appState.userDoc?.role === 'admin') {
-       showToast('⏳ Đang �?�?ng b�? backup lên Cloud...', 'info');
+    if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
+       showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
        window.DB.migrateJson(backup, false).then(() => {
-         showToast('�?? Đã �?�?ng b�? backup lên Cloud thành công!', 'success');
+         showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
        }).catch(err => {
-         showToast('�? L�?i �?�?ng b�?: ' + err.message, 'danger');
+         showToast('❌ Lỗi đồng bộ: ' + err.message, 'danger');
        });
     } else if (window.appState) {
        Object.entries(backup.data).forEach(([k, v]) => {
@@ -7084,15 +7370,15 @@ function restoreLatestBackup() {
     applyStoreSettings();
     renderPage(currentPage);
     updateAlertBadge();
-    showToast('�?? Đã khôi phục backup!', 'success');
+    showToast('✅ Đã khôi phục backup!', 'success');
   } catch(err) {
-    showToast('�? Khôi phục thất bại', 'danger');
+    showToast('❌ Khôi phục thất bại', 'danger');
   }
 }
 
 
 // ============================================================
-// PAGE: NCC (NH�? CUNG CẤP)
+// PAGE: NCC (NHÀ CUNG CẤP)
 // ============================================================
 function renderNCC() {
   const suppliers = Store.getSuppliers();
@@ -7101,12 +7387,12 @@ function renderNCC() {
   if (!el) return;
 
   if (suppliers.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">�?��</div><div class="empty-text">Chưa có nhà cung cấp nào<br><small>Nhấn "+ Thêm NCC" �?�? bắt �?ầu</small></div></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-text">Chưa có nhà cung cấp nào<br><small>Nhấn "+ Thêm NCC" để bắt đầu</small></div></div>`;
     return;
   }
 
   el.innerHTML = suppliers.map(s => {
-    // Tính doanh s�? nhập theo từng NCC
+    // Tính doanh số nhập theo từng NCC
     const myPurchases = purchases.filter(p => p.supplierId === s.id || p.supplier === s.name);
     const totalAmount = myPurchases.reduce((sum, p) => sum + p.price, 0);
     const thisMonth = myPurchases.filter(p => {
@@ -7114,25 +7400,25 @@ function renderNCC() {
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).reduce((sum, p) => sum + p.price, 0);
 
-    const debtLabels = { immediate: 'Tiền ngay', weekly: 'G�?i tuần', monthly: 'G�?i tháng', credit: 'Công nợ dài hạn' };
+    const debtLabels = { immediate: 'Tiền ngay', weekly: 'Ghi đầu theo tuần', monthly: 'Ghi đầu theo tháng', credit: 'Công nợ dài hạn' };
     const debtLabel = debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ';
 
     return `<div class="list-item" style="flex-direction:column;align-items:flex-start;gap:6px;cursor:pointer" onclick="openNCCDetail('${s.id}')">
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
         <div>
           <div class="list-item-title" style="font-size:15px">${s.name}</div>
-          ${s.phone ? `<div class="list-item-sub">�??? ${s.phone}</div>` : ''}
+          ${s.phone ? `<div class="list-item-sub">📞 ${s.phone}</div>` : ''}
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editNCC('${s.id}')">�?�️</button>
-          <button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteNCC('${s.id}')">�???️</button>
+          <button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editNCC('${s.id}')">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteNCC('${s.id}')">🗑️</button>
         </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text2)">
-        ${s.address ? `<span>�??� ${s.address}</span>` : ''}
-        <span>�??� ${debtLabel}</span>
-        <span>�??� Tháng này: <b style="color:var(--primary)">${fmt(thisMonth)}�?</b></span>
-        <span>�??? T�?ng: ${fmt(totalAmount)}�?</span>
+        ${s.address ? `<span>📍 ${s.address}</span>` : ''}
+        <span>📋 ${debtLabel}</span>
+        <span>📅 Tháng này: <b style="color:var(--primary)">${fmt(thisMonth)}đ</b></span>
+        <span>💰 Tổng: ${fmt(totalAmount)}đ</span>
       </div>
       ${s.products && s.products.length ? `<div style="font-size:11px;color:var(--text3)">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
     </div>`;
@@ -7144,7 +7430,7 @@ function openAddNCCModal() {
   if (!form) return;
   delete form.dataset.editId;
   form.reset();
-  document.getElementById('ncc-modal-title').textContent = '�?�� Thêm Nhà Cung Cấp';
+  document.getElementById('ncc-modal-title').textContent = '🏭 Thêm Nhà Cung Cấp';
   document.getElementById('ncc-modal').classList.add('active');
 }
 
@@ -7158,7 +7444,7 @@ function editNCC(id) {
   document.getElementById('ncc-edit-debt').value = s.debtPolicy || 'immediate';
   document.getElementById('ncc-edit-products').value = (s.products || []).join(', ');
   document.getElementById('ncc-edit-notes').value = s.notes || '';
-  document.getElementById('ncc-modal-title').textContent = '�?�️ Sửa Nhà Cung Cấp';
+  document.getElementById('ncc-modal-title').textContent = '✏️ Sửa Nhà Cung Cấp';
   document.getElementById('ncc-modal').classList.add('active');
 }
 
@@ -7177,10 +7463,10 @@ function submitNCC(e) {
 
   if (editId) {
     Store.updateSupplier(editId, { name, phone, address, debtPolicy, products, notes });
-    showToast('�?? Đã cập nhật nhà cung cấp!', 'success');
+    showToast('✅ Đã cập nhật nhà cung cấp!', 'success');
   } else {
     Store.addSupplier({ id: uid(), name, phone, address, debtPolicy, products, notes });
-    showToast('�?? Đã thêm nhà cung cấp!', 'success');
+    showToast('✅ Đã thêm nhà cung cấp!', 'success');
     // Cập nhật dropdown trong purchase modal
     renderPurchaseSupplierDropdown();
   }
@@ -7190,17 +7476,17 @@ function submitNCC(e) {
 
 function deleteNCC(id) {
   const s = Store.getSuppliers().find(x => x.id === id);
-  if (!confirm(`Xoá nhà cung cấp "${s?.name}"?`)) return;
+  if (!confirm(`Xoá nhà cung cấp "${s?.name || ''}"?`)) return;
   Store.deleteSupplier(id);
   renderNCC();
-  showToast('�???️ Đã xoá nhà cung cấp', 'success');
+  showToast('🗑️ Đã xoá nhà cung cấp', 'success');
 }
 
 function openNCCDetail(id) {
   const s = Store.getSuppliers().find(x => x.id === id);
   if (!s) return;
   const purchases = Store.getPurchases().filter(p => p.supplierId === id || p.supplier === s.name);
-  const debtLabels = { immediate: 'Tiền ngay', weekly: 'G�?i �?ầu theo tuần', monthly: 'G�?i �?ầu theo tháng', credit: 'Công nợ dài hạn' };
+  const debtLabels = { immediate: 'Tiền ngay', weekly: 'Ghi đầu theo tuần', monthly: 'Ghi đầu theo tháng', credit: 'Công nợ dài hạn' };
 
   const now = new Date();
   const thisMonth = purchases.filter(p => { const d = new Date(p.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
@@ -7214,35 +7500,35 @@ function openNCCDetail(id) {
   detailEl.innerHTML = `
     <div style="margin-bottom:16px">
       <div style="font-size:18px;font-weight:800">${s.name}</div>
-      ${s.phone ? `<div style="color:var(--text2);margin-top:4px">�??? ${s.phone}</div>` : ''}
-      ${s.address ? `<div style="color:var(--text2)">�??� ${s.address}</div>` : ''}
-      <div style="color:var(--text2)">�??� Chính sách: ${debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ'}</div>
+      ${s.phone ? `<div style="color:var(--text2);margin-top:4px">📞 ${s.phone}</div>` : ''}
+      ${s.address ? `<div style="color:var(--text2)">📍 ${s.address}</div>` : ''}
+      <div style="color:var(--text2)">📋 Chính sách: ${debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ'}</div>
       ${s.products?.length ? `<div style="color:var(--text3);font-size:12px;margin-top:6px">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
       ${s.notes ? `<div style="color:var(--text3);font-size:12px;margin-top:4px;border-left:2px solid var(--border);padding-left:8px">${s.notes}</div>` : ''}
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
       <div class="stat-card" style="padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text3)">Tuần này</div>
-        <div style="font-size:15px;font-weight:700;color:var(--primary)">${fmt(weekAmt)}�?</div>
+        <div style="font-size:15px;font-weight:700;color:var(--primary)">${fmt(weekAmt)}đ</div>
       </div>
       <div class="stat-card" style="padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text3)">Tháng này</div>
-        <div style="font-size:15px;font-weight:700;color:var(--info)">${fmt(monthAmt)}�?</div>
+        <div style="font-size:15px;font-weight:700;color:var(--info)">${fmt(monthAmt)}đ</div>
       </div>
       <div class="stat-card" style="padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--text3)">T�?ng c�?ng</div>
-        <div style="font-size:15px;font-weight:700;color:var(--success)">${fmt(total)}�?</div>
+        <div style="font-size:11px;color:var(--text3)">Tổng cộng</div>
+        <div style="font-size:15px;font-weight:700;color:var(--success)">${fmt(total)}đ</div>
       </div>
     </div>
-    <div style="font-weight:600;margin-bottom:8px">�??? L�?ch sử nhập hàng (${purchases.length} lần)</div>
+    <div style="font-weight:600;margin-bottom:8px">📦 Lịch sử nhập hàng (${purchases.length} lần)</div>
     ${purchases.slice(0,10).map(p => `
       <div class="list-item" style="padding:8px 0">
         <div class="list-item-content">
           <div class="list-item-title">${p.name}</div>
           <div class="list-item-sub">${p.qty} ${p.unit||'phần'} · ${fmtDate(p.date)}</div>
         </div>
-        <div class="list-item-right"><div class="list-item-amount">${fmt(p.price)}�?</div></div>
-      </div>`).join('') || '<div style="color:var(--text3);text-align:center;padding:12px">Chưa có l�?ch sử nhập hàng</div>'}
+        <div class="list-item-right"><div class="list-item-amount">${fmt(p.price)}đ</div></div>
+      </div>`).join('') || '<div style="color:var(--text3);text-align:center;padding:12px">Chưa có lịch sử nhập hàng</div>'}
   `;
   document.getElementById('ncc-detail-modal').classList.add('active');
 }

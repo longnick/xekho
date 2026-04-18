@@ -10,18 +10,35 @@ let aiOutputMode = 'voice'; // 'voice' or 'text'
 let aiChatHistoryLoaded = false;
 
 function repairVietnameseMojibake(input) {
-  const str = String(input ?? '');
-  if (!/[ÃÂâ€™â€œâ€|ðŸ|á»|áº|Ä‘|Æ°]/.test(str)) return str;
+  let str = String(input ?? '');
+  if (!str) return str;
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+  const suspect = badTokens.some(t => str.includes(t));
+  if (!suspect) return str;
   try {
-    return decodeURIComponent(escape(str));
+    str = decodeURIComponent(escape(str));
   } catch (_) {}
   try {
     const bytes = Uint8Array.from(str, ch => ch.charCodeAt(0) & 0xFF);
     const fixed = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return fixed || str;
-  } catch (_) {
-    return str;
-  }
+    str = fixed || str;
+  } catch (_) {}
+
+  // Heuristic fixes for common broken fragments in chat replies.
+  const dictionary = [
+    [/hôm/gi, 'hôm'],
+    [/hôm nay/gi, 'hôm nay'],
+    [/hôm qua/gi, 'hôm qua'],
+    [/với/gi, 'với'],
+    [/giảm/gi, 'giảm'],
+    [/doanh thu/gi, 'doanh thu'],
+    [/đ\s*ồng/gi, 'đồng'],
+    [/\((\d+)\s*đơn\)/gi, '($1 đơn)'],
+    [/không/gi, 'không'],
+    [/dữ liệu/gi, 'dữ liệu'],
+  ];
+  dictionary.forEach(([re, val]) => { str = str.replace(re, val); });
+  return str;
 }
 
 function toggleAIEngine() {
@@ -114,11 +131,14 @@ function updateAIModeUI() {
       el.style.color = hasUrl ? 'var(--info)' : 'var(--danger)';
       el.style.border = hasUrl ? '1px solid rgba(0,149,255,0.3)' : '1px solid rgba(239,68,68,0.3)';
     } else {
-      const hasKey = !!s.geminiApiKey;
-      el.innerHTML = hasKey ? '🌐 Chế độ Online (Gemini)' : '⚠️ Online (Thiếu API Key)';
-      el.style.background = hasKey ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-      el.style.color = hasKey ? 'var(--success)' : 'var(--danger)';
-      el.style.border = hasKey ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+      const hasGemini = !!s.geminiApiKey;
+      const hasDeepSeek = !!s.deepseekApiKey;
+      const hasAnyCloud = hasGemini || hasDeepSeek;
+      const label = hasGemini ? 'Gemini' : (hasDeepSeek ? 'DeepSeek' : 'Thiếu API Key');
+      el.innerHTML = hasAnyCloud ? `🌐 Chế độ Online (${label})` : '⚠️ Online (Thiếu API Key)';
+      el.style.background = hasAnyCloud ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+      el.style.color = hasAnyCloud ? 'var(--success)' : 'var(--danger)';
+      el.style.border = hasAnyCloud ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
     }
   }
 }
@@ -270,7 +290,7 @@ function sanitizeAIHtml(input) {
 
     if (tag === 'IMG') {
       const src = String(node.getAttribute('src') || '').trim();
-      const safeSrc = /^(data:image\/|https?:\/\/)/i.test(src);
+      const safeSrc = /^(data:image\/|https:\/\/)/i.test(src);
       if (!safeSrc) return document.createTextNode('');
       const img = document.createElement('img');
       img.setAttribute('src', src);
@@ -427,7 +447,7 @@ Nếu không liên quan đến đặt hàng, trả: { "actions": [], "reply": "M
 CHỈ trả JSON, không markdown.`;
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${s.geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContentkey=${s.geminiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -453,7 +473,10 @@ CHỈ trả JSON, không markdown.`;
         return;
       }
       
-      let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const _gc = data.candidates && data.candidates[0];
+      const _gp = _gc && _gc.content && _gc.content.parts;
+      const _g0 = _gp && _gp[0];
+      let raw = (_g0 && _g0.text) || '';
       raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
@@ -486,14 +509,14 @@ function recordAIMetric(data) {
       ok: 0,
       fail: 0,
       avgLatencyMs: 0,
-      byEngine: { gemini: 0, gemma: 0, offline: 0 },
+      byEngine: { gemini: 0, deepseek: 0, gemma: 0, offline: 0 },
       byIntent: {},
       lastUpdatedAt: null
     };
 
     const latency = Math.max(0, Number(data.latencyMs) || 0);
     const ok = !!data.ok;
-    const engine = ['gemini', 'gemma', 'offline'].includes(data.engine) ? data.engine : 'offline';
+    const engine = ['gemini', 'deepseek', 'gemma', 'offline'].includes(data.engine) ? data.engine : 'offline';
     const intent = data.intent || 'unknown';
     const nextTotal = (m.total || 0) + 1;
 
@@ -501,7 +524,7 @@ function recordAIMetric(data) {
     m.total = nextTotal;
     m.ok = (m.ok || 0) + (ok ? 1 : 0);
     m.fail = (m.fail || 0) + (ok ? 0 : 1);
-    m.byEngine = m.byEngine || { gemini: 0, gemma: 0, offline: 0 };
+    m.byEngine = m.byEngine || { gemini: 0, deepseek: 0, gemma: 0, offline: 0 };
     m.byEngine[engine] = (m.byEngine[engine] || 0) + 1;
     m.byIntent = m.byIntent || {};
     m.byIntent[intent] = (m.byIntent[intent] || 0) + 1;
@@ -523,16 +546,18 @@ function sendAIText(isVoice = false) {
 
   const isOnline = navigator.onLine;
   const s = Store.getSettings();
-  const hasKey = !!s.geminiApiKey;
+  const hasGemini = !!s.geminiApiKey;
+  const hasDeepSeek = !!s.deepseekApiKey;
+  const hasAnyCloud = hasGemini || hasDeepSeek;
   const startTs = Date.now();
   const activeEngine = s.forceOffline
     ? 'offline'
     : (s.activeAIEngine === 'gemma'
       ? 'gemma'
-      : ((isOnline && hasKey) ? 'gemini' : 'offline'));
+      : ((isOnline && hasAnyCloud) ? (hasGemini ? 'gemini' : 'deepseek') : 'offline'));
 
-  const modeLabel = (!s.forceOffline && isOnline && hasKey)
-    ? '🌐 Gemini AI'
+  const modeLabel = (!s.forceOffline && isOnline && hasAnyCloud)
+    ? `🌐 ${hasGemini ? 'Gemini' : 'DeepSeek'} AI`
     : '📱 Offline Engine';
   const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
   if (thinking) thinking.id = 'ai-thinking-bubble';
