@@ -3,6 +3,8 @@
 
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
@@ -13,7 +15,7 @@
   <title>Gánh Khô Chữa Lành – POS</title>
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260418-font">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
@@ -1029,6 +1031,25 @@
               </div>
             </div>
 
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">🧠 DeepSeek API (Câu hỏi mở)</div>
+              </div>
+              <div class="input-group">
+                <label class="input-label">DeepSeek API Key</label>
+                <input type="password" id="set-deepseekApiKey" class="input" placeholder="Dán DeepSeek API Key...">
+              </div>
+              <div class="input-group">
+                <label class="input-label">DeepSeek Endpoint</label>
+                <input type="text" id="set-deepseekEndpoint" class="input" placeholder="https://api.deepseek.com/v1/chat/completions">
+              </div>
+              <div class="input-group">
+                <label class="input-label">DeepSeek Model</label>
+                <input type="text" id="set-deepseekModel" class="input" placeholder="deepseek-chat">
+                <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Dùng cho câu hỏi mở như: so sánh hôm qua/hôm nay, món bán chạy nhất, sản phẩm bán được bao nhiêu...</div>
+              </div>
+            </div>
+
             <!-- OCR & Ảnh nhập hàng -->
             <div class="card">
               <div class="card-header">
@@ -1844,16 +1865,16 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <!-- data.js đã bị loại bỏ – app đọc 100% từ Firestore qua window.appState -->
-  <script src="data.js"></script>
-  <script src="store.js"></script>
+  <script src="data.js?v=20260418-4"></script>
+  <script src="store.js?v=20260418-4"></script>
   <!-- ✅ Bước 1: db.js (Firebase Data Layer) phải load TRƯỚC app.js -->
-  <script type="module" src="db.js"></script>
+  <script type="module" src="db.js?v=20260418-4"></script>
   <!-- ✅ Bước 2: Load AI modules -->
-  <script src="ai-core.js"></script>
-  <script src="ai-actions.js"></script>
-  <script src="ai-ui.js"></script>
+  <script src="ai-core.js?v=20260418-4"></script>
+  <script src="ai-actions.js?v=20260418-4"></script>
+  <script src="ai-ui.js?v=20260418-4"></script>
   <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
-  <script src="app.js"></script>
+  <script src="app.js?v=20260418-4"></script>
   <script>
     // Extra helpers that reference DOM
 
@@ -1929,32 +1950,7 @@
       document.getElementById('inv-tab-ncc').style.display = tab === 'ncc' ? '' : 'none';
       renderInventory();
 
-      // Populate datalist for purchase, stock, ledger, conversion, wastage
-      if (tab === 'purchase' || tab === 'stock' || tab === 'ledger' || tab === 'conversion' || tab === 'wastage') {
-        const inv = Store.getInventory().filter(i => !i.hidden);
-        const dl = document.getElementById('inv-names');
-        if (dl) dl.innerHTML = inv.map(i => `<option value="${i.name}">`).join('');
-        const convDl = document.getElementById('conv-ingredient');
-        if (convDl) {
-          const sortedConv = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-          convDl.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' + sortedConv.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
-        }
-        const wastageDl = document.getElementById('wastage-name');
-        if (wastageDl) {
-          const sortedWastage = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-          wastageDl.innerHTML = '<option value="">-- Chọn --</option>' + sortedWastage.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
-        }
-        const select = document.getElementById('ledger-item-select');
-        if (select && select.children.length <= 1) {
-          // Use synchronized inventory (same as _getInventory())
-          const allInv = (window.appState && window.appState.inventory && window.appState.inventory.length > 0)
-            ? window.appState.inventory
-            : Store.getInventory();
-          const sortedInv = allInv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-          select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + sortedInv.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
-          document.getElementById('ledger-month').value = new Date().toISOString().slice(0, 7);
-        }
-      }
+      try { if (typeof refreshInventoryPickers === 'function') refreshInventoryPickers(); } catch (_) {}
 
       // Khi chuyển sang tab Nhập hàng, reset UI ảnh & OCR
       if (tab === 'purchase') {
@@ -1992,9 +1988,10 @@
   <script>
     // Wait for all scripts to load before accessing navigate function
     document.addEventListener('DOMContentLoaded', function() {
-      // Update FAB icon based on page
-      const _origNavigate = navigate;
-      // Patch navigate to update FAB
+      if (typeof navigate !== 'function') {
+        console.error('[GKHL] navigate chưa có (app.js lỗi hoặc chưa tải). Thử Ctrl+Shift+R để tải lại không cache.');
+        return;
+      }
       const origNavigate = navigate;
       window.navigate = function (page) {
         origNavigate(page);
