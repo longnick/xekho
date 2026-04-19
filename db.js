@@ -971,18 +971,21 @@ const Orders = {
 
     const order    = orderSnap.data();
     const menuList = window.appState.menu || [];
+    const skipInventoryDeduction = order?.is_migrated === true;
 
     // FIX 5: Tính bản đồ nguyên liệu cần trừ TRƯỚC khi vào transaction
     const deductions = {}; // { [inventoryId]: amountToDeduct }
-    (order.items || []).forEach(orderItem => {
-      const dish = menuList.find(m => m.id === orderItem.id);
-      if (!dish || !Array.isArray(dish.ingredients)) return;
-      dish.ingredients.forEach(ing => {
-        const stock = (window.appState.inventory || []).find(s => s.name === ing.name);
-        if (!stock || !stock.id) return;
-        deductions[stock.id] = (deductions[stock.id] || 0) + (ing.qty || 0) * (orderItem.qty || 1);
+    if (!skipInventoryDeduction) {
+      (order.items || []).forEach(orderItem => {
+        const dish = menuList.find(m => m.id === orderItem.id);
+        if (!dish || !Array.isArray(dish.ingredients)) return;
+        dish.ingredients.forEach(ing => {
+          const stock = (window.appState.inventory || []).find(s => s.name === ing.name);
+          if (!stock || !stock.id) return;
+          deductions[stock.id] = (deductions[stock.id] || 0) + (ing.qty || 0) * (orderItem.qty || 1);
+        });
       });
-    });
+    }
     const deductIds = Object.keys(deductions);
 
     await runTransaction(_db, async tx => {
