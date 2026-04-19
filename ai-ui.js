@@ -646,3 +646,119 @@ async function speakText(text) {
 }
 
 if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.getVoices();
+
+// Chatbot policy override: only Offline NLP + DeepSeek.
+function toggleAIEngine() {
+  const s = Store.getSettings();
+  s.activeAIEngine = 'deepseek';
+  Store.setSettings(s);
+  const engineBtn = document.getElementById('ai-engine-toggle');
+  if (engineBtn) {
+    engineBtn.textContent = 'Offline NLP + DeepSeek';
+    engineBtn.className = 'badge badge-info';
+  }
+  updateAIModeUI();
+}
+
+function updateAIModeUI() {
+  const s = Store.getSettings();
+  const el = document.getElementById('ai-status-text');
+  if (!el) return;
+
+  if (s.forceOffline) {
+    el.innerHTML = '📴 Offline NLP';
+    el.style.background = 'var(--bg2)';
+    el.style.color = 'var(--text2)';
+    el.style.border = '1px solid var(--border)';
+    return;
+  }
+
+  const hasDeepSeek = !!s.deepseekApiKey;
+  el.innerHTML = hasDeepSeek ? '🌐 DeepSeek Online' : '⚠️ Online (Thiếu API Key DeepSeek)';
+  el.style.background = hasDeepSeek ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+  el.style.color = hasDeepSeek ? 'var(--success)' : 'var(--danger)';
+  el.style.border = hasDeepSeek ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+}
+
+async function handleAICameraCapture(event) {
+  if (event && event.target) event.target.value = '';
+  addAIBubble('⚠️ Scan ảnh AI đã được tắt. Chatbot hiện chỉ dùng Offline NLP và DeepSeek.', 'error');
+}
+
+function openAIAssistant() {
+  const modal = document.getElementById('ai-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+
+  const engineBtn = document.getElementById('ai-engine-toggle');
+  if (engineBtn) {
+    engineBtn.textContent = 'Offline NLP + DeepSeek';
+    engineBtn.className = 'badge badge-info';
+  }
+
+  updateAIModeUI();
+  updateAIOutputToggleUI();
+  const s = Store.getSettings();
+  updateAIActiveDot(s.forceOffline ? 'offline' : 'idle');
+
+  if (!aiChatHistoryLoaded) {
+    const history = Store.getAIHistory();
+    const container = document.getElementById('ai-chat-messages');
+    const welcomeMsg = document.getElementById('ai-welcome-msg');
+
+    if (history.length > 0 && container) {
+      container.innerHTML = '';
+      if (welcomeMsg) container.appendChild(welcomeMsg);
+      history.slice(-10).forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `ai-bubble ai-bubble-${msg.role}`;
+        div.innerHTML = sanitizeAIHtml(repairVietnameseMojibake(msg.content));
+        container.appendChild(div);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+    aiChatHistoryLoaded = true;
+  }
+}
+
+function sendAIText(isVoice = false) {
+  const inp = document.getElementById('ai-text-input');
+  const rawText = inp ? inp.value.trim() : '';
+  if (!rawText) return;
+  if (inp) inp.value = '';
+
+  addAIBubble(rawText, 'user');
+  const text = preprocessAIText(rawText);
+
+  const isOnline = navigator.onLine;
+  const s = Store.getSettings();
+  const hasDeepSeek = !!s.deepseekApiKey;
+  const startTs = Date.now();
+  const activeEngine = s.forceOffline ? 'offline' : ((isOnline && hasDeepSeek) ? 'deepseek' : 'offline');
+  const modeLabel = (!s.forceOffline && isOnline && hasDeepSeek) ? '🌐 DeepSeek AI' : '📱 Offline NLP';
+
+  const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
+  if (thinking) thinking.id = 'ai-thinking-bubble';
+  updateAIActiveDot('processing');
+
+  processAICommand(text).then(result => {
+    const reply = typeof result === 'string' ? result : result.reply;
+    const intent = typeof result === 'string' ? 'unknown' : result.intent;
+    removeThinkingBubble();
+    addAIBubble(reply, 'bot');
+    const latencyMs = Date.now() - startTs;
+    recordAIMetric({ ok: true, engine: activeEngine, intent, latencyMs });
+    updateAIActiveDot(activeEngine === 'offline' ? 'offline' : 'idle');
+    const latEl = document.getElementById('ai-latency-text');
+    if (latEl) latEl.textContent = `⏱️ ${(latencyMs / 1000).toFixed(2)}s - Engine: ${activeEngine}`;
+    if (isVoice || aiOutputMode === 'voice') speakText(reply);
+  }).catch(err => {
+    removeThinkingBubble();
+    const latencyMs = Date.now() - startTs;
+    addAIBubble(`❌ Lỗi: ${err.message || 'Không xác định'}`, 'error');
+    recordAIMetric({ ok: false, engine: activeEngine, intent: 'error', latencyMs });
+    updateAIActiveDot('error');
+    const latEl = document.getElementById('ai-latency-text');
+    if (latEl) latEl.textContent = `❌ ${(latencyMs / 1000).toFixed(2)}s - Engine: ${activeEngine}`;
+  });
+}
