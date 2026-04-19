@@ -1,5 +1,5 @@
 // ============================================================
-// HYBRID AI ENGINE: Gemini (online) + Local NLP (offline)
+// AI ENGINE: DeepSeek (online) + Local NLP (offline)
 // ============================================================
 
 const GEMINI_MODELS = [
@@ -271,9 +271,6 @@ Chỉ trả về câu trả lời tự nhiên (không markdown JSON).`;
 
   const canOnline = !settings.forceOffline && navigator.onLine;
   try {
-    if (canOnline && settings.geminiApiKey) {
-      return _repairAIText(await callGemini(settings.geminiApiKey, prompt, { forceJson: false })).replace(/```json/gi, '').replace(/```/g, '').trim();
-    }
     if (canOnline && settings.deepseekApiKey) {
       return _repairAIText(await callDeepSeek(settings.deepseekApiKey, prompt, {
         endpoint: settings.deepseekEndpoint,
@@ -314,12 +311,9 @@ async function processAICommand(text) {
   const menu       = Store.getMenu();
   const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
 
-  const isGemma = (s.activeAIEngine === 'gemma');
-  const canUseGemini = !s.forceOffline && navigator.onLine && s.geminiApiKey && !isGemma;
-  const canUseDeepSeek = !s.forceOffline && navigator.onLine && s.deepseekApiKey && !isGemma;
-  const canUseGemma = !s.forceOffline && isGemma && s.gemmaEndpoint;
+  const canUseDeepSeek = !s.forceOffline && navigator.onLine && s.deepseekApiKey;
 
-  // Câu hỏi mở phân tích số liệu: ưu tiên Gemini/DeepSeek để suy luận chính xác.
+  // Câu hỏi mở phân tích số liệu: ưu tiên DeepSeek nếu online.
   const openAnswer = await tryAnswerOpenAnalyticsQuestion(text, s, menu);
   if (openAnswer) {
     return { reply: _repairAIText(openAnswer), intent: 'report' };
@@ -328,45 +322,7 @@ async function processAICommand(text) {
   let parsed;
   let modeColor = '';
 
-  if (canUseGemma) {
-    try {
-      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
-      const prompt = buildGemmaPrompt(text, tablesInfo, menuForAI);
-      let raw = await callLocalGemma(s.gemmaEndpoint, s.gemmaApiKey, s.gemmaModel, prompt);
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      try { parsed = JSON.parse(raw); }
-      catch(_) { return _repairAIText(raw); }
-      modeColor = 'var(--info)';
-    } catch(e) {
-      console.warn('Gemma Local failed:', e.message);
-      const offlineResult = localNLPEngine(text, menu, tablesInfo);
-      if (offlineResult) {
-        parsed = offlineResult;
-        modeColor = 'var(--warning)';
-      } else {
-        return `⚠️ Kết nối Local Server thất bại (${e.message}). Đang dùng NLP Offline nhưng không hiểu lệnh.`;
-      }
-    }
-  } else if (canUseGemini) {
-    try {
-      const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
-      const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
-      let raw = await callGemini(s.geminiApiKey, prompt);
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      try { parsed = JSON.parse(raw); }
-      catch(_) { return _repairAIText(raw); }
-      modeColor = 'var(--success)';
-    } catch(e) {
-      console.warn('Gemini failed, switching to Local NLP:', e.message);
-      const offlineResult = localNLPEngine(text, menu, tablesInfo);
-      if (offlineResult) {
-        parsed = offlineResult;
-        modeColor = 'var(--warning)';
-      } else {
-        return `⚠️ Mất kết nối mạng và không nhận ra lệnh. Thử nói rõ hơn: "bàn 1 đặt 2 bia"`;
-      }
-    }
-  } else if (canUseDeepSeek) {
+  if (canUseDeepSeek) {
     try {
       const menuForAI = menu.map(m => ({ id: m.id, name: m.name, price: m.price }));
       const prompt = buildGeminiPrompt(text, tablesInfo, menuForAI);
@@ -390,10 +346,10 @@ async function processAICommand(text) {
       }
     }
   } else {
-    if (!s.geminiApiKey && !s.deepseekApiKey) {
+    if (!s.deepseekApiKey) {
       parsed = localNLPEngine(text, menu, tablesInfo);
       if (!parsed) {
-        return '⚠️ Chưa có API Key cho Gemini/DeepSeek. Vào <strong>Cài đặt → AI</strong> để cấu hình. Hoặc nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
+        return '⚠️ Chưa có API Key cho DeepSeek. Hệ thống đang dùng NLP Offline. Hãy nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
       }
       modeColor = 'var(--warning)';
     } else {

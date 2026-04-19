@@ -1,0 +1,1570 @@
+{
+  "Product_Catalog": [
+    {
+      "item_id": "kho_ca_moi",
+      "display_name": "Khô cá mối",
+      "category": "Khô Nướng",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "cá mối, khô mối"
+    },
+    {
+      "item_id": "kho_ca_chi_vang",
+      "display_name": "Khô cá chỉ vàng",
+      "category": "Khô Nướng",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "cá chỉ vàng, chỉ vàng"
+    },
+    {
+      "item_id": "kho_ca_thieu",
+      "display_name": "Khô cá thiều tẩm",
+      "category": "Khô Nướng",
+      "sell_price": 30000,
+      "item_type": "Finished",
+      "aliases": "cá thiều, thiều tẩm"
+    },
+    {
+      "item_id": "kho_ca_bong",
+      "display_name": "Khô cá bống",
+      "category": "Khô Nướng",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "cá bống"
+    },
+    {
+      "item_id": "kho_ca_khoai",
+      "display_name": "Khô cá khoai",
+      "category": "Khô Nướng",
+      "sell_price": 30000,
+      "item_type": "Finished",
+      "aliases": "cá khoai"
+    },
+    {
+      "item_id": "kho_ca_dao",
+      "display_name": "Khô cá đao",
+      "category": "Khô Nướng",
+      "sell_price": 30000,
+      "item_type": "Finished",
+      "aliases": "cá đao"
+    },
+    {
+      "item_id": "kho_ca_duoi",
+      "display_name": "Khô cá đuối",
+      "category": "Khô Nướng",
+      "sell_price": 60000,
+      "item_type": "Finished",
+      "aliases": "cá đuối"
+    },
+    {
+      "item_id": "lap_vit",
+      "display_name": "Lạp zịt",
+      "category": "Khô Nướng",
+      "sell_price": 20000,
+      "item_type": "Finished",
+      "aliases": "lạp vịt, lạp xưởng vịt"
+    },
+    {
+      "item_id": "kho_ca_bo",
+      "display_name": "Khô cá bò",
+      "category": "Khô Nướng",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "cá bò"
+    },
+    {
+      "item_id": "muc_kho",
+      "display_name": "Mực khô",
+      "category": "Khô Nướng",
+      "sell_price": 130000,
+      "item_type": "Finished",
+      "aliases": "mực, khô mực"
+    },
+    {
+      "item_id": "muc_1_nang_muoi_ot",
+      "display_name": "Mực 1 nắng muối ớt",
+      "category": "Đặc Biệt",
+      "sell_price": 230000,
+      "item_type": "Finished",
+      "aliases": "mực 1 nắng muối ớt"
+    },
+    {
+      "item_id": "muc_1_nang_moi",
+      "display_name": "Mực 1 nắng nướng mọi",
+      "category": "Đặc Biệt",
+      "sell_price": 230000,
+      "item_type": "Finished",
+      "aliases": "mực 1 nắng mọi"
+    },
+    {
+      "item_id": "muc_kho_chien_bo",
+      "display_name": "Mực khô chiên bơ tỏi",
+      "category": "Đặc Biệt",
+      "sell_price": 180000,
+      "item_type": "Finished",
+      "aliases": "mực chiên bơ"
+    },
+    {
+      "item_id": "vit_lon_om_bau",
+      "display_name": "Vịt lộn om bầu",
+      "category": "Đặc Biệt",
+      "sell_price": 39000,
+      "item_type": "Finished",
+      "aliases": "vịt lộn bầu"
+    },
+    {
+      "item_id": "combo_1",
+      "display_name": "Combo 1 (149k)",
+      "category": "Combo",
+      "sell_price": 149000,
+      "item_type": "Finished",
+      "aliases": "combo 1, mẹt 1"
+    },
+    {
+      "item_id": "combo_2",
+      "display_name": "Combo 2 (199k)",
+      "category": "Combo",
+      "sell_price": 199000,
+      "item_type": "Finished",
+      "aliases": "combo 2, mẹt 2"
+    },
+    {
+      "item_id": "combo_3",
+      "display_name": "Combo 3 (249k)",
+      "category": "Combo",
+      "sell_price": 249000,
+      "item_type": "Finished",
+      "aliases": "combo 3, mẹt 3"
+    },
+    {
+      "item_id": "ca_chi_vang_chien_bo",
+      "display_name": "Khô cá chỉ vàng chiên bơ",
+      "category": "Món Ăn Kèm",
+      "sell_price": 35000,
+      "item_type": "Finished",
+      "aliases": "chỉ vàng bơ"
+    },
+    {
+      "item_id": "ca_sun_sin_chien",
+      "display_name": "Cá sụn sịn chiên giòn",
+      "category": "Món Ăn Kèm",
+      "sell_price": 100000,
+      "item_type": "Finished",
+      "aliases": "sụn sịn"
+    },
+    {
+      "item_id": "ba_chi_nuong_doi",
+      "display_name": "Ba chỉ nướng lá dổi",
+      "category": "Món Ăn Kèm",
+      "sell_price": 60000,
+      "item_type": "Finished",
+      "aliases": "ba chỉ nướng"
+    },
+    {
+      "item_id": "goi_xoai_ca_moi",
+      "display_name": "Gỏi xoài khô cá mối",
+      "category": "Món Ăn Kèm",
+      "sell_price": 60000,
+      "item_type": "Finished",
+      "aliases": "gỏi xoài"
+    },
+    {
+      "item_id": "bap_xao",
+      "display_name": "Bắp xào",
+      "category": "Món Ăn Kèm",
+      "sell_price": 35000,
+      "item_type": "Finished",
+      "aliases": "bắp xào"
+    },
+    {
+      "item_id": "dau_hu_mo_hanh",
+      "display_name": "Đậu hũ chiên mỡ hành",
+      "category": "Món Ăn Kèm",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "đậu hũ, đậu chiên"
+    },
+    {
+      "item_id": "trung_bac_thao",
+      "display_name": "Trứng bắc thảo củ kiệu",
+      "category": "Món Ăn Kèm",
+      "sell_price": 70000,
+      "item_type": "Finished",
+      "aliases": "bắc thảo"
+    },
+    {
+      "item_id": "khoai_tay_lac",
+      "display_name": "Khoai tây lắc phô mai",
+      "category": "Món Ăn Kèm",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "khoai tây chiên"
+    },
+    {
+      "item_id": "chan_ga_nuong",
+      "display_name": "Chân gà nướng",
+      "category": "Món Ăn Kèm",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "chân gà"
+    },
+    {
+      "item_id": "tra_dao",
+      "display_name": "Trà đào",
+      "category": "Giải Khát",
+      "sell_price": 20000,
+      "item_type": "Finished",
+      "aliases": "trà đào"
+    },
+    {
+      "item_id": "tra_mang_cau",
+      "display_name": "Trà mãng cầu",
+      "category": "Giải Khát",
+      "sell_price": 25000,
+      "item_type": "Finished",
+      "aliases": "trà mãng cầu"
+    },
+    {
+      "item_id": "tra_tac",
+      "display_name": "Trà tắc",
+      "category": "Giải Khát",
+      "sell_price": 20000,
+      "item_type": "Finished",
+      "aliases": "trà tắc"
+    },
+    {
+      "item_id": "sting",
+      "display_name": "Sting",
+      "category": "Giải Khát",
+      "sell_price": 15000,
+      "item_type": "Retail",
+      "aliases": "sting"
+    },
+    {
+      "item_id": "7up",
+      "display_name": "7Up",
+      "category": "Giải Khát",
+      "sell_price": 15000,
+      "item_type": "Retail",
+      "aliases": "up"
+    },
+    {
+      "item_id": "pepsi",
+      "display_name": "Pepsi",
+      "category": "Giải Khát",
+      "sell_price": 15000,
+      "item_type": "Retail",
+      "aliases": "pepsi"
+    },
+    {
+      "item_id": "sprite",
+      "display_name": "Sprite",
+      "category": "Giải Khát",
+      "sell_price": 15000,
+      "item_type": "Retail",
+      "aliases": "sprite"
+    },
+    {
+      "item_id": "bo_huc",
+      "display_name": "Bò húc",
+      "category": "Giải Khát",
+      "sell_price": 20000,
+      "item_type": "Retail",
+      "aliases": "redbull"
+    },
+    {
+      "item_id": "tiger_nau",
+      "display_name": "Bia Tiger Nâu",
+      "category": "Beer",
+      "sell_price": 18000,
+      "item_type": "Retail",
+      "aliases": "tiger nâu"
+    },
+    {
+      "item_id": "tiger_bac",
+      "display_name": "Bia Tiger Bạc",
+      "category": "Beer",
+      "sell_price": 18000,
+      "item_type": "Retail",
+      "aliases": "tiger bạc"
+    },
+    {
+      "item_id": "ken_lun",
+      "display_name": "Ken lùn",
+      "category": "Beer",
+      "sell_price": 22000,
+      "item_type": "Retail",
+      "aliases": "ken"
+    },
+    {
+      "item_id": "sai_gon",
+      "display_name": "Sài Gòn",
+      "category": "Beer",
+      "sell_price": 18000,
+      "item_type": "Retail",
+      "aliases": "sài gòn"
+    },
+    {
+      "item_id": "ruou_mo",
+      "display_name": "Rượu Mơ",
+      "category": "Rượu",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "rượu mơ"
+    },
+    {
+      "item_id": "ruou_dau_tam",
+      "display_name": "Rượu Dâu tằm",
+      "category": "Rượu",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "rượu dâu"
+    },
+    {
+      "item_id": "ruou_com",
+      "display_name": "Rượu Cốm",
+      "category": "Rượu",
+      "sell_price": 60000,
+      "item_type": "Finished",
+      "aliases": "rượu cốm"
+    },
+    {
+      "item_id": "ruou_nep_cam",
+      "display_name": "Rượu Nếp Cẩm",
+      "category": "Rượu",
+      "sell_price": 60000,
+      "item_type": "Finished",
+      "aliases": "nếp cẩm"
+    },
+    {
+      "item_id": "ruou_gao",
+      "display_name": "Rượu Gạo",
+      "category": "Rượu",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "rượu gạo"
+    },
+    {
+      "item_id": "ruou_nu_nhi_hong",
+      "display_name": "Rượu Nữ Nhi Hồng",
+      "category": "Rượu",
+      "sell_price": 70000,
+      "item_type": "Finished",
+      "aliases": "nữ nhi hồng"
+    },
+    {
+      "item_id": "ruou_bach_nhat",
+      "display_name": "Rượu Bách Nhật",
+      "category": "Rượu",
+      "sell_price": 50000,
+      "item_type": "Finished",
+      "aliases": "bách nhật"
+    },
+    {
+      "item_id": "cocktail_hoang_hon",
+      "display_name": "Hoàng hôn trên biển",
+      "category": "Rượu",
+      "sell_price": 80000,
+      "item_type": "Finished",
+      "aliases": "hoàng hôn"
+    },
+    {
+      "item_id": "cocktail_dem",
+      "display_name": "Đêm huyền diệu",
+      "category": "Rượu",
+      "sell_price": 80000,
+      "item_type": "Finished",
+      "aliases": "đêm huyền diệu"
+    },
+    {
+      "item_id": "ca_bong_phomai",
+      "display_name": "Cá bống nướng phô mai",
+      "category": "Món Mới",
+      "sell_price": 39000,
+      "item_type": "Finished",
+      "aliases": "bống phô mai"
+    },
+    {
+      "item_id": "ca_bo_phomai",
+      "display_name": "Cá bò nướng phô mai",
+      "category": "Món Mới",
+      "sell_price": 39000,
+      "item_type": "Finished",
+      "aliases": "cá bò phô mai"
+    },
+    {
+      "item_id": "bo_kho_nuong",
+      "display_name": "Bò khô nướng",
+      "category": "Món Mới",
+      "sell_price": 39000,
+      "item_type": "Finished",
+      "aliases": "bò nướng"
+    },
+    {
+      "item_id": "cut_lon_xao_me",
+      "display_name": "Cút lộn xào me",
+      "category": "Món Mới",
+      "sell_price": 49000,
+      "item_type": "Finished",
+      "aliases": "cút lộn"
+    },
+    {
+      "item_id": "chan_ga_quai_thu",
+      "display_name": "Chân gà quái thú",
+      "category": "Món Mới",
+      "sell_price": 79000,
+      "item_type": "Finished",
+      "aliases": "chân gà cay"
+    },
+    {
+      "item_id": "cha_ram_oc",
+      "display_name": "Chả ram ốc",
+      "category": "Món Mới",
+      "sell_price": 79000,
+      "item_type": "Finished",
+      "aliases": "ram ốc"
+    },
+    {
+      "item_id": "nem_chua_la_doi",
+      "display_name": "Nem chua thính lá dổi",
+      "category": "Món Mới",
+      "sell_price": 79000,
+      "item_type": "Finished",
+      "aliases": "nem chua"
+    },
+    {
+      "item_id": "bo_vien_chien",
+      "display_name": "Bò viên chiên",
+      "category": "Món Mới",
+      "sell_price": 49000,
+      "item_type": "Finished",
+      "aliases": "bò viên"
+    },
+    {
+      "item_id": "ca_thu_do",
+      "display_name": "Cá thu đỏ tuổi thơ",
+      "category": "Món Mới",
+      "sell_price": 39000,
+      "item_type": "Finished",
+      "aliases": "cá thu đỏ"
+    },
+    {
+      "item_id": "da_heo_muoi_ot",
+      "display_name": "Da heo nướng muối ớt",
+      "category": "Món Mới",
+      "sell_price": 49000,
+      "item_type": "Finished",
+      "aliases": "da heo muối ớt"
+    }
+  ],
+  "Inventory_Items": [
+    {
+      "inv_id": "inv_ca_moi",
+      "material_name": "Cá mối thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 200,
+      "min_alert": 50
+    },
+    {
+      "inv_id": "inv_ca_chi_vang",
+      "material_name": "Cá chỉ vàng thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 500,
+      "min_alert": 100
+    },
+    {
+      "inv_id": "inv_ca_thieu",
+      "material_name": "Cá thiều thô",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_ca_bong",
+      "material_name": "Cá bống thô",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_ca_khoai",
+      "material_name": "Cá khoai thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_ca_dao",
+      "material_name": "Cá đao thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_ca_duoi",
+      "material_name": "Cá đuối thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 50,
+      "min_alert": 10
+    },
+    {
+      "inv_id": "inv_ca_bo",
+      "material_name": "Cá bò thô",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 150,
+      "min_alert": 30
+    },
+    {
+      "inv_id": "inv_muc_kho_m",
+      "material_name": "Mực khô (Vừa)",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 50,
+      "min_alert": 10
+    },
+    {
+      "inv_id": "inv_muc_kho_l",
+      "material_name": "Mực khô (Lớn)",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 30,
+      "min_alert": 5
+    },
+    {
+      "inv_id": "inv_muc_1_nang",
+      "material_name": "Mực 1 nắng",
+      "inv_type": "Raw",
+      "base_unit": "Con",
+      "current_stock": 20,
+      "min_alert": 5
+    },
+    {
+      "inv_id": "inv_ca_sun_sin",
+      "material_name": "Cá sụn sịn tươi/đông",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 3000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_ca_thu_do",
+      "material_name": "Cá thu đỏ",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_lap_vit",
+      "material_name": "Lạp vịt thô",
+      "inv_type": "Raw",
+      "base_unit": "Chiếc",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_ba_chi",
+      "material_name": "Thịt ba chỉ heo",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_chan_ga",
+      "material_name": "Chân gà",
+      "inv_type": "Raw",
+      "base_unit": "Cặp",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_bo_kho",
+      "material_name": "Bò khô nguyên miếng",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_cha_ram_oc",
+      "material_name": "Chả ram ốc chưa chiên",
+      "inv_type": "Raw",
+      "base_unit": "Cuốn",
+      "current_stock": 200,
+      "min_alert": 50
+    },
+    {
+      "inv_id": "inv_nem_chua",
+      "material_name": "Nem chua thính",
+      "inv_type": "Raw",
+      "base_unit": "Cái",
+      "current_stock": 150,
+      "min_alert": 30
+    },
+    {
+      "inv_id": "inv_bo_vien",
+      "material_name": "Bò viên",
+      "inv_type": "Raw",
+      "base_unit": "Viên",
+      "current_stock": 500,
+      "min_alert": 100
+    },
+    {
+      "inv_id": "inv_da_heo",
+      "material_name": "Da heo",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 3000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_xoai",
+      "material_name": "Xoài xanh",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_bap_hat",
+      "material_name": "Bắp hạt",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 3000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_khoai_tay",
+      "material_name": "Khoai tây",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_bau",
+      "material_name": "Bầu",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 4000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_cu_kieu",
+      "material_name": "Củ kiệu",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_tac",
+      "material_name": "Trái tắc (Quất)",
+      "inv_type": "Raw",
+      "base_unit": "Quả",
+      "current_stock": 300,
+      "min_alert": 50
+    },
+    {
+      "inv_id": "inv_mang_cau",
+      "material_name": "Mãng cầu ngâm",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_dao_ngam",
+      "material_name": "Đào ngâm",
+      "inv_type": "Raw",
+      "base_unit": "Miếng",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_trai_cay_mix",
+      "material_name": "Trái cây cắt lát (Cocktail)",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_vit_lon",
+      "material_name": "Trứng vịt lộn",
+      "inv_type": "Raw",
+      "base_unit": "Trứng",
+      "current_stock": 100,
+      "min_alert": 20
+    },
+    {
+      "inv_id": "inv_cut_lon",
+      "material_name": "Trứng cút lộn",
+      "inv_type": "Raw",
+      "base_unit": "Trứng",
+      "current_stock": 300,
+      "min_alert": 50
+    },
+    {
+      "inv_id": "inv_trung_bac_thao",
+      "material_name": "Trứng bắc thảo",
+      "inv_type": "Raw",
+      "base_unit": "Trứng",
+      "current_stock": 50,
+      "min_alert": 10
+    },
+    {
+      "inv_id": "inv_bo_thuc_vat",
+      "material_name": "Bơ thực vật",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_toi",
+      "material_name": "Tỏi băm",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_muoi_ot",
+      "material_name": "Muối ớt",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_mo_hanh",
+      "material_name": "Mỡ hành",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_sot_me",
+      "material_name": "Sốt me",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_sot_cay",
+      "material_name": "Sốt cay",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_pho_mai_bot",
+      "material_name": "Phô mai bột",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_duong",
+      "material_name": "Đường",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_tra_den",
+      "material_name": "Trà đen pha chế",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 2000,
+      "min_alert": 500
+    },
+    {
+      "inv_id": "inv_tom_kho",
+      "material_name": "Tôm khô",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_dau_hu",
+      "material_name": "Đậu hũ",
+      "inv_type": "Raw",
+      "base_unit": "Miếng",
+      "current_stock": 50,
+      "min_alert": 10
+    },
+    {
+      "inv_id": "inv_la_doi",
+      "material_name": "Lá dổi",
+      "inv_type": "Raw",
+      "base_unit": "Gram",
+      "current_stock": 500,
+      "min_alert": 100
+    },
+    {
+      "inv_id": "inv_ruou_mo",
+      "material_name": "Rượu Mơ (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_dau_tam",
+      "material_name": "Rượu Dâu (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_com",
+      "material_name": "Rượu Cốm (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_nep_cam",
+      "material_name": "Rượu Nếp Cẩm (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_gao",
+      "material_name": "Rượu Gạo (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_nnh",
+      "material_name": "Rượu Nữ Nhi Hồng (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_bach_nhat",
+      "material_name": "Rượu Bách Nhật (Bình chuẩn)",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 10000,
+      "min_alert": 2000
+    },
+    {
+      "inv_id": "inv_ruou_goc",
+      "material_name": "Rượu gốc pha cocktail",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 5000,
+      "min_alert": 1000
+    },
+    {
+      "inv_id": "inv_syrup_blue",
+      "material_name": "Syrup Blue",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_syrup_red",
+      "material_name": "Syrup Đỏ",
+      "inv_type": "Raw",
+      "base_unit": "ml",
+      "current_stock": 1000,
+      "min_alert": 200
+    },
+    {
+      "inv_id": "inv_sting",
+      "material_name": "Sting dâu",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_7up",
+      "material_name": "7Up",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_pepsi",
+      "material_name": "Pepsi",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_sprite",
+      "material_name": "Sprite",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_bo_huc",
+      "material_name": "Bò húc",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 24,
+      "min_alert": 6
+    },
+    {
+      "inv_id": "inv_tiger_nau",
+      "material_name": "Bia Tiger Nâu",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_tiger_bac",
+      "material_name": "Bia Tiger Bạc",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_ken",
+      "material_name": "Bia Heineken",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    },
+    {
+      "inv_id": "inv_saigon",
+      "material_name": "Bia Sài Gòn",
+      "inv_type": "Retail",
+      "base_unit": "Lon",
+      "current_stock": 48,
+      "min_alert": 12
+    }
+  ],
+  "Recipes_BOM": [
+    {
+      "parent_item_id": "kho_ca_moi",
+      "ingredient_inv_id": "inv_ca_moi",
+      "quantity_needed": 4,
+      "note": "4 con/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_chi_vang",
+      "ingredient_inv_id": "inv_ca_chi_vang",
+      "quantity_needed": 5,
+      "note": "5 con/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_thieu",
+      "ingredient_inv_id": "inv_ca_thieu",
+      "quantity_needed": 100,
+      "note": "100g/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_bong",
+      "ingredient_inv_id": "inv_ca_bong",
+      "quantity_needed": 100,
+      "note": "100g/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_khoai",
+      "ingredient_inv_id": "inv_ca_khoai",
+      "quantity_needed": 5,
+      "note": "5 con/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_dao",
+      "ingredient_inv_id": "inv_ca_dao",
+      "quantity_needed": 3,
+      "note": "3 con/phần"
+    },
+    {
+      "parent_item_id": "kho_ca_duoi",
+      "ingredient_inv_id": "inv_ca_duoi",
+      "quantity_needed": 1,
+      "note": "1 con/phần"
+    },
+    {
+      "parent_item_id": "lap_vit",
+      "ingredient_inv_id": "inv_lap_vit",
+      "quantity_needed": 1,
+      "note": "1 chiếc lạp"
+    },
+    {
+      "parent_item_id": "kho_ca_bo",
+      "ingredient_inv_id": "inv_ca_bo",
+      "quantity_needed": 3,
+      "note": "3 con/phần"
+    },
+    {
+      "parent_item_id": "muc_kho",
+      "ingredient_inv_id": "inv_muc_kho_m",
+      "quantity_needed": 1,
+      "note": "1 con mực size vừa"
+    },
+    {
+      "parent_item_id": "muc_1_nang_muoi_ot",
+      "ingredient_inv_id": "inv_muc_1_nang",
+      "quantity_needed": 1,
+      "note": "1 con mực 1 nắng"
+    },
+    {
+      "parent_item_id": "muc_1_nang_muoi_ot",
+      "ingredient_inv_id": "inv_muoi_ot",
+      "quantity_needed": 10,
+      "note": "10g muối ớt"
+    },
+    {
+      "parent_item_id": "muc_1_nang_moi",
+      "ingredient_inv_id": "inv_muc_1_nang",
+      "quantity_needed": 1,
+      "note": "1 con mực 1 nắng"
+    },
+    {
+      "parent_item_id": "muc_kho_chien_bo",
+      "ingredient_inv_id": "inv_muc_kho_l",
+      "quantity_needed": 1,
+      "note": "1 con mực size lớn"
+    },
+    {
+      "parent_item_id": "muc_kho_chien_bo",
+      "ingredient_inv_id": "inv_bo_thuc_vat",
+      "quantity_needed": 20,
+      "note": "20g bơ"
+    },
+    {
+      "parent_item_id": "muc_kho_chien_bo",
+      "ingredient_inv_id": "inv_toi",
+      "quantity_needed": 10,
+      "note": "10g tỏi"
+    },
+    {
+      "parent_item_id": "vit_lon_om_bau",
+      "ingredient_inv_id": "inv_vit_lon",
+      "quantity_needed": 2,
+      "note": "2 trứng"
+    },
+    {
+      "parent_item_id": "vit_lon_om_bau",
+      "ingredient_inv_id": "inv_bau",
+      "quantity_needed": 150,
+      "note": "150g bầu"
+    },
+    {
+      "parent_item_id": "combo_1",
+      "ingredient_inv_id": "inv_muc_kho_m",
+      "quantity_needed": 1,
+      "note": "1 mực vừa"
+    },
+    {
+      "parent_item_id": "combo_1",
+      "ingredient_inv_id": "inv_ca_chi_vang",
+      "quantity_needed": 3,
+      "note": "3 chỉ vàng"
+    },
+    {
+      "parent_item_id": "combo_1",
+      "ingredient_inv_id": "inv_ca_thieu",
+      "quantity_needed": 50,
+      "note": "50g cá thiều"
+    },
+    {
+      "parent_item_id": "combo_1",
+      "ingredient_inv_id": "inv_lap_vit",
+      "quantity_needed": 1,
+      "note": "1 lạp vịt"
+    },
+    {
+      "parent_item_id": "combo_2",
+      "ingredient_inv_id": "inv_muc_kho_m",
+      "quantity_needed": 1,
+      "note": "1 mực vừa"
+    },
+    {
+      "parent_item_id": "combo_2",
+      "ingredient_inv_id": "inv_ca_chi_vang",
+      "quantity_needed": 3,
+      "note": "3 chỉ vàng"
+    },
+    {
+      "parent_item_id": "combo_2",
+      "ingredient_inv_id": "inv_ca_duoi",
+      "quantity_needed": 1,
+      "note": "1 cá đuối"
+    },
+    {
+      "parent_item_id": "combo_2",
+      "ingredient_inv_id": "inv_ca_bo",
+      "quantity_needed": 2,
+      "note": "2 cá bò"
+    },
+    {
+      "parent_item_id": "combo_2",
+      "ingredient_inv_id": "inv_lap_vit",
+      "quantity_needed": 1,
+      "note": "1 lạp vịt"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_muc_kho_l",
+      "quantity_needed": 1,
+      "note": "1 mực lớn"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_ca_duoi",
+      "quantity_needed": 1,
+      "note": "1 cá đuối"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_lap_vit",
+      "quantity_needed": 1,
+      "note": "1 lạp vịt"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_ca_dao",
+      "quantity_needed": 2,
+      "note": "2 cá đao"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_xoai",
+      "quantity_needed": 100,
+      "note": "100g xoài làm gỏi"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_ca_thieu",
+      "quantity_needed": 50,
+      "note": "50g cá thiều làm gỏi"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_vit_lon",
+      "quantity_needed": 2,
+      "note": "2 trứng vịt lộn"
+    },
+    {
+      "parent_item_id": "combo_3",
+      "ingredient_inv_id": "inv_bau",
+      "quantity_needed": 150,
+      "note": "150g bầu"
+    },
+    {
+      "parent_item_id": "ca_chi_vang_chien_bo",
+      "ingredient_inv_id": "inv_ca_chi_vang",
+      "quantity_needed": 5,
+      "note": "5 con chỉ vàng"
+    },
+    {
+      "parent_item_id": "ca_chi_vang_chien_bo",
+      "ingredient_inv_id": "inv_bo_thuc_vat",
+      "quantity_needed": 15,
+      "note": "15g bơ"
+    },
+    {
+      "parent_item_id": "ca_sun_sin_chien",
+      "ingredient_inv_id": "inv_ca_sun_sin",
+      "quantity_needed": 150,
+      "note": "150g sụn sịn"
+    },
+    {
+      "parent_item_id": "ba_chi_nuong_doi",
+      "ingredient_inv_id": "inv_ba_chi",
+      "quantity_needed": 150,
+      "note": "150g ba chỉ"
+    },
+    {
+      "parent_item_id": "ba_chi_nuong_doi",
+      "ingredient_inv_id": "inv_la_doi",
+      "quantity_needed": 5,
+      "note": "5g lá dổi"
+    },
+    {
+      "parent_item_id": "goi_xoai_ca_moi",
+      "ingredient_inv_id": "inv_xoai",
+      "quantity_needed": 150,
+      "note": "150g xoài"
+    },
+    {
+      "parent_item_id": "goi_xoai_ca_moi",
+      "ingredient_inv_id": "inv_ca_moi",
+      "quantity_needed": 2,
+      "note": "2 con cá mối"
+    },
+    {
+      "parent_item_id": "bap_xao",
+      "ingredient_inv_id": "inv_bap_hat",
+      "quantity_needed": 150,
+      "note": "150g bắp"
+    },
+    {
+      "parent_item_id": "bap_xao",
+      "ingredient_inv_id": "inv_bo_thuc_vat",
+      "quantity_needed": 10,
+      "note": "10g bơ"
+    },
+    {
+      "parent_item_id": "bap_xao",
+      "ingredient_inv_id": "inv_tom_kho",
+      "quantity_needed": 10,
+      "note": "10g tôm khô"
+    },
+    {
+      "parent_item_id": "dau_hu_mo_hanh",
+      "ingredient_inv_id": "inv_dau_hu",
+      "quantity_needed": 2,
+      "note": "2 miếng đậu hũ"
+    },
+    {
+      "parent_item_id": "dau_hu_mo_hanh",
+      "ingredient_inv_id": "inv_mo_hanh",
+      "quantity_needed": 20,
+      "note": "20g mỡ hành"
+    },
+    {
+      "parent_item_id": "trung_bac_thao",
+      "ingredient_inv_id": "inv_trung_bac_thao",
+      "quantity_needed": 1,
+      "note": "1 trứng bắc thảo"
+    },
+    {
+      "parent_item_id": "trung_bac_thao",
+      "ingredient_inv_id": "inv_cu_kieu",
+      "quantity_needed": 50,
+      "note": "50g củ kiệu"
+    },
+    {
+      "parent_item_id": "trung_bac_thao",
+      "ingredient_inv_id": "inv_tom_kho",
+      "quantity_needed": 10,
+      "note": "10g tôm khô"
+    },
+    {
+      "parent_item_id": "khoai_tay_lac",
+      "ingredient_inv_id": "inv_khoai_tay",
+      "quantity_needed": 150,
+      "note": "150g khoai tây"
+    },
+    {
+      "parent_item_id": "khoai_tay_lac",
+      "ingredient_inv_id": "inv_pho_mai_bot",
+      "quantity_needed": 15,
+      "note": "15g phô mai bột"
+    },
+    {
+      "parent_item_id": "chan_ga_nuong",
+      "ingredient_inv_id": "inv_chan_ga",
+      "quantity_needed": 2,
+      "note": "2 cặp chân gà"
+    },
+    {
+      "parent_item_id": "tra_dao",
+      "ingredient_inv_id": "inv_tra_den",
+      "quantity_needed": 5,
+      "note": "5g trà"
+    },
+    {
+      "parent_item_id": "tra_dao",
+      "ingredient_inv_id": "inv_dao_ngam",
+      "quantity_needed": 3,
+      "note": "3 miếng đào"
+    },
+    {
+      "parent_item_id": "tra_dao",
+      "ingredient_inv_id": "inv_duong",
+      "quantity_needed": 20,
+      "note": "20g đường"
+    },
+    {
+      "parent_item_id": "tra_mang_cau",
+      "ingredient_inv_id": "inv_tra_den",
+      "quantity_needed": 5,
+      "note": "5g trà"
+    },
+    {
+      "parent_item_id": "tra_mang_cau",
+      "ingredient_inv_id": "inv_mang_cau",
+      "quantity_needed": 50,
+      "note": "50g mãng cầu ngâm"
+    },
+    {
+      "parent_item_id": "tra_mang_cau",
+      "ingredient_inv_id": "inv_duong",
+      "quantity_needed": 20,
+      "note": "20g đường"
+    },
+    {
+      "parent_item_id": "tra_tac",
+      "ingredient_inv_id": "inv_tra_den",
+      "quantity_needed": 5,
+      "note": "5g trà"
+    },
+    {
+      "parent_item_id": "tra_tac",
+      "ingredient_inv_id": "inv_tac",
+      "quantity_needed": 3,
+      "note": "3 quả tắc"
+    },
+    {
+      "parent_item_id": "tra_tac",
+      "ingredient_inv_id": "inv_duong",
+      "quantity_needed": 20,
+      "note": "20g đường"
+    },
+    {
+      "parent_item_id": "sting",
+      "ingredient_inv_id": "inv_sting",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "7up",
+      "ingredient_inv_id": "inv_7up",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "pepsi",
+      "ingredient_inv_id": "inv_pepsi",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "sprite",
+      "ingredient_inv_id": "inv_sprite",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "bo_huc",
+      "ingredient_inv_id": "inv_bo_huc",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "tiger_nau",
+      "ingredient_inv_id": "inv_tiger_nau",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "tiger_bac",
+      "ingredient_inv_id": "inv_tiger_bac",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "ken_lun",
+      "ingredient_inv_id": "inv_ken",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "sai_gon",
+      "ingredient_inv_id": "inv_saigon",
+      "quantity_needed": 1,
+      "note": "1 lon"
+    },
+    {
+      "parent_item_id": "ruou_mo",
+      "ingredient_inv_id": "inv_ruou_mo",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_dau_tam",
+      "ingredient_inv_id": "inv_ruou_dau_tam",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_com",
+      "ingredient_inv_id": "inv_ruou_com",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_nep_cam",
+      "ingredient_inv_id": "inv_ruou_nep_cam",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_gao",
+      "ingredient_inv_id": "inv_ruou_gao",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_nu_nhi_hong",
+      "ingredient_inv_id": "inv_ruou_nnh",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "ruou_bach_nhat",
+      "ingredient_inv_id": "inv_ruou_bach_nhat",
+      "quantity_needed": 300,
+      "note": "300ml/bình"
+    },
+    {
+      "parent_item_id": "cocktail_hoang_hon",
+      "ingredient_inv_id": "inv_ruou_goc",
+      "quantity_needed": 200,
+      "note": "200ml rượu gốc"
+    },
+    {
+      "parent_item_id": "cocktail_hoang_hon",
+      "ingredient_inv_id": "inv_syrup_blue",
+      "quantity_needed": 20,
+      "note": "20ml syrup blue"
+    },
+    {
+      "parent_item_id": "cocktail_hoang_hon",
+      "ingredient_inv_id": "inv_trai_cay_mix",
+      "quantity_needed": 50,
+      "note": "50g trái cây"
+    },
+    {
+      "parent_item_id": "cocktail_dem",
+      "ingredient_inv_id": "inv_ruou_goc",
+      "quantity_needed": 200,
+      "note": "200ml rượu gốc"
+    },
+    {
+      "parent_item_id": "cocktail_dem",
+      "ingredient_inv_id": "inv_syrup_red",
+      "quantity_needed": 20,
+      "note": "20ml syrup đỏ"
+    },
+    {
+      "parent_item_id": "cocktail_dem",
+      "ingredient_inv_id": "inv_trai_cay_mix",
+      "quantity_needed": 50,
+      "note": "50g trái cây"
+    },
+    {
+      "parent_item_id": "ca_bong_phomai",
+      "ingredient_inv_id": "inv_ca_bong",
+      "quantity_needed": 100,
+      "note": "100g cá bống"
+    },
+    {
+      "parent_item_id": "ca_bong_phomai",
+      "ingredient_inv_id": "inv_pho_mai_bot",
+      "quantity_needed": 15,
+      "note": "15g phô mai"
+    },
+    {
+      "parent_item_id": "ca_bo_phomai",
+      "ingredient_inv_id": "inv_ca_bo",
+      "quantity_needed": 3,
+      "note": "3 con cá bò"
+    },
+    {
+      "parent_item_id": "ca_bo_phomai",
+      "ingredient_inv_id": "inv_pho_mai_bot",
+      "quantity_needed": 15,
+      "note": "15g phô mai"
+    },
+    {
+      "parent_item_id": "bo_kho_nuong",
+      "ingredient_inv_id": "inv_bo_kho",
+      "quantity_needed": 100,
+      "note": "100g bò khô"
+    },
+    {
+      "parent_item_id": "cut_lon_xao_me",
+      "ingredient_inv_id": "inv_cut_lon",
+      "quantity_needed": 10,
+      "note": "10 trứng cút"
+    },
+    {
+      "parent_item_id": "cut_lon_xao_me",
+      "ingredient_inv_id": "inv_sot_me",
+      "quantity_needed": 30,
+      "note": "30g sốt me"
+    },
+    {
+      "parent_item_id": "chan_ga_quai_thu",
+      "ingredient_inv_id": "inv_chan_ga",
+      "quantity_needed": 2,
+      "note": "2 cặp chân gà"
+    },
+    {
+      "parent_item_id": "chan_ga_quai_thu",
+      "ingredient_inv_id": "inv_sot_cay",
+      "quantity_needed": 30,
+      "note": "30g sốt cay"
+    },
+    {
+      "parent_item_id": "cha_ram_oc",
+      "ingredient_inv_id": "inv_cha_ram_oc",
+      "quantity_needed": 10,
+      "note": "10 cuốn chả ram"
+    },
+    {
+      "parent_item_id": "nem_chua_la_doi",
+      "ingredient_inv_id": "inv_nem_chua",
+      "quantity_needed": 5,
+      "note": "5 cái nem"
+    },
+    {
+      "parent_item_id": "bo_vien_chien",
+      "ingredient_inv_id": "inv_bo_vien",
+      "quantity_needed": 10,
+      "note": "10 viên bò"
+    },
+    {
+      "parent_item_id": "ca_thu_do",
+      "ingredient_inv_id": "inv_ca_thu_do",
+      "quantity_needed": 100,
+      "note": "100g cá thu"
+    },
+    {
+      "parent_item_id": "da_heo_muoi_ot",
+      "ingredient_inv_id": "inv_da_heo",
+      "quantity_needed": 100,
+      "note": "100g da heo"
+    },
+    {
+      "parent_item_id": "da_heo_muoi_ot",
+      "ingredient_inv_id": "inv_muoi_ot",
+      "quantity_needed": 10,
+      "note": "10g muối ớt"
+    }
+  ]
+}

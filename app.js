@@ -839,7 +839,9 @@ function runMigrations() {
 
   // Patch menu & ingredients
   let mappedMenu = false;
-  const menu = Store.getMenu();
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [m.id, m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
   menu.forEach(m => {
     if (m.name === 'Khô cá chỉ vàng') { mappedMenu = true; m.name = 'Cá chỉ vàng nướng'; }
     else if (m.name === 'Khô cá thiều tâm') { mappedMenu = true; m.name = 'Khô cá thiều nướng'; }
@@ -1347,6 +1349,20 @@ function _getPurchases() {
     ? window.appState.purchases
     : Store.getPurchases();
   return purchases || [];
+}
+
+function _getHistory() {
+  const history = (window.appState && window.appState.history && window.appState.history.length > 0)
+    ? window.appState.history
+    : Store.getHistory();
+  return history || [];
+}
+
+function _getExpenses() {
+  const expenses = (window.appState && window.appState.expenses && window.appState.expenses.length > 0)
+    ? window.appState.expenses
+    : Store.getExpenses();
+  return expenses || [];
 }
 
 
@@ -2348,9 +2364,11 @@ function openBillModal() {
   // Dynamically calculate cost based on current inventory
   const inv = _getInventory();
   const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [m.id, m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
   let cost = 0;
   items.forEach(item => {
-    const dish = menu.find(m => m.id === item.id);
+    const dish = menuById.get(item.id) || menuByName.get(normalizeViKey(item.name)) || null;
     let dishCost = dish.cost || 0;
     if (dish && dish.itemType === ITEM_TYPES.RETAIL) {
       const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
@@ -2481,6 +2499,9 @@ function printBill() {
 
 function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRate) {
   const items      = orderItems[currentTable] || [];
+  const ordersMap = window.appState && window.appState.orders;
+  const activeOrder = ordersMap && ordersMap[String(currentTable)] ? ordersMap[String(currentTable)] : null;
+  const isMigratedOrder = activeOrder?.is_migrated === true;
   const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
 
   // --- Ảnh hóa đơn ---
@@ -2516,16 +2537,18 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     taxRate:      taxRate || 0,
     payMethod:    payMethod || 'cash',
     paidAt:       new Date().toISOString(),
+    is_migrated:  isMigratedOrder,
     photos:       [],
   };
 
   // --- Ghi LocalStorage (offline backup) ---
   Store.addHistory(historyRecord);
-  Store.deductInventory(items);
+  if (!isMigratedOrder) {
+    Store.deductInventory(items);
+  }
 
   // --- Ghi Firestore (cloud sync) ---
   if (window.DB) {
-    const ordersMap = window.appState && window.appState.orders;
     const orderId   = (window._currentOrderId && window._currentOrderId[currentTable])
       || (ordersMap && ordersMap[String(currentTable)] && ordersMap[String(currentTable)].id);
 
@@ -2544,14 +2567,17 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     if (orderId && currentTable !== 'takeaway') {
       // Đóng đơn trên Firestore để ghi history, xóa order, reset bàn
       window.DB.Orders.close(orderId, payInfo)
-        .then(() => window.DB.Inventory.deduct(items))
+        .then(() => {
+          if (isMigratedOrder || !window.DB.Inventory || !window.DB.Inventory.deduct) return;
+          return window.DB.Inventory.deduct(items);
+        })
         .catch(console.error);
     } else {
       // Bán mang về (Takeaway) hoặc Offline không có orderId
       if (window.DB.History && window.DB.History.add) {
         window.DB.History.add({ ...historyRecord, status: 'closed' }).catch(console.error);
       }
-      if (window.DB.Inventory && window.DB.Inventory.deduct) {
+      if (!isMigratedOrder && window.DB.Inventory && window.DB.Inventory.deduct) {
         window.DB.Inventory.deduct(items).catch(console.error);
       }
     }
@@ -4554,9 +4580,9 @@ function openDiscountDetails() {
 
 function renderRevenueChart() {
   const days = 7;
-  const h = (window.appState && window.appState.history) ? window.appState.history : Store.getHistory();
-  const e = (window.appState && window.appState.expenses) ? window.appState.expenses : Store.getExpenses();
-  const p = (window.appState && window.appState.purchases) ? window.appState.purchases : Store.getPurchases();
+  const h = _getHistory();
+  const e = _getExpenses();
+  const p = _getPurchases();
   
   const data = [];
   for(let i = days-1; i >= 0; i--) {
@@ -4966,9 +4992,9 @@ function renderTrendChart() {
   if(chartInstances.trend) chartInstances.trend.destroy();
 
   const days = 7;
-  const h = (window.appState && window.appState.history) ? window.appState.history : Store.getHistory();
-  const e = (window.appState && window.appState.expenses) ? window.appState.expenses : Store.getExpenses();
-  const p = (window.appState && window.appState.purchases) ? window.appState.purchases : Store.getPurchases();
+  const h = _getHistory();
+  const e = _getExpenses();
+  const p = _getPurchases();
   
   const data = [];
   for(let i = days-1; i >= 0; i--) {
@@ -5149,6 +5175,48 @@ function renderHourlyChart() {
   });
 }
 
+function renderCategoryChart() {
+  const orders = filterHistory(reportPeriod);
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [m.id, m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
+  const catRevenue = {};
+
+  orders.forEach(o => (o.items || []).forEach(item => {
+    const dish = menuById.get(item.id) || menuByName.get(normalizeViKey(item.name)) || null;
+    const cat = (dish && dish.category) || item.category || 'Khac';
+    catRevenue[cat] = (catRevenue[cat] || 0) + (Number(item.price || 0) * Number(item.qty || 0));
+  }));
+
+  const labels = Object.keys(catRevenue);
+  const data = labels.map(l => catRevenue[l]);
+  const ctx = document.getElementById('category-chart');
+  if(!ctx) return;
+  if(chartInstances.category) chartInstances.category.destroy();
+
+  if (!labels.length) {
+    chartInstances.category = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: ['Chua co du lieu'], datasets: [{ data: [1], backgroundColor: ['#3A3A4D'], borderWidth: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+      }
+    });
+    return;
+  }
+
+  const colors = ['#FF6B35','#FFD700','#00D68F','#0095FF','#FF3D71','#A855F7','#F97316'];
+  chartInstances.category = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth:0, hoverOffset:8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+    }
+  });
+}
+
 function renderExpenseReport() {
   const ctx = document.getElementById('expense-chart');
   const listEl = document.getElementById('purchase-report-list');
@@ -5171,8 +5239,8 @@ function renderExpenseReport() {
     return true;
   };
 
-  const rawPurchases = Store.getPurchases().filter(p => filterFn(p.date));
-  const rawExpenses = Store.getExpenses().filter(e => filterFn(e.date));
+  const rawPurchases = _getPurchases().filter(p => filterFn(p.date));
+  const rawExpenses = _getExpenses().filter(e => filterFn(e.date));
 
   const sums = {};
   rawPurchases.forEach(p => {
@@ -5281,7 +5349,7 @@ function renderOrderHistoryList() {
 }
 
 async function viewOrderDetail(orderId) {
-  const h = Store.getHistory();
+  const h = _getHistory();
   const o = h.find(x => (x.historyId || x.id) === orderId);
   if(!o) return;
 
@@ -5451,6 +5519,38 @@ function openAddMenuModal(id) {
 
 function editMenuItem(id) { openAddMenuModal(id); }
 
+function openAddMenuModal(id) {
+  const menu = _getMenu();
+  const inventory = _getInventory().filter(i => !i.hidden);
+  const dish = id ? menu.find(m => m.id === id) : null;
+  const formDish = dish || {};
+
+  document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
+  document.getElementById('menu-item-id').value = formDish.id || '';
+  document.getElementById('menu-item-name').value = formDish.name || '';
+  const unitInput = document.getElementById('menu-item-unit');
+  unitInput.value = formDish.unit || unitInput.defaultValue || 'phần';
+  document.getElementById('menu-item-price').value = formDish.price || '';
+  document.getElementById('menu-item-category').value = formDish.category || CATEGORIES[0];
+  document.getElementById('menu-item-type').value = formDish.itemType || ITEM_TYPES.FINISHED;
+
+  const linkedSel = document.getElementById('menu-linked-inventory-id');
+  if (linkedSel) {
+    linkedSel.innerHTML = '<option value="">-- Chọn hàng tồn kho --</option>' + inventory
+      .map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    linkedSel.value = formDish.linkedInventoryId || '';
+  }
+
+  const list = document.getElementById('menu-ingredients-list');
+  list.innerHTML = '';
+  if (dish && Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty, ing.unit));
+  }
+
+  toggleMenuItemTypeUI();
+  document.getElementById('menu-modal').classList.add('active');
+}
+
 function deleteMenuItem(id) {
   if(!confirm('Xoá món này?')) return;
   // FIX 4: Xoá trực tiếp trên Firestore
@@ -5537,7 +5637,7 @@ function toggleMenuItemTypeUI() {
 
 
 function addIngredientRow(name='', qty='', unit='') {
-  const inv = Store.getInventory();
+  const inv = _getInventory();
   // Filter inventory list to generate options (include hidden if already selected)
   const options = inv.filter(i => !i.hidden || i.name === name).map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})${i.hidden ? ' 🚫(Đã ẩn)' : ''}</option>`).join('');
   
@@ -5575,7 +5675,7 @@ window.updateIngUnitDropdown = function(selectEl, selectedUnit = '') {
   unitSel.innerHTML = '<option value="">-- Tính theo --</option>';
   if(!ingName) return;
 
-  const inv = Store.getInventory();
+  const inv = _getInventory();
   const convs = Store.getUnitConversions();
   
   const stock = inv.find(i => i.name === ingName);
@@ -5762,14 +5862,10 @@ function renderSettings() {
     ['set-bankName',     s.bankName    || 'Vietinbank'],
     ['set-bankAccount',  s.bankAccount || ''],
     ['set-bankOwner',    s.bankOwner   || ''],
-    ['set-geminiApiKey', s.geminiApiKey|| ''],
     ['set-deepseekApiKey', s.deepseekApiKey || ''],
     ['set-deepseekEndpoint', s.deepseekEndpoint || 'https://api.deepseek.com/v1/chat/completions'],
     ['set-deepseekModel', s.deepseekModel || 'deepseek-chat'],
     ['set-googleTTSKey', s.googleTTSKey|| ''],
-    ['set-gemmaEndpoint',s.gemmaEndpoint || 'http://127.0.0.1:11434/v1/chat/completions'],
-    ['set-gemmaModel',   s.gemmaModel    || 'gemma2:9b'],
-    ['set-gemmaApiKey',  s.gemmaApiKey   || ''],
     ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
   ];
@@ -5870,14 +5966,10 @@ function submitSettings(e) {
   const bankNameEl    = document.getElementById('set-bankName');
   const bankAccountEl = document.getElementById('set-bankAccount');
   const bankOwnerEl   = document.getElementById('set-bankOwner');
-  const geminiEl      = document.getElementById('set-geminiApiKey');
   const deepseekKeyEl = document.getElementById('set-deepseekApiKey');
   const deepseekEndpointEl = document.getElementById('set-deepseekEndpoint');
   const deepseekModelEl = document.getElementById('set-deepseekModel');
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
-  const gemmaEndpointEl = document.getElementById('set-gemmaEndpoint');
-  const gemmaModelEl    = document.getElementById('set-gemmaModel');
-  const gemmaApiKeyEl   = document.getElementById('set-gemmaApiKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
   const storageQuotaEl = document.getElementById('set-storageQuotaMb');
@@ -5912,14 +6004,14 @@ function submitSettings(e) {
     bankName:     (bankNameEl    && bankNameEl.value.trim())    || 'Vietinbank',
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
-    geminiApiKey: (geminiEl      && geminiEl.value.trim())      || '',
+    geminiApiKey: '',
     deepseekApiKey: (deepseekKeyEl && deepseekKeyEl.value.trim()) || '',
     deepseekEndpoint: (deepseekEndpointEl && deepseekEndpointEl.value.trim()) || 'https://api.deepseek.com/v1/chat/completions',
     deepseekModel: (deepseekModelEl && deepseekModelEl.value.trim()) || 'deepseek-chat',
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
-    gemmaEndpoint:(gemmaEndpointEl&& gemmaEndpointEl.value.trim())|| 'http://127.0.0.1:11434/v1/chat/completions',
-    gemmaModel:   (gemmaModelEl  && gemmaModelEl.value.trim())    || 'gemma2:9b',
-    gemmaApiKey:  (gemmaApiKeyEl && gemmaApiKeyEl.value.trim())   || '',
+    gemmaEndpoint:'',
+    gemmaModel:   '',
+    gemmaApiKey:  '',
     tableCount:   newTableCount,
     storageQuotaMb,
     taxRate:      newTaxRate,
@@ -5937,7 +6029,7 @@ function submitSettings(e) {
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
     ocrMode: (ocrModeEl && ['auto', 'offline', 'online'].includes(ocrModeEl.value)) ? ocrModeEl.value : (s.ocrMode || 'auto'),
     photoRetentionDays: photoRetentionEl ? Math.max(0, parseInt(photoRetentionEl.value, 10) || 0) : Number(s.photoRetentionDays || 0),
-    activeAIEngine: (s.activeAIEngine === 'gemma') ? 'gemma' : 'gemini',
+    activeAIEngine: 'deepseek',
     forceOffline: !!s.forceOffline,
     appTheme: selectedTheme,
     // Payment watcher
