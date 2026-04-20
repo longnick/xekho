@@ -1271,6 +1271,17 @@ const Orders = {
 
     // FIX 5: Tính bản đồ nguyên liệu cần trừ TRƯỚC khi vào transaction
     const deductions = {}; // { [inventoryId]: amountToDeduct }
+    const inventoryList = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
+    const conversions = (typeof Store !== 'undefined' && typeof Store.getUnitConversions === 'function')
+      ? (Store.getUnitConversions() || [])
+      : [];
+    const normalizeKey = text => String(text || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
     if (!skipInventoryDeduction) {
       (order.items || []).forEach(orderItem => {
         const dish = menuList.find(m => m.id === orderItem.id);
@@ -1288,9 +1299,20 @@ const Orders = {
 
         if (!Array.isArray(dish.ingredients)) return;
         dish.ingredients.forEach(ing => {
-          const stock = (window.appState.inventory || []).find(s => s.name === ing.name);
+          const stock = inventoryList.find(s => normalizeKey(s.name) === normalizeKey(ing.name));
           if (!stock || !stock.id) return;
-          deductions[stock.id] = (deductions[stock.id] || 0) + (ing.qty || 0) * (orderItem.qty || 1);
+          const ingUnit = String(ing.unit || stock.unit || '').trim();
+          let deductQty = Number(ing.qty || 0) * Number(orderItem.qty || 1);
+          if (ingUnit && stock.unit && normalizeKey(ingUnit) !== normalizeKey(stock.unit)) {
+            const conv = conversions.find(c =>
+              normalizeKey(c.ingredientName) === normalizeKey(ing.name) &&
+              normalizeKey(c.recipeUnit) === normalizeKey(ingUnit) &&
+              normalizeKey(c.purchaseUnit) === normalizeKey(stock.unit)
+            );
+            if (!conv || !(Number(conv.recipeQty) > 0)) return;
+            deductQty = deductQty * (Number(conv.purchaseQty || 0) / Number(conv.recipeQty || 1));
+          }
+          deductions[stock.id] = (deductions[stock.id] || 0) + deductQty;
         });
       });
     }
@@ -1531,6 +1553,9 @@ const Inventory = {
 
     // Tính lượng cần trừ cho mỗi nguyên liệu
     const deductions = {}; // { [inventoryId]: amountToDeduct }
+    const conversions = (typeof Store !== 'undefined' && typeof Store.getUnitConversions === 'function')
+      ? (Store.getUnitConversions() || [])
+      : [];
 
     menuItems.forEach(orderItem => {
       const dish = menu.find(m => m.id === orderItem.id);
@@ -1547,9 +1572,20 @@ const Inventory = {
       if (!Array.isArray(dish.ingredients)) return;
 
       dish.ingredients.forEach(ing => {
-        const stock = inventory.find(s => s.name === ing.name);
+        const stock = inventory.find(s => normalizeKey(s.name) === normalizeKey(ing.name));
         if (!stock || !stock.id) return;
-        deductions[stock.id] = (deductions[stock.id] || 0) + ing.qty * orderItem.qty;
+        const ingUnit = String(ing.unit || stock.unit || '').trim();
+        let deductQty = Number(ing.qty || 0) * Number(orderItem.qty || 1);
+        if (ingUnit && stock.unit && normalizeKey(ingUnit) !== normalizeKey(stock.unit)) {
+          const conv = conversions.find(c =>
+            normalizeKey(c.ingredientName) === normalizeKey(ing.name) &&
+            normalizeKey(c.recipeUnit) === normalizeKey(ingUnit) &&
+            normalizeKey(c.purchaseUnit) === normalizeKey(stock.unit)
+          );
+          if (!conv || !(Number(conv.recipeQty) > 0)) return;
+          deductQty = deductQty * (Number(conv.purchaseQty || 0) / Number(conv.recipeQty || 1));
+        }
+        deductions[stock.id] = (deductions[stock.id] || 0) + deductQty;
       });
     });
 

@@ -1,5 +1,5 @@
 // ============================================================
-// AI ENGINE: DeepSeek (online) + Local NLP (offline)
+// AI ENGINE: AI Server (online) + Local NLP (offline)
 // ============================================================
 
 const GEMINI_MODELS = [
@@ -272,7 +272,7 @@ Chỉ trả về câu trả lời tự nhiên (không markdown JSON).`;
   const canOnline = !settings.forceOffline && navigator.onLine;
   try {
     if (canOnline && settings.deepseekApiKey) {
-      return _repairAIText(await callDeepSeek(settings.deepseekApiKey, prompt, {
+      return _normalizeAITextV2(await callDeepSeek(settings.deepseekApiKey, prompt, {
         endpoint: settings.deepseekEndpoint,
         model: settings.deepseekModel,
         forceJson: false,
@@ -306,21 +306,224 @@ const aiSessionContext = {
   lastIntent: null
 };
 
+function getAIRouterBaseUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const host = window.location.hostname || '127.0.0.1';
+  return `${protocol}//${host}:3123`;
+}
+
+async function callServerAIRouter(text, previewOnly = true) {
+  const res = await fetch(`${getAIRouterBaseUrl()}/api/ai/router`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, previewOnly }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data?.ok) throw new Error(data?.error || 'AI router failed');
+  return data;
+}
+
+function mapAIServerErrorMessage(error) {
+  const raw = String(error?.message || error || '').trim();
+  if (!raw) return 'AI server đang lỗi, vui lòng thử lại.';
+  if (/Insufficient Balance/i.test(raw)) return 'AI provider đang hết số dư nên chưa phân tích câu hỏi mở được.';
+  if (/Failed to fetch|NetworkError|fetch/i.test(raw)) return 'Không kết nối được AI server nội bộ trên cổng 3123.';
+  return `AI server lỗi: ${raw}`;
+}
+
+function buildParsedActionFromRouter(routerResult) {
+  const intent = routerResult?.intentJson?.intent || routerResult?.execution?.intent;
+  const action = routerResult?.execution?.data?.client_action || null;
+  if (!action || !intent) return null;
+  if (intent === 'pos_order') {
+    return {
+      actions: [{
+        type: 'order',
+        tableId: String(action.tableId || routerResult.intentJson.table_id || ''),
+        items: Array.isArray(action.items) ? action.items : [],
+      }],
+      reply: routerResult.reply || '',
+    };
+  }
+  if (intent === 'pos_checkout') {
+    return {
+      actions: [{
+        type: 'pay',
+        tableId: String(action.tableId || routerResult.intentJson.table_id || ''),
+      }],
+      reply: routerResult.reply || '',
+    };
+  }
+  return null;
+}
+
+function _normalizeAIText(input) {
+  let str = _repairAIText(input);
+  if (!str) return str;
+  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
+  if (!suspect) return str;
+
+  const decodeUtf8Bytes = (value) => {
+    try {
+      const bytes = Uint8Array.from(String(value || ''), ch => ch.charCodeAt(0) & 0xFF);
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (_) {
+      return String(value || '');
+    }
+  };
+
+  const candidates = [str];
+  let iterative = str;
+  for (let i = 0; i < 3; i += 1) {
+    const next = decodeUtf8Bytes(iterative);
+    if (!next || next === iterative) break;
+    candidates.push(next);
+    iterative = next;
+  }
+
+  const score = (value) => {
+    const text = String(value || '');
+    const bad = (text.match(/[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/g) || []).length;
+    const good = (text.match(/[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/gi) || []).length;
+    return (bad * 3) - good;
+  };
+
+  str = candidates.sort((a, b) => score(a) - score(b))[0] || str;
+  str = str.replace(/[\u0080-\u009f]/g, '').replace(/�/g, '');
+
+  const dictionary = [
+    ['hÃ´m nay', 'hôm nay'],
+    ['hÃ´m qua', 'hôm qua'],
+    ['tuáº§n nÃ y', 'tuần này'],
+    ['thÃ¡ng nÃ y', 'tháng này'],
+    ['bÃ¡n Ä‘Æ°á»£c', 'bán được'],
+    ['Ä‘Æ¡n vá»‹', 'đơn vị'],
+    ['lÃ£i gÃ´p', 'lãi gộp'],
+    ['nháº­p', 'nhập'],
+    ['Táº¡m tÃ­nh', 'Tạm tính'],
+    ['hiá»‡n táº¡i', 'hiện tại'],
+    ['Ä‘Ã£', 'đã'],
+    ['chÆ°a', 'chưa'],
+    ['khÃ´ng', 'không'],
+    ['bÃ n', 'bàn'],
+  ];
+  dictionary.forEach(([bad, good]) => {
+    str = str.split(bad).join(good);
+  });
+
+  return str.trim();
+}
+
+function _normalizeAITextV2(input) {
+  let str = String(input ?? '');
+  if (!str) return str;
+  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
+  if (!suspect) return str;
+
+  const hasGoodVietnamese = /[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/i.test(str);
+  if (!hasGoodVietnamese) {
+    try {
+      const bytes = Uint8Array.from(String(str || ''), ch => ch.charCodeAt(0) & 0xFF);
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (decoded && !/[\u0000-\u001f]/.test(decoded)) str = decoded;
+    } catch (_) {}
+  }
+
+  str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
+
+  const dictionary = [
+    ['bÃ¡n', 'b\u00e1n'],
+    ['Ä‘Æ°á»£c', '\u0111\u01b0\u1ee3c'],
+    ['Ä‘Æ¡n', '\u0111\u01a1n'],
+    ['vá»‹', 'v\u1ecb'],
+    ['lÃ£i', 'l\u00e3i'],
+    ['gÃ´p', 'g\u1ed9p'],
+    ['nháº­p', 'nh\u1eadp'],
+    ['tá»•ng', 't\u1ed5ng'],
+    ['chá»‘t', 'ch\u1ed1t'],
+    ['hiá»‡n', 'hi\u1ec7n'],
+    ['máº·t hÃ ng', 'm\u1eb7t h\u00e0ng'],
+    ['mÃ³n', 'm\u00f3n'],
+    ['nhiá»u nháº¥t', 'nhi\u1ec1u nh\u1ea5t'],
+    ['hÃ´m nay', 'h\u00f4m nay'],
+    ['hÃ´m qua', 'h\u00f4m qua'],
+    ['tuáº§n nÃ y', 'tu\u1ea7n n\u00e0y'],
+    ['thÃ¡ng nÃ y', 'th\u00e1ng n\u00e0y'],
+    ['Táº¡m tÃ­nh', 'T\u1ea1m t\u00ednh'],
+    ['hiá»‡n táº¡i', 'hi\u1ec7n t\u1ea1i'],
+    ['chÆ°a', 'ch\u01b0a'],
+    ['khÃ´ng', 'kh\u00f4ng'],
+    ['bÃ n', 'b\u00e0n'],
+    ['Ä‘Ã£', '\u0111\u00e3'],
+    ['Ä‘á»ƒ', '\u0111\u1ec3'],
+    ['Ä‘', '\u0111'],
+    ['Ã¡', '\u00e1'],
+    ['Ã ', '\u00e0'],
+    ['Ã£', '\u00e3'],
+    ['Ã¢', '\u00e2'],
+    ['Ãª', '\u00ea'],
+    ['Ã´', '\u00f4'],
+    ['Æ°', '\u01b0'],
+    ['Æ¡', '\u01a1'],
+    ['Ã¹', '\u00f9'],
+    ['Ãº', '\u00fa'],
+    ['Ã²', '\u00f2'],
+    ['Ã³', '\u00f3'],
+    ['Ã¨', '\u00e8'],
+    ['Ã©', '\u00e9'],
+    ['Ã¬', '\u00ec'],
+    ['Ã­', '\u00ed'],
+  ];
+  dictionary.forEach(([bad, good]) => {
+    str = str.split(bad).join(good);
+  });
+
+  return str.trim();
+}
+
 async function processAICommand(text) {
   const s = Store.getSettings();
   const menu       = Store.getMenu();
   const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
 
-  const canUseDeepSeek = !s.forceOffline && navigator.onLine && s.deepseekApiKey;
+  let canUseDeepSeek = !s.forceOffline && navigator.onLine;
+  let aiServerFailureMessage = '';
 
-  // Câu hỏi mở phân tích số liệu: ưu tiên DeepSeek nếu online.
-  const openAnswer = await tryAnswerOpenAnalyticsQuestion(text, s, menu);
-  if (openAnswer) {
-    return { reply: _repairAIText(openAnswer), intent: 'report' };
+  if (canUseDeepSeek) {
+    try {
+      const routed = await callServerAIRouter(text, true);
+      const routedIntent = String(routed?.intentJson?.intent || routed?.execution?.intent || '').trim();
+      if (['query_sales', 'query_import', 'query_inventory'].includes(routedIntent)) {
+        return { reply: _normalizeAITextV2(routed.reply || ''), intent: routedIntent, engine: 'gemini-server' };
+      }
+      if (['pos_order', 'pos_checkout'].includes(routedIntent)) {
+        const parsedAction = buildParsedActionFromRouter(routed);
+        if (!parsedAction) {
+          return { reply: _normalizeAITextV2(routed.reply || 'AI chưa dựng được thao tác hợp lệ.'), intent: routedIntent, engine: 'gemini-server' };
+        }
+        const ok = await openAIConfirmModal(routed.reply || 'Xác nhận thực thi lệnh AI?');
+        if (!ok) return { reply: 'Đã huỷ thao tác AI.', intent: routedIntent, engine: 'gemini-server' };
+        const finalReply = executeAIActions(parsedAction, menu, text, { skipAutoConfirm: true });
+        return { reply: _normalizeAITextV2(finalReply), intent: routedIntent, engine: 'gemini-server' };
+      }
+      if (routed.reply) {
+        return { reply: _normalizeAITextV2(routed.reply), intent: routedIntent || 'unknown', engine: 'gemini-server' };
+      }
+      throw new Error('AI router returned empty response.');
+    } catch (e) {
+      console.warn('DeepSeek server failed, fallback local:', e.message);
+      aiServerFailureMessage = mapAIServerErrorMessage(e);
+      canUseDeepSeek = false;
+    }
   }
 
+  // Câu hỏi mở phân tích số liệu: ưu tiên DeepSeek nếu online.
+  if (aiServerFailureMessage && typeof _isOpenAnalyticsQuestion === 'function' && _isOpenAnalyticsQuestion(text)) {
+    return { reply: aiServerFailureMessage, intent: 'error', engine: 'offline' };
+  }
   let parsed;
   let modeColor = '';
+  canUseDeepSeek = false;
 
   if (canUseDeepSeek) {
     try {
@@ -333,7 +536,7 @@ async function processAICommand(text) {
       });
       raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
       try { parsed = JSON.parse(raw); }
-      catch(_) { return _repairAIText(raw); }
+      catch(_) { return _normalizeAITextV2(raw); }
       modeColor = 'var(--success)';
     } catch(e) {
       console.warn('DeepSeek failed, switching to Local NLP:', e.message);
@@ -349,7 +552,7 @@ async function processAICommand(text) {
     if (!s.deepseekApiKey) {
       parsed = localNLPEngine(text, menu, tablesInfo);
       if (!parsed) {
-        return '⚠️ Chưa có API Key cho DeepSeek. Hệ thống đang dùng NLP Offline. Hãy nói rõ câu lệnh kiểu: "bàn 1 đặt 2 bia sài gòn"';
+        return '⚠️ AI server chưa có Gemini API key hợp lệ. Hệ thống đang dùng NLP Offline cho các lệnh cơ bản.';
       }
       modeColor = 'var(--warning)';
     } else {
@@ -370,7 +573,7 @@ async function processAICommand(text) {
     ? parsed.actions[0].type 
     : 'unknown';
 
-  return { reply: _repairAIText(finalReply), intent: intent };
+    return { reply: _normalizeAITextV2(finalReply), intent: intent, engine: 'offline' };
 }
 
 function buildGemmaPrompt(text, tablesInfo, menu) {
