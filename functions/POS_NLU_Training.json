@@ -1,0 +1,44 @@
+{
+  "intents": {
+    "query_import": {
+      "phrases": [
+        "hôm nay nhập bao nhiêu %item%",
+        "tuần này nhập %item% bao nhiêu",
+        "nhập hàng %time%",
+        "nhập %item% %time%"
+      ]
+    },
+    "query_sales": {
+      "phrases": [
+        "hôm nay bán được bao nhiêu",
+        "doanh thu %time%",
+        "báo cáo doanh thu %time%",
+        "bán được bao nhiêu %time%"
+      ]
+    },
+    "query_inventory": {
+      "phrases": [
+        "%item% còn bao nhiêu",
+        "tồn kho %item%",
+        "kiểm tra tồn kho %item%",
+        "kho %item% còn không"
+      ]
+    },
+    "pos_order": {
+      "phrases": [
+        "bàn %table% gọi %qty% %item%",
+        "bàn %table% order %qty% %item%",
+        "cho bàn %table% thêm %qty% %item%",
+        "gọi %qty% %item% bàn %table%"
+      ]
+    },
+    "pos_checkout": {
+      "phrases": [
+        "tính tiền bàn %table%",
+        "thanh toán bàn %table%",
+        "xuất bill bàn %table%",
+        "in bill bàn %table%"
+      ]
+    }
+  }
+}

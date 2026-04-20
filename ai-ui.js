@@ -273,16 +273,16 @@ function updateAIModeUILegacy() {
 }
 
 function getAIServerBaseUrl() {
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  const host = window.location.hostname || '127.0.0.1';
-  return `${protocol}//${host}:3123`;
+  const projectId = 'pos-v2-909ff';
+  const region = 'asia-southeast1';
+  return `https://${region}-${projectId}.cloudfunctions.net`;
 }
 
 async function refreshAIServerStatus() {
   try {
-    const res = await fetch(`${getAIServerBaseUrl()}/api/ai/status`, { cache: 'no-store' });
+    const res = await fetch(`${getAIServerBaseUrl()}/aiStatus`, { cache: 'no-store' });
     const data = await res.json();
-    aiServerOnline = !!(res.ok && data?.ok && data?.aiEnabled);
+    aiServerOnline = !!(res.ok && data?.ok);
   } catch (_) {
     aiServerOnline = false;
   }
