@@ -1,8 +1,22 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
+const path = require('path');
 
 // 1. Kết nối Firebase
-const serviceAccount = require('./serviceAccountKey.json');
+function loadServiceAccount() {
+    const directPath = path.join(__dirname, 'serviceAccountKey.json');
+    if (fs.existsSync(directPath)) return require(directPath);
+
+    const fallback = fs.readdirSync(__dirname).find(name =>
+        /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
+    );
+    if (!fallback) {
+        throw new Error('Không tìm thấy file service account trong thư mục project.');
+    }
+    return require(path.join(__dirname, fallback));
+}
+
+const serviceAccount = loadServiceAccount();
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)

@@ -1,0 +1,63 @@
+{
+  "entities": ["%time%", "%item%", "%qty%", "%table%"],
+  "intents": {
+    "query_import": {
+      "description": "Nhập hàng & Chi phí",
+      "phrases": [
+        "%time% nhập bao nhiêu %item%",
+        "Kiểm tra số lượng nhập %item% trong %time%",
+        "Từ %time% tới giờ lấy mấy thùng %item%",
+        "Tiền nhập %item% %time% là bao nhiêu",
+        "%time% vác về bao nhiêu %item% rồi",
+        "Tổng chi phí nhập %item% %time%",
+        "Báo cáo tình hình nhập %item% %time%"
+      ]
+    },
+    "query_sales": {
+      "description": "Bán ra & Doanh thu",
+      "phrases": [
+        "%time% bán được bao nhiêu %item%",
+        "Doanh thu %time% thế nào",
+        "%item% bán chạy không trong %time%",
+        "Tổng kết tiền bán %item% %time%",
+        "%time% đẩy được mấy thùng %item% rồi",
+        "Lãi %time% được bao nhiêu",
+        "Cho xem báo cáo doanh thu %time%",
+        "Top món bán chạy nhất %time% là gì"
+      ]
+    },
+    "query_inventory": {
+      "description": "Tồn kho hiện tại",
+      "phrases": [
+        "Tồn kho %item% hiện tại thế nào",
+        "Còn bao nhiêu %item% trong kho",
+        "Kho còn %item% không",
+        "%item% còn mấy thùng",
+        "Kiểm tra xem còn %item% để bán không",
+        "Cập nhật tồn kho %item%"
+      ]
+    },
+    "pos_order": {
+      "description": "Thao tác POS - Gọi món",
+      "phrases": [
+        "Bàn %table% gọi %qty% %item%",
+        "Thêm %qty% %item% cho bàn %table%",
+        "Cho %qty% %item% ra bàn %table% nha",
+        "Lên thêm %qty% %item% bàn %table%",
+        "Bàn %table% lấy %qty% %item%",
+        "Ghi %qty% %item% vào bàn %table%"
+      ]
+    },
+    "pos_checkout": {
+      "description": "Thao tác POS - Tính tiền",
+      "phrases": [
+        "Tính tiền bàn %table%",
+        "Chốt bill bàn %table%",
+        "Bàn %table% thanh toán",
+        "Ra bill cho bàn %table%",
+        "Tổng kết bàn %table%",
+        "Bàn %table% về rồi tính tiền đi"
+      ]
+    }
+  }
+}

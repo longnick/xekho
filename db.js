@@ -32,6 +32,7 @@ import {
 import {
   initializeFirestore,
   persistentLocalCache,
+  persistentMultipleTabManager,
   doc, collection,
   getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
   onSnapshot,
@@ -104,9 +105,11 @@ const SETTINGS_DEFAULTS = {
 // ============================================================
 const _firebaseApp = initializeApp(FIREBASE_CONFIG);
 const _auth        = getAuth(_firebaseApp);
-// FIX 2: Kích hoạt Offline Persistence – quán vẫn thao tác được khi rớt mạng WiFi
+// Bật cache đa tab để Safari/iPhone không báo failed-precondition khi mở nhiều tab.
 const _db          = initializeFirestore(_firebaseApp, {
-  localCache: persistentLocalCache({}),
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
 });
 const _rtdb        = getDatabase(_firebaseApp);
 
@@ -474,6 +477,33 @@ function sanitize(obj) {
   return obj;
 }
 
+async function _safeSetDoc(ref, data, options, context) {
+  try {
+    await setDoc(ref, sanitize(data), options);
+  } catch (err) {
+    console.error(`[DB] setDoc failed${context ? ' · ' + context : ''}:`, err);
+    throw err;
+  }
+}
+
+async function _safeUpdateDoc(ref, data, context) {
+  try {
+    await updateDoc(ref, sanitize(data));
+  } catch (err) {
+    console.error(`[DB] updateDoc failed${context ? ' · ' + context : ''}:`, err);
+    throw err;
+  }
+}
+
+async function _safeDeleteDoc(ref, context) {
+  try {
+    await deleteDoc(ref);
+  } catch (err) {
+    console.error(`[DB] deleteDoc failed${context ? ' · ' + context : ''}:`, err);
+    throw err;
+  }
+}
+
 /** Chuyển Firestore Timestamp → ISO string (format quen thuộc với app.js) */
 function _tsToIso(val) {
   if (!val) return null;
@@ -655,24 +685,75 @@ function _listen() {
   _unsubs.push(onSnapshot(
     query(_col('history'), orderBy('paidAt', 'desc'), limit(500)),
     snap => {
-      window.appState.history = snap.docs.map(_fromDoc).filter(Boolean);
+      const raw = snap.docs.map(_fromDoc).filter(Boolean);
+      const repaired = raw.map(item => _deepRepairVietnameseValue(item));
+      window.appState.history = repaired;
       _markSnapshotReady();
       _dispatchEvent('db:update', { key: 'history' });
+
+      let needCommit = 0;
+      const batch = writeBatch(_db);
+      raw.forEach((item, idx) => {
+        const fixed = repaired[idx];
+        if (!fixed) return;
+        if (JSON.stringify(item) === JSON.stringify(fixed)) return;
+        needCommit++;
+        batch.update(_doc('history', fixed.id), sanitize(fixed));
+      });
+      if (needCommit > 0) {
+        batch.commit().then(() => {
+          console.log(`[db:repair] ✅ history repaired: ${needCommit} items`);
+        }).catch(err => console.warn('[db:repair] history warning', err));
+      }
     }, _snapErr('history')
   ));
 
   // 5h. Expenses
   _unsubs.push(onSnapshot(query(_col('expenses'), orderBy('date', 'desc')), snap => {
-    window.appState.expenses = snap.docs.map(_fromDoc).filter(Boolean);
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = raw.map(item => _deepRepairVietnameseValue(item));
+    window.appState.expenses = repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'expenses' });
+
+    let needCommit = 0;
+    const batch = writeBatch(_db);
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      if (JSON.stringify(item) === JSON.stringify(fixed)) return;
+      needCommit++;
+      batch.update(_doc('expenses', fixed.id), sanitize(fixed));
+    });
+    if (needCommit > 0) {
+      batch.commit().then(() => {
+        console.log(`[db:repair] ✅ expenses repaired: ${needCommit} items`);
+      }).catch(err => console.warn('[db:repair] expenses warning', err));
+    }
   }, _snapErr('expenses')));
 
   // 5i. Purchases
   _unsubs.push(onSnapshot(query(_col('purchases'), orderBy('date', 'desc')), snap => {
-    window.appState.purchases = snap.docs.map(_fromDoc).filter(Boolean);
+    const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    const repaired = raw.map(item => _deepRepairVietnameseValue(item));
+    window.appState.purchases = repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'purchases' });
+
+    let needCommit = 0;
+    const batch = writeBatch(_db);
+    raw.forEach((item, idx) => {
+      const fixed = repaired[idx];
+      if (!fixed) return;
+      if (JSON.stringify(item) === JSON.stringify(fixed)) return;
+      needCommit++;
+      batch.update(_doc('purchases', fixed.id), sanitize(fixed));
+    });
+    if (needCommit > 0) {
+      batch.commit().then(() => {
+        console.log(`[db:repair] ✅ purchases repaired: ${needCommit} items`);
+      }).catch(err => console.warn('[db:repair] purchases warning', err));
+    }
   }, _snapErr('purchases')));
 
   // Presence listener (RTDB)
@@ -788,7 +869,7 @@ const Tables = {
 
   /** Cập nhật bàn  */
   async update(tableId, data) {
-    await updateDoc(_doc('tables', tableId), sanitize(data));
+    await _safeUpdateDoc(_doc('tables', tableId), data, `tables.update(${tableId})`);
   },
 
   /**
@@ -955,7 +1036,7 @@ const Orders = {
 
   /** Cập nhật metadata đơn (discount, shipping, vatAmount, note, discountType) */
   async updateMeta(orderId, meta) {
-    await updateDoc(_doc('orders', orderId), sanitize(meta));
+    await _safeUpdateDoc(_doc('orders', orderId), meta, `orders.updateMeta(${orderId})`);
   },
 
   /**
@@ -1053,16 +1134,77 @@ const Menu = {
 
   async add(item) {
     const ref = doc(_col('menu'));
-    await setDoc(ref, sanitize({ ...item, id: ref.id, createdAt: serverTimestamp() }));
+    await _safeSetDoc(ref, { ...item, id: ref.id, createdAt: serverTimestamp() }, undefined, 'menu.add');
     return ref.id;
   },
 
   async update(id, data) {
-    await updateDoc(_doc('menu', id), sanitize(data));
+    await _safeUpdateDoc(_doc('menu', id), data, `menu.update(${id})`);
   },
 
   async delete(id) {
-    await deleteDoc(_doc('menu', id));
+    await _safeDeleteDoc(_doc('menu', id), `menu.delete(${id})`);
+  },
+};
+
+// ============================================================
+// §10b  RECIPES_BOM API  –  lưu công thức theo collection riêng
+// ============================================================
+const RecipesBOM = {
+  async saveBatch(parent_item_id, ingredients) {
+    const parentId = String(parent_item_id || '').trim();
+    if (!parentId) return;
+
+    const inv = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
+    const invByName = new Map(inv.map(i => [String(i.name || '').trim(), i]).filter(([k]) => !!k));
+    const invByKey = new Map(inv.map(i => [_slugRepairKey(i.name), i]).filter(([k]) => !!k));
+
+    const list = Array.isArray(ingredients) ? ingredients : [];
+    const normalized = list.map(ing => {
+      const name = String(ing?.name || '').trim();
+      const qty = Number(ing?.qty ?? ing?.quantity_needed ?? 0);
+      const unit = String(ing?.unit || '').trim();
+      if (!name || !(qty > 0)) return null;
+
+      const stock =
+        invByName.get(name) ||
+        invByKey.get(_slugRepairKey(name)) ||
+        null;
+      if (!stock?.id) return null;
+
+      const ingredientId = String(stock.id);
+      return {
+        parent_item_id: parentId,
+        ingredient_inv_id: ingredientId,
+        ingredient_name: stock.name || name,
+        quantity_needed: qty,
+        unit: unit || stock.unit || '',
+      };
+    }).filter(Boolean);
+
+    const nextIds = new Set(normalized.map(x => x.ingredient_inv_id));
+
+    const existingSnap = await getDocs(query(_col('Recipes_BOM'), where('parent_item_id', '==', parentId)));
+    const existing = existingSnap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+
+    const batch = writeBatch(_db);
+
+    existing.forEach(docItem => {
+      const ingId = String(docItem.ingredient_inv_id || '');
+      if (ingId && !nextIds.has(ingId)) {
+        batch.delete(docItem.ref);
+      }
+    });
+
+    normalized.forEach(row => {
+      const docId = `${row.parent_item_id}_${row.ingredient_inv_id}`;
+      batch.set(_doc('Recipes_BOM', docId), sanitize({
+        ...row,
+        updatedAt: serverTimestamp(),
+      }), { merge: true });
+    });
+
+    await batch.commit();
   },
 };
 
@@ -1075,16 +1217,16 @@ const Inventory = {
 
   async add(item) {
     const ref = doc(_col('inventory'));
-    await setDoc(ref, sanitize({ ...item, id: ref.id }));
+    await _safeSetDoc(ref, { ...item, id: ref.id }, undefined, 'inventory.add');
     return ref.id;
   },
 
   async update(id, data) {
-    await updateDoc(_doc('inventory', id), sanitize(data));
+    await _safeUpdateDoc(_doc('inventory', id), data, `inventory.update(${id})`);
   },
 
   async delete(id) {
-    await deleteDoc(_doc('inventory', id));
+    await _safeDeleteDoc(_doc('inventory', id), `inventory.delete(${id})`);
   },
 
   /**
@@ -1155,7 +1297,7 @@ const Settings = {
 
   /** Lưu settings – thay Store.setSettings() */
   async save(data) {
-    await setDoc(_settingsDoc(), sanitize({ ...data }), { merge: true });
+    await _safeSetDoc(_settingsDoc(), { ...data }, { merge: true }, 'settings.save');
   },
 };
 
@@ -1169,17 +1311,17 @@ const Users = {
 
   /** Sửa thông tin user (role, displayName, password...) */
   async update(uid, data) {
-    await updateDoc(_doc('users', uid), sanitize(data));
+    await _safeUpdateDoc(_doc('users', uid), data, `users.update(${uid})`);
   },
 
   /** Đặt role cho user */
   async setRole(uid, role) {
-    await updateDoc(_doc('users', uid), { role });
+    await _safeUpdateDoc(_doc('users', uid), { role }, `users.setRole(${uid})`);
   },
 
   /** Vô hiệu hóa user */
   async disable(uid) {
-    await updateDoc(_doc('users', uid), { role: 'disabled' });
+    await _safeUpdateDoc(_doc('users', uid), { role: 'disabled' }, `users.disable(${uid})`);
   },
 
   /**
@@ -1253,10 +1395,10 @@ const History = {
   getAll() { return window.appState.history; },
   async add(data) {
     const histRef = doc(_col('history'));
-    await setDoc(histRef, sanitize({
+    await _safeSetDoc(histRef, {
       ...data,
       historyId: histRef.id,
-    }));
+    }, undefined, 'history.add');
     return histRef.id;
   }
 };
@@ -1267,16 +1409,16 @@ const Expenses = {
   async add(data) {
     // data = { id, name, amount, category, date }  – khớp store.js addExpense
     const ref = doc(_col('expenses'));
-    await setDoc(ref, sanitize({
+    await _safeSetDoc(ref, {
       ...data,
       id:   ref.id,
       date: data.date || new Date().toISOString(),
-    }));
+    }, undefined, 'expenses.add');
     return ref.id;
   },
 
   async delete(id) {
-    await deleteDoc(_doc('expenses', id));
+    await _safeDeleteDoc(_doc('expenses', id), `expenses.delete(${id})`);
   },
 };
 
@@ -1287,20 +1429,20 @@ const Purchases = {
     // data = { name, qty, unit, price, costPerUnit, date, supplier, supplierId }
     // Khớp store.js addPurchase
     const ref = doc(_col('purchases'));
-    await setDoc(ref, sanitize({
+    await _safeSetDoc(ref, {
       ...data,
       id:   ref.id,
       date: data.date || new Date().toISOString(),
-    }));
+    }, undefined, 'purchases.add');
     return ref.id;
   },
 
   async update(id, data) {
-    await updateDoc(_doc('purchases', id), sanitize(data));
+    await _safeUpdateDoc(_doc('purchases', id), data, `purchases.update(${id})`);
   },
 
   async delete(id) {
-    await deleteDoc(_doc('purchases', id));
+    await _safeDeleteDoc(_doc('purchases', id), `purchases.delete(${id})`);
   },
 };
 
@@ -1309,16 +1451,16 @@ const Suppliers = {
 
   async add(data) {
     const ref = doc(_col('suppliers'));
-    await setDoc(ref, sanitize({ ...data, id: ref.id }));
+    await _safeSetDoc(ref, { ...data, id: ref.id }, undefined, 'suppliers.add');
     return ref.id;
   },
 
   async update(id, data) {
-    await updateDoc(_doc('suppliers', id), sanitize(data));
+    await _safeUpdateDoc(_doc('suppliers', id), data, `suppliers.update(${id})`);
   },
 
   async delete(id) {
-    await deleteDoc(_doc('suppliers', id));
+    await _safeDeleteDoc(_doc('suppliers', id), `suppliers.delete(${id})`);
   },
 };
 
@@ -1334,11 +1476,11 @@ const ShiftLogs = {
    */
   async add(logData) {
     const ref = doc(_col('shiftLogs'));
-    await setDoc(ref, sanitize({
+    await _safeSetDoc(ref, {
       ...logData,
       id:       ref.id,
       loggedAt: serverTimestamp(),
-    }));
+    }, undefined, 'shiftLogs.add');
     console.log('[DB] ShiftLogs.add: Đã ghi chốt ca', ref.id);
     return ref.id;
   },
@@ -1986,6 +2128,7 @@ window.DB = {
   Tables,
   Orders,
   Menu,
+  RecipesBOM,
   Inventory,
   Settings,
   Users,
