@@ -1332,15 +1332,21 @@ function _getOrders() {
 }
 function _getMenu() {
   const inv = _getInventory();
-  const menu = (window.appState && window.appState.menu && window.appState.menu.length > 0)
-    ? window.appState.menu
-    : Store.getMenu();
+  const hasMasterMenu = Array.isArray(window.appState?.masterData?.products);
+  const menu = hasMasterMenu
+    ? (Array.isArray(window.appState?.menu) ? window.appState.menu : [])
+    : ((window.appState && window.appState.menu && window.appState.menu.length > 0)
+      ? window.appState.menu
+      : Store.getMenu());
   return (menu || []).map(item => normalizeMenuItemModel(item, inv));
 }
 function _getInventory() {
-  const inventory = (window.appState && window.appState.inventory && window.appState.inventory.length > 0)
-    ? window.appState.inventory
-    : Store.getInventory();
+  const hasMasterInventory = Array.isArray(window.appState?.masterData?.inventoryItems);
+  const inventory = hasMasterInventory
+    ? (Array.isArray(window.appState?.inventory) ? window.appState.inventory : [])
+    : ((window.appState && window.appState.inventory && window.appState.inventory.length > 0)
+      ? window.appState.inventory
+      : Store.getInventory());
   return (inventory || []).map(normalizeInventoryItemModel);
 }
 
@@ -1991,6 +1997,59 @@ function _getCloudOrderId(key) {
     || null;
 }
 
+async function _syncWholeOrderToCloud(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  const items = Array.isArray(orderItems[key]) ? orderItems[key].map(item => ({ ...item })) : [];
+  const extras = orderExtras[key] || {};
+
+  if (!items.length) {
+    const orderId = _getCloudOrderId(key);
+    if (orderId && window.DB.Orders?.cancel) {
+      await window.DB.Orders.cancel(orderId);
+      if (window._currentOrderId) delete window._currentOrderId[key];
+    }
+    return;
+  }
+
+  const orderId = await _ensureCloudOrder(key);
+  if (!orderId) return;
+
+  await window.DB.Orders.updateMeta(orderId, {
+    items,
+    discount: Number(extras.discount || 0),
+    shipping: Number(extras.shipping || 0),
+    note: extras.note || '',
+    discountType: extras.discountType === 'percent' ? 'percent' : 'vnd',
+  });
+}
+
+function _queueWholeOrderCloudSync(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  window.__orderCloudSyncTimers = window.__orderCloudSyncTimers || {};
+  if (window.__orderCloudSyncTimers[key]) {
+    clearTimeout(window.__orderCloudSyncTimers[key]);
+  }
+  window.__orderCloudSyncTimers[key] = setTimeout(() => {
+    _syncWholeOrderToCloud(key).catch(err => {
+      console.error('[POS] _syncWholeOrderToCloud failed:', key, err);
+    }).finally(() => {
+      if (window.__orderCloudSyncTimers) delete window.__orderCloudSyncTimers[key];
+    });
+  }, 250);
+}
+
+async function _flushWholeOrderCloudSync(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  if (window.__orderCloudSyncTimers && window.__orderCloudSyncTimers[key]) {
+    clearTimeout(window.__orderCloudSyncTimers[key]);
+    delete window.__orderCloudSyncTimers[key];
+  }
+  await _syncWholeOrderToCloud(key);
+}
+
 /**
  * Đảm bảo tđơ tại đơn hàng Cloud cho bàn key.
  * Nếu chưa có để gọi Orders.open() và cache lại orderId.
@@ -2044,6 +2103,11 @@ async function _cloudSyncItem(action, tableKey) {
     }
   } catch (e) {
     console.error('[POS] _cloudSyncItem failed:', action.type, e);
+    try {
+      await _syncWholeOrderToCloud(key);
+    } catch (syncErr) {
+      console.error('[POS] fallback whole-order sync failed:', key, syncErr);
+    }
   }
 }
 
@@ -2233,6 +2297,10 @@ function saveOrder() {
       }
       Store.setTables(tables);
     }
+  }
+
+  if (window.DB && currentTable !== 'takeaway') {
+    _queueWholeOrderCloudSync(currentTable);
   }
 }
 
@@ -2497,7 +2565,7 @@ function printBill() {
   }
 }
 
-function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRate) {
+async function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRate) {
   const items      = orderItems[currentTable] || [];
   const ordersMap = window.appState && window.appState.orders;
   const activeOrder = ordersMap && ordersMap[String(currentTable)] ? ordersMap[String(currentTable)] : null;
@@ -2541,48 +2609,60 @@ function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRa
     photos:       [],
   };
 
+  try {
+    if (window.DB) {
+      if (currentTable !== 'takeaway') {
+        await _flushWholeOrderCloudSync(currentTable);
+      }
+
+      const orderId   = (window._currentOrderId && window._currentOrderId[currentTable])
+        || (window.appState && window.appState.orders && window.appState.orders[String(currentTable)] && window.appState.orders[String(currentTable)].id)
+        || null;
+
+      const payInfo = {
+        total, cost,
+        payMethod:    payMethod || 'cash',
+        discount:     extras?.discount || 0,
+        discountNote: extras?.discountNote || '',
+        shipping:     extras?.shipping || 0,
+        vatAmount:    vatAmount || 0,
+        taxRate:      taxRate || 0,
+        billNo,
+        historyId,
+      };
+
+      if (orderId && currentTable !== 'takeaway') {
+        // Chỉ coi là thanh toán xong khi close() ghi được history lên Firestore.
+        await window.DB.Orders.close(orderId, payInfo);
+      } else {
+        if (!window.DB.History || !window.DB.History.add) {
+          throw new Error('Cloud history writer is unavailable.');
+        }
+        await window.DB.History.add({ ...historyRecord, status: 'closed' });
+        if (currentTable !== 'takeaway' && window.DB.Tables?.update) {
+          await window.DB.Tables.update(currentTable, {
+            status: 'empty',
+            orderId: null,
+            openTime: null,
+          });
+        }
+        if (!isMigratedOrder && window.DB.Inventory?.deduct) {
+          await window.DB.Inventory.deduct(items);
+        }
+      }
+
+      if (window._currentOrderId) delete window._currentOrderId[currentTable];
+    }
+  } catch (err) {
+    console.error('[POS] confirmPayment cloud write failed:', err);
+    showToast('Thanh toán chưa ghi được lên Firestore. Đơn vẫn được giữ lại để thử lại.', 'danger');
+    return;
+  }
+
   // --- Ghi LocalStorage (offline backup) ---
   Store.addHistory(historyRecord);
   if (!isMigratedOrder) {
     Store.deductInventory(items);
-  }
-
-  // --- Ghi Firestore (cloud sync) ---
-  if (window.DB) {
-    const orderId   = (window._currentOrderId && window._currentOrderId[currentTable])
-      || (ordersMap && ordersMap[String(currentTable)] && ordersMap[String(currentTable)].id);
-
-    const payInfo = {
-      total, cost,
-      payMethod:    payMethod || 'cash',
-      discount:     extras?.discount || 0,
-      discountNote: extras?.discountNote || '',
-      shipping:     extras?.shipping || 0,
-      vatAmount:    vatAmount || 0,
-      taxRate:      taxRate || 0,
-      billNo,
-      historyId,
-    };
-
-    if (orderId && currentTable !== 'takeaway') {
-      // Đóng đơn trên Firestore để ghi history, xóa order, reset bàn
-      window.DB.Orders.close(orderId, payInfo)
-        .then(() => {
-          if (isMigratedOrder || !window.DB.Inventory || !window.DB.Inventory.deduct) return;
-          return window.DB.Inventory.deduct(items);
-        })
-        .catch(console.error);
-    } else {
-      // Bán mang về (Takeaway) hoặc Offline không có orderId
-      if (window.DB.History && window.DB.History.add) {
-        window.DB.History.add({ ...historyRecord, status: 'closed' }).catch(console.error);
-      }
-      if (!isMigratedOrder && window.DB.Inventory && window.DB.Inventory.deduct) {
-        window.DB.Inventory.deduct(items).catch(console.error);
-      }
-    }
-    // Dù có hay không orderId, xóa tracking
-    if (window._currentOrderId) delete window._currentOrderId[currentTable];
   }
 
   // --- Dọn local state ---
@@ -4970,7 +5050,7 @@ function setReportPeriod(p) {
 }
 
 function renderTopItems() {
-  const top = getTopItems(reportPeriod, 8);
+  const top = getTopItems(reportPeriod, reportDateOpts, 8);
   document.getElementById('top-items').innerHTML = top.length ? top.map((item, i) =>
     `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(255,107,53,0.1);color:var(--primary);font-weight:800;font-size:16px">${i+1}</div>
@@ -4984,7 +5064,7 @@ function renderTopItems() {
     </div>`
   ).join('') : '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có dữ liệu</div></div>';
 
-  const topProfit = getTopProfitableItems(reportPeriod, 8);
+  const topProfit = getTopProfitableItems(reportPeriod, reportDateOpts, 8);
   document.getElementById('top-profit-items').innerHTML = topProfit.length ? topProfit.map((item, i) =>
     `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(16,185,129,0.1);color:var(--success);font-weight:800;font-size:16px">${i+1}</div>
@@ -5004,18 +5084,39 @@ function renderTrendChart() {
   if(!ctx) return;
   if(chartInstances.trend) chartInstances.trend.destroy();
 
-  const days = 7;
-  const h = _getHistory();
-  const e = _getExpenses();
-  const p = _getPurchases();
-  
+  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const expenses = filterExpenses(reportPeriod, reportDateOpts);
+  const purchases = filterPurchases(reportPeriod, reportDateOpts);
+  const periodRange = getPeriodDateRange(reportPeriod, reportDateOpts);
+
+  let startDate;
+  let endDate;
+  if(periodRange) {
+    startDate = new Date(periodRange.start);
+    endDate = new Date(periodRange.end);
+  } else {
+    const sourceDates = [
+      ...orders.map(o => o.paidAt),
+      ...expenses.map(e => e.date),
+      ...purchases.map(p => p.date),
+    ]
+      .map(v => new Date(v))
+      .filter(d => !Number.isNaN(d.getTime()))
+      .sort((a, b) => a - b);
+
+    endDate = sourceDates.length ? new Date(sourceDates[sourceDates.length - 1]) : new Date();
+    startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 29);
+  }
+
+  startDate.setHours(0,0,0,0);
+  endDate.setHours(0,0,0,0);
+
   const data = [];
-  for(let i = days-1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+  for(let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const ds = d.toDateString();
     
-    const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
+    const dayOrders = orders.filter(o => new Date(o.paidAt).toDateString() === ds);
     
     // Tính doanh thu gộp
     const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
@@ -5025,15 +5126,15 @@ function renderTrendChart() {
     const dayDiscount = dayOrders.reduce((s,o) => s + (o.discount || 0), 0);
     const dayVat = dayOrders.reduce((s,o) => s + (o.vatAmount || 0), 0);
     
-    const dayExp = e.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0);
-    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0);
+    const dayExp = expenses.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0);
+    const dayPur = purchases.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0);
     
     const totalOut = dayCost + dayDiscount + dayVat + dayExp + dayPur;
     const profit = dayGrossSales - totalOut;
 
     data.push({
       date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
-      label: d.getDate(), // just the day number for x-axis as shown in image
+      label: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       revenue: dayGrossSales,
       profit: profit
     });
@@ -5139,7 +5240,7 @@ function renderTrendChart() {
 }
 
 function renderCategoryChart() {
-  const orders = filterHistory(reportPeriod);
+  const orders = filterHistory(reportPeriod, reportDateOpts);
   const menu = Store.getMenu();
   const catRevenue = {};
   orders.forEach(o => (o.items||[]).forEach(item => {
@@ -5164,7 +5265,7 @@ function renderCategoryChart() {
 }
 
 function renderHourlyChart() {
-  const orders = filterHistory(reportPeriod);
+  const orders = filterHistory(reportPeriod, reportDateOpts);
   const hours = Array(24).fill(0);
   orders.forEach(o => { const h = new Date(o.paidAt).getHours(); hours[h] += o.total; });
   const activeHours = hours.slice(8, 24);
@@ -5189,7 +5290,7 @@ function renderHourlyChart() {
 }
 
 function renderCategoryChart() {
-  const orders = filterHistory(reportPeriod);
+  const orders = filterHistory(reportPeriod, reportDateOpts);
   const menu = _getMenu();
   const menuById = new Map(menu.map(m => [m.id, m]));
   const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
@@ -5235,25 +5336,8 @@ function renderExpenseReport() {
   const listEl = document.getElementById('purchase-report-list');
   if (!ctx || !listEl) return;
 
-  const now = new Date();
-  const filterFn = (dateStr) => {
-    const d = new Date(dateStr);
-    if(reportPeriod === 'today') return d.toDateString() === now.toDateString();
-    if(reportPeriod === 'day' && reportDateOpts && reportDateOpts.date) {
-      return d.toDateString() === new Date(reportDateOpts.date).toDateString();
-    }
-    if(reportPeriod === 'range' && reportDateOpts && reportDateOpts.fromDate && reportDateOpts.toDate) {
-      const from = new Date(reportDateOpts.fromDate); from.setHours(0,0,0,0);
-      const to = new Date(reportDateOpts.toDate); to.setHours(23,59,59,999);
-      return d >= from && d <= to;
-    }
-    if(reportPeriod === 'week') return (now - d) / 86400000 <= 7;
-    if(reportPeriod === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
-  };
-
-  const rawPurchases = _getPurchases().filter(p => filterFn(p.date));
-  const rawExpenses = _getExpenses().filter(e => filterFn(e.date));
+  const rawPurchases = filterPurchases(reportPeriod, reportDateOpts);
+  const rawExpenses = filterExpenses(reportPeriod, reportDateOpts);
 
   const sums = {};
   rawPurchases.forEach(p => {
@@ -5307,7 +5391,7 @@ function renderExpenseReport() {
 
 function renderOrderHistoryList() {
   cleanupOldOrderHistoryPhotos();
-  const orders = filterHistory(reportPeriod, reportDateOpts).slice(0, 50);
+  const orders = filterHistory(reportPeriod, reportDateOpts);
   
   if(!orders.length) {
     document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có lịch sử</div></div>';
@@ -5851,6 +5935,7 @@ function applyDateFilter(page) {
   } else {
     reportDateOpts = opts;
     reportPeriod = period;
+    renderTrendChart();
     renderTopItems();
     renderCategoryChart();
     renderHourlyChart();

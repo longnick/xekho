@@ -7,6 +7,7 @@ const MASTER_DATA_PATH = path.join(PROJECT_ROOT, 'GanhKho_MasterData.json');
 const STORAGE_BUCKET = 'pos-v2-909ff.firebasestorage.app';
 const SHOULD_APPLY = process.argv.includes('--apply');
 const SHOULD_PURGE_STORAGE = process.argv.includes('--purge-storage');
+const SHOULD_PURGE_LEGACY = process.argv.includes('--purge-legacy');
 
 function loadServiceAccount() {
   const directPath = path.join(PROJECT_ROOT, 'serviceAccountKey.json');
@@ -226,20 +227,38 @@ async function main() {
     getCollectionDocs(db, 'orders'),
   ]);
 
-  const menuIndex = buildCanonicalIndex(menuDocs, {
+  const effectiveMenuDocs = menuDocs.length
+    ? menuDocs
+    : productCatalogDocs.map(item => ({
+        id: item.item_id || item.id,
+        name: item.display_name || item.name || item.item_id || item.id,
+        masterProductId: item.item_id || item.id,
+        linkedInventoryId: item.linkedInventoryId || null,
+      }));
+  const effectiveInventoryDocs = inventoryDocs.length
+    ? inventoryDocs
+    : inventoryItemDocs.map(item => ({
+        id: item.inv_id || item.id,
+        name: item.material_name || item.name || item.inv_id || item.id,
+        masterInventoryId: item.inv_id || item.id,
+        unit: item.base_unit || item.unit || '',
+        itemType: item.inv_type || item.itemType || '',
+      }));
+
+  const menuIndex = buildCanonicalIndex(effectiveMenuDocs, {
     masterField: 'masterProductId',
     preferredIdPattern: /^m\d+$/i,
   });
-  const inventoryIndex = buildCanonicalIndex(inventoryDocs, {
+  const inventoryIndex = buildCanonicalIndex(effectiveInventoryDocs, {
     masterField: 'masterInventoryId',
     preferredIdPattern: /^i\d+$/i,
   });
 
   const liveInventoryIds = new Set(
-    inventoryDocs.map(item => String(item.id || item.ref.id))
+    effectiveInventoryDocs.map(item => String(item.id || item.ref?.id || ''))
   );
   const liveInventoryNames = new Set(
-    inventoryDocs.map(item => normalizeKey(item.name))
+    effectiveInventoryDocs.map(item => normalizeKey(item.name))
   );
 
   const extraProductCatalog = productCatalogDocs.filter(item => {
@@ -502,12 +521,20 @@ async function main() {
     orphanUnitConversions: takePreview(orphanUnitConversions.map(item => ({ id: item.id, ingredientId: item.ingredientId || null, ingredientName: item.ingredientName || '' }))),
     duplicateMenuDocs: takePreview(menuIndex.duplicateDocs.map(item => ({ id: item.id, name: item.name, canonicalId: menuIndex.canonicalById.get(String(item.id))?.id || null }))),
     duplicateInventoryDocs: takePreview(inventoryIndex.duplicateDocs.map(item => ({ id: item.id, name: item.name, canonicalId: inventoryIndex.canonicalById.get(String(item.id))?.id || null }))),
+    legacyCollections: SHOULD_PURGE_LEGACY ? {
+      menuDocsToDelete: menuDocs.length,
+      inventoryDocsToDelete: inventoryDocs.length,
+      unitConversionsToDelete: unitConversionDocs.length,
+    } : null,
     storageFilesPreview: takePreview(storageFiles),
     storageFileCount: storageFiles.length,
   });
 
   if (!SHOULD_APPLY) {
     console.log('\nDry-run only. Chay lai voi --apply de remap va xoa duplicate an toan.');
+    if (SHOULD_PURGE_LEGACY) {
+      console.log('Dang bat --purge-legacy: se xoa toan bo collection menu/inventory/unitConversions sau khi remap.');
+    }
     if (storageFiles.length > 0) {
       console.log('Them --purge-storage neu muon xoa toan bo file trong Firebase Storage.');
     }
@@ -531,6 +558,9 @@ async function main() {
     ...orphanUnitConversions.map(item => item.ref),
     ...duplicateMenuCandidates,
     ...duplicateInventoryCandidates,
+    ...(SHOULD_PURGE_LEGACY ? menuDocs.map(item => item.ref) : []),
+    ...(SHOULD_PURGE_LEGACY ? inventoryDocs.map(item => item.ref) : []),
+    ...(SHOULD_PURGE_LEGACY ? unitConversionDocs.map(item => item.ref) : []),
   ]);
 
   const updatedDocs = await commitUpdates(db, updates);
@@ -543,6 +573,7 @@ async function main() {
   logSection('CLEANUP_DONE', {
     updatedFirestoreDocs: updatedDocs,
     deletedFirestoreDocs: deletedDocs,
+    purgedLegacyCollections: SHOULD_PURGE_LEGACY,
     purgedStorage: SHOULD_PURGE_STORAGE,
   });
 }
