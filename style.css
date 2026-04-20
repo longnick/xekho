@@ -138,6 +138,7 @@ body {
 .header-btn:active { transform: scale(0.92); }
 .header-btn.alert-dot { position: relative; }
 .header-btn.alert-dot::after { content:''; position:absolute; top:6px; right:6px; width:8px; height:8px; background:var(--danger); border-radius:50%; border:2px solid var(--bg2); }
+.header-btn-reload { color: var(--primary); font-weight: 800; }
 
 /* ---- MAIN CONTENT ---- */
 .main-content {
