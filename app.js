@@ -4642,15 +4642,36 @@ function updateFinanceUI(s) {
 
 function renderExpenseList() {
   const expenses = filterExpenses(financePeriod, financeDateOpts);
+  const purchases = filterPurchases(financePeriod, financeDateOpts);
+  const rows = [
+    ...expenses.map(e => ({
+      type: 'expense',
+      id: e.id || uid(),
+      name: e.name,
+      category: e.category || 'Chi phí khác',
+      date: e.date,
+      amount: Number(e.amount) || 0,
+    })),
+    ...purchases.map(p => ({
+      type: 'purchase',
+      id: p.id || uid(),
+      name: p.name,
+      category: 'Nhập hàng',
+      date: p.date,
+      amount: Number(p.price) || 0,
+      qty: Number(p.qty) || 0,
+      unit: p.unit || '',
+    })),
+  ].filter(r => r.date && r.amount > 0).sort((a, b) => new Date(b.date) - new Date(a.date));
   
-  if(!expenses.length) {
+  if(!rows.length) {
     document.getElementById('expense-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-text">Chưa có chi phí</div></div>';
     return;
   }
 
   // Group by date
   const groups = {};
-  expenses.forEach(e => {
+  rows.forEach(e => {
     const key = fmtDate(e.date);
     if(!groups[key]) groups[key] = [];
     groups[key].push(e);
@@ -4658,13 +4679,13 @@ function renderExpenseList() {
 
   let html = '';
   for(const [date, items] of Object.entries(groups)) {
-    const dayTotal = items.reduce((s,e) => s + e.amount, 0);
+    const dayTotal = items.reduce((s,e) => s + (Number(e.amount) || 0), 0);
     html += `<div class="history-group-header"><span>📅 ${date}</span><span class="history-group-total">-${fmt(dayTotal)}đ</span></div>`;
     html += items.map(e => `<div class="list-item">
-      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">💸</div>
+      <div class="list-item-icon" style="background:${e.type === 'purchase' ? 'rgba(255,193,7,0.12)' : 'rgba(255,61,113,0.1)'}">${e.type === 'purchase' ? '📦' : '💸'}</div>
       <div class="list-item-content">
-        <div class="list-item-title">${repairVietnameseText(e.name)}</div>
-        <div class="list-item-sub">${repairVietnameseText(e.category)} · ${fmtTime(e.date)}</div>
+        <div class="list-item-title">${repairVietnameseText(e.type === 'purchase' ? ('Nhập hàng: ' + e.name) : e.name)}</div>
+        <div class="list-item-sub">${repairVietnameseText(e.category)}${e.type === 'purchase' ? ` · ${fmt(e.qty)} ${repairVietnameseText(e.unit || '')}` : ''} · ${fmtTime(e.date)}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.amount)}đ</div>
