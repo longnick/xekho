@@ -56,14 +56,14 @@ async function callGemini(apiKey, systemPrompt, options = {}) {
         }
         throw new Error(data.error.message);
       }
-      if (!data.candidates?.length) throw new Error(_repairAIText('Gemini khÃ´ng tráº£ vá» káº¿t quáº£.'));
+      if (!data.candidates?.length) throw new Error(_repairAIText('Gemini không trả về kết quả.'));
       return data.candidates[0].content.parts[0].text;
     } catch(e) {
       if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
       lastError = e;
     }
   }
-  throw lastError || new Error(_repairAIText('Táº¥t cáº£ Gemini models Ä‘á»u khÃ´ng kháº£ dá»¥ng.'));
+  throw lastError || new Error(_repairAIText('Tất cả Gemini models đều không khả dụng.'));
 }
 
 async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
@@ -84,8 +84,8 @@ async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
   });
 
   const data = await res.json();
-  if (!res.ok) throw new Error(_repairAIText(data.error?.message || 'Lá»—i tá»« Local API'));
-  if (!data.choices || !data.choices.length) throw new Error(_repairAIText('Local AI khÃ´ng tráº£ vá» káº¿t quáº£.'));
+  if (!res.ok) throw new Error(_repairAIText(data.error?.message || 'Lỗi từ Local API'));
+  if (!data.choices || !data.choices.length) throw new Error(_repairAIText('Local AI không trả về kết quả.'));
 
   return data.choices[0].message.content;
 }
@@ -383,39 +383,39 @@ function buildGemmaPrompt(text, tablesInfo, menu) {
     }
   });
 
-  return `Báº¡n lÃ  trá»£ lÃ½ AI ná»™i bá»™ cho há»‡ thá»‘ng POS nhÃ  hÃ ng/quÃ¡n Äƒn.
+  return `Bạn là trợ lý AI nội bộ cho hệ thống POS nhà hàng/quán ăn.
 
-NguyÃªn táº¯c báº¯t buá»™c:
-1. Báº¡n KHÃ”NG Ä‘Æ°á»£c tá»± Ã½ thay Ä‘á»•i dá»¯ liá»‡u.
-2. Báº¡n chá»‰ Ä‘Æ°á»£c tráº£ vá» JSON há»£p lá»‡ theo schema.
-3. Náº¿u khÃ´ng cháº¯c cháº¯n vá» tÃªn mÃ³n, sá»‘ lÆ°á»£ng, bÃ n, hoáº·c Ã½ Ä‘á»‹nh ngÆ°á»i dÃ¹ng, pháº£i Ä‘áº·t needs_confirmation=true.
-4. KhÃ´ng tá»± suy Ä‘oÃ¡n SKU náº¿u chÆ°a Ä‘á»§ cháº¯c cháº¯n.
-5. Æ¯u tiÃªn an toÃ n dá»¯ liá»‡u hÆ¡n sá»± tiá»‡n lá»£i.
-6. Chá»‰ sá»­ dá»¥ng thÃ´ng tin náº±m trong ngá»¯ cáº£nh mÃ  app cung cáº¥p.
-7. Náº¿u ngÆ°á»i dÃ¹ng há»i bÃ¡o cÃ¡o, chá»‰ tÃ³m táº¯t tá»« sá»‘ liá»‡u Ä‘Æ°á»£c truyá»n vÃ o.
-8. Náº¿u cÃ¢u há»i ngoÃ i pháº¡m vi POS, tráº£ lá»i ngáº¯n ráº±ng yÃªu cáº§u khÃ´ng thuá»™c nghiá»‡p vá»¥ POS.
+Nguyên tắc bắt buộc:
+1. Bạn KHÔNG được tự ý thay đổi dữ liệu.
+2. Bạn chỉ được trả về JSON hợp lệ theo schema.
+3. Nếu không chắc chắn về tên món, số lượng, bàn, hoặc ý định người dùng, phải đặt needs_confirmation=true.
+4. Không tự suy đoán SKU nếu chưa đủ chắc chắn.
+5. Ưu tiên an toàn dữ liệu hơn sự tiện lợi.
+6. Chỉ sử dụng thông tin nằm trong ngữ cảnh mà app cung cấp.
+7. Nếu người dùng hỏi báo cáo, chỉ tóm tắt từ số liệu được truyền vào.
+8. Nếu câu hỏi ngoài phạm vi POS, trả lời ngắn rằng yêu cầu không thuộc nghiệp vụ POS.
 
-Quy táº¯c Ã¡nh xáº¡ (Action Mapping):
-- "thÃªm", "cho thÃªm", "order thÃªm", "Ä‘áº·t", "gá»i" => order
-- "bá»›t", "giáº£m", "huá»· 1 mÃ³n", "xÃ³a" => remove 
-- "ghi chÃº", "nháº¯c báº¿p", "Ã­t cay", "khÃ´ng Ä‘Ã¡" => note
-- "tÃ­nh tiá»n", "thanh toÃ¡n", "bill" => pay
-- "bÃ¡o cÃ¡o", "hÃ´m nay bÃ¡n Ä‘Æ°á»£c" => insight
+Quy tắc ánh xạ (Action Mapping):
+- "thêm", "cho thêm", "order thêm", "đặt", "gọi" => order
+- "bớt", "giảm", "huỷ 1 món", "xóa" => remove
+- "ghi chú", "nhắc bếp", "ít cay", "không đá" => note
+- "tính tiền", "thanh toán", "bill" => pay
+- "báo cáo", "hôm nay bán được" => insight
 
-Äáº§u ra báº¯t buá»™c lÃ  JSON Object KHÃ”NG kÃ¨m giáº£i thÃ­ch:
+Đầu ra bắt buộc là JSON Object KHÔNG kèm giải thích:
 {
   "type": "order|remove|pay|insight|unknown",
-  "tableId": "ID bÃ n (VÃ­ dá»¥: 1, 2, 3... Hoáº·c 'null' náº¿u khÃ´ng Ä‘á» cáº­p)",
-  "items": [{"name": "TÃªn mÃ³n", "qty": 1}],
+  "tableId": "ID bàn (Ví dụ: 1, 2, 3... Hoặc 'null' nếu không đề cập)",
+  "items": [{"name": "Tên món", "qty": 1}],
   "needs_confirmation": false
 }
 
-Dá»¯ liá»‡u ngá»¯ cáº£nh:
-- Danh sÃ¡ch bÃ n: ${JSON.stringify(tablesInfo)}
-- ÄÆ¡n hÃ ng Ä‘ang má»Ÿ: ${JSON.stringify(currentOrders)}
-- Thá»±c Ä‘Æ¡n: ${JSON.stringify(menu)}
+Dữ liệu ngữ cảnh:
+- Danh sách bàn: ${JSON.stringify(tablesInfo)}
+- Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
+- Thực đơn: ${JSON.stringify(menu)}
 
-CÃ¢u lá»‡nh ngÆ°á»i dÃ¹ng: "${text}"`;
+Câu lệnh người dùng: "${text}"`;
 }
 
 function buildGeminiPrompt(text, tablesInfo, menu) {
@@ -433,34 +433,34 @@ function buildGeminiPrompt(text, tablesInfo, menu) {
   // Add today's summary
   const todayRev = getRevenueSummary('today');
   
-  return `Báº¡n lÃ  "GÃ¡nh KhÃ´" â€“ trá»£ lÃ½ AI thu ngÃ¢n quÃ¡n nháº­u Viá»‡t Nam.
-Nhiá»‡m vá»¥: PhÃ¢n tÃ­ch cÃ¢u lá»‡nh tiáº¿ng Viá»‡t vÃ  tráº£ vá» JSON.
+  return `Bạn là "Gánh Khô" – trợ lý AI thu ngân quán nhậu Việt Nam.
+Nhiệm vụ: Phân tích câu lệnh tiếng Việt và trả về JSON.
 
-Danh sÃ¡ch bÃ n: ${JSON.stringify(tablesInfo)}
-ÄÆ¡n hÃ ng Ä‘ang má»Ÿ: ${JSON.stringify(currentOrders)}
-Danh sÃ¡ch thá»±c Ä‘Æ¡n: ${JSON.stringify(menu)}
-Kho hÃ ng hÃ³a: ${JSON.stringify(inventoryInfo)}
-Doanh thu hÃ´m nay: ${todayRev.orders} Ä‘Æ¡n, ${todayRev.revenue}Ä‘ doanh thu, ${todayRev.expenseTotal}Ä‘ chi phÃ­, lÃ£i gá»™p ${todayRev.gross}Ä‘
+Danh sách bàn: ${JSON.stringify(tablesInfo)}
+Đơn hàng đang mở: ${JSON.stringify(currentOrders)}
+Danh sách thực đơn: ${JSON.stringify(menu)}
+Kho hàng hóa: ${JSON.stringify(inventoryInfo)}
+Doanh thu hôm nay: ${todayRev.orders} đơn, ${todayRev.revenue}đ doanh thu, ${todayRev.expenseTotal}đ chi phí, lãi gộp ${todayRev.gross}đ
 
-ACTION há»— trá»£:
-1. "order"  â€“ Gá»i/thÃªm mÃ³n: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
-2. "remove" â€“ Bá»›t/xoÃ¡ mÃ³n:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
-3. "pay"    â€“ Má»Ÿ bill tÃ­nh tiá»n: { type:"pay", tableId:"1" }
-4. "view"   â€“ Má»Ÿ/xem tráº¡ng thÃ¡i bÃ n: { type:"view", tableId:"1" }
-5. "report" â€“ BÃ¡o cÃ¡o doanh thu: { type:"report", date:"YYYY-MM-DD" } (náº¿u ngÆ°á»i dÃ¹ng há»i ngÃ y khÃ¡c. VD: "bÃ¡o cÃ¡o hÃ´m qua" tráº£ vá» date cá»§a hÃ´m qua. HÃ´m nay lÃ : ${new Date().toISOString().split('T')[0]})
-6. "restock"â€“ Nháº­p thÃªm hÃ ng vÃ o kho: { type:"restock", items:[{name:"<tÃªn>", qty:5}] }
-7. "unknown" - Khi khÃ´ng rÃµ hoáº·c mÃ³n khÃ´ng cÃ³: { type:"unknown", tableId:"1" }
+ACTION hỗ trợ:
+1. "order"  – Gọi/thêm món: { type:"order",  tableId:"1", items:[{id:"<id>", qty:2}] }
+2. "remove" – Bớt/xoá món:  { type:"remove", tableId:"1", itemId:"<id>", qty:1 }
+3. "pay"    – Mở bill tính tiền: { type:"pay", tableId:"1" }
+4. "view"   – Mở/xem trạng thái bàn: { type:"view", tableId:"1" }
+5. "report" – Báo cáo doanh thu: { type:"report", date:"YYYY-MM-DD" } (nếu người dùng hỏi ngày khác. VD: "báo cáo hôm qua" trả về date của hôm qua. Hôm nay là: ${new Date().toISOString().split('T')[0]})
+6. "restock"– Nhập thêm hàng vào kho: { type:"restock", items:[{name:"<tên>", qty:5}] }
+7. "unknown" - Khi không rõ hoặc món không có: { type:"unknown", tableId:"1" }
 
-Quy táº¯c:
-- Khá»›p tÃªn mÃ³n/nguyÃªn liá»‡u Gáº¦N ÄÃšNG (sÃ i gÃ²n â‰ˆ Bia SÃ i GÃ²n, tiger â‰ˆ Bia Tiger, má»±c â‰ˆ Má»±c khÃ´ nÆ°á»›ng).
-- Náº¿u ngÆ°á»i dÃ¹ng gá»i mÃ³n KHÃ”NG CÃ“ trong thá»±c Ä‘Æ¡n, dÃ¹ng "unknown".
-- "report" cho cÃ¢u há»i: doanh thu, bÃ¡n Ä‘Æ°á»£c bao nhiÃªu, bÃ¡o cÃ¡o, tá»•ng káº¿t, tá»“n kho tháº¿ nÃ o, v.v.
-- "restock" cho: nháº­p thÃªm Ä‘á»“, mua thÃªm hÃ ng vÃ o kho.
-- reply: ngáº¯n gá»n, thÃ¢n thiá»‡n, xÆ°ng "em". Náº¿u report, tÃ³m táº¯t: doanh thu, lÃ£i, chi phÃ­, Ä‘Æ¡n, tá»“n kho cáº§n nháº­p.
+Quy tắc:
+- Khớp tên món/nguyên liệu GẦN ĐÚNG (sài gòn ≈ Bia Sài Gòn, tiger ≈ Bia Tiger, mực ≈ Mực khô nướng).
+- Nếu người dùng gọi món KHÔNG CÓ trong thực đơn, dùng "unknown".
+- "report" cho câu hỏi: doanh thu, bán được bao nhiêu, báo cáo, tổng kết, tồn kho thế nào, v.v.
+- "restock" cho: nhập thêm đồ, mua thêm hàng vào kho.
+- reply: ngắn gọn, thân thiện, xưng "em". Nếu report, tóm tắt: doanh thu, lãi, chi phí, đơn, tồn kho cần nhập.
 
-CÃ¢u lá»‡nh: "${text}"
+Câu lệnh: "${text}"
 
-CHá»ˆ tráº£ vá» JSON: { "actions": [...], "reply": "..." }`;
+CHỈ trả về JSON: { "actions": [...], "reply": "..." }`;
 }
 
 // ============================================================
@@ -524,37 +524,33 @@ function localNLPEngine(text, menu, tables) {
     }
   }
 
-  // --- Query / BÃ¡o cÃ¡o ---
-  // Nháº­n diá»‡n bÃ¡o cÃ¡o doanh thu: "bÃ¡o cÃ¡o doanh thu ngÃ y...", "hÃ´m ... bÃ¡n Ä‘Æ°á»£c", "ngÃ y ... bÃ¡n tháº¿ nÃ o", "thÃ¡ng ... bÃ¡n tháº¿ nÃ o/bao nhiÃªu"
-  const isRevReport = /b[aÃ¡]o c[aÃ¡]o doanh thu|doanh thu ng[aÃ ]y|doanh thu tuáº§n|doanh thu thÃ¡ng|doanh thu nÄƒm|b[aÃ¡]n Ä‘[uÆ°á»£c]c bao nhi[eÃª]u|b[aÃ¡]n th[eáº¿] n[aÃ ]o|b[aÃ¡]n Ä‘[uÆ°á»£c] kh[oÃ´]ng|hÃ´m.*b[aÃ¡]n|ng[aÃ ]y.*b[aÃ¡]n|tuáº§n.*b[aÃ¡]n|thÃ¡ng.*b[aÃ¡]n/i.test(t);
-  const isPurchaseReport = /b[aÃ¡]o c[aÃ¡]o nh[aáº­]p h[aÃ ]ng|nh[aáº­]p h[aÃ ]ng ng[aÃ ]y|nh[aáº­]p h[aÃ ]ng tuáº§n|nh[aáº­]p h[aÃ ]ng thÃ¡ng/i.test(t);
-  const isExpenseReport  = /b[aÃ¡]o c[aÃ¡]o chi ph[Ã­i]|chi ph[Ã­i] ng[aÃ ]y|chi ph[Ã­i] tuáº§n|chi ph[Ã­i] thÃ¡ng/i.test(t);
-  const isFinanceReport  = /b[aÃ¡]o c[aÃ¡]o t[aÃ ]i ch[Ã­i]nh|t[aÃ ]i ch[Ã­i]nh ng[aÃ ]y|t[aÃ ]i ch[Ã­i]nh tuáº§n|t[aÃ ]i ch[Ã­i]nh thÃ¡ng|t[aÃ ]i ch[Ã­i]nh nÄƒm/i.test(t);
+  const isRevReport = /báo cáo doanh thu|doanh thu ngày|doanh thu tuần|doanh thu tháng|doanh thu năm|bán được bao nhiêu|bán thế nào|bán được không|hôm.*bán|ngày.*bán|tuần.*bán|tháng.*bán/i.test(t);
+  const isPurchaseReport = /báo cáo nhập hàng|nhập hàng ngày|nhập hàng tuần|nhập hàng tháng/i.test(t);
+  const isExpenseReport  = /báo cáo chi phí|chi phí ngày|chi phí tuần|chi phí tháng/i.test(t);
+  const isFinanceReport  = /báo cáo tài chính|tài chính ngày|tài chính tuần|tài chính tháng|tài chính năm/i.test(t);
 
   if (isRevReport || isPurchaseReport || isExpenseReport || isFinanceReport) {
     const pi = parseViDateFromText(t);
     const type = isFinanceReport ? 'finance' : isPurchaseReport ? 'purchase' : isExpenseReport ? 'expense' : 'revenue';
-    return buildDetailedReportReply(type, pi || { period: 'today', label: 'hÃ´m nay' });
+    return buildDetailedReportReply(type, pi || { period: 'today', label: 'hôm nay' });
   }
 
   if (isQuery) {
-    if (/b[aÃ ]n n[aÃ ]o.*tr[oá»‘]ng|tr[oá»‘]ng.*b[aÃ ]n/i.test(t)) {
-      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `BÃ n ${tb.id}`);
+    if (/bàn nào.*trống|trống.*bàn/i.test(t)) {
+      const emptyTables = tables.filter(tb => tb.status === 'empty').map(tb => tb.name || `Bàn ${tb.id}`);
       return {
         actions: [],
-        reply: emptyTables.length
-          ? `Hiá»‡n Ä‘ang trá»‘ng: ${emptyTables.join(', ')} áº¡!`
-          : 'Hiá»‡n táº¡i táº¥t cáº£ cÃ¡c bÃ n Ä‘á»u Ä‘ang cÃ³ khÃ¡ch áº¡!'
+        reply: emptyTables.length ? `Hiện đang trống: ${emptyTables.join(', ')} ạ!` : 'Hiện tại tất cả các bàn đều đang có khách ạ!'
       };
     }
-    if (/menu|th[uÃº]c Ä‘[oÆ¡]n|c[oÃ²]n m[oÃ³]n/i.test(t)) {
+    if (/menu|thực đơn|còn món/i.test(t)) {
       const names = menu.slice(0, 8).map(m => m.name).join(', ');
       return {
         actions: [],
-        reply: `Thá»±c Ä‘Æ¡n cÃ³: ${names}... vÃ  nhiá»u mÃ³n khÃ¡c áº¡!`
+        reply: `Thực đơn có: ${names}... và nhiều món khác ạ!`
       };
     }
-    if (/doanh thu|b[aÃ ]o c[aÃ¡]o|t[oá»•]ng k[eáº¿]t|b[aÃ¡]n Ä‘[uÆ°á»£]c|tá»“n kho/i.test(t)) {
+    if (/doanh thu|báo cáo|tổng kết|bán được|tồn kho/i.test(t)) {
       return buildReportReply();
     }
     return null;
@@ -566,7 +562,7 @@ function localNLPEngine(text, menu, tables) {
     if (matchedInv.length > 0) {
       return {
         actions: [{ type: 'restock', items: matchedInv.map(it => ({ name: it.name, qty: it.qty })) }],
-        reply: `Dáº¡ em Ä‘Ã£ nháº­p thÃªm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vÃ o kho rá»“i áº¡!`
+        reply: `Dạ em đã nhập thêm ${matchedInv.map(it => it.qty + ' ' + it.name).join(', ')} vào kho rồi ạ!`
       };
     }
     return null;
@@ -577,7 +573,7 @@ function localNLPEngine(text, menu, tables) {
     if (!tableId) {
       return {
         actions: [],
-        reply: `Dáº¡ anh chá»‹ muá»‘n bá»›t mÃ³n á»Ÿ bÃ n nÃ o áº¡? VÃ­ dá»¥: "Bá»›t 1 bia bÃ n 2"`
+        reply: `Dạ anh chị muốn bớt món ở bàn nào ạ? Ví dụ: "Bớt 1 bia bàn 2"`
       };
     }
     const matchedItems = extractMenuItems(t, menu);
@@ -590,12 +586,12 @@ function localNLPEngine(text, menu, tables) {
       const names = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
       return {
         actions,
-        reply: `Dáº¡ em Ä‘Ã£ bá»›t ${names} á»Ÿ bÃ n ${tableId} áº¡!`
+        reply: `Dạ em đã bớt ${names} ở bàn ${tableId} ạ!`
       };
     }
     return {
       actions: [{ type: 'view', tableId }],
-      reply: `Dáº¡ em chÆ°a xÃ¡c Ä‘á»‹nh Ä‘Æ°á»£c mÃ³n cáº§n bá»›t, má»Ÿ bÃ n ${tableId} Ä‘á»ƒ anh chá»‹ chá»‰nh thá»§ cÃ´ng áº¡!`
+      reply: `Dạ em chưa xác định được món cần bớt, mở bàn ${tableId} để anh chị chỉnh thủ công ạ!`
     };
   }
 
@@ -608,7 +604,7 @@ function localNLPEngine(text, menu, tables) {
     if (matchedItems.length === 0) {
       return {
         actions: [{ type: 'unknown', tableId }],
-        reply: `Dáº¡ em chÆ°a nghe rÃµ tÃªn mÃ³n, má»i anh chá»‹ chá»n mÃ³n thá»§ cÃ´ng cho bÃ n ${tableId} áº¡!`
+        reply: `Dạ em chưa nghe rõ tên món, mời anh chị chọn món thủ công cho bàn ${tableId} ạ!`
       };
     }
     
@@ -620,7 +616,7 @@ function localNLPEngine(text, menu, tables) {
     const names   = matchedItems.map(it => `${it.qty} ${it.name}`).join(', ');
     return {
       actions,
-      reply: `Dáº¡ em Ä‘Ã£ lÃªn ${names} cho bÃ n ${tableId} rá»“i áº¡! Náº¿u thiáº¿u mÃ³n nÃ o anh chá»‹ chá»n thÃªm trong menu nhÃ©.`
+      reply: `Dạ em đã lên ${names} cho bàn ${tableId} rồi ạ! Nếu thiếu món nào anh chị chọn thêm trong menu nhé.`
     };
   }
 
@@ -639,7 +635,7 @@ function localNLPEngine(text, menu, tables) {
 
 // Äá»‹nh dáº¡ng sá»‘ tiá»n Ä‘áº§y Ä‘á»§, dÃ¹ng "Ä‘á»“ng" thay "Ä‘" cho chatbot
 function fmtDong(n) {
-  return n.toLocaleString('vi-VN') + ' Ä‘á»“ng';
+  return n.toLocaleString('vi-VN') + ' đồng';
 }
 
 // PhÃ¢n tÃ­ch ngÃ y thÃ¡ng tiáº¿ng Viá»‡t tá»« vÄƒn báº£n
@@ -648,48 +644,40 @@ function parseViDateFromText(text) {
   const t = text.toLowerCase().normalize('NFC');
   const now = new Date();
 
-  // "hÃ´m nay" / "hÃ´m nay"
-  if (/hÃ´m nay|hom nay/i.test(t)) {
-    return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hÃ´m nay' };
+  if (/hôm nay|hom nay/i.test(t)) {
+    return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
   }
-  // "hÃ´m qua"
-  if (/hÃ´m qua|hom qua/i.test(t)) {
+  if (/hôm qua|hom qua/i.test(t)) {
     const d = new Date(now); d.setDate(d.getDate()-1);
-    return { period: 'day', dateStr: d.toISOString().split('T')[0], label: 'hÃ´m qua' };
+    return { period: 'day', dateStr: d.toISOString().split('T')[0], label: 'hôm qua' };
   }
-  // "tuáº§n nÃ y" / "tuáº§n nay"
-  if (/tuáº§n nÃ y|tuan nay|tuan nay|tuáº§n nay/i.test(t)) {
-    return { period: 'week', label: 'tuáº§n nÃ y' };
+  if (/tuần này|tuan nay/i.test(t)) {
+    return { period: 'week', label: 'tuần này' };
   }
-  // "tuáº§n trÆ°á»›c"
-  if (/tuáº§n trÆ°á»›c|tuan truoc/i.test(t)) {
+  if (/tuần trước|tuan truoc/i.test(t)) {
     const from = new Date(now); from.setDate(from.getDate()-14);
     const to   = new Date(now); to.setDate(to.getDate()-7);
-    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: 'tuáº§n trÆ°á»›c' };
+    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: 'tuần trước' };
   }
-  // "thÃ¡ng nÃ y"
-  if (/thÃ¡ng nÃ y|thang nay|thÃ¡ng nay/i.test(t)) {
-    return { period: 'month', label: 'thÃ¡ng nÃ y' };
+  if (/tháng này|thang nay/i.test(t)) {
+    return { period: 'month', label: 'tháng này' };
   }
-  // "thÃ¡ng trÆ°á»›c"
-  if (/thÃ¡ng trÆ°á»›c|thang truoc/i.test(t)) {
+  if (/tháng trước|thang truoc/i.test(t)) {
     const d = new Date(now.getFullYear(), now.getMonth()-1, 1);
     const from = d.toISOString().split('T')[0];
     const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
     const to = lastDay.toISOString().split('T')[0];
-    return { period: 'range', fromDate: from, toDate: to, label: 'thÃ¡ng trÆ°á»›c' };
+    return { period: 'range', fromDate: from, toDate: to, label: 'tháng trước' };
   }
-  // "nÄƒm nay"
-  if (/nÄƒm nay|nam nay/i.test(t)) {
+  if (/năm nay|nam nay/i.test(t)) {
     const from = `${now.getFullYear()}-01-01`;
     const to   = `${now.getFullYear()}-12-31`;
-    return { period: 'range', fromDate: from, toDate: to, label: `nÄƒm ${now.getFullYear()}` };
+    return { period: 'range', fromDate: from, toDate: to, label: `năm ${now.getFullYear()}` };
   }
 
-  // NgÃ y cá»¥ thá»ƒ: "ngÃ y 7/4", "7 thÃ¡ng 4", "ngÃ y 7 thÃ¡ng 4"
-  const dayMonthMatch = t.match(/ng[Ã a]y\s*(\d{1,2})[\/-](\d{1,2})/) ||
+  const dayMonthMatch = t.match(/ng[àa]y\s*(\d{1,2})[\/-](\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*thÃ¡ng\s*(\d{1,2})/) ||
+                        t.match(/(\d{1,2})\s*tháng\s*(\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/);
   if (dayMonthMatch) {
     const day = parseInt(dayMonthMatch[1]);
@@ -697,55 +685,51 @@ function parseViDateFromText(text) {
     const year = now.getFullYear();
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       const d = new Date(year, month-1, day);
-      return { period: 'day', dateStr: d.toISOString().split('T')[0], label: `ngÃ y ${day}/${month}` };
+      return { period: 'day', dateStr: d.toISOString().split('T')[0], label: `ngày ${day}/${month}` };
     }
   }
 
-  // ThÃ¡ng cá»¥ thá»ƒ: "thÃ¡ng 3", "thÃ¡ng 12"
-  const monthMatch = t.match(/thÃ¡ng\s*(\d{1,2})|thang\s*(\d{1,2})/);
+  const monthMatch = t.match(/tháng\s*(\d{1,2})|thang\s*(\d{1,2})/);
   if (monthMatch) {
     const m = parseInt(monthMatch[1] || monthMatch[2]);
     const year = now.getFullYear();
     const from = new Date(year, m-1, 1).toISOString().split('T')[0];
     const lastDay = new Date(year, m, 0);
     const to = lastDay.toISOString().split('T')[0];
-    return { period: 'range', fromDate: from, toDate: to, label: `thÃ¡ng ${m}` };
+    return { period: 'range', fromDate: from, toDate: to, label: `tháng ${m}` };
   }
 
-  // Tuáº§n sá»‘ cá»¥ thá»ƒ: "tuáº§n 2", "tuáº§n 15"
-  const weekMatch = t.match(/tuáº§n\s*(\d+)|tuan\s*(\d+)/);
+  const weekMatch = t.match(/tuần\s*(\d+)|tuan\s*(\d+)/);
   if (weekMatch) {
     const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
-    // Æ¯á»›c tÃ­nh báº¯t Ä‘áº§u tuáº§n theo weekNum trong nÄƒm hiá»‡n táº¡i
     const jan1 = new Date(now.getFullYear(), 0, 1);
     const from = new Date(jan1.getTime() + (weekNum-1)*7*86400000);
     const to   = new Date(from.getTime() + 6*86400000);
-    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: `tuáº§n ${weekNum}` };
+    return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: `tuần ${weekNum}` };
   }
 
-  return null; // KhÃ´ng phÃ¢n tÃ­ch Ä‘Æ°á»£c
+  return null;
 }
 
-// Táº¡o ná»™i dung bÃ¡o cÃ¡o chi tiáº¿t khÃ´ng viáº¿t táº¯t
 function buildDetailedReportReply(type, periodInfo) {
-  const pi = periodInfo || { period: 'today', label: 'hÃ´m nay' };
+  const pi = periodInfo || { period: 'today', label: 'hôm nay' };
   const opts = pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {});
 
   if (type === 'revenue' || type === 'finance') {
     const s = getRevenueSummary(pi.period, opts);
-    const label = pi.label || 'ká»³ nÃ y';
-    let reply = `ðŸ“Š <b>BÃ¡o cÃ¡o doanh thu ${label}:</b><br>`;
-    reply += `â€¢ Doanh thu: <b>${fmtDong(s.revenue)}</b><br>`;
-    reply += `â€¢ Sá»‘ Ä‘Æ¡n hÃ ng: <b>${s.orders} Ä‘Æ¡n hÃ ng</b><br>`;
-    reply += `â€¢ Tiá»n máº·t: ${fmtDong(s.revenueCash)}<br>`;
-    reply += `â€¢ Chuyá»ƒn khoáº£n: ${fmtDong(s.revenueBank)}<br>`;
+    const label = pi.label || 'kỳ này';
+    let reply = `📊 <b>Báo cáo doanh thu ${label}:</b><br>`;
+    reply += `• Doanh thu: <b>${fmtDong(s.revenue)}</b><br>`;
+    reply += `• Số đơn hàng: <b>${s.orders} đơn hàng</b><br>`;
+    reply += `• Tiền mặt: ${fmtDong(s.revenueCash)}<br>`;
+    reply += `• Chuyển khoản: ${fmtDong(s.revenueBank)}<br>`;
     if (type === 'finance') {
-      reply += `â€¢ GiÃ¡ vá»‘n: ${fmtDong(s.cost)}<br>`;
-      reply += `â€¢ LÃ£i gá»™p: <b>${fmtDong(s.gross)}</b><br>`;
-      reply += `â€¢ Chi phÃ­ hoáº¡t Ä‘á»™ng: ${fmtDong(s.expenseTotal)}<br>`;
-      reply += `â€¢ Lá»£i nhuáº­n rÃ²ng: <b style="color:var(--success)">${fmtDong(s.profit)}</b><br>`;
+      reply += `• Giá vốn: ${fmtDong(s.cost)}<br>`;
+      reply += `• Lãi gộp: <b>${fmtDong(s.gross)}</b><br>`;
+      reply += `• Chi phí hoạt động: ${fmtDong(s.expenseTotal)}<br>`;
+      reply += `• Lợi nhuận ròng: <b style="color:var(--success)">${fmtDong(s.profit)}</b><br>`;
       if (s.discountTotal > 0)
-        reply += `â€¢ Tá»•ng giáº£m giÃ¡: ${fmtDong(s.discountTotal)}<br>`;
+        reply += `• Tổng giảm giá: ${fmtDong(s.discountTotal)}<br>`;
     }
     return { actions: [{ type: 'report' }], reply };
   }
@@ -753,9 +737,8 @@ function buildDetailedReportReply(type, periodInfo) {
   if (type === 'purchase') {
     const opts2 = pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {});
     const purchases = Store.getPurchases();
-    const label = pi.label || 'ká»³ nÃ y';
+    const label = pi.label || 'kỳ này';
     const now = new Date();
-    // Lá»c nháº­p hÃ ng theo ká»³
     const filtered = purchases.filter(p => {
       const d = new Date(p.date);
       if (pi.period === 'today') return d.toDateString() === now.toDateString();
@@ -770,33 +753,32 @@ function buildDetailedReportReply(type, periodInfo) {
       return false;
     });
     const total = filtered.reduce((s,p) => s + p.price, 0);
-    let reply = `ðŸ“¦ <b>BÃ¡o cÃ¡o nháº­p hÃ ng ${label}:</b><br>`;
+    let reply = `📦 <b>Báo cáo nhập hàng ${label}:</b><br>`;
     if (filtered.length === 0) {
-      reply += `â€¢ KhÃ´ng cÃ³ láº§n nháº­p hÃ ng nÃ o trong ${label}.`;
+      reply += `• Không có lần nhập hàng nào trong ${label}.`;
     } else {
-      reply += `â€¢ Sá»‘ láº§n nháº­p hÃ ng: <b>${filtered.length} láº§n</b><br>`;
-      reply += `â€¢ Tá»•ng tiá»n nháº­p hÃ ng: <b>${fmtDong(total)}</b><br>`;
+      reply += `• Số lần nhập hàng: <b>${filtered.length} lần</b><br>`;
+      reply += `• Tổng tiền nhập hàng: <b>${fmtDong(total)}</b><br>`;
       const top3 = filtered.slice(0,3);
-      reply += `â€¢ CÃ¡c máº·t hÃ ng nháº­p gáº§n Ä‘Ã¢y: ${top3.map(p => `${p.name} (${p.qty} ${p.unit || 'pháº§n'}, ${fmtDong(p.price)})`).join('; ')}`;
+      reply += `• Các mặt hàng nhập gần đây: ${top3.map(p => `${p.name} (${p.qty} ${p.unit || 'phần'}, ${fmtDong(p.price)})`).join('; ')}`;
     }
     return { actions: [{ type: 'report' }], reply };
   }
 
   if (type === 'expense') {
     const expenses = filterExpenses(pi.period, opts);
-    const label = pi.label || 'ká»³ nÃ y';
+    const label = pi.label || 'kỳ này';
     const total = expenses.reduce((s,e) => s + e.amount, 0);
-    let reply = `ðŸ’¸ <b>BÃ¡o cÃ¡o chi phÃ­ ${label}:</b><br>`;
+    let reply = `💸 <b>Báo cáo chi phí ${label}:</b><br>`;
     if (expenses.length === 0) {
-      reply += `â€¢ KhÃ´ng cÃ³ chi phÃ­ nÃ o trong ${label}.`;
+      reply += `• Không có chi phí nào trong ${label}.`;
     } else {
-      reply += `â€¢ Tá»•ng chi phÃ­: <b>${fmtDong(total)}</b><br>`;
-      reply += `â€¢ Sá»‘ khoáº£n chi: <b>${expenses.length} khoáº£n</b><br>`;
-      // NhÃ³m theo danh má»¥c
+      reply += `• Tổng chi phí: <b>${fmtDong(total)}</b><br>`;
+      reply += `• Số khoản chi: <b>${expenses.length} khoản</b><br>`;
       const bycat = {};
       expenses.forEach(e => { bycat[e.category] = (bycat[e.category]||0) + e.amount; });
       Object.entries(bycat).forEach(([cat,amt]) => {
-        reply += `â€¢ ${cat}: ${fmtDong(amt)}<br>`;
+        reply += `• ${cat}: ${fmtDong(amt)}<br>`;
       });
     }
     return { actions: [{ type: 'report' }], reply };
@@ -812,25 +794,25 @@ function buildReportReply() {
   const alerts = getInventoryAlerts();
   const needRestock = alerts.critical.length + alerts.low.length;
   
-  let reply = `ðŸ“Š <b>BÃ¡o cÃ¡o hÃ´m nay:</b><br>`;
-  reply += `â€¢ Doanh thu: <b>${fmtDong(todayRev.revenue)}</b> (${todayRev.orders} Ä‘Æ¡n hÃ ng)<br>`;
-  reply += `â€¢ LÃ£i gá»™p: <b>${fmtDong(todayRev.gross)}</b><br>`;
-  reply += `â€¢ Chi phÃ­: ${fmtDong(todayRev.expenseTotal)}<br>`;
-  reply += `â€¢ Lá»£i nhuáº­n: <b>${fmtDong(todayRev.profit)}</b><br>`;
-  reply += `â€¢ Tiá»n máº·t: ${fmtDong(todayRev.revenueCash)} | Chuyá»ƒn khoáº£n: ${fmtDong(todayRev.revenueBank)}<br>`;
+  let reply = `📊 <b>Báo cáo hôm nay:</b><br>`;
+  reply += `• Doanh thu: <b>${fmtDong(todayRev.revenue)}</b> (${todayRev.orders} đơn hàng)<br>`;
+  reply += `• Lãi gộp: <b>${fmtDong(todayRev.gross)}</b><br>`;
+  reply += `• Chi phí: ${fmtDong(todayRev.expenseTotal)}<br>`;
+  reply += `• Lợi nhuận: <b>${fmtDong(todayRev.profit)}</b><br>`;
+  reply += `• Tiền mặt: ${fmtDong(todayRev.revenueCash)} | Chuyển khoản: ${fmtDong(todayRev.revenueBank)}<br>`;
   
   if(weekRev.orders > 0) {
     const avgDaily = Math.round(weekRev.revenue / 7);
-    reply += `<br>ðŸ“ˆ <b>7 ngÃ y qua:</b> ${fmtDong(weekRev.revenue)} (Trung bÃ¬nh: ${fmtDong(avgDaily)}/ngÃ y)<br>`;
+    reply += `<br>📈 <b>7 ngày qua:</b> ${fmtDong(weekRev.revenue)} (Trung bình: ${fmtDong(avgDaily)}/ngày)<br>`;
   }
   
   if(needRestock > 0) {
-    reply += `<br>âš ï¸ <b>Tá»“n kho:</b> ${alerts.critical.length} máº·t hÃ ng cáº§n nháº­p gáº¥p, ${alerts.low.length} máº·t hÃ ng sáº¯p háº¿t`;
+    reply += `<br>⚠️ <b>Tồn kho:</b> ${alerts.critical.length} mặt hàng cần nhập gấp, ${alerts.low.length} mặt hàng sắp hết`;
     if(alerts.critical.length > 0) {
-      reply += `<br>ðŸš¨ ${alerts.critical.slice(0,3).map(i => i.name).join(', ')}`;
+      reply += `<br>🚨 ${alerts.critical.slice(0,3).map(i => i.name).join(', ')}`;
     }
   } else {
-    reply += `<br>âœ… Tá»“n kho á»•n Ä‘á»‹nh`;
+    reply += `<br>✅ Tồn kho ổn định`;
   }
   
   return {

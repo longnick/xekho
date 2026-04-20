@@ -12,8 +12,9 @@ let aiChatHistoryLoaded = false;
 function repairVietnameseMojibake(input) {
   let str = String(input ?? '');
   if (!str) return str;
-  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
-  const suspect = badTokens.some(t => str.includes(t));
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ', 'áº', 'á»'];
+  const hasControlChars = /[\u0080-\u009f]/.test(str);
+  const suspect = hasControlChars || badTokens.some(t => str.includes(t));
   if (!suspect) return str;
   try {
     str = decodeURIComponent(escape(str));
@@ -23,6 +24,7 @@ function repairVietnameseMojibake(input) {
     const fixed = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     str = fixed || str;
   } catch (_) {}
+  str = str.replace(/[\u0080-\u009f]/g, '');
 
   // Heuristic fixes for common broken fragments in chat replies.
   const dictionary = [
@@ -41,11 +43,11 @@ function repairVietnameseMojibake(input) {
   return str;
 }
 
-function toggleAIEngine() {
+function toggleAIEngineLegacy() {
   const s = Store.getSettings();
   s.activeAIEngine = (s.activeAIEngine === 'gemma') ? 'gemini' : 'gemma';
   Store.setSettings(s);
-  updateAIModeUI();
+  updateAIModeUILegacy();
   
   const engineBtn = document.getElementById('ai-engine-toggle');
   if(engineBtn) {
@@ -59,7 +61,7 @@ function toggleAIEngine() {
   }
 }
 
-function openAIAssistant() {
+function openAIAssistantLegacy() {
   const modal = document.getElementById('ai-modal');
   if(!modal) return;
   modal.classList.add('active');
@@ -75,7 +77,7 @@ function openAIAssistant() {
     }
   }
 
-  updateAIModeUI();
+  updateAIModeUILegacy();
   updateAIOutputToggleUI();
   updateAIActiveDot(s.forceOffline ? 'offline' : 'idle');
 
@@ -109,10 +111,10 @@ function toggleAIMode() {
   const s = Store.getSettings();
   s.forceOffline = !s.forceOffline;
   Store.setSettings(s);
-  updateAIModeUI();
+  updateAIModeUILegacy();
 }
 
-function updateAIModeUI() {
+function updateAIModeUILegacy() {
   const s = Store.getSettings();
   const el = document.getElementById('ai-status-text');
   if(!el) return;
@@ -381,7 +383,7 @@ function startAIListening() {
   aiRecognition.onresult = (e) => {
     const text = e.results[0][0].transcript;
     stopAIListening();
-    document.getElementById('ai-text-input').value = text;
+    document.getElementById('ai-text-input').value = repairVietnameseMojibake(text);
     sendAIText(true);
   };
 
@@ -409,7 +411,7 @@ function stopAIListening() {
 }
 
 // ------ Camera Capture â†’ Gemini Vision ------
-async function handleAICameraCapture(event) {
+async function handleAICameraCaptureLegacy(event) {
   const file = event.target.files[0];
   if(!file) return;
   
@@ -535,11 +537,11 @@ function recordAIMetric(data) {
 }
 
 // ------ Text send ------
-function sendAIText(isVoice = false) {
+function sendAITextGeminiLegacy(isVoice = false) {
   const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? inp.value.trim() : '';
+  const rawText = inp ? repairVietnameseMojibake(inp.value.trim()) : '';
   if (!rawText) return;
-  if(inp) inp.value = '';
+  if (inp) inp.value = '';
   
   addAIBubble(rawText, 'user');
   const text = preprocessAIText(rawText);
@@ -723,7 +725,7 @@ function openAIAssistant() {
 
 function sendAIText(isVoice = false) {
   const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? inp.value.trim() : '';
+  const rawText = inp ? repairVietnameseMojibake(inp.value.trim()) : '';
   if (!rawText) return;
   if (inp) inp.value = '';
 

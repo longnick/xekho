@@ -57,6 +57,10 @@
           <span id="alert-badge-header"
             style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
         </button>
+        <button class="header-btn header-btn-reload" id="header-reload-btn" onclick="hardReloadApp()"
+          title="🔄 Reload (xoá cache)">
+          🔄
+        </button>
         <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -198,7 +202,7 @@
       </div>
 
       <div class="modal-overlay" id="cart-sheet" onclick="if(event.target===this)closeCartSheet()">
-        <div class="modal-sheet" style="padding-bottom: 24px;">
+        <div class="modal-sheet" style="padding-bottom: calc(24px + var(--safe-bottom));">
           <div class="modal-handle"></div>
           <div class="modal-header">
             <div class="modal-title">🛒 Giỏ hàng</div>
@@ -1541,6 +1545,13 @@
               <label class="input-label">Giá bán (đ) *</label>
               <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
             </div>
+            <div class="input-group">
+              <label class="input-label">Giá vốn (đ)</label>
+              <input class="input" id="menu-item-cost" type="number" min="0" placeholder="Tự tính từ nguyên liệu..." readonly
+                style="background:var(--bg3);color:var(--text2);font-weight:700;cursor:default">
+            </div>
+          </div>
+          <div class="form-row">
             <div class="input-group">
               <label class="input-label">Loại hàng *</label>
               <select class="select" id="menu-item-type" onchange="toggleMenuItemTypeUI()">
