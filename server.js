@@ -8,6 +8,26 @@ const admin = require('firebase-admin');
 const { NLPEngine, normalizeVi } = require('./NLPEngine');
 const { DeepSeekRouter } = require('./DeepSeekRouter');
 
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  lines.forEach(line => {
+    const trimmed = String(line || '').trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const idx = trimmed.indexOf('=');
+    if (idx <= 0) return;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (key) process.env[key] = value;
+  });
+}
+
+loadLocalEnv();
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -37,12 +57,23 @@ if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const firestore = admin.apps.length ? admin.firestore() : null;
+const AI_PROVIDER = String(process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
+const AI_API_KEY = AI_PROVIDER === 'gemini'
+  ? (process.env.GEMINI_API_KEY || '')
+  : (process.env.DEEPSEEK_API_KEY || '');
+const AI_MODEL = AI_PROVIDER === 'gemini'
+  ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
+  : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+const AI_ENDPOINT = AI_PROVIDER === 'gemini'
+  ? (process.env.GEMINI_ENDPOINT || undefined)
+  : (process.env.DEEPSEEK_ENDPOINT || undefined);
 const deepSeekRouter = firestore
   ? new DeepSeekRouter({
       firestore,
-      apiKey: process.env.DEEPSEEK_API_KEY || '',
-      endpoint: process.env.DEEPSEEK_ENDPOINT || undefined,
-      model: process.env.DEEPSEEK_MODEL || undefined,
+      provider: AI_PROVIDER,
+      apiKey: AI_API_KEY,
+      endpoint: AI_ENDPOINT,
+      model: AI_MODEL,
     })
   : null;
 
@@ -353,10 +384,7 @@ app.post('/api/ai/router', async (req, res) => {
   const {
     text,
     commitCheckout = false,
-    endpoint,
-    model,
-    apiKey,
-    timeoutMs,
+    previewOnly = true,
   } = req.body || {};
 
   if (!text || !String(text).trim()) {
@@ -370,20 +398,14 @@ app.post('/api/ai/router', async (req, res) => {
     });
   }
 
-  const router = (apiKey || endpoint || model || timeoutMs)
-    ? new DeepSeekRouter({
-        firestore,
-        apiKey: apiKey || process.env.DEEPSEEK_API_KEY || '',
-        endpoint: endpoint || process.env.DEEPSEEK_ENDPOINT || undefined,
-        model: model || process.env.DEEPSEEK_MODEL || undefined,
-        timeoutMs,
-      })
-    : deepSeekRouter;
+  const router = deepSeekRouter;
 
   try {
     const startedAt = Date.now();
     const result = await router.route(String(text).trim(), {
       commitCheckout: !!commitCheckout,
+      previewOnly: !!previewOnly,
+      userText: String(text).trim(),
     });
 
     return res.json({
@@ -393,6 +415,8 @@ app.post('/api/ai/router', async (req, res) => {
       intentJson: result.intentJson,
       execution: result.execution,
       reply: result.execution?.text || '',
+      aiEnabled: !!AI_API_KEY,
+      provider: AI_PROVIDER,
     });
   } catch (error) {
     console.error('[api/ai/router] error:', error);
@@ -401,6 +425,15 @@ app.post('/api/ai/router', async (req, res) => {
       error: error?.message || 'DeepSeek router failed.',
     });
   }
+});
+
+app.get('/api/ai/status', (req, res) => {
+  return res.json({
+    ok: true,
+    aiEnabled: !!AI_API_KEY,
+    provider: AI_PROVIDER,
+    model: AI_MODEL,
+  });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

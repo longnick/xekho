@@ -990,9 +990,20 @@ function runMigrations() {
 }
 
 function applyStoreSettings() {
+  try {
+    const localSettings = Store.getSettings();
+    if (localSettings.deepseekApiKey || localSettings.deepseekEndpoint || localSettings.deepseekModel) {
+      Store.setSettings({
+        ...localSettings,
+        deepseekApiKey: '',
+        deepseekEndpoint: '',
+        deepseekModel: '',
+      });
+    }
+  } catch (_) {}
   // Ưu tiên settings từ Cloud (appState), fallback về LocalStorage
   const s = (window.appState && window.appState.settings && window.appState.settings.storeName)
-    ? window.appState.settings
+    ? { ...window.appState.settings, deepseekApiKey: '', deepseekEndpoint: '', deepseekModel: '' }
     : Store.getSettings();
 
   if(s.bankAccount) PAYMENT_INFO.account = s.bankAccount;
@@ -1516,8 +1527,11 @@ function refreshInventoryPickers() {
     ledgerSel.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' +
       sorted.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
     if (prev) ledgerSel.value = prev;
-    const month = document.getElementById('ledger-month');
-    if (month && !month.value) month.value = new Date().toISOString().slice(0, 7);
+    const fromDate = document.getElementById('ledger-from-date');
+    const toDate = document.getElementById('ledger-to-date');
+    const today = new Date().toISOString().split('T')[0];
+    if (fromDate && !fromDate.value) fromDate.value = today;
+    if (toDate && !toDate.value) toDate.value = today;
   }
 
   try { populateManualMergeDropdowns(); } catch(_) {}
@@ -3696,12 +3710,11 @@ function renderForecast() {
 function renderLedger() {
   const invItems = _getInventory();
   const select = document.getElementById('ledger-item-select');
-  const monthInput = document.getElementById('ledger-month');
-  
-  if(!monthInput.value) {
-    const d = new Date();
-    monthInput.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  }
+  const fromInput = document.getElementById('ledger-from-date');
+  const toInput = document.getElementById('ledger-to-date');
+  const today = new Date().toISOString().split('T')[0];
+  if (fromInput && !fromInput.value) fromInput.value = today;
+  if (toInput && !toInput.value) toInput.value = fromInput?.value || today;
   
   const currentVal = select.value;
   const sortedItems = invItems.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
@@ -3723,6 +3736,22 @@ function renderLedger() {
   if(!inv) return;
 
   const itemName = inv.name;
+  const itemKey = normalizeViKey(itemName);
+  const conversions = Store.getUnitConversions();
+  const normalizeLedgerQty = (recipeQty, recipeUnit, stockItem) => {
+    const baseQty = Number(recipeQty || 0);
+    if (!(baseQty > 0) || !stockItem) return 0;
+    const sourceUnit = String(recipeUnit || stockItem.unit || '').trim();
+    const stockUnit = String(stockItem.unit || '').trim();
+    if (!sourceUnit || !stockUnit || normalizeViKey(sourceUnit) === normalizeViKey(stockUnit)) return baseQty;
+    const conv = conversions.find(c =>
+      normalizeViKey(c.ingredientName) === itemKey &&
+      normalizeViKey(c.recipeUnit) === normalizeViKey(sourceUnit) &&
+      normalizeViKey(c.purchaseUnit) === normalizeViKey(stockUnit)
+    );
+    if (!conv || !(Number(conv.recipeQty) > 0)) return 0;
+    return baseQty * (Number(conv.purchaseQty || 0) / Number(conv.recipeQty || 1));
+  };
 
   // Hiđơ thđ thông tin nguyên liđu
   if(infoCardEl) {
@@ -3740,13 +3769,34 @@ function renderLedger() {
     `;
   }
 
-  const [year, month] = monthInput.value.split('-').map(Number);
-  const startDate = new Date(year, month - 1, 1).getTime();
-  const endDate = new Date(year, month, 1).getTime();
+  const fromValue = fromInput?.value || today;
+  const toValue = toInput?.value || fromValue;
+  let startDate = new Date(fromValue);
+  let endDate = new Date(toValue);
+  if (Number.isNaN(startDate.getTime())) startDate = new Date();
+  if (Number.isNaN(endDate.getTime())) endDate = new Date(startDate);
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(23, 59, 59, 999);
+  if (endDate < startDate) {
+    const temp = new Date(startDate);
+    startDate = new Date(endDate);
+    endDate = new Date(temp);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+    if (fromInput) fromInput.value = startDate.toISOString().split('T')[0];
+    if (toInput) toInput.value = endDate.toISOString().split('T')[0];
+  }
+  const startTime = startDate.getTime();
+  const endTime = endDate.getTime();
 
-  const allPurchases = Store.getPurchases().filter(p => p.name === itemName);
-  const allHistory = Store.getHistory();
-  const menu = Store.getMenu();
+  const allPurchases = _getPurchases().filter(p =>
+    String(p.inventoryItemId || '') === String(inv.id) ||
+    normalizeViKey(p.name) === itemKey
+  );
+  const allHistory = _getHistory();
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [String(m.id), m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
 
   let events = [];
   
@@ -3772,6 +3822,45 @@ function renderLedger() {
     }
   });
 
+  events = [];
+
+  allPurchases.forEach(p => {
+    const t = new Date(p.date).getTime();
+    events.push({
+      time: t,
+      type: 'purchase',
+      qty: Number(p.qty || 0),
+      desc: 'Nhập hàng',
+      label: p.supplier || '',
+    });
+  });
+
+  allHistory.forEach(h => {
+    const t = new Date(h.paidAt).getTime();
+    let usedQty = 0;
+    (h.items || []).forEach(i => {
+      const dish = menuById.get(String(i.id || '')) || menuByName.get(normalizeViKey(i.name)) || null;
+      if (!dish) return;
+
+      if (dish.itemType === ITEM_TYPES.RETAIL) {
+        const linkedId = String(dish.linkedInventoryId || '');
+        if ((linkedId && linkedId === String(inv.id)) || (!linkedId && normalizeViKey(dish.name) === itemKey)) {
+          usedQty += Number(i.qty || 0);
+        }
+        return;
+      }
+
+      if (!Array.isArray(dish.ingredients)) return;
+      dish.ingredients.forEach(ing => {
+        if (normalizeViKey(ing.name) !== itemKey) return;
+        usedQty += normalizeLedgerQty(ing.qty, ing.unit, inv) * Number(i.qty || 0);
+      });
+    });
+    if (usedQty > 0) {
+      events.push({ time: t, type: 'sale', qty: usedQty, desc: 'Bán ra', label: h.id });
+    }
+  });
+
   events.sort((a,b) => a.time - b.time);
 
   let totalPurchasesAfterStart = 0;
@@ -3780,11 +3869,11 @@ function renderLedger() {
   let totalSalesAfterEnd = 0;
 
   events.forEach(e => {
-    if (e.time >= startDate) {
+    if (e.time >= startTime) {
       if (e.type === 'purchase') totalPurchasesAfterStart += e.qty;
       else if (e.type === 'sale') totalSalesAfterStart += e.qty;
     }
-    if (e.time >= endDate) {
+    if (e.time > endTime) {
       if (e.type === 'purchase') totalPurchasesAfterEnd += e.qty;
       else if (e.type === 'sale') totalSalesAfterEnd += e.qty;
     }
@@ -3793,7 +3882,7 @@ function renderLedger() {
   // Calculate back from present
   let openingStock = inv.qty - totalPurchasesAfterStart + totalSalesAfterStart;
   
-  let monthEvents = events.filter(e => e.time >= startDate && e.time < endDate);
+  let periodEvents = events.filter(e => e.time >= startTime && e.time <= endTime);
 
   let periodPurchases = 0;
   let periodSales = 0;
@@ -3806,7 +3895,7 @@ function renderLedger() {
   `;
 
   let detailsHtml = '';
-  monthEvents.forEach(e => {
+  periodEvents.forEach(e => {
     if (e.type === 'purchase') {
       currentRunningStock += e.qty;
       periodPurchases += e.qty;
@@ -3849,7 +3938,7 @@ function renderLedger() {
     </div>
   </div>`;
 
-  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Không có giao dịch trong tháng</div></div>';
+  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Không có giao dịch trong khoảng thời gian đã chọn</div></div>';
 
   document.getElementById('ledger-list').innerHTML = html;
 }
@@ -5045,8 +5134,135 @@ async function closeShift(expectedCash) {
 // ============================================================
 let reportPeriod = 'month'; // Thay đăi mặc đănh thành 'month' đă hiđơ thđ đủ dữ liđu từ các ngày trưđc
 let reportDateOpts = {};
+let reportFilters = {
+  transactions: { sales: true, purchases: true, expenses: true },
+  ingredientId: '',
+};
+
+function isReportTransactionEnabled(type) {
+  return !!reportFilters?.transactions?.[type];
+}
+
+function getSelectedReportIngredient() {
+  const inventory = _getInventory().filter(item => !item.hidden && !item.mergedInto);
+  if (!reportFilters.ingredientId) return null;
+  return inventory.find(item => String(item.id) === String(reportFilters.ingredientId)) || null;
+}
+
+function populateReportIngredientFilter() {
+  const select = document.getElementById('report-ingredient-filter');
+  if (!select) return;
+  const inventory = _getInventory()
+    .filter(item => !item.hidden && !item.mergedInto)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
+  const current = String(reportFilters.ingredientId || '');
+  select.innerHTML = '<option value="">Tất cả nguyên liệu</option>' + inventory
+    .map(item => `<option value="${item.id}">${item.name} (${item.unit || 'đvt'})</option>`)
+    .join('');
+  select.value = inventory.some(item => String(item.id) === current) ? current : '';
+}
+
+function renderReportFilterSummary() {
+  const summaryEl = document.getElementById('report-filter-summary');
+  if (!summaryEl) return;
+  const labels = [];
+  if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
+  if (isReportTransactionEnabled('purchases')) labels.push('Nhập hàng');
+  if (isReportTransactionEnabled('expenses')) labels.push('Chi phí khác');
+  const ingredient = getSelectedReportIngredient();
+  summaryEl.textContent = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${ingredient ? ` · Nguyên liệu: ${ingredient.name}` : ' · Tất cả nguyên liệu'}`;
+}
+
+function syncReportFilterUI() {
+  const sales = document.getElementById('report-filter-sales');
+  const purchases = document.getElementById('report-filter-purchases');
+  const expenses = document.getElementById('report-filter-expenses');
+  if (sales) sales.checked = isReportTransactionEnabled('sales');
+  if (purchases) purchases.checked = isReportTransactionEnabled('purchases');
+  if (expenses) expenses.checked = isReportTransactionEnabled('expenses');
+  populateReportIngredientFilter();
+  renderReportFilterSummary();
+}
+
+function setReportTransactionFilter(type, checked) {
+  reportFilters.transactions[type] = !!checked;
+  renderReportFilterSummary();
+  refreshReportViews();
+}
+
+function setReportIngredientFilter(value) {
+  reportFilters.ingredientId = String(value || '').trim();
+  renderReportFilterSummary();
+  refreshReportViews();
+}
+
+function resetReportFilters() {
+  reportFilters = {
+    transactions: { sales: true, purchases: true, expenses: true },
+    ingredientId: '',
+  };
+  syncReportFilterUI();
+  refreshReportViews();
+}
+
+function doesOrderMatchReportIngredient(order, ingredient) {
+  if (!ingredient) return true;
+  const ingredientKey = normalizeViKey(ingredient.name);
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(item => [String(item.id), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  return (order.items || []).some(item => {
+    const itemKey = normalizeViKey(item.name);
+    if (itemKey === ingredientKey) return true;
+    const dish = menuById.get(String(item.id || '')) || menuByName.get(itemKey) || null;
+    if (!dish) return false;
+    if (String(dish.linkedInventoryId || '') === String(ingredient.id)) return true;
+    return Array.isArray(dish.ingredients) && dish.ingredients.some(ing => normalizeViKey(ing.name) === ingredientKey);
+  });
+}
+
+function doesPurchaseMatchReportIngredient(purchase, ingredient) {
+  if (!ingredient) return true;
+  if (String(purchase.inventoryItemId || '') === String(ingredient.id)) return true;
+  return normalizeViKey(purchase.name) === normalizeViKey(ingredient.name);
+}
+
+function doesExpenseMatchReportIngredient(expense, ingredient) {
+  if (!ingredient) return true;
+  const ingredientKey = normalizeViKey(ingredient.name);
+  const haystack = [expense.name, expense.note, expense.category].map(normalizeViKey).join(' ');
+  return haystack.includes(ingredientKey);
+}
+
+function getFilteredReportOrders() {
+  if (!isReportTransactionEnabled('sales')) return [];
+  const ingredient = getSelectedReportIngredient();
+  return filterHistory(reportPeriod, reportDateOpts).filter(order => doesOrderMatchReportIngredient(order, ingredient));
+}
+
+function getFilteredReportPurchases() {
+  if (!isReportTransactionEnabled('purchases')) return [];
+  const ingredient = getSelectedReportIngredient();
+  return filterPurchases(reportPeriod, reportDateOpts).filter(purchase => doesPurchaseMatchReportIngredient(purchase, ingredient));
+}
+
+function getFilteredReportExpenses() {
+  if (!isReportTransactionEnabled('expenses')) return [];
+  const ingredient = getSelectedReportIngredient();
+  return filterExpenses(reportPeriod, reportDateOpts).filter(expense => doesExpenseMatchReportIngredient(expense, ingredient));
+}
+
+function refreshReportViews() {
+  renderTrendChart();
+  renderTopItems();
+  renderCategoryChart();
+  renderHourlyChart();
+  renderOrderHistoryList();
+  renderExpenseReport();
+}
 
 function renderReports() {
+  syncReportFilterUI();
   setReportPeriod(reportPeriod);
 }
 
@@ -5065,16 +5281,21 @@ function setReportPeriod(p) {
     return;
   }
   reportDateOpts = {};
-  renderTrendChart();
-  renderTopItems();
-  renderCategoryChart();
-  renderHourlyChart();
-  renderOrderHistoryList();
-  renderExpenseReport();
+  syncReportFilterUI();
+  refreshReportViews();
 }
 
 function renderTopItems() {
-  const top = getTopItems(reportPeriod, reportDateOpts, 8);
+  const orders = getFilteredReportOrders();
+  const topMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (!topMap[item.name]) topMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+      topMap[item.name].qty += Number(item.qty || 0);
+      topMap[item.name].revenue += Number(item.price || 0) * Number(item.qty || 0);
+    });
+  });
+  const top = Object.values(topMap).sort((a, b) => b.qty - a.qty).slice(0, 8);
   document.getElementById('top-items').innerHTML = top.length ? top.map((item, i) =>
     `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(255,107,53,0.1);color:var(--primary);font-weight:800;font-size:16px">${i+1}</div>
@@ -5088,7 +5309,19 @@ function renderTopItems() {
     </div>`
   ).join('') : '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có dữ liệu</div></div>';
 
-  const topProfit = getTopProfitableItems(reportPeriod, reportDateOpts, 8);
+  const profitMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (!profitMap[item.name]) profitMap[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0 };
+      profitMap[item.name].qty += Number(item.qty || 0);
+      profitMap[item.name].revenue += Number(item.price || 0) * Number(item.qty || 0);
+      profitMap[item.name].cost += Number(item.cost || 0) * Number(item.qty || 0);
+    });
+  });
+  const topProfit = Object.values(profitMap)
+    .map(item => ({ ...item, profit: item.revenue - item.cost }))
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 8);
   document.getElementById('top-profit-items').innerHTML = topProfit.length ? topProfit.map((item, i) =>
     `<div class="list-item">
       <div class="list-item-icon" style="background:rgba(16,185,129,0.1);color:var(--success);font-weight:800;font-size:16px">${i+1}</div>
@@ -5108,9 +5341,9 @@ function renderTrendChart() {
   if(!ctx) return;
   if(chartInstances.trend) chartInstances.trend.destroy();
 
-  const orders = filterHistory(reportPeriod, reportDateOpts);
-  const expenses = filterExpenses(reportPeriod, reportDateOpts);
-  const purchases = filterPurchases(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
+  const expenses = getFilteredReportExpenses();
+  const purchases = getFilteredReportPurchases();
   const periodRange = getPeriodDateRange(reportPeriod, reportDateOpts);
 
   let startDate;
@@ -5264,7 +5497,7 @@ function renderTrendChart() {
 }
 
 function renderCategoryChart() {
-  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
   const menu = Store.getMenu();
   const catRevenue = {};
   orders.forEach(o => (o.items||[]).forEach(item => {
@@ -5289,7 +5522,7 @@ function renderCategoryChart() {
 }
 
 function renderHourlyChart() {
-  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
   const hours = Array(24).fill(0);
   orders.forEach(o => { const h = new Date(o.paidAt).getHours(); hours[h] += o.total; });
   const activeHours = hours.slice(8, 24);
@@ -5314,7 +5547,7 @@ function renderHourlyChart() {
 }
 
 function renderCategoryChart() {
-  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
   const menu = _getMenu();
   const menuById = new Map(menu.map(m => [m.id, m]));
   const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
@@ -5360,8 +5593,8 @@ function renderExpenseReport() {
   const listEl = document.getElementById('purchase-report-list');
   if (!ctx || !listEl) return;
 
-  const rawPurchases = filterPurchases(reportPeriod, reportDateOpts);
-  const rawExpenses = filterExpenses(reportPeriod, reportDateOpts);
+  const rawPurchases = getFilteredReportPurchases();
+  const rawExpenses = getFilteredReportExpenses();
 
   const sums = {};
   rawPurchases.forEach(p => {
@@ -5415,7 +5648,7 @@ function renderExpenseReport() {
 
 function renderOrderHistoryList() {
   cleanupOldOrderHistoryPhotos();
-  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
   
   if(!orders.length) {
     document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có lịch sử</div></div>';
@@ -6030,12 +6263,7 @@ function applyDateFilter(page) {
   } else {
     reportDateOpts = opts;
     reportPeriod = period;
-    renderTrendChart();
-    renderTopItems();
-    renderCategoryChart();
-    renderHourlyChart();
-    renderOrderHistoryList();
-    renderExpenseReport(); // NEW!
+    refreshReportViews();
   }
 }
 
@@ -6205,9 +6433,9 @@ function renderSettings() {
     ['set-bankName',     s.bankName    || 'Vietinbank'],
     ['set-bankAccount',  s.bankAccount || ''],
     ['set-bankOwner',    s.bankOwner   || ''],
-    ['set-deepseekApiKey', s.deepseekApiKey || ''],
-    ['set-deepseekEndpoint', s.deepseekEndpoint || 'https://api.deepseek.com/v1/chat/completions'],
-    ['set-deepseekModel', s.deepseekModel || 'deepseek-chat'],
+    ['set-deepseekApiKey', 'server-managed'],
+    ['set-deepseekEndpoint', 'server-managed'],
+    ['set-deepseekModel', 'server-managed'],
     ['set-googleTTSKey', s.googleTTSKey|| ''],
     ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
@@ -6309,9 +6537,6 @@ function submitSettings(e) {
   const bankNameEl    = document.getElementById('set-bankName');
   const bankAccountEl = document.getElementById('set-bankAccount');
   const bankOwnerEl   = document.getElementById('set-bankOwner');
-  const deepseekKeyEl = document.getElementById('set-deepseekApiKey');
-  const deepseekEndpointEl = document.getElementById('set-deepseekEndpoint');
-  const deepseekModelEl = document.getElementById('set-deepseekModel');
   const ttsKeyEl      = document.getElementById('set-googleTTSKey');
   const tableCountEl  = document.getElementById('set-tableCount');
   const autoBackupEl  = document.getElementById('set-autoBackup');
@@ -6348,9 +6573,9 @@ function submitSettings(e) {
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
     geminiApiKey: '',
-    deepseekApiKey: (deepseekKeyEl && deepseekKeyEl.value.trim()) || '',
-    deepseekEndpoint: (deepseekEndpointEl && deepseekEndpointEl.value.trim()) || 'https://api.deepseek.com/v1/chat/completions',
-    deepseekModel: (deepseekModelEl && deepseekModelEl.value.trim()) || 'deepseek-chat',
+    deepseekApiKey: '',
+    deepseekEndpoint: '',
+    deepseekModel: '',
     googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
     gemmaEndpoint:'',
     gemmaModel:   '',

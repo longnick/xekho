@@ -234,7 +234,7 @@ function _buildAIActionConfirmText(action, menuFull) {
 }
 
 // --- Execute parsed actions (shared between Gemini and Local NLP) ---
-function executeAIActions(parsed, menuFull, userText = '') {
+function executeAIActions(parsed, menuFull, userText = '', options = {}) {
   if (!parsed) return _repairAIActionText('KhÃ´ng nháº­n ra lá»‡nh nÃ y áº¡.');
   parsed = normalizeAIResponse(parsed, menuFull);
   const validated = validateAIActions(parsed, menuFull);
@@ -246,7 +246,7 @@ function executeAIActions(parsed, menuFull, userText = '') {
   if (parsed.actions?.length) {
     for (const a of parsed.actions) {
       if (_needsAIActionConfirm(a)) {
-        const ok = confirm(_buildAIActionConfirmText(a, menuFull));
+        const ok = options.skipAutoConfirm ? true : confirm(_buildAIActionConfirmText(a, menuFull));
         if (!ok) {
           if (!parsed.reply || parsed.reply.length < 5) parsed.reply = _repairAIActionText('ÄÃ£ há»§y thao tÃ¡c theo yÃªu cáº§u.');
           continue;

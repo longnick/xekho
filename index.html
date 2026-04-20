@@ -394,9 +394,12 @@
             <div style="font-weight:700;font-size:15px">📓 Danh mục & Thẻ Kho</div>
             <button class="btn btn-sm btn-primary" onclick="openAddInvItemModal()">+ Tạo nguyên liệu</button>
           </div>
-          <div class="date-filter mb-2" style="margin-bottom:12px; display:flex; gap:8px;">
-            <input type="month" id="ledger-month" class="input input-sm" style="flex:1" onchange="renderLedger()">
-            <select id="ledger-item-select" class="select select-sm" style="flex:2" onchange="renderLedger()">
+          <div class="date-filter mb-2" style="margin-bottom:12px; display:grid; gap:8px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1; min-width:140px" onchange="renderLedger()">
+              <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1; min-width:140px" onchange="renderLedger()">
+            </div>
+            <select id="ledger-item-select" class="select select-sm" style="width:100%" onchange="renderLedger()">
               <option value="">-- Chọn Nguyên Liệu --</option>
             </select>
           </div>
@@ -598,6 +601,42 @@
             <input type="date" class="input input-sm date-input" id="report-single-date"
               onchange="applyDateFilter('report')">
           </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;padding:14px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <div>
+              <div class="card-title" style="font-size:14px;">Bộ lọc báo cáo</div>
+              <div class="card-sub" style="font-size:11px;color:var(--text3)">Lọc theo giao dịch đã chọn và nguyên liệu cần theo dõi</div>
+            </div>
+            <button type="button" class="btn btn-xs btn-outline" onclick="resetReportFilters()">Đặt lại lọc</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;">
+            <div>
+              <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Loại giao dịch</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
+                  <input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)">
+                  <span>Đơn bán</span>
+                </label>
+                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
+                  <input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)">
+                  <span>Nhập hàng</span>
+                </label>
+                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
+                  <input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)">
+                  <span>Chi phí khác</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="input-label" for="report-ingredient-filter">Nguyên liệu tùy chọn</label>
+              <select id="report-ingredient-filter" class="select" onchange="setReportIngredientFilter(this.value)">
+                <option value="">Tất cả nguyên liệu</option>
+              </select>
+            </div>
+          </div>
+          <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2);"></div>
         </div>
 
         <div class="tab-bar">
@@ -1035,20 +1074,21 @@
 
             <div class="card">
               <div class="card-header">
-                <div class="card-title">🧠 DeepSeek API</div>
+                <div class="card-title">🧠 AI Server (Gemini)</div>
               </div>
               <div class="input-group">
-                <label class="input-label">DeepSeek API Key</label>
-                <input type="password" id="set-deepseekApiKey" class="input" placeholder="Dán DeepSeek API Key...">
+                <label class="input-label">Bảo mật AI Server</label>
+                <input type="password" id="set-deepseekApiKey" class="input" placeholder="Được quản lý phía server" disabled>
+                <div style="font-size:11px;color:var(--text3);margin-top:6px">Khóa Gemini chỉ lưu trên server nội bộ, không lưu trên máy POS để tránh lộ key.</div>
               </div>
               <div class="input-group">
-                <label class="input-label">DeepSeek Endpoint</label>
-                <input type="text" id="set-deepseekEndpoint" class="input" placeholder="https://api.deepseek.com/v1/chat/completions">
+                <label class="input-label">Gemini Provider</label>
+                <input type="text" id="set-deepseekEndpoint" class="input" placeholder="gemini-2.5-flash" disabled>
               </div>
               <div class="input-group">
-                <label class="input-label">DeepSeek Model</label>
-                <input type="text" id="set-deepseekModel" class="input" placeholder="deepseek-chat">
-                <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Chatbot hiện chỉ dùng 2 chế độ: NLP Offline và DeepSeek Online.</div>
+                <label class="input-label">Gemini Model</label>
+                <input type="text" id="set-deepseekModel" class="input" placeholder="gemini-2.5-flash" disabled>
+                <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Chatbot sẽ ưu tiên AI server Gemini cho câu hỏi mở và fallback NLP Offline khi cần.</div>
               </div>
             </div>
 
@@ -1612,7 +1652,7 @@
               <!-- Chuyển đổi Model AI -->
               <button id="ai-engine-toggle" class="badge badge-primary"
                 style="cursor:pointer; border:none; padding:4px 8px; font-size:10px; font-weight:700"
-                onclick="toggleAIEngine()" title="Chế độ AI hiện tại">Offline NLP + DeepSeek</button>
+                onclick="toggleAIEngine()" title="Chế độ AI hiện tại">Offline NLP + Gemini Server</button>
             </div>
             <div
               style="font-size:11px; font-weight:600; cursor:pointer; display:inline-block; margin-top:1px; padding:2px 6px; border-radius:4px; user-select:none; transition:all 0.2s"
@@ -1714,6 +1754,22 @@
               <line x1="8" y1="23" x2="16" y2="23"></line>
             </svg>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="ai-confirm-modal" onclick="if(event.target===this)closeAIConfirmModal(false)">
+    <div class="modal-sheet-center" style="padding:0;overflow:hidden;max-width:420px;width:calc(100% - 24px)">
+      <div class="modal-header" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
+        <div class="modal-title">🤖 Xác nhận lệnh AI</div>
+        <button class="modal-close" onclick="closeAIConfirmModal(false)">✕</button>
+      </div>
+      <div style="padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div id="ai-confirm-message" style="font-size:14px;line-height:1.55;color:var(--text)"></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary btn-block" onclick="closeAIConfirmModal(false)">Huỷ</button>
+          <button class="btn btn-success btn-block" onclick="closeAIConfirmModal(true)">Xác nhận</button>
         </div>
       </div>
     </div>

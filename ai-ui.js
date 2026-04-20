@@ -5,6 +5,8 @@
 let aiRecognition = null;
 let aiIsListening  = false;
 let aiOutputMode = 'voice'; // 'voice' or 'text'
+let aiConfirmResolver = null;
+let aiServerOnline = null;
 
 // ------ UI helpers ------
 let aiChatHistoryLoaded = false;
@@ -43,6 +45,131 @@ function repairVietnameseMojibake(input) {
   return str;
 }
 
+function repairVietnameseMojibakeV2(input) {
+  let str = repairVietnameseMojibake(input);
+  if (!str) return str;
+  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
+  if (!suspect) return str;
+
+  const decodeUtf8Bytes = (value) => {
+    try {
+      const bytes = Uint8Array.from(String(value || ''), ch => ch.charCodeAt(0) & 0xFF);
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (_) {
+      return String(value || '');
+    }
+  };
+
+  const candidates = [str];
+  let iterative = str;
+  for (let i = 0; i < 3; i += 1) {
+    const next = decodeUtf8Bytes(iterative);
+    if (!next || next === iterative) break;
+    candidates.push(next);
+    iterative = next;
+  }
+
+  const score = (value) => {
+    const text = String(value || '');
+    const bad = (text.match(/[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/g) || []).length;
+    const good = (text.match(/[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/gi) || []).length;
+    return (bad * 3) - good;
+  };
+
+  str = candidates.sort((a, b) => score(a) - score(b))[0] || str;
+  str = str.replace(/[\u0080-\u009f]/g, '').replace(/�/g, '');
+
+  const dictionary = [
+    ['hÃ´m nay', 'hôm nay'],
+    ['hÃ´m qua', 'hôm qua'],
+    ['tuáº§n nÃ y', 'tuần này'],
+    ['thÃ¡ng nÃ y', 'tháng này'],
+    ['bÃ¡n Ä‘Æ°á»£c', 'bán được'],
+    ['Ä‘Æ¡n vá»‹', 'đơn vị'],
+    ['lÃ£i gÃ´p', 'lãi gộp'],
+    ['nháº­p', 'nhập'],
+    ['Táº¡m tÃ­nh', 'Tạm tính'],
+    ['hiá»‡n táº¡i', 'hiện tại'],
+    ['Ä‘Ã£', 'đã'],
+    ['chÆ°a', 'chưa'],
+    ['khÃ´ng', 'không'],
+    ['bÃ n', 'bàn'],
+    ['máº·t hÃ ng', 'mặt hàng'],
+  ];
+  dictionary.forEach(([bad, good]) => {
+    str = str.split(bad).join(good);
+  });
+
+  return str.trim();
+}
+
+function repairVietnameseMojibakeV3(input) {
+  let str = String(input ?? '');
+  if (!str) return str;
+  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
+  if (!suspect) return str;
+
+  const hasGoodVietnamese = /[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/i.test(str);
+  if (!hasGoodVietnamese) {
+    try {
+      const bytes = Uint8Array.from(String(str || ''), ch => ch.charCodeAt(0) & 0xFF);
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (decoded && !/[\u0000-\u001f]/.test(decoded)) str = decoded;
+    } catch (_) {}
+  }
+
+  str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
+
+  const dictionary = [
+    ['bÃ¡n', 'b\u00e1n'],
+    ['Ä‘Æ°á»£c', '\u0111\u01b0\u1ee3c'],
+    ['Ä‘Æ¡n', '\u0111\u01a1n'],
+    ['vá»‹', 'v\u1ecb'],
+    ['lÃ£i', 'l\u00e3i'],
+    ['gÃ´p', 'g\u1ed9p'],
+    ['nháº­p', 'nh\u1eadp'],
+    ['tá»•ng', 't\u1ed5ng'],
+    ['chá»‘t', 'ch\u1ed1t'],
+    ['hiá»‡n', 'hi\u1ec7n'],
+    ['máº·t hÃ ng', 'm\u1eb7t h\u00e0ng'],
+    ['mÃ³n', 'm\u00f3n'],
+    ['nhiá»u nháº¥t', 'nhi\u1ec1u nh\u1ea5t'],
+    ['hÃ´m nay', 'h\u00f4m nay'],
+    ['hÃ´m qua', 'h\u00f4m qua'],
+    ['tuáº§n nÃ y', 'tu\u1ea7n n\u00e0y'],
+    ['thÃ¡ng nÃ y', 'th\u00e1ng n\u00e0y'],
+    ['Táº¡m tÃ­nh', 'T\u1ea1m t\u00ednh'],
+    ['hiá»‡n táº¡i', 'hi\u1ec7n t\u1ea1i'],
+    ['chÆ°a', 'ch\u01b0a'],
+    ['khÃ´ng', 'kh\u00f4ng'],
+    ['bÃ n', 'b\u00e0n'],
+    ['Ä‘Ã£', '\u0111\u00e3'],
+    ['Ä‘á»ƒ', '\u0111\u1ec3'],
+    ['Ä‘', '\u0111'],
+    ['Ã¡', '\u00e1'],
+    ['Ã ', '\u00e0'],
+    ['Ã£', '\u00e3'],
+    ['Ã¢', '\u00e2'],
+    ['Ãª', '\u00ea'],
+    ['Ã´', '\u00f4'],
+    ['Æ°', '\u01b0'],
+    ['Æ¡', '\u01a1'],
+    ['Ã¹', '\u00f9'],
+    ['Ãº', '\u00fa'],
+    ['Ã²', '\u00f2'],
+    ['Ã³', '\u00f3'],
+    ['Ã¨', '\u00e8'],
+    ['Ã©', '\u00e9'],
+    ['Ã¬', '\u00ec'],
+    ['Ã­', '\u00ed'],
+  ];
+  dictionary.forEach(([bad, good]) => {
+    str = str.split(bad).join(good);
+  });
+
+  return str.trim();
+}
+
 function toggleAIEngineLegacy() {
   const s = Store.getSettings();
   s.activeAIEngine = (s.activeAIEngine === 'gemma') ? 'gemini' : 'gemma';
@@ -65,6 +192,9 @@ function openAIAssistantLegacy() {
   const modal = document.getElementById('ai-modal');
   if(!modal) return;
   modal.classList.add('active');
+  refreshAIServerStatus().then(() => {
+    try { updateAIModeUILegacy(); } catch (_) {}
+  });
   const s = Store.getSettings();
   const engineBtn = document.getElementById('ai-engine-toggle');
   if(engineBtn) {
@@ -93,7 +223,7 @@ function openAIAssistantLegacy() {
       recentHistory.forEach(msg => {
         const div = document.createElement('div');
         div.className = `ai-bubble ai-bubble-${msg.role}`;
-        div.innerHTML = sanitizeAIHtml(repairVietnameseMojibake(msg.content));
+        div.innerHTML = sanitizeAIHtml(repairVietnameseMojibakeV3(msg.content));
         container.appendChild(div);
       });
       container.scrollTop = container.scrollHeight;
@@ -133,16 +263,30 @@ function updateAIModeUILegacy() {
       el.style.color = hasUrl ? 'var(--info)' : 'var(--danger)';
       el.style.border = hasUrl ? '1px solid rgba(0,149,255,0.3)' : '1px solid rgba(239,68,68,0.3)';
     } else {
-      const hasGemini = !!s.geminiApiKey;
-      const hasDeepSeek = !!s.deepseekApiKey;
-      const hasAnyCloud = hasGemini || hasDeepSeek;
-      const label = hasGemini ? 'Gemini' : (hasDeepSeek ? 'DeepSeek' : 'Thiếu API Key');
-      el.innerHTML = hasAnyCloud ? `🌐 Chế độ Online (${label})` : '⚠️ Online (Thiếu API Key)';
-      el.style.background = hasAnyCloud ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-      el.style.color = hasAnyCloud ? 'var(--success)' : 'var(--danger)';
-      el.style.border = hasAnyCloud ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+      const onlineReady = navigator.onLine && aiServerOnline === true;
+      el.innerHTML = onlineReady ? '🌐 Chế độ Online (AI Server)' : '📴 Offline NLP';
+      el.style.background = onlineReady ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+      el.style.color = onlineReady ? 'var(--success)' : 'var(--danger)';
+      el.style.border = onlineReady ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
     }
   }
+}
+
+function getAIServerBaseUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const host = window.location.hostname || '127.0.0.1';
+  return `${protocol}//${host}:3123`;
+}
+
+async function refreshAIServerStatus() {
+  try {
+    const res = await fetch(`${getAIServerBaseUrl()}/api/ai/status`, { cache: 'no-store' });
+    const data = await res.json();
+    aiServerOnline = !!(res.ok && data?.ok && data?.aiEnabled);
+  } catch (_) {
+    aiServerOnline = false;
+  }
+  return aiServerOnline;
 }
 
 function updateAIActiveDot(state = 'idle') {
@@ -197,6 +341,25 @@ function clearAIAssistantHistory() {
   }
 }
 
+function openAIConfirmModal(message) {
+  const modal = document.getElementById('ai-confirm-modal');
+  const body = document.getElementById('ai-confirm-message');
+  if (!modal || !body) return Promise.resolve(confirm(String(message || 'Xác nhận thực thi lệnh AI?')));
+  body.innerHTML = sanitizeAIHtml(repairVietnameseMojibakeV3(String(message || 'Xác nhận thực thi lệnh AI?')).replace(/\n/g, '<br>'));
+  modal.classList.add('active');
+  return new Promise(resolve => {
+    aiConfirmResolver = resolve;
+  });
+}
+
+function closeAIConfirmModal(confirmed) {
+  const modal = document.getElementById('ai-confirm-modal');
+  if (modal) modal.classList.remove('active');
+  const resolver = aiConfirmResolver;
+  aiConfirmResolver = null;
+  if (resolver) resolver(!!confirmed);
+}
+
 function openFullAIHistory() {
   const history = Store.getAIHistory();
   const list = document.getElementById('ai-history-list');
@@ -205,7 +368,7 @@ function openFullAIHistory() {
   list.innerHTML = history.length ? history.map(msg => `
     <div class="history-item">
       <div class="history-role ${msg.role}">${msg.role === 'user' ? '👤 Bạn' : '🤖 Trợ lý'}</div>
-      <div class="history-content">${sanitizeAIHtml(repairVietnameseMojibake(msg.content))}</div>
+      <div class="history-content">${sanitizeAIHtml(repairVietnameseMojibakeV3(msg.content))}</div>
       <div class="history-time">${msg.time ? fmtDateTime(msg.time) : ''}</div>
     </div>
   `).reverse().join('') : '<div style="text-align:center;color:var(--text3);padding:20px">Chưa có lịch sử trò chuyện</div>';
@@ -328,7 +491,7 @@ function addAIBubble(text, role = 'bot') {
   div.className = `ai-bubble ai-bubble-${role}`;
   const normalizedText = role === 'user'
     ? String(text || '')
-    : repairVietnameseMojibake(text);
+    : repairVietnameseMojibakeV3(text);
   div.innerHTML = sanitizeAIHtml(normalizedText);
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
@@ -383,7 +546,7 @@ function startAIListening() {
   aiRecognition.onresult = (e) => {
     const text = e.results[0][0].transcript;
     stopAIListening();
-    document.getElementById('ai-text-input').value = repairVietnameseMojibake(text);
+    document.getElementById('ai-text-input').value = repairVietnameseMojibakeV3(text);
     sendAIText(true);
   };
 
@@ -539,7 +702,7 @@ function recordAIMetric(data) {
 // ------ Text send ------
 function sendAITextGeminiLegacy(isVoice = false) {
   const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? repairVietnameseMojibake(inp.value.trim()) : '';
+  const rawText = inp ? repairVietnameseMojibakeV3(inp.value.trim()) : '';
   if (!rawText) return;
   if (inp) inp.value = '';
   
@@ -591,7 +754,7 @@ function sendAITextGeminiLegacy(isVoice = false) {
 // ------ TTS: Google Cloud TTS (premium) + SpeechSynthesis (fallback) ------
 async function speakText(text) {
   if (!text) return;
-  const plain = repairVietnameseMojibake(text).replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵📷📅📆🔊📝]/gu, '').trim();
+  const plain = repairVietnameseMojibakeV3(text).replace(/<[^>]+>/g, '').replace(/[🎤🤖👋✅⚠️❌📉🛵🏦💵📷📅📆🔊📝]/gu, '').trim();
   if (!plain) return;
 
   const s = Store.getSettings();
@@ -649,14 +812,14 @@ async function speakText(text) {
 
 if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.getVoices();
 
-// Chatbot policy override: only Offline NLP + DeepSeek.
+// Chatbot policy override: only Offline NLP + Gemini Server.
 function toggleAIEngine() {
   const s = Store.getSettings();
-  s.activeAIEngine = 'deepseek';
+  s.activeAIEngine = 'gemini';
   Store.setSettings(s);
   const engineBtn = document.getElementById('ai-engine-toggle');
   if (engineBtn) {
-    engineBtn.textContent = 'Offline NLP + DeepSeek';
+    engineBtn.textContent = 'Offline NLP + Gemini Server';
     engineBtn.className = 'badge badge-info';
   }
   updateAIModeUI();
@@ -675,16 +838,16 @@ function updateAIModeUI() {
     return;
   }
 
-  const hasDeepSeek = !!s.deepseekApiKey;
-  el.innerHTML = hasDeepSeek ? '🌐 DeepSeek Online' : '⚠️ Online (Thiếu API Key DeepSeek)';
-  el.style.background = hasDeepSeek ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-  el.style.color = hasDeepSeek ? 'var(--success)' : 'var(--danger)';
-  el.style.border = hasDeepSeek ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+  const onlineReady = navigator.onLine && aiServerOnline === true;
+  el.innerHTML = onlineReady ? '🌐 AI Server Online' : '📴 Offline NLP';
+  el.style.background = onlineReady ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+  el.style.color = onlineReady ? 'var(--success)' : 'var(--danger)';
+  el.style.border = onlineReady ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
 }
 
 async function handleAICameraCapture(event) {
   if (event && event.target) event.target.value = '';
-  addAIBubble('⚠️ Scan ảnh AI đã được tắt. Chatbot hiện chỉ dùng Offline NLP và DeepSeek.', 'error');
+  addAIBubble('⚠️ Scan ảnh AI đã được tắt. Chatbot hiện chỉ dùng Offline NLP và Gemini Server.', 'error');
 }
 
 function openAIAssistant() {
@@ -694,7 +857,7 @@ function openAIAssistant() {
 
   const engineBtn = document.getElementById('ai-engine-toggle');
   if (engineBtn) {
-    engineBtn.textContent = 'Offline NLP + DeepSeek';
+    engineBtn.textContent = 'Offline NLP + Gemini Server';
     engineBtn.className = 'badge badge-info';
   }
 
@@ -714,7 +877,7 @@ function openAIAssistant() {
       history.slice(-10).forEach(msg => {
         const div = document.createElement('div');
         div.className = `ai-bubble ai-bubble-${msg.role}`;
-        div.innerHTML = sanitizeAIHtml(repairVietnameseMojibake(msg.content));
+        div.innerHTML = sanitizeAIHtml(repairVietnameseMojibakeV3(msg.content));
         container.appendChild(div);
       });
       container.scrollTop = container.scrollHeight;
@@ -725,7 +888,7 @@ function openAIAssistant() {
 
 function sendAIText(isVoice = false) {
   const inp = document.getElementById('ai-text-input');
-  const rawText = inp ? repairVietnameseMojibake(inp.value.trim()) : '';
+  const rawText = inp ? repairVietnameseMojibakeV3(inp.value.trim()) : '';
   if (!rawText) return;
   if (inp) inp.value = '';
 
@@ -734,10 +897,9 @@ function sendAIText(isVoice = false) {
 
   const isOnline = navigator.onLine;
   const s = Store.getSettings();
-  const hasDeepSeek = !!s.deepseekApiKey;
   const startTs = Date.now();
-  const activeEngine = s.forceOffline ? 'offline' : ((isOnline && hasDeepSeek) ? 'deepseek' : 'offline');
-  const modeLabel = (!s.forceOffline && isOnline && hasDeepSeek) ? '🌐 DeepSeek AI' : '📱 Offline NLP';
+  const activeEngine = s.forceOffline ? 'offline' : (isOnline ? 'gemini-server' : 'offline');
+  const modeLabel = (!s.forceOffline && isOnline) ? '🌐 Gemini AI Server' : '📱 Offline NLP';
 
   const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
   if (thinking) thinking.id = 'ai-thinking-bubble';
@@ -746,13 +908,14 @@ function sendAIText(isVoice = false) {
   processAICommand(text).then(result => {
     const reply = typeof result === 'string' ? result : result.reply;
     const intent = typeof result === 'string' ? 'unknown' : result.intent;
+    const resultEngine = typeof result === 'string' ? activeEngine : (result.engine || activeEngine);
     removeThinkingBubble();
     addAIBubble(reply, 'bot');
     const latencyMs = Date.now() - startTs;
-    recordAIMetric({ ok: true, engine: activeEngine, intent, latencyMs });
-    updateAIActiveDot(activeEngine === 'offline' ? 'offline' : 'idle');
+    recordAIMetric({ ok: true, engine: resultEngine, intent, latencyMs });
+    updateAIActiveDot(resultEngine === 'offline' ? 'offline' : 'idle');
     const latEl = document.getElementById('ai-latency-text');
-    if (latEl) latEl.textContent = `⏱️ ${(latencyMs / 1000).toFixed(2)}s - Engine: ${activeEngine}`;
+    if (latEl) latEl.textContent = `⏱️ ${(latencyMs / 1000).toFixed(2)}s - Engine: ${resultEngine}`;
     if (isVoice || aiOutputMode === 'voice') speakText(reply);
   }).catch(err => {
     removeThinkingBubble();
