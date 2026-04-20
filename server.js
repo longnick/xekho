@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 const { NLPEngine, normalizeVi } = require('./NLPEngine');
+const { DeepSeekRouter } = require('./DeepSeekRouter');
 
 const app = express();
 app.use(cors());
@@ -36,6 +37,14 @@ if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const firestore = admin.apps.length ? admin.firestore() : null;
+const deepSeekRouter = firestore
+  ? new DeepSeekRouter({
+      firestore,
+      apiKey: process.env.DEEPSEEK_API_KEY || '',
+      endpoint: process.env.DEEPSEEK_ENDPOINT || undefined,
+      model: process.env.DEEPSEEK_MODEL || undefined,
+    })
+  : null;
 
 const nlp = new NLPEngine({
   trainingPath: path.join(__dirname, 'POS_NLU_Training.json'),
@@ -338,6 +347,60 @@ app.post('/api/voice', async (req, res) => {
       res.json({ reply: replyText });
     }
   });
+});
+
+app.post('/api/ai/router', async (req, res) => {
+  const {
+    text,
+    commitCheckout = false,
+    endpoint,
+    model,
+    apiKey,
+    timeoutMs,
+  } = req.body || {};
+
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ ok: false, error: 'Missing text' });
+  }
+
+  if (!firestore || !deepSeekRouter) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Firestore is not configured on server.',
+    });
+  }
+
+  const router = (apiKey || endpoint || model || timeoutMs)
+    ? new DeepSeekRouter({
+        firestore,
+        apiKey: apiKey || process.env.DEEPSEEK_API_KEY || '',
+        endpoint: endpoint || process.env.DEEPSEEK_ENDPOINT || undefined,
+        model: model || process.env.DEEPSEEK_MODEL || undefined,
+        timeoutMs,
+      })
+    : deepSeekRouter;
+
+  try {
+    const startedAt = Date.now();
+    const result = await router.route(String(text).trim(), {
+      commitCheckout: !!commitCheckout,
+    });
+
+    return res.json({
+      ok: true,
+      text: String(text).trim(),
+      latencyMs: Date.now() - startedAt,
+      intentJson: result.intentJson,
+      execution: result.execution,
+      reply: result.execution?.text || '',
+    });
+  } catch (error) {
+    console.error('[api/ai/router] error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || 'DeepSeek router failed.',
+    });
+  }
 });
 
 server.listen(PORT, '0.0.0.0', () => {
