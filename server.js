@@ -44,6 +44,74 @@ const nlp = new NLPEngine({
 let nlpReady = false;
 nlp.trainModel().then(() => { nlpReady = true; }).catch(() => { nlpReady = false; });
 
+function normalizeUnit(unit) {
+  const raw = String(unit || '').trim();
+  if (!raw) return 'phan';
+  const key = normalizeVi(raw);
+  const map = {
+    gram: 'Gram',
+    gam: 'Gram',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    con: 'Con',
+    lon: 'Lon',
+    chai: 'Chai',
+    phan: 'phan',
+    portion: 'phan',
+  };
+  return map[key] || raw;
+}
+
+function mapInventoryDoc(doc) {
+  const data = doc.data() || {};
+  const id = String(data.inv_id || doc.id);
+  return {
+    id,
+    name: data.material_name || data.name || id,
+    unit: normalizeUnit(data.base_unit || data.unit),
+    qty: Number(data.current_stock ?? data.qty ?? 0),
+    itemType: String(data.inv_type || '').toLowerCase() === 'retail' ? 'retail_item' : 'raw_material',
+  };
+}
+
+async function loadMasterViews() {
+  if (!firestore) return { menuDocs: [], inventoryDocs: [] };
+  const [productSnap, inventorySnap, recipeSnap] = await Promise.all([
+    firestore.collection('Product_Catalog').get(),
+    firestore.collection('Inventory_Items').get(),
+    firestore.collection('Recipes_BOM').get(),
+  ]);
+
+  const inventoryDocs = inventorySnap.docs.map(mapInventoryDoc);
+  const inventoryById = new Map(inventoryDocs.map(item => [item.id, item]));
+  const recipesByParent = new Map();
+  recipeSnap.docs.forEach(doc => {
+    const row = doc.data() || {};
+    const parentId = String(row.parent_item_id || '').trim();
+    if (!parentId) return;
+    if (!recipesByParent.has(parentId)) recipesByParent.set(parentId, []);
+    recipesByParent.get(parentId).push(row);
+  });
+
+  const menuDocs = productSnap.docs.map(doc => {
+    const data = doc.data() || {};
+    const id = String(data.item_id || doc.id);
+    const type = String(data.item_type || '').toLowerCase() === 'retail' ? 'retail_item' : 'finished_good';
+    const bom = recipesByParent.get(id) || [];
+    const linkedInventory = inventoryById.get(String(data.linkedInventoryId || bom[0]?.ingredient_inv_id || '')) || null;
+    return {
+      id,
+      name: data.display_name || data.name || id,
+      price: Number(data.sell_price ?? data.price ?? 0),
+      itemType: type,
+      unit: normalizeUnit(data.unit || linkedInventory?.unit || 'phan'),
+      linkedInventoryId: type === 'retail_item' ? (linkedInventory?.id || null) : null,
+    };
+  });
+
+  return { menuDocs, inventoryDocs };
+}
+
 function findMenuItemByName(menuDocs, name) {
   const key = normalizeVi(name);
   if (!key) return null;
@@ -110,15 +178,13 @@ async function addItemsToOrder(orderId, items) {
 }
 
 async function getMenuDocs() {
-  if (!firestore) return [];
-  const snap = await firestore.collection('menu').get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const { menuDocs } = await loadMasterViews();
+  return menuDocs;
 }
 
 async function getInventoryByName(name) {
   if (!firestore) throw new Error('Firestore chưa được cấu hình trên server.');
-  const snap = await firestore.collection('inventory').get();
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const { inventoryDocs: list } = await loadMasterViews();
   const key = normalizeVi(name);
   const exact = list.find(i => normalizeVi(i.name) === key);
   if (exact) return exact;
