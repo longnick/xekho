@@ -1429,10 +1429,34 @@ function findLinkedInventoryIdForMenuItem(item = {}, inventory = []) {
   return exact ? exact.id : null;
 }
 
+function normalizeUnitText(unit) {
+  const raw = String(unit || '').trim();
+  if (!raw) return 'phần';
+  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
+  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
+  const key = normalizeViKey(raw);
+  const map = {
+    phan: 'phần',
+    portion: 'phần',
+    lon: 'Lon',
+    chai: 'Chai',
+    ly: 'ly',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    gram: 'Gram',
+    gam: 'Gram',
+    mieng: 'Miếng',
+    piece: 'Miếng',
+    con: 'Con',
+  };
+  return map[key] || raw;
+}
+
 function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
   const itemType = inferMenuItemType(item);
   return {
     ...item,
+    unit: normalizeUnitText(item.unit),
     itemType,
     linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
     ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
@@ -4084,7 +4108,7 @@ function submitPurchase(e) {
       window.DB.Purchases?.add ? window.DB.Purchases.add(purchaseData) : Promise.resolve(null)
     ]).then(([_, cloudPurchaseId]) => {
       const id = cloudPurchaseId || uid();
-      Store.addPurchase({ ...purchaseData, id });
+      Store.addPurchase({ ...purchaseData, id }, { skipCloudSync: true });
       showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
 
       document.getElementById('pur-name').value = '';
@@ -5667,6 +5691,76 @@ function deleteMenuItem(id) {
   }
 }
 
+function applyMenuItemOptimisticState(savedId, payload) {
+  const id = String(savedId || '').trim();
+  if (!id) return;
+
+  const inventory = _getInventory();
+  const currentMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
+  const prev = currentMenu.find(item => String(item.id) === id) || {};
+  const nextItem = normalizeMenuItemModel({
+    ...prev,
+    id,
+    name: payload.name,
+    category: payload.category,
+    price: Number(payload.price || 0),
+    unit: payload.unit || 'phần',
+    cost: Number(payload.cost || 0),
+    itemType: payload.itemType || ITEM_TYPES.FINISHED,
+    linkedInventoryId: payload.linkedInventoryId || null,
+    aliases: payload.aliases || prev.aliases || '',
+    ingredients: Array.isArray(payload.ingredients) ? payload.ingredients : [],
+  }, inventory);
+
+  if (Array.isArray(window.appState?.menu)) {
+    const idx = window.appState.menu.findIndex(item => String(item.id) === id);
+    if (idx >= 0) window.appState.menu[idx] = nextItem;
+    else window.appState.menu.unshift(nextItem);
+  }
+
+  if (Array.isArray(window.appState?.masterData?.products)) {
+    const products = window.appState.masterData.products;
+    const idx = products.findIndex(item => String(item.item_id || item.id || item._docId || '') === id);
+    const nextProduct = {
+      ...(idx >= 0 ? products[idx] : {}),
+      item_id: id,
+      _docId: idx >= 0 ? (products[idx]._docId || id) : id,
+      display_name: payload.name,
+      category: payload.category,
+      sell_price: Number(payload.price || 0),
+      item_type: payload.itemType === ITEM_TYPES.RETAIL ? 'Retail' : 'Finished',
+      linkedInventoryId: payload.linkedInventoryId || null,
+      cost: Number(payload.cost || 0),
+      unit: payload.unit || 'phần',
+      aliases: payload.aliases || (idx >= 0 ? products[idx].aliases || '' : ''),
+    };
+    if (idx >= 0) products[idx] = nextProduct;
+    else products.unshift(nextProduct);
+  }
+
+  if (Array.isArray(window.appState?.masterData?.recipes)) {
+    const invByName = new Map(inventory.map(item => [String(item.name || '').trim(), item]));
+    const nextRecipes = (Array.isArray(payload.ingredients) ? payload.ingredients : [])
+      .map(ing => {
+        const stock = invByName.get(String(ing.name || '').trim());
+        if (!stock?.id) return null;
+        return {
+          _docId: `${id}_${stock.id}`,
+          parent_item_id: id,
+          ingredient_inv_id: stock.id,
+          ingredient_name: stock.name,
+          quantity_needed: Number(ing.qty || 0),
+          unit: ing.unit || stock.unit || '',
+        };
+      })
+      .filter(Boolean);
+
+    window.appState.masterData.recipes = window.appState.masterData.recipes
+      .filter(row => String(row.parent_item_id || '') !== id)
+      .concat(nextRecipes);
+  }
+}
+
 async function submitMenuItem(e) {
   e.preventDefault();
   const form = e.target;
@@ -5722,6 +5816,7 @@ async function submitMenuItem(e) {
         await window.DB.RecipesBOM.saveBatch(savedId, payload.ingredients || []);
       }
 
+      applyMenuItemOptimisticState(savedId, payload);
       document.getElementById('menu-modal').classList.remove('active');
       renderMenuAdmin();
       showToast('✅ Đã lưu món ăn!');

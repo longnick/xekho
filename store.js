@@ -70,10 +70,34 @@ function _resolveLinkedInventoryId(item = {}, inventory = []) {
   return exact ? exact.id : null;
 }
 
+function _normalizeUnitText(unit) {
+  const raw = String(unit || '').trim();
+  if (!raw) return 'phần';
+  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
+  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
+  const key = _slugVi(raw);
+  const map = {
+    phan: 'phần',
+    portion: 'phần',
+    lon: 'Lon',
+    chai: 'Chai',
+    ly: 'ly',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    gram: 'Gram',
+    gam: 'Gram',
+    mieng: 'Miếng',
+    piece: 'Miếng',
+    con: 'Con',
+  };
+  return map[key] || raw;
+}
+
 function _normalizeMenuItem(item = {}, inventory = []) {
   const itemType = _inferMenuItemType(item);
   return {
     ...item,
+    unit: _normalizeUnitText(item.unit),
     itemType,
     linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? _resolveLinkedInventoryId(item, inventory) : null,
     ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
@@ -187,12 +211,16 @@ const Store = {
 
   // PURCHASES
   getPurchases() { return this.get(KEYS.purchases) || []; },
-  addPurchase(p) {
+  addPurchase(p, opts = {}) {
     const pur = this.getPurchases();
-    pur.unshift(p);
+    const entry = p && typeof p === 'object' ? { ...p } : p;
+    if (entry && typeof entry === 'object' && Object.prototype.hasOwnProperty.call(entry, '__skipCloudSync')) {
+      delete entry.__skipCloudSync;
+    }
+    pur.unshift(entry);
     this.set(KEYS.purchases, pur);
-    if (window.DB && window.DB.Purchases && window.DB.Purchases.add) {
-      window.DB.Purchases.add(p).catch(console.error);
+    if (!opts.skipCloudSync && window.DB && window.DB.Purchases && window.DB.Purchases.add) {
+      window.DB.Purchases.add(entry).catch(console.error);
     }
   },
   setPurchases(arr) { this.set(KEYS.purchases, arr); },

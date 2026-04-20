@@ -1646,11 +1646,19 @@
         style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:160px;max-height:45vh">
         <div class="ai-bubble ai-bubble-bot" id="ai-welcome-msg">
           <div style="font-weight:700; margin-bottom:4px">👋 Xin chào! Em là Trợ lý Gánh Khô.</div>
-          Mời anh chị đọc lệnh hoặc gõ bên dưới. Em hỗ trợ:<br>
-          • <b>"Bàn 2 gọi 3 tiger bạc, 1 mực"</b><br>
-          • <b>"Bớt 1 bia bàn 2"</b> hoặc <b>"Tính tiền bàn 5"</b><br>
-          • <b>"Hôm nay bán được bao nhiêu rồi?"</b><br>
-          • <b>"Nhập thêm 10 mực khô"</b>
+          <div style="margin-bottom:6px">Để chatbot hiểu đúng, anh chị nên nói <b>1 câu = 1 việc</b>, ngắn và rõ tên món/bàn/thời gian.</div>
+          <div style="margin-bottom:6px"><b>Lệnh đang hỗ trợ tốt nhất:</b></div>
+          • <b>Gọi món:</b> "Bàn 2 gọi 3 tiger bạc, 1 khô cá bò"<br>
+          • <b>Bớt món:</b> "Bớt 1 tiger bạc bàn 2"<br>
+          • <b>Mở/xem bàn:</b> "Mở bàn 5"<br>
+          • <b>Tính tiền:</b> "Tính tiền bàn 5"<br>
+          • <b>Hỏi doanh thu:</b> "Hôm nay bán được bao nhiêu?" hoặc "Doanh thu tháng này"<br>
+          • <b>Hỏi nhập hàng:</b> "Tháng này nhập hàng bao nhiêu?"<br>
+          • <b>Hỏi tồn kho:</b> "Kiểm tra tồn kho khô cá bò"<br>
+          • <b>Nhập kho nhanh:</b> "Nhập thêm 10 mực khô"<br>
+          <div style="margin-top:6px;color:var(--text2);font-size:12px">
+            Nên tránh: câu quá dài, nhiều việc trong 1 câu, hoặc các yêu cầu như sửa menu/xóa dữ liệu bằng chatbot.
+          </div>
         </div>
       </div>
 
@@ -1685,7 +1693,7 @@
           </button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ai-text-input" class="input" placeholder="Lệnh: Bàn 5 gọi 3 cọp trắng..."
+          <input type="text" id="ai-text-input" class="input" placeholder="Ví dụ: Bàn 5 gọi 3 tiger bạc"
             style="flex:1" onkeydown="if(event.key==='Enter')sendAIText(false)">
           <button id="ai-send-btn" class="btn btn-secondary" onclick="sendAIText(false)"
             style="padding:10px 14px;flex-shrink:0">
