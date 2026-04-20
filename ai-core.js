@@ -307,13 +307,13 @@ const aiSessionContext = {
 };
 
 function getAIRouterBaseUrl() {
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  const host = window.location.hostname || '127.0.0.1';
-  return `${protocol}//${host}:3123`;
+  const projectId = 'pos-v2-909ff';
+  const region = 'asia-southeast1';
+  return `https://${region}-${projectId}.cloudfunctions.net`;
 }
 
 async function callServerAIRouter(text, previewOnly = true) {
-  const res = await fetch(`${getAIRouterBaseUrl()}/api/ai/router`, {
+  const res = await fetch(`${getAIRouterBaseUrl()}/aiRouter`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, previewOnly }),
@@ -327,7 +327,7 @@ function mapAIServerErrorMessage(error) {
   const raw = String(error?.message || error || '').trim();
   if (!raw) return 'AI server đang lỗi, vui lòng thử lại.';
   if (/Insufficient Balance/i.test(raw)) return 'AI provider đang hết số dư nên chưa phân tích câu hỏi mở được.';
-  if (/Failed to fetch|NetworkError|fetch/i.test(raw)) return 'Không kết nối được AI server nội bộ trên cổng 3123.';
+  if (/Failed to fetch|NetworkError|fetch/i.test(raw)) return 'Không kết nối được Cloud Function AI Router.';
   return `AI server lỗi: ${raw}`;
 }
 
