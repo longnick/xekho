@@ -660,6 +660,13 @@ function filterPurchases(period, opts) {
   return purchases.filter(p => isDateInPeriod(p.date, period, opts));
 }
 
+function _computeOrderCost(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const lineCost = items.reduce((sum, item) => sum + (Number(item.cost || 0) * Number(item.qty || 0)), 0);
+  if (lineCost > 0) return lineCost;
+  return Number(order?.cost || 0);
+}
+
 // Revenue summary
 function getRevenueSummary(period, opts) {
   const orders = filterHistory(period, opts);
@@ -681,12 +688,17 @@ function getRevenueSummary(period, opts) {
   const netSales = grossSales - discountTotal;
   
   // Giá vốn hàng bán (COGS)
-  const cost = orders.reduce((s,o) => s + (o.cost || 0), 0);
+  const cost = orders.reduce((s,o) => s + _computeOrderCost(o), 0);
   
   // Lợi nhuận gộp (Gross Profit) = Doanh thu thuần - COGS
   const gross = netSales - cost;
   
-  const expenses = filterExpenses(period, opts);
+  const expenses = filterExpenses(period, opts).filter(e =>
+    !(
+      String(e.category || '').toLowerCase() === 'nhập hàng' ||
+      /^nhập hàng:/i.test(String(e.name || ''))
+    )
+  );
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   
   // Tính tổng purchase cho biểu đồ "Chi phí" (bao gồm expense + purchase)
@@ -704,6 +716,9 @@ function getRevenueSummary(period, opts) {
     cost, 
     gross, 
     expenseTotal: totalExpenseAndPurchase, // Trả ra tổng chi phí + nhập hàng cho fin-expense
+    expenseTotal,
+    purchaseTotal,
+    cashOutTotal: totalExpenseAndPurchase,
     profit, 
     orders: orders.length, 
     revenueBank, 
