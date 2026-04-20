@@ -553,7 +553,7 @@ const _masterProductDoc = id => _doc(MASTER_COLLECTIONS.products, id);
 const _masterInventoryDoc = id => _doc(MASTER_COLLECTIONS.inventory, id);
 const _masterRecipeDoc = id => _doc(MASTER_COLLECTIONS.recipes, id);
 
-function _normalizeUnitLabel(unit) {
+function _normalizeUnitLabelSafe(unit) {
   const raw = _repairVietnameseString(String(unit || '').trim());
   if (!raw) return 'pháº§n';
   const key = _slugRepairKey(raw);
@@ -578,6 +578,29 @@ function _masterInventoryTypeToApp(invType) {
   return String(invType || '').toLowerCase() === 'retail'
     ? 'retail_item'
     : 'raw_material';
+}
+
+function _normalizeUnitLabel(unit) {
+  const raw = _repairVietnameseString(String(unit || '').trim());
+  if (!raw) return 'phần';
+  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
+  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
+  const key = _slugRepairKey(raw);
+  const map = {
+    gram: 'Gram',
+    gam: 'Gram',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    kilogam: 'Kg',
+    con: 'Con',
+    lon: 'Lon',
+    chai: 'Chai',
+    phan: 'phần',
+    portion: 'phần',
+    mieng: 'Miếng',
+    piece: 'Miếng',
+  };
+  return map[key] || raw;
 }
 
 function _appInventoryTypeToMaster(itemType) {
