@@ -134,6 +134,11 @@ window.appState = {
   expenses:   null,
   purchases:  null,
   suppliers:  null,
+  masterData: {
+    products: null,
+    inventoryItems: null,
+    recipes: null,
+  },
 
   // --- Presence (RTDB) ---
   presence:   {},      // { [uid]: { displayName, online, lastSeen } }
@@ -373,42 +378,38 @@ async function repairVietnameseNow(options = {}) {
     }
   }
 
-  // 2) Menu
+  // 2) Product_Catalog
   {
-    const snap = await getDocs(_col('menu'));
+    const snap = await getDocs(_col(MASTER_COLLECTIONS.products));
     const raw = snap.docs.map(_fromDoc).filter(Boolean);
-    const repaired = _repairAppStateData('menu', raw, { forceCanonicalIds });
+    const repaired = _repairAppStateData('menu', _buildMenuViewFromMaster(raw, window.appState?.inventory || [], window.appState?.masterData?.recipes || []), { forceCanonicalIds });
     raw.forEach((item, idx) => {
       const fixed = repaired[idx];
       if (!fixed) return;
-      const ing = Array.isArray(item.ingredients) ? item.ingredients : [];
-      const needs = _hasBrokenVietnamese(item.name) ||
-        _hasBrokenVietnamese(item.category) ||
-        ing.some(x => _hasBrokenVietnamese(x?.name));
+      const needs = _hasBrokenVietnamese(item.display_name) || _hasBrokenVietnamese(item.category);
       if (!needs) return;
       report.collections.menu++;
       updates.push({
-        ref: _doc('menu', fixed.id),
+        ref: _masterProductDoc(fixed.id),
         data: {
-          name: fixed.name,
+          display_name: fixed.name,
           category: fixed.category,
-          ingredients: fixed.ingredients || [],
         }
       });
     });
   }
 
-  // 3) Inventory
+  // 3) Inventory_Items
   {
-    const snap = await getDocs(_col('inventory'));
+    const snap = await getDocs(_col(MASTER_COLLECTIONS.inventory));
     const raw = snap.docs.map(_fromDoc).filter(Boolean);
-    const repaired = _repairAppStateData('inventory', raw, { forceCanonicalIds });
+    const repaired = _repairAppStateData('inventory', _buildInventoryViewFromMaster(raw), { forceCanonicalIds });
     raw.forEach((item, idx) => {
       const fixed = repaired[idx];
       if (!fixed) return;
-      if (!_hasBrokenVietnamese(item.name)) return;
+      if (!_hasBrokenVietnamese(item.material_name)) return;
       report.collections.inventory++;
-      updates.push({ ref: _doc('inventory', fixed.id), data: { name: fixed.name } });
+      updates.push({ ref: _masterInventoryDoc(fixed.id), data: { material_name: fixed.name } });
     });
   }
 
@@ -464,6 +465,14 @@ function sanitize(obj) {
       .filter(v => v !== null && v !== undefined);
   }
   if (obj instanceof Timestamp) return obj;
+  if (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj._methodName === 'string'
+  ) {
+    // Preserve Firestore FieldValue sentinels such as serverTimestamp()/increment()
+    return obj;
+  }
   if (typeof obj === 'object') {
     const clean = {};
     for (const [k, v] of Object.entries(obj)) {
@@ -535,6 +544,185 @@ function _dispatchEvent(name, detail = {}) {
 const _col = name => collection(_db, name);
 const _doc = (col, id) => doc(_db, col, String(id));
 const _settingsDoc = () => doc(_db, 'config', 'settings');
+const MASTER_COLLECTIONS = {
+  products: 'Product_Catalog',
+  inventory: 'Inventory_Items',
+  recipes: 'Recipes_BOM',
+};
+const _masterProductDoc = id => _doc(MASTER_COLLECTIONS.products, id);
+const _masterInventoryDoc = id => _doc(MASTER_COLLECTIONS.inventory, id);
+const _masterRecipeDoc = id => _doc(MASTER_COLLECTIONS.recipes, id);
+
+function _normalizeUnitLabel(unit) {
+  const raw = _repairVietnameseString(String(unit || '').trim());
+  if (!raw) return 'pháº§n';
+  const key = _slugRepairKey(raw);
+  const map = {
+    gram: 'Gram',
+    gam: 'Gram',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    kilogam: 'Kg',
+    con: 'Con',
+    lon: 'Lon',
+    chai: 'Chai',
+    phan: 'pháº§n',
+    portion: 'pháº§n',
+    mieng: 'Miáº¿ng',
+    piece: 'Miáº¿ng',
+  };
+  return map[key] || raw;
+}
+
+function _masterInventoryTypeToApp(invType) {
+  return String(invType || '').toLowerCase() === 'retail'
+    ? 'retail_item'
+    : 'raw_material';
+}
+
+function _appInventoryTypeToMaster(itemType) {
+  return String(itemType || '').toLowerCase() === 'retail_item'
+    ? 'Retail'
+    : 'Raw';
+}
+
+function _masterMenuTypeToApp(itemType) {
+  return String(itemType || '').toLowerCase() === 'retail'
+    ? 'retail_item'
+    : 'finished_good';
+}
+
+function _appMenuTypeToMaster(itemType) {
+  return String(itemType || '').toLowerCase() === 'retail_item'
+    ? 'Retail'
+    : 'Finished';
+}
+
+function _buildInventoryViewFromMaster(rows = []) {
+  return [...rows]
+    .map(item => {
+      const id = String(item.inv_id || item.id || item._docId || '').trim();
+      if (!id) return null;
+      return {
+        id,
+        name: _repairVietnameseString(item.material_name || item.name || id),
+        unit: _normalizeUnitLabel(item.base_unit || item.unit),
+        itemType: item.itemType || _masterInventoryTypeToApp(item.inv_type),
+        qty: Number(item.current_stock ?? item.qty ?? 0),
+        minQty: Number(item.min_alert ?? item.minQty ?? 0),
+        costPerUnit: Number(item.costPerUnit ?? 0),
+        hidden: !!item.hidden,
+        supplierName: item.supplierName || '',
+        supplierPhone: item.supplierPhone || '',
+        supplierAddress: item.supplierAddress || '',
+        masterInventoryId: id,
+        _docId: String(item._docId || id),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
+}
+
+function _buildMenuViewFromMaster(products = [], inventoryRows = [], recipes = []) {
+  const inventoryById = new Map(inventoryRows.map(item => [String(item.id), item]));
+  const recipeMap = new Map();
+
+  (Array.isArray(recipes) ? recipes : []).forEach(recipe => {
+    const parentId = String(recipe.parent_item_id || '').trim();
+    if (!parentId) return;
+    if (!recipeMap.has(parentId)) recipeMap.set(parentId, []);
+    recipeMap.get(parentId).push(recipe);
+  });
+
+  return [...products]
+    .map(product => {
+      const id = String(product.item_id || product.id || product._docId || '').trim();
+      if (!id) return null;
+
+      const itemType = product.itemType || _masterMenuTypeToApp(product.item_type);
+      const bomLines = recipeMap.get(id) || [];
+      const ingredients = itemType === 'finished_good'
+        ? bomLines.map(line => {
+            const inventoryItem = inventoryById.get(String(line.ingredient_inv_id || ''));
+            return inventoryItem ? {
+              name: inventoryItem.name,
+              qty: Number(line.quantity_needed ?? line.qty ?? 0),
+              unit: inventoryItem.unit || _normalizeUnitLabel(line.unit),
+            } : null;
+          }).filter(Boolean)
+        : [];
+      const linkedInventory = itemType === 'retail_item'
+        ? inventoryById.get(String(product.linkedInventoryId || bomLines[0]?.ingredient_inv_id || '')) || null
+        : null;
+
+      return {
+        id,
+        name: _repairVietnameseString(product.display_name || product.name || id),
+        category: _repairVietnameseString(product.category || 'Khac'),
+        price: Number(product.sell_price ?? product.price ?? 0),
+        unit: _normalizeUnitLabel(product.unit || (linkedInventory ? linkedInventory.unit : 'phan')),
+        cost: Number(product.cost ?? 0),
+        itemType,
+        linkedInventoryId: itemType === 'retail_item' ? (linkedInventory?.id || null) : null,
+        ingredients,
+        aliases: product.aliases || '',
+        masterProductId: id,
+        _docId: String(product._docId || id),
+      };
+    })
+    .filter(Boolean);
+}
+
+const _masterSnapshotState = {
+  countedMenu: false,
+  countedInventory: false,
+};
+
+function _rebuildMasterDerivedState() {
+  const master = window.appState.masterData || {};
+  if (!Array.isArray(master.products) || !Array.isArray(master.inventoryItems) || !Array.isArray(master.recipes)) {
+    return;
+  }
+
+  const inventory = _repairAppStateData('inventory', _buildInventoryViewFromMaster(master.inventoryItems));
+  const menu = _repairAppStateData('menu', _buildMenuViewFromMaster(master.products, inventory, master.recipes));
+
+  window.appState.inventory = inventory;
+  window.appState.menu = menu;
+
+  if (!_masterSnapshotState.countedInventory) {
+    _masterSnapshotState.countedInventory = true;
+    _markSnapshotReady();
+  }
+  if (!_masterSnapshotState.countedMenu) {
+    _masterSnapshotState.countedMenu = true;
+    _markSnapshotReady();
+  }
+
+  _dispatchEvent('db:update', { key: 'inventory' });
+  _dispatchEvent('db:update', { key: 'menu' });
+}
+
+let _masterListenersAttached = false;
+function _listenMasterCollections() {
+  if (_masterListenersAttached) return;
+  _masterListenersAttached = true;
+
+  _unsubs.push(onSnapshot(_col(MASTER_COLLECTIONS.products), snap => {
+    window.appState.masterData.products = snap.docs.map(_fromDoc).filter(Boolean);
+    _rebuildMasterDerivedState();
+  }, _snapErr(MASTER_COLLECTIONS.products)));
+
+  _unsubs.push(onSnapshot(_col(MASTER_COLLECTIONS.inventory), snap => {
+    window.appState.masterData.inventoryItems = snap.docs.map(_fromDoc).filter(Boolean);
+    _rebuildMasterDerivedState();
+  }, _snapErr(MASTER_COLLECTIONS.inventory)));
+
+  _unsubs.push(onSnapshot(_col(MASTER_COLLECTIONS.recipes), snap => {
+    window.appState.masterData.recipes = snap.docs.map(_fromDoc).filter(Boolean);
+    _rebuildMasterDerivedState();
+  }, _snapErr(MASTER_COLLECTIONS.recipes)));
+}
 
 
 // ============================================================
@@ -621,6 +809,7 @@ function _listen() {
   // 5d. Menu
   _unsubs.push(onSnapshot(_col('menu'), snap => {
     const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    if (Array.isArray(window.appState?.masterData?.products)) return;
     const repaired = _repairAppStateData('menu', raw);
     window.appState.menu = repaired;
     _markSnapshotReady();
@@ -653,6 +842,7 @@ function _listen() {
   // 5e. Inventory
   _unsubs.push(onSnapshot(query(_col('inventory'), orderBy('name')), snap => {
     const raw = snap.docs.map(_fromDoc).filter(Boolean);
+    if (Array.isArray(window.appState?.masterData?.inventoryItems)) return;
     const repaired = _repairAppStateData('inventory', raw);
     window.appState.inventory = repaired;
     _markSnapshotReady();
@@ -782,6 +972,7 @@ onAuthStateChanged(_auth, async user => {
     window.appState.userDoc = { uid: 'local-admin', email: OWNER_EMAIL, role: 'admin', displayName: 'Admin', username: 'admin' };
     
     _listen();
+    _listenMasterCollections();
     _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
     console.log('[DB] Chạy chế độ bỏ qua đăng nhập (Local Admin)');
     return;
@@ -831,6 +1022,7 @@ onAuthStateChanged(_auth, async user => {
 
   // Bắt đầu lắng nghe Firestore
   _listen();
+  _listenMasterCollections();
 
   _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
   console.log('[DB] Auth OK –', role, user.email);
@@ -1059,7 +1251,19 @@ const Orders = {
     if (!skipInventoryDeduction) {
       (order.items || []).forEach(orderItem => {
         const dish = menuList.find(m => m.id === orderItem.id);
-        if (!dish || !Array.isArray(dish.ingredients)) return;
+        if (!dish) return;
+
+        const itemType = dish.itemType || ((Array.isArray(dish.ingredients) && dish.ingredients.length > 0) ? 'finished_good' : 'retail_item');
+        if (itemType === 'retail_item') {
+          const stock =
+            (window.appState.inventory || []).find(s => s.id === dish.linkedInventoryId) ||
+            (window.appState.inventory || []).find(s => s.name === dish.name);
+          if (!stock || !stock.id) return;
+          deductions[stock.id] = (deductions[stock.id] || 0) + (orderItem.qty || 1);
+          return;
+        }
+
+        if (!Array.isArray(dish.ingredients)) return;
         dish.ingredients.forEach(ing => {
           const stock = (window.appState.inventory || []).find(s => s.name === ing.name);
           if (!stock || !stock.id) return;
@@ -1071,7 +1275,7 @@ const Orders = {
 
     await runTransaction(_db, async tx => {
       // Đọc các inv doc trước khi write (quy tắc bắt buộc của Firestore Transaction)
-      const invSnaps = await Promise.all(deductIds.map(id => tx.get(_doc('inventory', id))));
+      const invSnaps = await Promise.all(deductIds.map(id => tx.get(_masterInventoryDoc(id))));
 
       // Ghi history
       const histRef = doc(_col('history'));
@@ -1098,8 +1302,8 @@ const Orders = {
         if (!snap.exists()) return;
         const deductAmt = deductions[snap.id] || 0;
         if (deductAmt <= 0) return;
-        const currentQty = snap.data().qty || 0;
-        tx.update(snap.ref, { qty: Math.max(0, currentQty - deductAmt) });
+        const currentQty = Number(snap.data().current_stock ?? snap.data().qty ?? 0);
+        tx.update(snap.ref, { current_stock: Math.max(0, currentQty - deductAmt) });
       });
     });
   },
@@ -1133,17 +1337,49 @@ const Menu = {
   getAll() { return window.appState.menu; },
 
   async add(item) {
-    const ref = doc(_col('menu'));
-    await _safeSetDoc(ref, { ...item, id: ref.id, createdAt: serverTimestamp() }, undefined, 'menu.add');
+    const ref = doc(_col(MASTER_COLLECTIONS.products));
+    await _safeSetDoc(ref, sanitize({
+      item_id: ref.id,
+      display_name: item.name || ref.id,
+      category: item.category || 'Khac',
+      sell_price: Number(item.price || 0),
+      item_type: _appMenuTypeToMaster(item.itemType),
+      aliases: item.aliases || '',
+      linkedInventoryId: item.linkedInventoryId || null,
+      cost: Number(item.cost || 0),
+      unit: item.unit || 'phan',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }), undefined, 'menu.add');
+    if (Array.isArray(item.ingredients)) {
+      await RecipesBOM.saveBatch(ref.id, item.ingredients);
+    }
     return ref.id;
   },
 
   async update(id, data) {
-    await _safeUpdateDoc(_doc('menu', id), data, `menu.update(${id})`);
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(data, 'name')) payload.display_name = data.name;
+    if (Object.prototype.hasOwnProperty.call(data, 'category')) payload.category = data.category;
+    if (Object.prototype.hasOwnProperty.call(data, 'price')) payload.sell_price = Number(data.price || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.item_type = _appMenuTypeToMaster(data.itemType);
+    if (Object.prototype.hasOwnProperty.call(data, 'aliases')) payload.aliases = data.aliases || '';
+    if (Object.prototype.hasOwnProperty.call(data, 'linkedInventoryId')) payload.linkedInventoryId = data.linkedInventoryId || null;
+    if (Object.prototype.hasOwnProperty.call(data, 'cost')) payload.cost = Number(data.cost || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'unit')) payload.unit = data.unit || 'phan';
+    payload.updatedAt = serverTimestamp();
+    await _safeUpdateDoc(_masterProductDoc(id), payload, `menu.update(${id})`);
+    if (Object.prototype.hasOwnProperty.call(data, 'ingredients')) {
+      await RecipesBOM.saveBatch(id, data.ingredients || []);
+    }
   },
 
   async delete(id) {
-    await _safeDeleteDoc(_doc('menu', id), `menu.delete(${id})`);
+    const existingSnap = await getDocs(query(_col(MASTER_COLLECTIONS.recipes), where('parent_item_id', '==', String(id))));
+    const batch = writeBatch(_db);
+    existingSnap.docs.forEach(docSnap => batch.delete(docSnap.ref));
+    batch.delete(_masterProductDoc(id));
+    await batch.commit();
   },
 };
 
@@ -1216,17 +1452,42 @@ const Inventory = {
   getAll() { return window.appState.inventory; },
 
   async add(item) {
-    const ref = doc(_col('inventory'));
-    await _safeSetDoc(ref, { ...item, id: ref.id }, undefined, 'inventory.add');
+    const ref = doc(_col(MASTER_COLLECTIONS.inventory));
+    await _safeSetDoc(ref, sanitize({
+      inv_id: ref.id,
+      material_name: item.name || ref.id,
+      inv_type: _appInventoryTypeToMaster(item.itemType),
+      base_unit: item.unit || 'phan',
+      current_stock: Number(item.qty || 0),
+      min_alert: Number(item.minQty || 0),
+      costPerUnit: Number(item.costPerUnit || 0),
+      hidden: !!item.hidden,
+      supplierName: item.supplierName || '',
+      supplierPhone: item.supplierPhone || '',
+      supplierAddress: item.supplierAddress || '',
+      updatedAt: serverTimestamp(),
+    }), undefined, 'inventory.add');
     return ref.id;
   },
 
   async update(id, data) {
-    await _safeUpdateDoc(_doc('inventory', id), data, `inventory.update(${id})`);
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(data, 'name')) payload.material_name = data.name;
+    if (Object.prototype.hasOwnProperty.call(data, 'unit')) payload.base_unit = data.unit || 'phan';
+    if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.inv_type = _appInventoryTypeToMaster(data.itemType);
+    if (Object.prototype.hasOwnProperty.call(data, 'qty')) payload.current_stock = Number(data.qty || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'minQty')) payload.min_alert = Number(data.minQty || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'costPerUnit')) payload.costPerUnit = Number(data.costPerUnit || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'hidden')) payload.hidden = !!data.hidden;
+    if (Object.prototype.hasOwnProperty.call(data, 'supplierName')) payload.supplierName = data.supplierName || '';
+    if (Object.prototype.hasOwnProperty.call(data, 'supplierPhone')) payload.supplierPhone = data.supplierPhone || '';
+    if (Object.prototype.hasOwnProperty.call(data, 'supplierAddress')) payload.supplierAddress = data.supplierAddress || '';
+    payload.updatedAt = serverTimestamp();
+    await _safeUpdateDoc(_masterInventoryDoc(id), payload, `inventory.update(${id})`);
   },
 
   async delete(id) {
-    await _safeDeleteDoc(_doc('inventory', id), `inventory.delete(${id})`);
+    await _safeDeleteDoc(_masterInventoryDoc(id), `inventory.delete(${id})`);
   },
 
   /**
@@ -1274,14 +1535,14 @@ const Inventory = {
 
     await runTransaction(_db, async tx => {
       // Đọc tất cả trước (quy tắc Transaction)
-      const snaps = await Promise.all(ids.map(id => tx.get(_doc('inventory', id))));
+      const snaps = await Promise.all(ids.map(id => tx.get(_masterInventoryDoc(id))));
 
       // Tính & ghi tất cả
       snaps.forEach(snap => {
         if (!snap.exists()) return;
-        const currentQty = snap.data().qty || 0;
+        const currentQty = Number(snap.data().current_stock ?? snap.data().qty ?? 0);
         const newQty     = Math.max(0, currentQty - (deductions[snap.id] || 0));
-        tx.update(snap.ref, { qty: newQty });
+        tx.update(snap.ref, { current_stock: newQty });
       });
     });
   },

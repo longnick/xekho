@@ -548,6 +548,61 @@ const fmtDateTime = d => `${fmtDate(d)} ${fmtTime(d)}`;
 const today = () => new Date().toISOString().split('T')[0];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
+function getPeriodDateRange(period, opts) {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+
+  if(period === 'today') {
+    start.setHours(0,0,0,0);
+    end.setHours(23,59,59,999);
+    return { start, end };
+  }
+
+  if(period === 'day' && opts && opts.date) {
+    const target = new Date(opts.date);
+    if(Number.isNaN(target.getTime())) return null;
+    target.setHours(0,0,0,0);
+    const targetEnd = new Date(target);
+    targetEnd.setHours(23,59,59,999);
+    return { start: target, end: targetEnd };
+  }
+
+  if(period === 'range' && opts && opts.fromDate && opts.toDate) {
+    const from = new Date(opts.fromDate);
+    const to = new Date(opts.toDate);
+    if(Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+    from.setHours(0,0,0,0);
+    to.setHours(23,59,59,999);
+    return { start: from, end: to };
+  }
+
+  if(period === 'week') {
+    start.setDate(start.getDate() - 6);
+    start.setHours(0,0,0,0);
+    end.setHours(23,59,59,999);
+    return { start, end };
+  }
+
+  if(period === 'month') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    monthStart.setHours(0,0,0,0);
+    monthEnd.setHours(23,59,59,999);
+    return { start: monthStart, end: monthEnd };
+  }
+
+  return null;
+}
+
+function isDateInPeriod(value, period, opts) {
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return false;
+  const range = getPeriodDateRange(period, opts);
+  if(!range) return true;
+  return date >= range.start && date <= range.end;
+}
+
 // Filter history by period
 // period: 'today'|'day'|'week'|'month'|'all'|'range'
 // opts: { date: 'YYYY-MM-DD', fromDate: 'YYYY-MM-DD', toDate: 'YYYY-MM-DD' }
@@ -557,23 +612,7 @@ function filterHistory(period, opts) {
     ? window.appState.history
     : Store.getHistory();
 
-  const now = new Date();
-  return h.filter(o => {
-    const d = new Date(o.paidAt);
-    if(period === 'today') return d.toDateString() === now.toDateString();
-    if(period === 'day' && opts && opts.date) {
-      const target = new Date(opts.date);
-      return d.toDateString() === target.toDateString();
-    }
-    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
-      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
-      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
-      return d >= from && d <= to;
-    }
-    if(period === 'week') { const diff = (now - d) / 86400000; return diff <= 7; }
-    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
-  });
+  return h.filter(o => isDateInPeriod(o.paidAt, period, opts));
 }
 
 
@@ -583,23 +622,14 @@ function filterExpenses(period, opts) {
   const expenses = (window.appState && window.appState.expenses && window.appState.expenses.length > 0)
     ? window.appState.expenses
     : Store.getExpenses();
-  const now = new Date();
-  return expenses.filter(e => {
-    const d = new Date(e.date);
-    if(period === 'today') return d.toDateString() === now.toDateString();
-    if(period === 'day' && opts && opts.date) {
-      const target = new Date(opts.date);
-      return d.toDateString() === target.toDateString();
-    }
-    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
-      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
-      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
-      return d >= from && d <= to;
-    }
-    if(period === 'week') return (now - d) / 86400000 <= 7;
-    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
-  });
+  return expenses.filter(e => isDateInPeriod(e.date, period, opts));
+}
+
+function filterPurchases(period, opts) {
+  const purchases = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
+    ? window.appState.purchases
+    : Store.getPurchases();
+  return purchases.filter(p => isDateInPeriod(p.date, period, opts));
 }
 
 // Revenue summary
@@ -632,27 +662,7 @@ function getRevenueSummary(period, opts) {
   const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
   
   // Tính tổng purchase cho biểu đồ "Chi phí" (bao gồm expense + purchase)
-  const p = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
-    ? window.appState.purchases
-    : Store.getPurchases();
-  
-  const purchases = p.filter(p => {
-    const d = new Date(p.date);
-    const now = new Date();
-    if(period === 'today') return d.toDateString() === now.toDateString();
-    if(period === 'day' && opts && opts.date) {
-      const target = new Date(opts.date);
-      return d.toDateString() === target.toDateString();
-    }
-    if(period === 'range' && opts && opts.fromDate && opts.toDate) {
-      const from = new Date(opts.fromDate); from.setHours(0,0,0,0);
-      const to = new Date(opts.toDate); to.setHours(23,59,59,999);
-      return d >= from && d <= to;
-    }
-    if(period === 'week') return (now - d) / 86400000 <= 7;
-    if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    return true;
-  });
+  const purchases = filterPurchases(period, opts);
   const purchaseTotal = purchases.reduce((s,p) => s + p.price, 0);
   const totalExpenseAndPurchase = expenseTotal + purchaseTotal;
 
@@ -676,9 +686,17 @@ function getRevenueSummary(period, opts) {
   };
 }
 
+function _normalizeTopMetricArgs(optsOrLimit, maybeLimit) {
+  if(typeof optsOrLimit === 'number' || typeof optsOrLimit === 'undefined') {
+    return { opts: undefined, limit: optsOrLimit || 10 };
+  }
+  return { opts: optsOrLimit, limit: maybeLimit || 10 };
+}
+
 // Top selling items
-function getTopItems(period, limit) {
-  const orders = filterHistory(period);
+function getTopItems(period, optsOrLimit, maybeLimit) {
+  const { opts, limit } = _normalizeTopMetricArgs(optsOrLimit, maybeLimit);
+  const orders = filterHistory(period, opts);
   const map = {};
   orders.forEach(o => {
     (o.items||[]).forEach(item => {
@@ -691,8 +709,9 @@ function getTopItems(period, limit) {
 }
 
 // Most profitable items
-function getTopProfitableItems(period, limit) {
-  const orders = filterHistory(period);
+function getTopProfitableItems(period, optsOrLimit, maybeLimit) {
+  const { opts, limit } = _normalizeTopMetricArgs(optsOrLimit, maybeLimit);
+  const orders = filterHistory(period, opts);
   const map = {};
   orders.forEach(o => {
     (o.items||[]).forEach(item => {
