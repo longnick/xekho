@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? userDoc().data.role
+        : null;
+    }
+
+    function isAdmin() {
+      return userRole() in ['admin', 'manager'];
+    }
+
+    match /System_Logs/{logId} {
+      allow create: if signedIn();
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /Staff/{staffId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /config/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /users/{userId} {
+      allow read, write: if signedIn();
+    }
+
+    match /tables/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /orders/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /menu/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /inventory/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /history/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /expenses/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /purchases/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /suppliers/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /shiftLogs/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /aiHistory/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /unitConversions/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /pending_users/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /Product_Catalog/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /Inventory_Items/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /Recipes_BOM/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

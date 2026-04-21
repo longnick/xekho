@@ -876,10 +876,16 @@
         <div id="set-tab-users" class="settings-tab-content" style="display:none;">
           <div id="settings-user-management" class="card">
             <div class="card-header">
-              <div class="card-title">👥 Quản lý nhân viên</div>
+              <div class="card-title">👥 Cài đặt nhân sự</div>
               <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
             </div>
             <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+          </div>
+          <div id="settings-system-logs" class="card" style="margin-top:12px; display:none;">
+            <div class="card-header">
+              <div class="card-title">🧾 System Logs</div>
+            </div>
+            <div id="system-logs-list" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
         </div>
 
@@ -1959,7 +1965,7 @@
           </div>
           <div id="pin-session-hint" class="card-sub" style="margin-bottom:14px"></div>
           <button id="pin-submit-btn" type="submit" class="btn btn-primary btn-block">Mở máy</button>
-          <button type="button" class="btn btn-secondary btn-block" style="margin-top:10px" onclick="handleLogout()">Đăng xuất Firebase</button>
+          <button type="button" class="btn btn-secondary btn-block" id="lock-screen-logout-btn" style="margin-top:10px" onclick="handleLogout()">Đăng xuất Firebase</button>
         </form>
       </div>
     </div>
@@ -2285,29 +2291,37 @@
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
-        <div class="modal-title" id="user-modal-title">Thêm Nhân Viên</div>
+        <div class="modal-title" id="user-modal-title">Thêm Nhân Sự</div>
         <button type="button" class="modal-close"
           onclick="document.getElementById('user-modal').classList.remove('active')">✕</button>
       </div>
       <div class="modal-body">
         <form id="user-form" onsubmit="submitUser(event)">
+          <input type="hidden" id="user-edit-id">
           <div class="input-group">
-            <label class="input-label">Tên đăng nhập *</label>
-            <input class="input" id="user-edit-username" placeholder="nguyenvana" required autocomplete="off">
+            <label class="input-label">Họ và tên *</label>
+            <input class="input" id="user-edit-full-name" placeholder="Nguyễn Văn A" required autocomplete="off">
           </div>
           <div class="input-group">
-            <label class="input-label">Mật khẩu *</label>
-            <input type="password" class="input" id="user-edit-password" placeholder="***" required
-              autocomplete="new-password">
+            <label class="input-label">Mã PIN (4 số) *</label>
+            <input type="password" class="input" id="user-edit-pin" placeholder="1234" required maxlength="4"
+              inputmode="numeric" pattern="[0-9]{4}" autocomplete="one-time-code">
           </div>
           <div class="input-group">
             <label class="input-label">Quyền hạn</label>
             <select class="select" id="user-edit-role">
-              <option value="staff">Nhân viên (Chỉ Bàn, Order)</option>
-              <option value="admin">Quản lý (Toàn quyền)</option>
+              <option value="staff">Nhân viên (Order / Thanh toán)</option>
+              <option value="admin">Admin (Toàn quyền)</option>
             </select>
           </div>
-          <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu</button>
+          <div class="input-group">
+            <label class="input-label">Trạng thái</label>
+            <select class="select" id="user-edit-status">
+              <option value="active">Đang hoạt động</option>
+              <option value="inactive">Ngưng hoạt động</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="user-save-btn" style="margin-top:8px">✅ Lưu</button>
         </form>
       </div>
     </div>
