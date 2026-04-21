@@ -606,29 +606,29 @@
         <!-- TAB: REVENUE -->
         <div id="report-tab-revenue" class="report-tab-content">
           <div class="card" style="margin-bottom:16px">
-            <div class="card-title" style="margin-bottom:10px">Bo loc bao cao</div>
+            <div class="card-title" style="margin-bottom:10px">Bộ lọc báo cáo</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
               <div class="input-group" style="margin:0">
-                <label class="input-label">Mon an</label>
+                <label class="input-label">Món ăn</label>
                 <select id="report-menu-filter" class="select" onchange="setReportMenuFilter(this.value)">
-                  <option value="">Tat ca mon an</option>
+                  <option value="">Tất cả món ăn</option>
                 </select>
               </div>
               <label class="toggle-wrap" style="margin:0">
-                <div class="toggle-label">Don ban</div>
+                <div class="toggle-label">Đơn bán</div>
                 <label class="toggle"><input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
-                <div class="toggle-label">Nhap hang</div>
+                <div class="toggle-label">Nhập hàng</div>
                 <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
-                <div class="toggle-label">Chi phi khac</div>
+                <div class="toggle-label">Chi phí khác</div>
                 <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)"><span class="toggle-slider"></span></label>
               </label>
             </div>
             <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
-            <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="resetReportFilters()">Dat lai bo loc</button>
+            <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="resetReportFilters()">Đặt lại bộ lọc</button>
           </div>
 
           <!-- Charts -->
@@ -1574,6 +1574,13 @@
             <div class="input-group">
               <label class="input-label">Giá bán (đ) *</label>
               <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
+            </div>
+            <div class="input-group">
+              <label class="input-label">GiÃ¡ vá»‘n tá»± tÃ­nh (Ä‘)</label>
+              <input class="input" id="menu-item-cost" type="number" min="0" step="1" placeholder="0" readonly>
+              <div id="menu-item-cost-formula" style="font-size:11px;color:var(--text3);margin-top:4px">
+                GiÃ¡ vá»‘n sáº½ tá»± Ä‘á»™ng cá»™ng tá»« cÃ¡c nguyÃªn liá»‡u trong cÃ´ng thá»©c.
+              </div>
             </div>
             <div class="input-group">
               <label class="input-label">Loại hàng *</label>
