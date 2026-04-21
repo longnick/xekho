@@ -127,6 +127,7 @@ window.appState = {
   ready:      false,   // true sau khi tất cả snapshot đầu tiên xong
   uid:        null,
   userDoc:    null,    // { uid, email, role, displayName, username }
+  currentUser: null,   // phiên POS theo mã PIN (Vanilla JS)
 
   // --- Dữ liệu nghiệp vụ (thay thế Store.get...()) ---
   tables:     null,
@@ -135,6 +136,7 @@ window.appState = {
   inventory:  null,
   settings:   null,
   users:      null,
+  staff:      null,
   history:    null,
   expenses:   null,
   purchases:  null,
@@ -442,7 +444,7 @@ async function repairVietnameseNow(options = {}) {
 
 // Đếm số snapshot đã ready để biết khi nào appState.ready = true
 let _snapshotReadyCount  = 0;
-const TOTAL_SNAPSHOTS    = 9;   // tables, orders, menu, inventory, settings, users, history, expenses, purchases
+const TOTAL_SNAPSHOTS    = 10;   // tables, orders, menu, inventory, settings, users, staff, history, expenses, purchases
 
 function _markSnapshotReady() {
   _snapshotReadyCount++;
@@ -516,6 +518,51 @@ async function _safeDeleteDoc(ref, context) {
     console.error(`[DB] deleteDoc failed${context ? ' · ' + context : ''}:`, err);
     throw err;
   }
+}
+
+function _getAuditActor() {
+  const posUser = window.appState?.currentUser || null;
+  const authUser = window.appState?.userDoc || null;
+  const actor = sanitize({
+    id: posUser?.id || posUser?.pin || authUser?.uid || null,
+    name: posUser?.name || posUser?.username || authUser?.displayName || authUser?.username || authUser?.email || null,
+    role: posUser?.role || authUser?.role || null,
+    uid: authUser?.uid || null,
+  });
+  return actor && Object.keys(actor).length ? actor : null;
+}
+
+function _withCreateAudit(data = {}) {
+  const actor = _getAuditActor();
+  return sanitize({
+    ...data,
+    createdBy: data.createdBy ?? actor,
+    timestamp: data.timestamp ?? serverTimestamp(),
+    updatedBy: data.updatedBy ?? actor,
+    updatedAt: data.updatedAt ?? serverTimestamp(),
+  });
+}
+
+function _withUpdateAudit(data = {}) {
+  const actor = _getAuditActor();
+  return sanitize({
+    ...data,
+    updatedBy: data.updatedBy ?? actor,
+    updatedAt: data.updatedAt ?? serverTimestamp(),
+    timestamp: data.timestamp ?? serverTimestamp(),
+  });
+}
+
+async function logAction(actionType, details = {}) {
+  const ref = doc(_col('System_Logs'));
+  await _safeSetDoc(ref, {
+    id: ref.id,
+    actionType: String(actionType || 'unknown'),
+    details: sanitize(details || {}),
+    createdBy: _getAuditActor(),
+    timestamp: serverTimestamp(),
+  }, undefined, `System_Logs.create(${actionType || 'unknown'})`);
+  return ref.id;
 }
 
 /** Chuyển Firestore Timestamp → ISO string (format quen thuộc với app.js) */
@@ -899,6 +946,13 @@ function _listen() {
     _dispatchEvent('db:update', { key: 'users' });
   }, _snapErr('users')));
 
+  // 5f+. Staff (PIN login + personnel management)
+  _unsubs.push(onSnapshot(query(_col('Staff'), orderBy('full_name')), snap => {
+    window.appState.staff = snap.docs.map(_fromDoc).filter(Boolean);
+    _markSnapshotReady();
+    _dispatchEvent('db:update', { key: 'staff' });
+  }, _snapErr('Staff')));
+
   // 5g. History  (500 đơn mới nhất – đủ cho báo cáo tháng)
   _unsubs.push(onSnapshot(
     query(_col('history'), orderBy('paidAt', 'desc'), limit(500)),
@@ -998,10 +1052,31 @@ onAuthStateChanged(_auth, async user => {
     _stopListeners();
     window.appState.uid = null;
     window.appState.userDoc = null;
+    window.appState.currentUser = null;
+    window.appState.tables = null;
+    window.appState.orders = null;
+    window.appState.menu = null;
+    window.appState.inventory = null;
+    window.appState.settings = null;
+    window.appState.users = null;
+    window.appState.staff = null;
+    window.appState.history = null;
+    window.appState.expenses = null;
+    window.appState.purchases = null;
+    window.appState.suppliers = null;
+    window.appState.masterData = {
+      products: null,
+      inventoryItems: null,
+      recipes: null,
+    };
+    window.appState.presence = {};
     _dispatchEvent('db:signedOut', {});
     console.log('[DB] Chưa đăng nhập Firebase');
     return;
   }
+
+  _snapshotReadyCount = 0;
+  window.appState.ready = false;
 
   // Đọc / tạo document users/{uid}
   const uRef  = _doc('users', user.uid);
@@ -1138,15 +1213,16 @@ const Orders = {
     const orderId  = `ORD-${tableId}-${Date.now()}`;
     const orderRef = _doc('orders',  orderId);
     const tableRef = _doc('tables',  tableId);
+    const actor = sanitize(createdBy) || _getAuditActor();
 
     await runTransaction(_db, async tx => {
-      tx.set(orderRef, sanitize({
+      tx.set(orderRef, _withCreateAudit({
         id:           orderId,
         tableId:      String(tableId),
         tableName,
         staffUid:     staffUid || null,
-        createdBy:    createdBy?.name || null,
-        createdByRole: createdBy?.role || null,
+        createdBy:    actor,
+        createdByRole: actor?.role || null,
         items:        [],
         discount:     0,
         discountType: 'vnd',
@@ -1255,7 +1331,7 @@ const Orders = {
 
   /** Cập nhật metadata đơn (discount, shipping, vatAmount, note, discountType) */
   async updateMeta(orderId, meta) {
-    await _safeUpdateDoc(_doc('orders', orderId), meta, `orders.updateMeta(${orderId})`);
+    await _safeUpdateDoc(_doc('orders', orderId), _withUpdateAudit(meta), `orders.updateMeta(${orderId})`);
   },
 
   /**
@@ -1334,6 +1410,8 @@ const Orders = {
         historyId: histRef.id,
         paidAt:    serverTimestamp(),
         status:    'completed',
+        paidBy:    _getAuditActor(),
+        timestamp: serverTimestamp(),
       }));
 
       // Xóa active order
@@ -1364,19 +1442,28 @@ const Orders = {
   async cancel(orderId, cancelReason = 'Hủy đơn hàng') {
     const snap = await getDoc(_doc('orders', orderId));
     if (!snap.exists()) return;
-    const { tableId } = snap.data();
+    const orderData = snap.data();
+    const { tableId } = orderData;
+    const actor = _getAuditActor();
 
     await runTransaction(_db, async tx => {
-      tx.update(_doc('orders', orderId), sanitize({
+      tx.update(_doc('orders', orderId), _withUpdateAudit({
         status: 'cancelled',
         cancelReason: String(cancelReason || 'Hủy đơn hàng').trim(),
         cancelledAt: serverTimestamp(),
+        cancelledBy: actor,
       }));
       tx.update(_doc('tables', tableId), {
         status:   'empty',
         orderId:  null,
         openTime: null,
       });
+    });
+    await logAction('order_cancelled', {
+      orderId,
+      tableId: String(tableId || ''),
+      cancelReason: String(cancelReason || 'Hủy đơn hàng').trim(),
+      orderStatus: orderData?.status || 'open',
     });
   },
 };
@@ -1506,7 +1593,7 @@ const Inventory = {
 
   async add(item) {
     const ref = doc(_col(MASTER_COLLECTIONS.inventory));
-    await _safeSetDoc(ref, sanitize({
+    await _safeSetDoc(ref, _withCreateAudit({
       inv_id: ref.id,
       material_name: item.name || ref.id,
       inv_type: _appInventoryTypeToMaster(item.itemType),
@@ -1536,7 +1623,7 @@ const Inventory = {
     if (Object.prototype.hasOwnProperty.call(data, 'supplierPhone')) payload.supplierPhone = data.supplierPhone || '';
     if (Object.prototype.hasOwnProperty.call(data, 'supplierAddress')) payload.supplierAddress = data.supplierAddress || '';
     payload.updatedAt = serverTimestamp();
-    await _safeUpdateDoc(_masterInventoryDoc(id), payload, `inventory.update(${id})`);
+    await _safeUpdateDoc(_masterInventoryDoc(id), _withUpdateAudit(payload), `inventory.update(${id})`);
   },
 
   async delete(id) {
@@ -1714,6 +1801,64 @@ const Users = {
   },
 };
 
+const Staff = {
+  getAll() { return window.appState.staff; },
+
+  getById(staffId) {
+    const all = Array.isArray(window.appState.staff) ? window.appState.staff : [];
+    return all.find(item => String(item.staff_id || item.id || '') === String(staffId || '')) || null;
+  },
+
+  findByPin(pin, options = {}) {
+    const code = String(pin || '').trim();
+    const includeInactive = options.includeInactive === true;
+    const all = Array.isArray(window.appState.staff) ? window.appState.staff : [];
+    return all.find(item => {
+      if (String(item.pin_code || '') !== code) return false;
+      if (includeInactive) return true;
+      return String(item.status || 'active').toLowerCase() === 'active';
+    }) || null;
+  },
+
+  async isPinDuplicate(pin, excludeStaffId = null) {
+    const code = String(pin || '').trim();
+    if (!/^\d{4}$/.test(code)) return false;
+    const snap = await getDocs(query(_col('Staff'), where('pin_code', '==', code), limit(5)));
+    return snap.docs.some(docSnap => {
+      const data = docSnap.data() || {};
+      const currentId = String(data.staff_id || docSnap.id || '');
+      return currentId !== String(excludeStaffId || '');
+    });
+  },
+
+  async add(data) {
+    const ref = doc(_col('Staff'));
+    const payload = sanitize({
+      staff_id: ref.id,
+      full_name: String(data?.full_name || '').trim(),
+      pin_code: String(data?.pin_code || '').trim(),
+      role: String(data?.role || 'staff').trim().toLowerCase(),
+      status: String(data?.status || 'active').trim().toLowerCase(),
+    });
+    await _safeSetDoc(ref, _withCreateAudit(payload), undefined, `Staff.add(${ref.id})`);
+    return ref.id;
+  },
+
+  async update(staffId, data) {
+    const payload = sanitize({
+      full_name: data?.full_name != null ? String(data.full_name).trim() : undefined,
+      pin_code: data?.pin_code != null ? String(data.pin_code).trim() : undefined,
+      role: data?.role != null ? String(data.role).trim().toLowerCase() : undefined,
+      status: data?.status != null ? String(data.status).trim().toLowerCase() : undefined,
+    });
+    await _safeUpdateDoc(_doc('Staff', staffId), _withUpdateAudit(payload), `Staff.update(${staffId})`);
+  },
+
+  async delete(staffId) {
+    await _safeDeleteDoc(_doc('Staff', staffId), `Staff.delete(${staffId})`);
+  },
+};
+
 
 // ============================================================
 // §14  HISTORY / EXPENSES / PURCHASES / SUPPLIERS
@@ -1828,6 +1973,17 @@ const ShiftLogs = {
     );
     const q    = query(_col('shiftLogs'), orderBy('loggedAt', 'desc'), limit(50));
     const snap = await getDocs(q);
+    return snap.docs.map(_fromDoc).filter(Boolean);
+  },
+};
+
+const SystemLogs = {
+  async add(actionType, details) {
+    return logAction(actionType, details);
+  },
+
+  async listRecent(limitCount = 30) {
+    const snap = await getDocs(query(_col('System_Logs'), orderBy('timestamp', 'desc'), limit(limitCount)));
     return snap.docs.map(_fromDoc).filter(Boolean);
   },
 };
@@ -2468,11 +2624,13 @@ window.DB = {
   Inventory,
   Settings,
   Users,
+  Staff,
   History,
   Expenses,
   Purchases,
   Suppliers,
   Presence,
+  SystemLogs,
   ShiftLogs,    // FIX 3: Chốt ca Cloud
 
   // Công cụ di trú dữ liệu
@@ -2481,6 +2639,7 @@ window.DB = {
   seedTables:  seedTablesIfEmpty,
   forceMigrateToCloud: forceMigrateToCloud,
   repairVietnameseNow: repairVietnameseNow,
+  logAction,
 
   // Tiện ích đọc nhanh
   get currentUser() { return _auth.currentUser; },
