@@ -331,6 +331,18 @@ function mapAIServerErrorMessage(error) {
   return `AI server lỗi: ${raw}`;
 }
 
+function getCurrentAIRole() {
+  return String(
+    window.getCurrentPosUser?.()?.role ||
+    window.appState?.currentUser?.role ||
+    ''
+  ).trim().toLowerCase();
+}
+
+function isStaffAIRole() {
+  return getCurrentAIRole() === 'staff';
+}
+
 function buildParsedActionFromRouter(routerResult) {
   const intent = routerResult?.intentJson?.intent || routerResult?.execution?.intent;
   const action = routerResult?.execution?.data?.client_action || null;
@@ -494,6 +506,13 @@ async function processAICommand(text) {
       const routed = await callServerAIRouter(text, true);
       const routedIntent = String(routed?.intentJson?.intent || routed?.execution?.intent || '').trim();
       if (['query_sales', 'query_import', 'query_inventory'].includes(routedIntent)) {
+        if (isStaffAIRole()) {
+          return {
+            reply: 'Tài khoản Staff chỉ được dùng AI để order và thanh toán.',
+            intent: routedIntent,
+            engine: 'gemini-server'
+          };
+        }
         return { reply: _normalizeAITextV2(routed.reply || ''), intent: routedIntent, engine: 'gemini-server' };
       }
       if (['pos_order', 'pos_checkout'].includes(routedIntent)) {
@@ -1134,7 +1153,7 @@ function _normalizeAIActionType(type) {
   return t;
 }
 
-function _normalizeAIText(s) {
+function _normalizeAITextLegacy(s) {
   return String(s || '')
     .toLowerCase()
     .normalize('NFC')
