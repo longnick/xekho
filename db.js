@@ -21,6 +21,8 @@ import { initializeApp }
 
 import {
   getAuth,
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -105,6 +107,9 @@ const SETTINGS_DEFAULTS = {
 // ============================================================
 const _firebaseApp = initializeApp(FIREBASE_CONFIG);
 const _auth        = getAuth(_firebaseApp);
+setPersistence(_auth, browserLocalPersistence).catch(err => {
+  console.error('[DB] Không thể bật LOCAL auth persistence:', err);
+});
 // Bật cache đa tab để Safari/iPhone không báo failed-precondition khi mở nhiều tab.
 const _db          = initializeFirestore(_firebaseApp, {
   localCache: persistentLocalCache({
@@ -814,9 +819,9 @@ function _listen() {
     _dispatchEvent('db:update', { key: 'tables' });
   }, _snapErr('tables')));
 
-  // 5c. Active Orders  (chỉ đơn status != 'closed')
+  // 5c. Active Orders  (chỉ lấy đơn còn mở để không kéo đơn cancelled về UI)
   _unsubs.push(onSnapshot(
-    query(_col('orders'), where('status', '!=', 'closed')),
+    query(_col('orders'), where('status', '==', 'open')),
     snap => {
       const map = {};
       snap.docs.forEach(d => {
@@ -990,14 +995,11 @@ function _snapErr(name) {
 // ============================================================
 onAuthStateChanged(_auth, async user => {
   if (!user) {
-    // Nếu không có user, vẫn khởi tạo để app chạy (chế độ offline hoặc bỏ login)
-    window.appState.uid = 'local-admin';
-    window.appState.userDoc = { uid: 'local-admin', email: OWNER_EMAIL, role: 'admin', displayName: 'Admin', username: 'admin' };
-    
-    _listen();
-    _listenMasterCollections();
-    _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
-    console.log('[DB] Chạy chế độ bỏ qua đăng nhập (Local Admin)');
+    _stopListeners();
+    window.appState.uid = null;
+    window.appState.userDoc = null;
+    _dispatchEvent('db:signedOut', {});
+    console.log('[DB] Chưa đăng nhập Firebase');
     return;
   }
 
@@ -1132,7 +1134,7 @@ const Orders = {
   },
 
   /** Mở đơn mới cho bàn – thay Store.setOrders() + Store.setTables() */
-  async open(tableId, tableName, staffUid) {
+  async open(tableId, tableName, staffUid, createdBy = null) {
     const orderId  = `ORD-${tableId}-${Date.now()}`;
     const orderRef = _doc('orders',  orderId);
     const tableRef = _doc('tables',  tableId);
@@ -1143,6 +1145,8 @@ const Orders = {
         tableId:      String(tableId),
         tableName,
         staffUid:     staffUid || null,
+        createdBy:    createdBy?.name || null,
+        createdByRole: createdBy?.role || null,
         items:        [],
         discount:     0,
         discountType: 'vnd',
@@ -1329,7 +1333,7 @@ const Orders = {
         ...payInfo,
         historyId: histRef.id,
         paidAt:    serverTimestamp(),
-        status:    'closed',
+        status:    'completed',
       }));
 
       // Xóa active order
@@ -1357,13 +1361,17 @@ const Orders = {
    * Hủy đơn (không ghi history).
    * Tương đương clearTable() offline.
    */
-  async cancel(orderId) {
+  async cancel(orderId, cancelReason = 'Hủy đơn hàng') {
     const snap = await getDoc(_doc('orders', orderId));
     if (!snap.exists()) return;
     const { tableId } = snap.data();
 
     await runTransaction(_db, async tx => {
-      tx.delete(_doc('orders', orderId));
+      tx.update(_doc('orders', orderId), sanitize({
+        status: 'cancelled',
+        cancelReason: String(cancelReason || 'Hủy đơn hàng').trim(),
+        cancelledAt: serverTimestamp(),
+      }));
       tx.update(_doc('tables', tableId), {
         status:   'empty',
         orderId:  null,
@@ -1717,9 +1725,17 @@ const History = {
     const histRef = doc(_col('history'));
     await _safeSetDoc(histRef, {
       ...data,
+      status: data?.status || 'completed',
       historyId: histRef.id,
     }, undefined, 'history.add');
     return histRef.id;
+  },
+  async cancel(historyId, cancelReason = 'Void order') {
+    await _safeUpdateDoc(_doc('history', historyId), sanitize({
+      status: 'cancelled',
+      cancelReason: String(cancelReason || 'Void order').trim(),
+      cancelledAt: serverTimestamp(),
+    }), `history.cancel(${historyId})`);
   }
 };
 
@@ -2467,6 +2483,7 @@ window.DB = {
   repairVietnameseNow: repairVietnameseNow,
 
   // Tiện ích đọc nhanh
+  get currentUser() { return _auth.currentUser; },
   get ready()   { return window.appState.ready; },
   get userDoc() { return window.appState.userDoc; },
   get state()   { return window.appState; },

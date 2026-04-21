@@ -61,6 +61,9 @@
           title="🔄 Reload (xoá cache)">
           🔄
         </button>
+        <button class="header-btn" id="header-lock-btn" onclick="lockPosSession('Khóa máy thủ công')" title="Khóa máy">
+          🔒
+        </button>
         <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -630,9 +633,9 @@
               </div>
             </div>
             <div>
-              <label class="input-label" for="report-ingredient-filter">Nguyên liệu tùy chọn</label>
-              <select id="report-ingredient-filter" class="select" onchange="setReportIngredientFilter(this.value)">
-                <option value="">Tất cả nguyên liệu</option>
+              <label class="input-label" for="report-menu-filter">Món ăn tùy chọn</label>
+              <select id="report-menu-filter" class="select" onchange="setReportMenuFilter(this.value)">
+                <option value="">Tất cả món ăn</option>
               </select>
             </div>
           </div>
@@ -1916,13 +1919,13 @@
       </div>
 
       <div class="login-card">
-        <div class="card-title" style="font-size:18px;margin-bottom:6px">Đăng nhập hệ thống</div>
-        <div class="card-sub" style="margin-bottom:14px">Nhập tài khoản nhân sự để tiếp tục</div>
+        <div class="card-title" style="font-size:18px;margin-bottom:6px">Master Login</div>
+        <div class="card-sub" style="margin-bottom:14px">Quản lý đăng nhập bằng Email/Password Firebase để mở máy POS</div>
 
         <form id="login-form" onsubmit="handleLoginSubmit(event)">
           <div class="input-group">
-            <label class="input-label">Tài khoản</label>
-            <input id="login-username" class="input" placeholder="admin hoặc email" autocomplete="username" required>
+            <label class="input-label">Email</label>
+            <input id="login-username" class="input" placeholder="manager@domain.com" autocomplete="username" required>
           </div>
           <div class="input-group">
             <label class="input-label">Mật khẩu</label>
@@ -1931,6 +1934,33 @@
           <button id="login-submit-btn" type="submit" class="btn btn-primary btn-block">Đăng nhập</button>
         </form>
 
+      </div>
+    </div>
+  </div>
+
+  <div id="lock-screen" class="login-screen">
+    <div class="login-shell">
+      <div class="login-brand">
+        <div class="login-logo">🔒</div>
+        <div>
+          <div class="login-title">Màn hình khóa POS</div>
+          <div class="login-sub" id="lock-screen-master-label">Đăng nhập Firebase thành công</div>
+        </div>
+      </div>
+
+      <div class="login-card">
+        <div class="card-title" style="font-size:18px;margin-bottom:6px">Nhập mã PIN nhân viên</div>
+        <div class="card-sub" style="margin-bottom:14px">Ví dụ: `1111` cho Nhân viên, `9999` cho Quản lý</div>
+
+        <form id="pin-form" onsubmit="handlePinSubmit(event)">
+          <div class="input-group">
+            <label class="input-label">Mã PIN 4 số</label>
+            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="••••" autocomplete="one-time-code" required>
+          </div>
+          <div id="pin-session-hint" class="card-sub" style="margin-bottom:14px"></div>
+          <button id="pin-submit-btn" type="submit" class="btn btn-primary btn-block">Mở máy</button>
+          <button type="button" class="btn btn-secondary btn-block" style="margin-top:10px" onclick="handleLogout()">Đăng xuất Firebase</button>
+        </form>
       </div>
     </div>
   </div>

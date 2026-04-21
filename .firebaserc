@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "pos-v2-909ff"
-  }
+    "default": "pos-v2-909ff",
+    "Xoa-sua-don-hang": "pos-v2-909ff"
+  },
+  "targets": {},
+  "etags": {}
 }

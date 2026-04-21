@@ -282,16 +282,132 @@ const ImgZoom = (() => {
 // ============================================================
 // LOGIN & USER MANAGEMENT
 // ============================================================
-let currentUser = { username: 'admin', role: 'admin' };
+const POS_PIN_USERS = {
+  '1111': { name: 'Nhân viên A', role: 'staff' },
+  '9999': { name: 'Admin', role: 'manager' },
+};
+const POS_IDLE_LOCK_MS = 3 * 60 * 1000;
+
+let currentUser = null;
+let masterAuthUser = null;
+let posIdleTimer = null;
+let posActivityBound = false;
+
+function showLoginScreen(show) {
+  const loginScreen = document.getElementById('login-screen');
+  if (!loginScreen) return;
+  loginScreen.classList.toggle('active', !!show);
+}
+
+function showLockScreen(show) {
+  const lockScreen = document.getElementById('lock-screen');
+  if (!lockScreen) return;
+  lockScreen.classList.toggle('active', !!show);
+}
+
+function updateLockScreenUI(reason = '') {
+  const masterLabel = document.getElementById('lock-screen-master-label');
+  const sessionHint = document.getElementById('pin-session-hint');
+  const pinInput = document.getElementById('pin-code-input');
+  const authName = masterAuthUser?.displayName || masterAuthUser?.username || masterAuthUser?.email || 'Chưa có Firebase Auth';
+  if (masterLabel) masterLabel.textContent = `Firebase: ${authName}`;
+  if (sessionHint) sessionHint.textContent = reason || 'Chọn nhân viên bằng mã PIN để bắt đầu order.';
+  if (pinInput) {
+    pinInput.value = '';
+    setTimeout(() => pinInput.focus(), 0);
+  }
+}
+
+function hasMasterAuthSession() {
+  return !!(window.DB?.currentUser || masterAuthUser?.uid);
+}
 
 function checkLoginState() {
-  const hasSession = !!sessionStorage.getItem('gkhl_current_session');
-  const loginScreen = document.getElementById('login-screen');
-  if (loginScreen) {
-    if (hasSession) loginScreen.classList.remove('active');
-    else loginScreen.classList.add('active');
+  const hasAuth = hasMasterAuthSession();
+  if (!hasAuth) {
+    showLoginScreen(true);
+    showLockScreen(false);
+    return false;
   }
-  return hasSession;
+  showLoginScreen(false);
+  showLockScreen(!currentUser);
+  return !!currentUser;
+}
+
+function getCurrentPosUser() {
+  return currentUser ? { ...currentUser } : null;
+}
+
+function getCurrentPosUserName() {
+  return currentUser?.name || currentUser?.username || 'Chưa chọn nhân viên';
+}
+
+function resetPosIdleTimer() {
+  if (posIdleTimer) clearTimeout(posIdleTimer);
+  if (!currentUser) return;
+  posIdleTimer = setTimeout(() => {
+    lockPosSession('Tự động khóa sau 3 phút không thao tác');
+  }, POS_IDLE_LOCK_MS);
+}
+
+function bindPosActivityWatchers() {
+  if (posActivityBound) return;
+  posActivityBound = true;
+  ['click', 'keydown', 'touchstart', 'mousemove'].forEach(eventName => {
+    window.addEventListener(eventName, () => {
+      if (!currentUser) return;
+      resetPosIdleTimer();
+    }, { passive: true });
+  });
+}
+
+function unlockPosSession(pin) {
+  if (!hasMasterAuthSession()) return false;
+  const profile = POS_PIN_USERS[String(pin || '').trim()];
+  if (!profile) return false;
+  currentUser = {
+    pin: String(pin).trim(),
+    name: profile.name,
+    username: profile.name,
+    role: profile.role,
+  };
+  applyRoleRights();
+  showLockScreen(false);
+  showLoginScreen(false);
+  updateLockScreenUI(`Đã mở máy cho ${profile.name}`);
+  resetPosIdleTimer();
+  showToast(`✅ Xin chào ${profile.name}`, 'success');
+  return true;
+}
+
+function lockPosSession(reason = 'Máy POS đã được khóa') {
+  if (posIdleTimer) {
+    clearTimeout(posIdleTimer);
+    posIdleTimer = null;
+  }
+  currentUser = null;
+  applyRoleRights();
+  if (hasMasterAuthSession()) {
+    updateLockScreenUI(reason);
+    showLoginScreen(false);
+    showLockScreen(true);
+  } else {
+    showLockScreen(false);
+    showLoginScreen(true);
+  }
+}
+
+function handlePinSubmit(e) {
+  e.preventDefault();
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  if (!/^\d{4}$/.test(pin)) {
+    showToast('PIN phải gồm đúng 4 số.', 'warning');
+    return;
+  }
+  if (!unlockPosSession(pin)) {
+    showToast('PIN không đúng.', 'danger');
+    updateLockScreenUI('PIN không đúng. Vui lòng thử lại.');
+  }
 }
 
 async function handleLoginSubmit(e) {
@@ -310,15 +426,12 @@ async function handleLoginSubmit(e) {
   }
 
   try {
-    const email = username.includes('@') ? username : `${username}@ganhkho.vn`;
+    const email = username;
     if (window.DB?.login) {
       const result = await window.DB.login(email, password);
       if (!result.success) throw new Error(result.error || 'Đăng nhập thất bại');
     }
-    sessionStorage.setItem('gkhl_current_session', JSON.stringify({ username, at: Date.now() }));
-    const loginScreen = document.getElementById('login-screen');
-    if (loginScreen) loginScreen.classList.remove('active');
-    showToast('✅ Đăng nhập thành công', 'success');
+    showToast('✅ Đăng nhập Firebase thành công. Vui lòng nhập PIN.', 'success');
   } catch (err) {
     showToast(`Lỗi đăng nhập: ${err.message || err}`, 'danger');
   } finally {
@@ -330,21 +443,21 @@ async function handleLoginSubmit(e) {
 }
 
 function continueLocalMode() {
-  sessionStorage.setItem('gkhl_current_session', JSON.stringify({ username: 'admin', local: true, at: Date.now() }));
-  currentUser = { username: 'admin', role: 'admin' };
-  const loginScreen = document.getElementById('login-screen');
-  if (loginScreen) loginScreen.classList.remove('active');
-  applyRoleRights();
-  showToast('⚡ Đã vào chế độ nội bộ', 'success');
+  showToast('Chế độ nội bộ đã bị tắt. Hãy đăng nhập Firebase rồi nhập PIN.', 'warning');
 }
 
 function handleLogout() {
   const ok = confirm('Bạn có chắc muốn đăng xuất không');
   if (!ok) return;
 
-  sessionStorage.removeItem('gkhl_current_session');
-  const loginScreen = document.getElementById('login-screen');
-  if (loginScreen) loginScreen.classList.add('active');
+  currentUser = null;
+  masterAuthUser = null;
+  if (posIdleTimer) {
+    clearTimeout(posIdleTimer);
+    posIdleTimer = null;
+  }
+  showLockScreen(false);
+  showLoginScreen(true);
 
   const userInp = document.getElementById('login-username');
   const passInp = document.getElementById('login-password');
@@ -357,45 +470,48 @@ function handleLogout() {
 }
 
 function applyRoleRights() {
-  if(!currentUser) currentUser = { username: 'admin', role: 'admin' };
-  
   const userDisplay = document.getElementById('current-user-display');
   if(userDisplay) {
-    userDisplay.innerHTML = `<span style="margin-right:4px">👤</span>${currentUser.username}`;
+    userDisplay.innerHTML = currentUser
+      ? `<span style="margin-right:4px">👤</span>${currentUser.username}`
+      : `<span style="margin-right:4px">🔒</span>Đã khóa`;
   }
 
-  const role = String(currentUser.role || '').toLowerCase();
+  const role = String(currentUser?.role || '').toLowerCase();
   const isStaff = role === 'staff';
+  const isLocked = !currentUser;
 
   // Staff: chỉ hiển thị tab Bàn
   document.querySelectorAll('.bottom-nav .nav-item[data-page]').forEach(el => {
     const page = el.getAttribute('data-page');
-    el.style.display = (isStaff && page !== 'tables') ? 'none' : '';
+    el.style.display = (isLocked || (isStaff && page !== 'tables')) ? 'none' : '';
   });
   const navMore = document.getElementById('nav-more');
-  if (navMore) navMore.style.display = isStaff ? 'none' : '';
+  if (navMore) navMore.style.display = (isLocked || isStaff) ? 'none' : '';
   
   // Hide UI parts for Staff
   const revCard = document.getElementById('staff-hide-rev');
-  if(revCard) revCard.style.display = isStaff ? 'none' : '';
+  if(revCard) revCard.style.display = (isLocked || isStaff) ? 'none' : '';
   const ordCard = document.getElementById('staff-hide-ord');
-  if(ordCard) ordCard.style.display = isStaff ? 'none' : '';
+  if(ordCard) ordCard.style.display = (isLocked || isStaff) ? 'none' : '';
   
   const aifab = document.getElementById('ai-fab');
-  if(aifab) aifab.style.display = isStaff ? 'none' : '';
+  if(aifab) aifab.style.display = (isLocked || isStaff) ? 'none' : '';
   const aimic = document.getElementById('ai-mic-btn');
-  if(aimic) aimic.style.display = isStaff ? 'none' : '';
+  if(aimic) aimic.style.display = (isLocked || isStaff) ? 'none' : '';
   const mainFab = document.getElementById('main-fab');
-  if(mainFab) mainFab.style.display = isStaff ? 'none' : '';
+  if(mainFab) mainFab.style.display = (isLocked || isStaff) ? 'none' : '';
+  const lockBtn = document.getElementById('header-lock-btn');
+  if (lockBtn) lockBtn.style.display = hasMasterAuthSession() ? '' : 'none';
   const aiPanel = document.getElementById('ai-assistant-panel');
-  if (aiPanel && isStaff) aiPanel.classList.remove('active');
+  if (aiPanel && (isLocked || isStaff)) aiPanel.classList.remove('active');
 
   // Hide delete buttons inside Order Page
   const orderDelBtns = document.querySelectorAll('.delete-order-btn'); 
-  orderDelBtns.forEach(btn => btn.style.display = isStaff ? 'none' : '');
+  orderDelBtns.forEach(btn => btn.style.display = (isLocked || isStaff) ? 'none' : '');
   
   const clearTableBtn = document.getElementById('btn-clear-table');
-  if(clearTableBtn) clearTableBtn.style.display = isStaff ? 'none' : '';
+  if(clearTableBtn) clearTableBtn.style.display = (isLocked || isStaff) ? 'none' : '';
 
   // Nếu staff đang ở trang khác thì quay về bàn
   if (isStaff && currentPage !== 'tables') {
@@ -440,7 +556,7 @@ function renderUserManagement() {
     const onlineDot = `<span title="${isOnline ? 'Đang online' : 'Offline'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isOnline ? 'var(--success,#00D68F)' : '#555'};margin-left:6px;vertical-align:middle;"></span>`;
     const roleText = String(u.role || '').toLowerCase();
     const isRootAdmin = uname.toLowerCase() === 'admin' || roleText === 'admin';
-    const isSelf = String(currentUser.username || '').toLowerCase() === uname.toLowerCase();
+    const isSelf = String(currentUser?.username || '').toLowerCase() === uname.toLowerCase();
 
     return `
     <div class="list-item" onclick="editUserById('${uid}')" style="cursor:pointer">
@@ -557,7 +673,7 @@ async function deleteUserById(userId) {
     showToast('Không thể xóa tài khoản quản trị.', 'warning');
     return;
   }
-  if (String(currentUser.username || '').toLowerCase() === String(uname).toLowerCase()) {
+  if (String(currentUser?.username || '').toLowerCase() === String(uname).toLowerCase()) {
     showToast('Không thể tự xóa tài khoản đang đăng nhập.', 'warning');
     return;
   }
@@ -601,11 +717,8 @@ function deleteUser(username) {
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', async () => {
-  // Chặn đăng nhập (LocalStorage session)
-  const isLoggedIn = checkLoginState();
-  if(!isLoggedIn) {
-    // App vẫn init ngầm phía sau, login xong hiển thị ngay
-  }
+  checkLoginState();
+  bindPosActivityWatchers();
 
   // 1. Tải cơ sở dữ liệu hệ thống (Bất đồng bộ)
   await PhotoDB.init();
@@ -666,12 +779,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('db:signedIn', (e) => {
     const ud = e.detail && e.detail.userDoc;
     if (ud) {
-      currentUser = { username: ud.displayName || ud.username || ud.email, role: ud.role };
-      // Chỉ ẩn login khi đã có session hoặc là user cloud thực (không phải local-admin fallback)
-      const loginScreen = document.getElementById('login-screen');
-      const hasSession = !!sessionStorage.getItem('gkhl_current_session');
-      const isLocalFallback = String(ud.uid || '') === 'local-admin';
-      if (loginScreen && (hasSession || !isLocalFallback)) loginScreen.classList.remove('active');
+      masterAuthUser = { uid: ud.uid, email: ud.email, role: ud.role, displayName: ud.displayName, username: ud.username };
+      showLoginScreen(false);
+      updateLockScreenUI('Nhập mã PIN để vào ca làm việc.');
+      showLockScreen(true);
       applyRoleRights();
       console.log('[Bridge] db:signedIn ->', ud.role, ud.email);
     }
@@ -679,9 +790,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Khi db.js báo signedOut: luôn đưa về màn hình đăng nhập
   window.addEventListener('db:signedOut', () => {
-    sessionStorage.removeItem('gkhl_current_session');
-    const loginScreen = document.getElementById('login-screen');
-    if (loginScreen) loginScreen.classList.add('active');
+    currentUser = null;
+    masterAuthUser = null;
+    if (posIdleTimer) {
+      clearTimeout(posIdleTimer);
+      posIdleTimer = null;
+    }
+    showLockScreen(false);
+    showLoginScreen(true);
+    applyRoleRights();
   });
 
   // Khi Firebase đã ready (tất cả snapshot đã về)
@@ -1375,6 +1492,12 @@ function _getHistory() {
   return history || [];
 }
 
+function isCompletedHistoryOrderForUi(order) {
+  const status = String(order?.status || '').trim().toLowerCase();
+  if (!status) return !order?.cancelledAt && !order?.cancelReason;
+  return status === 'completed' || status === 'closed';
+}
+
 function _getExpenses() {
   const expenses = (window.appState && window.appState.expenses && window.appState.expenses.length > 0)
     ? window.appState.expenses
@@ -1391,14 +1514,14 @@ const ITEM_TYPE_LABELS = {
 };
 
 function getCurrentUserRole() {
-  return (window.appState && window.appState.userDoc && window.appState.userDoc.role)
-    || (currentUser && currentUser.role)
-    || 'admin';
+  return (currentUser && currentUser.role)
+    || (window.appState && window.appState.userDoc && window.appState.userDoc.role)
+    || '';
 }
 
 function isAdminUser() {
   const role = String(getCurrentUserRole() || '').toLowerCase();
-  return role === 'admin' || role === 'owner' || role === 'superadmin';
+  return role === 'admin' || role === 'manager' || role === 'owner' || role === 'superadmin';
 }
 
 function normalizeViKey(text) {
@@ -1706,7 +1829,7 @@ function requestIngredientMerge(sourceId, targetId) {
     targetId,
     sourceName: source.name,
     targetName: target.name,
-    requestedBy: currentUser.username || 'staff',
+    requestedBy: currentUser?.username || 'staff',
     requestedAt: new Date().toISOString(),
     status: 'pending',
   });
@@ -1769,7 +1892,7 @@ async function approveIngredientMerge(sourceId, targetId) {
 
   const requests = Store.getItemMergeRequests().map(r => (
     r.sourceId === sourceId && r.targetId === targetId
-      ? { ...r, status: 'approved', approvedBy: currentUser.username || 'admin', approvedAt: new Date().toISOString() }
+      ? { ...r, status: 'approved', approvedBy: currentUser?.username || 'admin', approvedAt: new Date().toISOString() }
       : r
   ));
   Store.setItemMergeRequests(requests);
@@ -1966,6 +2089,13 @@ async function clearTable() {
   if (currentTable == null) return;
   const label = currentTable === 'takeaway' ? 'đơn mang về' : `bàn ${currentTable}`;
   if (!confirm(`Huỷ ${label}? Mọi món đang chọn sẽ bị xoá.`)) return;
+  const cancelReasonInput = prompt('Nhập lý do hủy đơn hàng:', currentTable === 'takeaway' ? 'Khách đổi ý' : 'Hủy tại quầy');
+  if (cancelReasonInput === null) return;
+  const cancelReason = String(cancelReasonInput || '').trim();
+  if (!cancelReason) {
+    showToast('Vui lòng nhập lý do hủy đơn.', 'warning');
+    return;
+  }
 
   const key = String(currentTable);
 
@@ -1978,7 +2108,7 @@ async function clearTable() {
       const orderIdFromTable = window.appState?.tables?.find(t => String(t.id) === key)?.orderId || null;
       const orderId = orderIdFromCache || orderIdFromAppState || orderIdFromForTable || orderIdFromTable;
       if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
-        await window.DB.Orders.cancel(orderId);
+        await window.DB.Orders.cancel(orderId, cancelReason);
       }
       if (window._currentOrderId) delete window._currentOrderId[key];
       if (window.appState?.orders && window.appState.orders[key]) delete window.appState.orders[key];
@@ -2035,6 +2165,14 @@ function _getCloudOrderId(key) {
     || null;
 }
 
+function getCurrentOrderActorMeta() {
+  const posUser = getCurrentPosUser();
+  return {
+    updatedBy: posUser?.name || null,
+    updatedByRole: posUser?.role || null,
+  };
+}
+
 async function _syncWholeOrderToCloud(tableKey) {
   if (!window.DB || tableKey === 'takeaway') return;
   const key = String(tableKey);
@@ -2044,7 +2182,7 @@ async function _syncWholeOrderToCloud(tableKey) {
   if (!items.length) {
     const orderId = _getCloudOrderId(key);
     if (orderId && window.DB.Orders?.cancel) {
-      await window.DB.Orders.cancel(orderId);
+      await window.DB.Orders.cancel(orderId, 'Tự động hủy do giỏ hàng trống');
       if (window._currentOrderId) delete window._currentOrderId[key];
     }
     return;
@@ -2059,6 +2197,7 @@ async function _syncWholeOrderToCloud(tableKey) {
     shipping: Number(extras.shipping || 0),
     note: extras.note || '',
     discountType: extras.discountType === 'percent' ? 'percent' : 'vnd',
+    ...getCurrentOrderActorMeta(),
   });
 }
 
@@ -2099,7 +2238,8 @@ async function _ensureCloudOrder(key) {
   if (orderId) return orderId;
   const staffUid = window.appState && window.appState.uid;
   const tableName = `Bàn ${key}`;
-  orderId = await window.DB.Orders.open(key, tableName, staffUid);
+  const posUser = getCurrentPosUser();
+  orderId = await window.DB.Orders.open(key, tableName, staffUid, posUser);
   window._currentOrderId = window._currentOrderId || {};
   window._currentOrderId[String(key)] = orderId;
   return orderId;
@@ -2183,13 +2323,13 @@ function saveOrderForTable(tableId) {
     if (items.length > 0) {
       _ensureCloudOrder(key)
         .then(orderId => {
-          if (orderId) return window.DB.Orders.updateMeta(orderId, { items });
+          if (orderId) return window.DB.Orders.updateMeta(orderId, { items, ...getCurrentOrderActorMeta() });
         })
         .catch(console.error);
     } else {
       const orderId = _getCloudOrderId(key);
       if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
-        window.DB.Orders.cancel(orderId)
+        window.DB.Orders.cancel(orderId, 'Tự động hủy do giỏ hàng trống')
           .then(() => {
             if (window._currentOrderId) delete window._currentOrderId[String(key)];
           })
@@ -2643,6 +2783,9 @@ async function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount,
     taxRate:      taxRate || 0,
     payMethod:    payMethod || 'cash',
     paidAt:       new Date().toISOString(),
+    createdBy:    getCurrentPosUserName(),
+    createdByRole: getCurrentUserRole(),
+    status:       'completed',
     is_migrated:  isMigratedOrder,
     photos:       [],
   };
@@ -2676,7 +2819,7 @@ async function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount,
         if (!window.DB.History || !window.DB.History.add) {
           throw new Error('Cloud history writer is unavailable.');
         }
-        await window.DB.History.add({ ...historyRecord, status: 'closed' });
+        await window.DB.History.add({ ...historyRecord, status: 'completed' });
         if (currentTable !== 'takeaway' && window.DB.Tables?.update) {
           await window.DB.Tables.update(currentTable, {
             status: 'empty',
@@ -3793,37 +3936,13 @@ function renderLedger() {
     String(p.inventoryItemId || '') === String(inv.id) ||
     normalizeViKey(p.name) === itemKey
   );
-  const allHistory = _getHistory();
+  const allHistory = _getHistory().filter(isCompletedHistoryOrderForUi);
   const menu = _getMenu();
   const menuById = new Map(menu.map(m => [String(m.id), m]));
   const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
 
   let events = [];
   
-  allPurchases.forEach(p => {
-    const t = new Date(p.date).getTime();
-    events.push({ time: t, type: 'purchase', qty: p.qty, desc: 'Nhập hàng', label: p.supplier || '' });
-  });
-
-  allHistory.forEach(h => {
-    const t = new Date(h.paidAt).getTime();
-    let usedQty = 0;
-    (h.items||[]).forEach(i => {
-       const dish = menu.find(m => m.id === i.id);
-       if (dish && dish.ingredients) {
-         const ing = dish.ingredients.find(ing => ing.name === itemName);
-         if (ing) {
-            usedQty += ing.qty * i.qty;
-         }
-       }
-    });
-    if (usedQty > 0) {
-      events.push({ time: t, type: 'sale', qty: usedQty, desc: 'Bán ra', label: h.id });
-    }
-  });
-
-  events = [];
-
   allPurchases.forEach(p => {
     const t = new Date(p.date).getTime();
     events.push({
@@ -4605,7 +4724,7 @@ function updateFinanceUI(s) {
   document.getElementById('fin-revenue').textContent = fmtFull(s.netSales);
   document.getElementById('fin-cost').textContent = fmtFull(s.cost);
   document.getElementById('fin-gross').textContent = fmtFull(s.gross);
-  document.getElementById('fin-expense').textContent = fmtFull(s.expenseTotal);
+  document.getElementById('fin-expense').textContent = fmtFull(s.cashOutTotal || s.expenseTotal || 0);
   document.getElementById('fin-profit').textContent = fmtFull(s.profit);
   document.getElementById('fin-orders').textContent = s.orders;
   document.getElementById('fin-bank').textContent = fmtFull(s.revenueBank || 0);
@@ -4640,10 +4759,10 @@ function updateFinanceUI(s) {
   renderRevenueChart();
 }
 
-function renderExpenseList() {
-  const expenses = filterExpenses(financePeriod, financeDateOpts);
-  const purchases = filterPurchases(financePeriod, financeDateOpts);
-  const rows = [
+function getFinanceExpenseRows(period = financePeriod, opts = financeDateOpts) {
+  const expenses = filterExpenses(period, opts);
+  const purchases = filterPurchases(period, opts);
+  return [
     ...expenses.map(e => ({
       type: 'expense',
       id: e.id || uid(),
@@ -4663,7 +4782,11 @@ function renderExpenseList() {
       unit: p.unit || '',
     })),
   ].filter(r => r.date && r.amount > 0).sort((a, b) => new Date(b.date) - new Date(a.date));
-  
+}
+
+function renderExpenseList() {
+  const rows = getFinanceExpenseRows(financePeriod, financeDateOpts);
+
   if(!rows.length) {
     document.getElementById('expense-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-text">Chưa có chi phí</div></div>';
     return;
@@ -4807,36 +4930,20 @@ function openDiscountDetails() {
 
 function renderRevenueChart() {
   const days = 7;
-  const h = _getHistory();
-  const e = _getExpenses();
-  const p = _getPurchases();
-  
   const data = [];
+
   for(let i = days-1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const ds = d.toDateString();
-    
-    const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
-    
-    // Doanh thu gộp (chưa trừ chiết khấu)
-    const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
-    
-    // Tính lại chi phí nguyên liệu (COGS) dựa trên từng món để tránh dữ liệu lỗi (cost quá cao) trong lịch sử cũ
-    const dayCost = dayOrders.reduce((s,o) => s + (o.items || []).reduce((ss, i) => ss + (i.cost || 0) * (i.qty || 1), 0), 0);
-    const dayDiscount = dayOrders.reduce((s,o) => s + (o.discount || 0), 0); // Chi phí giảm giá
-    const dayVat = dayOrders.reduce((s,o) => s + (o.vatAmount || 0), 0); // VAT
-    
-    const dayExp = e.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0); // Nhân sự, marketing, etc.
-    const dayPur = p.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0); // Nhập hàng (giá trị price lưu tổng tiền bill nhập)
-    
-    // Tổng CHI PHÍ (lấy trị tuyệt đối để biểu đồ luôn dương)
-    const totalOut = dayCost + dayDiscount + dayVat + dayExp + dayPur;
-    
+    const dateKey = d.toISOString().split('T')[0];
+    const dayOrders = filterHistory('range', { fromDate: dateKey, toDate: dateKey });
+    const dayRows = getFinanceExpenseRows('range', { fromDate: dateKey, toDate: dateKey });
+    const dayNetSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0) - (o.discount || 0), 0);
+    const dayCashOut = dayRows.reduce((s,row) => s + (Number(row.amount) || 0), 0);
     data.push({
       date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
-      income: dayGrossSales,
-      expense: totalOut
+      income: dayNetSales,
+      expense: dayCashOut
     });
   }
 
@@ -5157,30 +5264,30 @@ let reportPeriod = 'month'; // Thay đăi mặc đănh thành 'month' đă hiđ�
 let reportDateOpts = {};
 let reportFilters = {
   transactions: { sales: true, purchases: true, expenses: true },
-  ingredientId: '',
+  menuItemId: '',
 };
 
 function isReportTransactionEnabled(type) {
   return !!reportFilters?.transactions?.[type];
 }
 
-function getSelectedReportIngredient() {
-  const inventory = _getInventory().filter(item => !item.hidden && !item.mergedInto);
-  if (!reportFilters.ingredientId) return null;
-  return inventory.find(item => String(item.id) === String(reportFilters.ingredientId)) || null;
+function getSelectedReportMenuItem() {
+  const menu = _getMenu().filter(item => !item.hidden);
+  if (!reportFilters.menuItemId) return null;
+  return menu.find(item => String(item.id) === String(reportFilters.menuItemId)) || null;
 }
 
-function populateReportIngredientFilter() {
-  const select = document.getElementById('report-ingredient-filter');
+function populateReportMenuFilter() {
+  const select = document.getElementById('report-menu-filter');
   if (!select) return;
-  const inventory = _getInventory()
-    .filter(item => !item.hidden && !item.mergedInto)
+  const menu = _getMenu()
+    .filter(item => !item.hidden)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
-  const current = String(reportFilters.ingredientId || '');
-  select.innerHTML = '<option value="">Tất cả nguyên liệu</option>' + inventory
-    .map(item => `<option value="${item.id}">${item.name} (${item.unit || 'đvt'})</option>`)
+  const current = String(reportFilters.menuItemId || '');
+  select.innerHTML = '<option value="">Tất cả món ăn</option>' + menu
+    .map(item => `<option value="${item.id}">${item.name}</option>`)
     .join('');
-  select.value = inventory.some(item => String(item.id) === current) ? current : '';
+  select.value = menu.some(item => String(item.id) === current) ? current : '';
 }
 
 function renderReportFilterSummary() {
@@ -5190,8 +5297,8 @@ function renderReportFilterSummary() {
   if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
   if (isReportTransactionEnabled('purchases')) labels.push('Nhập hàng');
   if (isReportTransactionEnabled('expenses')) labels.push('Chi phí khác');
-  const ingredient = getSelectedReportIngredient();
-  summaryEl.textContent = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${ingredient ? ` · Nguyên liệu: ${ingredient.name}` : ' · Tất cả nguyên liệu'}`;
+  const menuItem = getSelectedReportMenuItem();
+  summaryEl.textContent = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${menuItem ? ` · Món ăn: ${menuItem.name}` : ' · Tất cả món ăn'}`;
 }
 
 function syncReportFilterUI() {
@@ -5201,7 +5308,7 @@ function syncReportFilterUI() {
   if (sales) sales.checked = isReportTransactionEnabled('sales');
   if (purchases) purchases.checked = isReportTransactionEnabled('purchases');
   if (expenses) expenses.checked = isReportTransactionEnabled('expenses');
-  populateReportIngredientFilter();
+  populateReportMenuFilter();
   renderReportFilterSummary();
 }
 
@@ -5211,8 +5318,8 @@ function setReportTransactionFilter(type, checked) {
   refreshReportViews();
 }
 
-function setReportIngredientFilter(value) {
-  reportFilters.ingredientId = String(value || '').trim();
+function setReportMenuFilter(value) {
+  reportFilters.menuItemId = String(value || '').trim();
   renderReportFilterSummary();
   refreshReportViews();
 }
@@ -5220,57 +5327,45 @@ function setReportIngredientFilter(value) {
 function resetReportFilters() {
   reportFilters = {
     transactions: { sales: true, purchases: true, expenses: true },
-    ingredientId: '',
+    menuItemId: '',
   };
   syncReportFilterUI();
   refreshReportViews();
 }
 
-function doesOrderMatchReportIngredient(order, ingredient) {
-  if (!ingredient) return true;
-  const ingredientKey = normalizeViKey(ingredient.name);
-  const menu = _getMenu();
-  const menuById = new Map(menu.map(item => [String(item.id), item]));
-  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+function doesOrderMatchReportMenuItem(order, menuItem) {
+  if (!menuItem) return true;
+  const menuItemKey = normalizeViKey(menuItem.name);
   return (order.items || []).some(item => {
-    const itemKey = normalizeViKey(item.name);
-    if (itemKey === ingredientKey) return true;
-    const dish = menuById.get(String(item.id || '')) || menuByName.get(itemKey) || null;
-    if (!dish) return false;
-    if (String(dish.linkedInventoryId || '') === String(ingredient.id)) return true;
-    return Array.isArray(dish.ingredients) && dish.ingredients.some(ing => normalizeViKey(ing.name) === ingredientKey);
+    if (String(item.id || '') === String(menuItem.id)) return true;
+    return normalizeViKey(item.name) === menuItemKey;
   });
 }
 
-function doesPurchaseMatchReportIngredient(purchase, ingredient) {
-  if (!ingredient) return true;
-  if (String(purchase.inventoryItemId || '') === String(ingredient.id)) return true;
-  return normalizeViKey(purchase.name) === normalizeViKey(ingredient.name);
+function doesPurchaseMatchReportMenuItem(purchase, menuItem) {
+  return true;
 }
 
-function doesExpenseMatchReportIngredient(expense, ingredient) {
-  if (!ingredient) return true;
-  const ingredientKey = normalizeViKey(ingredient.name);
-  const haystack = [expense.name, expense.note, expense.category].map(normalizeViKey).join(' ');
-  return haystack.includes(ingredientKey);
+function doesExpenseMatchReportMenuItem(expense, menuItem) {
+  return true;
 }
 
 function getFilteredReportOrders() {
   if (!isReportTransactionEnabled('sales')) return [];
-  const ingredient = getSelectedReportIngredient();
-  return filterHistory(reportPeriod, reportDateOpts).filter(order => doesOrderMatchReportIngredient(order, ingredient));
+  const menuItem = getSelectedReportMenuItem();
+  return filterHistory(reportPeriod, reportDateOpts).filter(order => doesOrderMatchReportMenuItem(order, menuItem));
 }
 
 function getFilteredReportPurchases() {
   if (!isReportTransactionEnabled('purchases')) return [];
-  const ingredient = getSelectedReportIngredient();
-  return filterPurchases(reportPeriod, reportDateOpts).filter(purchase => doesPurchaseMatchReportIngredient(purchase, ingredient));
+  const menuItem = getSelectedReportMenuItem();
+  return filterPurchases(reportPeriod, reportDateOpts).filter(purchase => doesPurchaseMatchReportMenuItem(purchase, menuItem));
 }
 
 function getFilteredReportExpenses() {
   if (!isReportTransactionEnabled('expenses')) return [];
-  const ingredient = getSelectedReportIngredient();
-  return filterExpenses(reportPeriod, reportDateOpts).filter(expense => doesExpenseMatchReportIngredient(expense, ingredient));
+  const menuItem = getSelectedReportMenuItem();
+  return filterExpenses(reportPeriod, reportDateOpts).filter(expense => doesExpenseMatchReportMenuItem(expense, menuItem));
 }
 
 function refreshReportViews() {
@@ -5308,6 +5403,16 @@ function setReportPeriod(p) {
 
 function renderTopItems() {
   const orders = getFilteredReportOrders();
+  const menu = _getMenu().filter(item => !item.hidden);
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const getOrderItemUnitCost = (item) => {
+    const inlineCost = Number(item.cost || 0);
+    if (inlineCost > 0) return inlineCost;
+    const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
+    return Number(menuItem?.cost || 0);
+  };
+
   const topMap = {};
   orders.forEach(o => {
     (o.items || []).forEach(item => {
@@ -5334,9 +5439,12 @@ function renderTopItems() {
   orders.forEach(o => {
     (o.items || []).forEach(item => {
       if (!profitMap[item.name]) profitMap[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0 };
-      profitMap[item.name].qty += Number(item.qty || 0);
-      profitMap[item.name].revenue += Number(item.price || 0) * Number(item.qty || 0);
-      profitMap[item.name].cost += Number(item.cost || 0) * Number(item.qty || 0);
+      const qty = Number(item.qty || 0);
+      const revenue = Number(item.price || 0) * qty;
+      const cost = getOrderItemUnitCost(item) * qty;
+      profitMap[item.name].qty += qty;
+      profitMap[item.name].revenue += revenue;
+      profitMap[item.name].cost += cost;
     });
   });
   const topProfit = Object.values(profitMap)
@@ -6414,7 +6522,7 @@ async function confirmResetData(keepMenu, keepInventory) {
   orderItems = {};
   
   // 2. Reset Cloud Firestore (nếu có kết nối và là Admin)
-  if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
+  if (window.DB && isAdminUser()) {
     showToast('⏳ Đang xóa dữ liệu trên Cloud...', 'info');
     try {
       await window.DB.resetCloudData(keepMenu, keepInventory);
@@ -7972,7 +8080,7 @@ function importBackup() {
         Store.restoreFromBackup(backup);
         
         // Nếu đang kết nối Cloud và là admin, đồng bộ thẳng lên Cloud
-        if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
+        if (window.DB && isAdminUser()) {
            showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
            await window.DB.migrateJson(backup, false);
            showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
@@ -8033,7 +8141,7 @@ function restoreLatestBackup() {
     
     Store.restoreFromBackup(backup);
     
-    if (window.DB && window.appState && window.appState.userDoc.role === 'admin') {
+    if (window.DB && isAdminUser()) {
        showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
        window.DB.migrateJson(backup, false).then(() => {
          showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
