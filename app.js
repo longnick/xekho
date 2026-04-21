@@ -282,11 +282,8 @@ const ImgZoom = (() => {
 // ============================================================
 // LOGIN & USER MANAGEMENT
 // ============================================================
-const POS_PIN_USERS = {
-  '1111': { name: 'Nhân viên A', role: 'staff' },
-  '9999': { name: 'Admin', role: 'manager' },
-};
 const POS_IDLE_LOCK_MS = 3 * 60 * 1000;
+const STAFF_ALLOWED_PAGES = new Set(['tables', 'orders']);
 
 let currentUser = null;
 let masterAuthUser = null;
@@ -322,6 +319,11 @@ function hasMasterAuthSession() {
   return !!(window.DB?.currentUser || masterAuthUser?.uid);
 }
 
+function isMasterAdminAccount() {
+  const role = String(masterAuthUser?.role || window.appState?.userDoc?.role || '').trim().toLowerCase();
+  return role === 'admin' || role === 'manager' || role === 'owner' || role === 'superadmin';
+}
+
 function checkLoginState() {
   const hasAuth = hasMasterAuthSession();
   if (!hasAuth) {
@@ -338,8 +340,171 @@ function getCurrentPosUser() {
   return currentUser ? { ...currentUser } : null;
 }
 
+function syncCurrentPosUserToAppState() {
+  if (!window.appState) return;
+  window.appState.currentUser = currentUser ? { ...currentUser } : null;
+}
+
+window.getCurrentPosUser = getCurrentPosUser;
+
 function getCurrentPosUserName() {
   return currentUser?.name || currentUser?.username || 'Chưa chọn nhân viên';
+}
+
+function _escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function _normalizeStaffRole(role) {
+  return String(role || 'staff').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
+}
+
+function _normalizeStaffStatus(status) {
+  return String(status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
+}
+
+function _getManagedStaff(includeInactive = false) {
+  const staff = (window.appState && Array.isArray(window.appState.staff))
+    ? window.appState.staff
+    : [];
+  if (includeInactive) return staff;
+  return staff.filter(item => _normalizeStaffStatus(item?.status) === 'active');
+}
+
+function _getStaffIdentity(staff = {}) {
+  return String(staff.staff_id || staff.id || '');
+}
+
+function _findStaffByPin(pin, options = {}) {
+  const code = String(pin || '').trim();
+  if (!/^\d{4}$/.test(code)) return null;
+  const includeInactive = options.includeInactive === true;
+  return _getManagedStaff(includeInactive).find(item => String(item.pin_code || '') === code) || null;
+}
+
+function _buildCurrentUserFromStaff(staff, pin) {
+  if (!staff) return null;
+  const normalizedRole = _normalizeStaffRole(staff.role);
+  return {
+    id: _getStaffIdentity(staff),
+    staff_id: _getStaffIdentity(staff),
+    pin: String(pin || staff.pin_code || '').trim(),
+    name: staff.full_name || staff.username || 'Nhân viên',
+    username: staff.full_name || staff.username || 'Nhân viên',
+    role: normalizedRole,
+    status: _normalizeStaffStatus(staff.status),
+  };
+}
+
+function _hasActiveAdminStaff() {
+  return _getManagedStaff(true).some(item =>
+    _normalizeStaffRole(item?.role) === 'admin' &&
+    _normalizeStaffStatus(item?.status) === 'active'
+  );
+}
+
+function bootstrapStaffSetupSessionIfNeeded(showNotice = false) {
+  const staff = Array.isArray(window.appState?.staff) ? window.appState.staff : null;
+  if (!hasMasterAuthSession() || currentUser || !Array.isArray(staff) || _hasActiveAdminStaff() || !isMasterAdminAccount()) {
+    return false;
+  }
+
+  const displayName = masterAuthUser?.displayName || masterAuthUser?.username || masterAuthUser?.email || 'Admin';
+  currentUser = {
+    id: masterAuthUser?.uid || 'bootstrap-admin',
+    staff_id: 'bootstrap-admin',
+    pin: null,
+    name: displayName,
+    username: displayName,
+    role: 'admin',
+    status: 'active',
+    bootstrap: true,
+  };
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  showLoginScreen(false);
+  showLockScreen(false);
+  if (showNotice) {
+    showToast('Chưa có admin Staff. Đã mở quyền admin tạm để khởi tạo lại tài khoản quản trị.', 'warning');
+  }
+  return true;
+}
+
+async function ensureEmergencyAdminStaffIfNeeded() {
+  if (!hasMasterAuthSession() || !isMasterAdminAccount()) return false;
+  if (!Array.isArray(window.appState?.staff) || _hasActiveAdminStaff()) return false;
+  if (!window.DB?.Staff?.add || !window.DB?.Staff?.update) return false;
+
+  const emergencyPin = '8899';
+  const existingPinStaff = _findStaffByPin(emergencyPin, { includeInactive: true });
+
+  try {
+    if (existingPinStaff) {
+      const nextStaff = {
+        ...existingPinStaff,
+        full_name: existingPinStaff.full_name || 'Admin POS',
+        pin_code: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      };
+      await window.DB.Staff.update(_getStaffIdentity(existingPinStaff), {
+        full_name: nextStaff.full_name,
+        pin_code: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      });
+      currentUser = _buildCurrentUserFromStaff(nextStaff, emergencyPin);
+      syncCurrentPosUserToAppState();
+      applyRoleRights();
+      showLockScreen(false);
+      showLoginScreen(false);
+      showToast('Đã nâng quyền admin cho PIN 8899.', 'success');
+      return true;
+    }
+
+    const newId = await window.DB.Staff.add({
+      full_name: 'Admin POS',
+      pin_code: emergencyPin,
+      role: 'admin',
+      status: 'active',
+    });
+
+    try {
+      await window.DB?.logAction?.('staff_bootstrap_admin', {
+        message: 'Hệ thống đã tạo Staff admin khẩn cấp Admin POS',
+        staff_id: newId,
+        full_name: 'Admin POS',
+        pin_code_hint: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      });
+    } catch (err) {
+      console.warn('[Audit] staff_bootstrap_admin', err);
+    }
+
+    currentUser = _buildCurrentUserFromStaff({
+      staff_id: newId,
+      full_name: 'Admin POS',
+      pin_code: emergencyPin,
+      role: 'admin',
+      status: 'active',
+    }, emergencyPin);
+    syncCurrentPosUserToAppState();
+    applyRoleRights();
+    showLockScreen(false);
+    showLoginScreen(false);
+    showToast('Đã tạo Staff admin mới với PIN 8899.', 'success');
+    return true;
+  } catch (err) {
+    console.error('[Staff bootstrap]', err);
+    showToast('Không thể tự tạo admin 8899. Hãy kiểm tra quyền Firebase Admin.', 'danger');
+    return false;
+  }
 }
 
 function resetPosIdleTimer() {
@@ -363,20 +528,23 @@ function bindPosActivityWatchers() {
 
 function unlockPosSession(pin) {
   if (!hasMasterAuthSession()) return false;
-  const profile = POS_PIN_USERS[String(pin || '').trim()];
+  const profile = _findStaffByPin(pin);
   if (!profile) return false;
-  currentUser = {
-    pin: String(pin).trim(),
-    name: profile.name,
-    username: profile.name,
-    role: profile.role,
-  };
+  currentUser = _buildCurrentUserFromStaff(profile, pin);
+  syncCurrentPosUserToAppState();
   applyRoleRights();
   showLockScreen(false);
   showLoginScreen(false);
-  updateLockScreenUI(`Đã mở máy cho ${profile.name}`);
+  updateLockScreenUI(`Đã mở máy cho ${profile.full_name}`);
   resetPosIdleTimer();
-  showToast(`✅ Xin chào ${profile.name}`, 'success');
+  try {
+    if (currentPage === 'orders' && currentTable) {
+      renderCatTabs();
+      renderMenuItems();
+      renderCart();
+    }
+  } catch (_) {}
+  showToast(`✅ Xin chào ${profile.full_name}`, 'success');
   return true;
 }
 
@@ -386,6 +554,7 @@ function lockPosSession(reason = 'Máy POS đã được khóa') {
     posIdleTimer = null;
   }
   currentUser = null;
+  syncCurrentPosUserToAppState();
   applyRoleRights();
   if (hasMasterAuthSession()) {
     updateLockScreenUI(reason);
@@ -397,7 +566,7 @@ function lockPosSession(reason = 'Máy POS đã được khóa') {
   }
 }
 
-function handlePinSubmit(e) {
+async function handlePinSubmit(e) {
   e.preventDefault();
   const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
   if (!/^\d{4}$/.test(pin)) {
@@ -405,8 +574,24 @@ function handlePinSubmit(e) {
     return;
   }
   if (!unlockPosSession(pin)) {
+    try {
+      await window.DB?.logAction?.('pin_login_failed', {
+        attemptedPinLength: pin.length,
+        reason: 'invalid_pin',
+      });
+    } catch (err) {
+      console.warn('[Audit] pin_login_failed', err);
+    }
     showToast('PIN không đúng.', 'danger');
     updateLockScreenUI('PIN không đúng. Vui lòng thử lại.');
+    return;
+  }
+  try {
+    await window.DB?.logAction?.('pin_login_success', {
+      user: getCurrentPosUser(),
+    });
+  } catch (err) {
+    console.warn('[Audit] pin_login_success', err);
   }
 }
 
@@ -451,6 +636,7 @@ function handleLogout() {
   if (!ok) return;
 
   currentUser = null;
+  syncCurrentPosUserToAppState();
   masterAuthUser = null;
   if (posIdleTimer) {
     clearTimeout(posIdleTimer);
@@ -469,250 +655,364 @@ function handleLogout() {
   }
 }
 
+function canAccessPage(page) {
+  const target = String(page || '').trim().toLowerCase();
+  if (!currentUser) return target === 'tables';
+  if (isAdminUser()) return true;
+  return STAFF_ALLOWED_PAGES.has(target);
+}
+
 function applyRoleRights() {
   const userDisplay = document.getElementById('current-user-display');
-  if(userDisplay) {
+  if (userDisplay) {
     userDisplay.innerHTML = currentUser
-      ? `<span style="margin-right:4px">👤</span>${currentUser.username}`
+      ? `<span style="margin-right:4px">👤</span>${_escapeHtml(currentUser.username)}`
       : `<span style="margin-right:4px">🔒</span>Đã khóa`;
   }
 
   const role = String(currentUser?.role || '').toLowerCase();
+  const isAdmin = role === 'admin';
   const isStaff = role === 'staff';
   const isLocked = !currentUser;
 
-  // Staff: chỉ hiển thị tab Bàn
+  // Staff chỉ được thao tác luồng order/checkout, không truy cập cấu hình/kho/báo cáo.
   document.querySelectorAll('.bottom-nav .nav-item[data-page]').forEach(el => {
-    const page = el.getAttribute('data-page');
-    el.style.display = (isLocked || (isStaff && page !== 'tables')) ? 'none' : '';
+    const page = String(el.getAttribute('data-page') || '').trim().toLowerCase();
+    const allowed = !isLocked && (isAdmin || STAFF_ALLOWED_PAGES.has(page));
+    el.style.display = allowed ? '' : 'none';
   });
   const navMore = document.getElementById('nav-more');
   if (navMore) navMore.style.display = (isLocked || isStaff) ? 'none' : '';
-  
-  // Hide UI parts for Staff
+  const headerLogoutBtn = document.getElementById('header-logout-btn');
+  if (headerLogoutBtn) headerLogoutBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  const lockLogoutBtn = document.getElementById('lock-screen-logout-btn');
+  if (lockLogoutBtn) lockLogoutBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+
+  const alertBtn = document.getElementById('header-alert-btn');
+  if (alertBtn) alertBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  const reloadBtn = document.getElementById('header-reload-btn');
+  if (reloadBtn) reloadBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+
   const revCard = document.getElementById('staff-hide-rev');
-  if(revCard) revCard.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (revCard) revCard.style.display = (isLocked || isStaff) ? 'none' : '';
   const ordCard = document.getElementById('staff-hide-ord');
-  if(ordCard) ordCard.style.display = (isLocked || isStaff) ? 'none' : '';
-  
+  if (ordCard) ordCard.style.display = (isLocked || isStaff) ? 'none' : '';
+
   const aifab = document.getElementById('ai-fab');
-  if(aifab) aifab.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (aifab) aifab.style.display = (isLocked || isStaff) ? 'none' : '';
   const aimic = document.getElementById('ai-mic-btn');
-  if(aimic) aimic.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (aimic) aimic.style.display = (isLocked || isStaff) ? 'none' : '';
   const mainFab = document.getElementById('main-fab');
-  if(mainFab) mainFab.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (mainFab) mainFab.style.display = (isLocked || isStaff) ? 'none' : '';
   const lockBtn = document.getElementById('header-lock-btn');
   if (lockBtn) lockBtn.style.display = hasMasterAuthSession() ? '' : 'none';
   const aiPanel = document.getElementById('ai-assistant-panel');
   if (aiPanel && (isLocked || isStaff)) aiPanel.classList.remove('active');
 
-  // Hide delete buttons inside Order Page
-  const orderDelBtns = document.querySelectorAll('.delete-order-btn'); 
-  orderDelBtns.forEach(btn => btn.style.display = (isLocked || isStaff) ? 'none' : '');
-  
-  const clearTableBtn = document.getElementById('btn-clear-table');
-  if(clearTableBtn) clearTableBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  const orderDelBtns = document.querySelectorAll('.delete-order-btn');
+  orderDelBtns.forEach(btn => btn.style.display = (isLocked || !isAdmin) ? 'none' : '');
 
-  // Nếu staff đang ở trang khác thì quay về bàn
-  if (isStaff && currentPage !== 'tables') {
+  const clearTableBtn = document.getElementById('btn-clear-table');
+  if (clearTableBtn) clearTableBtn.style.display = (isLocked || !isAdmin) ? 'none' : '';
+
+  if (isLocked && currentPage !== 'tables') {
+    navigate('tables');
+    return;
+  }
+
+  if (isStaff && !STAFF_ALLOWED_PAGES.has(String(currentPage || '').toLowerCase())) {
     navigate('tables');
   }
 }
 
-// ==== Quản lý người dùng ====
-function _getManagedUsers(includeDisabled = false) {
-  const users = (window.appState && Array.isArray(window.appState.users) && window.appState.users.length > 0)
-    ? window.appState.users
-    : Store.getUsers();
-  if (!includeDisabled) return (users || []).filter(u => String(u?.role || '').toLowerCase() !== 'disabled');
-  return users || [];
-}
-
-function _getUserIdentity(u = {}) {
-  return String(u.uid || u.username || u.email || '');
-}
-
+// ==== Quản lý nhân sự (collection Staff) ====
 function renderUserManagement() {
-  if (!isAdminUser()) return;
   const umSection = document.getElementById('settings-user-management');
-  if(umSection) umSection.style.display = 'block';
+  if (!umSection) return;
+  if (!isAdminUser()) {
+    umSection.style.display = 'none';
+    return;
+  }
+  umSection.style.display = 'block';
 
   const list = document.getElementById('user-management-list');
-  if(!list) return;
+  if (!list) return;
 
-  const users = _getManagedUsers(false);
-  const presence = (window.appState && window.appState.presence) || {};
-
-  if (!users.length) {
+  const staffList = _getManagedStaff(true);
+  if (!staffList.length) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">Chưa có nhân viên</div></div>';
     return;
   }
 
-  list.innerHTML = users.map(u => {
-    const uname    = u.username || u.displayName || u.email || '';
-    const uid      = _getUserIdentity(u);
-    const pres     = presence[uid] || null;
-    const isOnline = pres && pres.online;
-    const onlineDot = `<span title="${isOnline ? 'Đang online' : 'Offline'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isOnline ? 'var(--success,#00D68F)' : '#555'};margin-left:6px;vertical-align:middle;"></span>`;
-    const roleText = String(u.role || '').toLowerCase();
-    const isRootAdmin = uname.toLowerCase() === 'admin' || roleText === 'admin';
-    const isSelf = String(currentUser?.username || '').toLowerCase() === uname.toLowerCase();
+  list.innerHTML = staffList.map(staff => {
+    const staffId = _getStaffIdentity(staff);
+    const fullName = staff.full_name || 'Chưa đặt tên';
+    const roleText = _normalizeStaffRole(staff.role);
+    const statusText = _normalizeStaffStatus(staff.status);
+    const pinMasked = String(staff.pin_code || '').replace(/\d/g, '•') || 'Chưa có PIN';
+    const isCurrentUser = String(currentUser?.staff_id || currentUser?.id || '') === staffId;
+    const isAdminStaff = roleText === 'admin';
+    const roleBadge = isAdminStaff
+      ? '<span class="badge badge-primary">Admin</span>'
+      : '<span class="badge badge-info">Staff</span>';
+    const statusBadge = statusText === 'active'
+      ? '<span class="badge badge-success">Đang hoạt động</span>'
+      : '<span class="badge badge-danger">Ngưng hoạt động</span>';
 
     return `
-    <div class="list-item" onclick="editUserById('${uid}')" style="cursor:pointer">
+    <div class="list-item" onclick="editUserById('${staffId}')" style="cursor:pointer">
       <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👥</div>
       <div class="list-item-content">
-        <div class="list-item-title">${uname} ${roleText==='admin' ? '<span class="badge badge-primary">Admin</span>' : '<span class="badge badge-info">Staff</span>'} ${onlineDot}</div>
-        <div class="list-item-sub">${isOnline ? '🟢 Đang online' : (pres ? '⚫ Offline' : 'Chưa hoạt động')}</div>
+        <div class="list-item-title">${_escapeHtml(fullName)} ${roleBadge} ${statusBadge}</div>
+        <div class="list-item-sub">PIN: ${pinMasked} · Mã: ${_escapeHtml(staffId)}${isCurrentUser ? ' · Đang đăng nhập' : ''}</div>
       </div>
       <div>
-        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUserById('${uid}')">Sửa</button>
-        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUserById('${uid}')" ${(isRootAdmin || isSelf) ? 'disabled' : ''}>Xóa</button>
+        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUserById('${staffId}')">Sửa</button>
+        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUserById('${staffId}')" ${(isCurrentUser || isAdminStaff) ? 'disabled' : ''}>Xóa</button>
       </div>
     </div>`;
   }).join('');
 }
 
 function openAddUserModal() {
-  document.getElementById('user-edit-username').value = '';
-  document.getElementById('user-edit-username').readOnly = false;
-  document.getElementById('user-edit-password').value = '';
-  document.getElementById('user-edit-password').placeholder = '***';
-  document.getElementById('user-edit-password').required = true;
-  document.getElementById('user-edit-role').value = 'staff';
-  document.getElementById('user-edit-role').disabled = false;
-  
+  const form = document.getElementById('user-form');
+  if (form) form.reset();
+  const idEl = document.getElementById('user-edit-id');
+  const nameEl = document.getElementById('user-edit-full-name');
+  const pinEl = document.getElementById('user-edit-pin');
+  const roleEl = document.getElementById('user-edit-role');
+  const statusEl = document.getElementById('user-edit-status');
+  const submitBtn = document.getElementById('user-save-btn');
+
+  if (idEl) idEl.value = '';
+  if (nameEl) nameEl.value = '';
+  if (pinEl) {
+    pinEl.value = '';
+    pinEl.placeholder = 'Ví dụ: 1234';
+  }
+  if (roleEl) roleEl.value = 'staff';
+  if (statusEl) statusEl.value = 'active';
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = '✅ Lưu';
+  }
+
   const title = document.getElementById('user-modal-title');
-  if(title) title.textContent = 'Thêm Nhân Viên';
-  
+  if (title) title.textContent = 'Thêm Nhân Sự';
+
   document.getElementById('user-modal').classList.add('active');
 }
 
 function editUserById(userId) {
-  const users = _getManagedUsers(true);
-  const u = users.find(x => _getUserIdentity(x) === String(userId));
-  if(!u) return;
+  const staff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(userId));
+  if (!staff) return;
 
   const title = document.getElementById('user-modal-title');
-  if(title) title.textContent = 'Sửa Nhân Viên';
-  
-  document.getElementById('user-edit-username').value = u.username;
-  document.getElementById('user-edit-username').readOnly = true;
-  document.getElementById('user-edit-password').value = '';
-  document.getElementById('user-edit-password').placeholder = '(Bỏ trống nếu không đổi)';
-  document.getElementById('user-edit-password').required = false;
-  
-  if (u.username.toLowerCase() === 'admin') {
-    document.getElementById('user-edit-role').value = 'admin';
-    document.getElementById('user-edit-role').disabled = true;
-  } else {
-    document.getElementById('user-edit-role').disabled = false;
-    document.getElementById('user-edit-role').value = u.role;
-  }
-  
+  if (title) title.textContent = 'Sửa Nhân Sự';
+
+  document.getElementById('user-edit-id').value = _getStaffIdentity(staff);
+  document.getElementById('user-edit-full-name').value = staff.full_name || '';
+  document.getElementById('user-edit-pin').value = String(staff.pin_code || '');
+  document.getElementById('user-edit-role').value = _normalizeStaffRole(staff.role);
+  document.getElementById('user-edit-status').value = _normalizeStaffStatus(staff.status);
+
   document.getElementById('user-modal').classList.add('active');
 }
 
 function editUser(username) {
-  const users = _getManagedUsers(true);
-  const u = users.find(x => String((x.username || '')).toLowerCase() === String(username || '').toLowerCase());
-  if (!u) return;
-  editUserById(_getUserIdentity(u));
+  const staff = _getManagedStaff(true).find(item =>
+    String(item.full_name || '').toLowerCase() === String(username || '').toLowerCase()
+  );
+  if (!staff) return;
+  editUserById(_getStaffIdentity(staff));
+}
+
+async function logStaffManagementAction(actionType, staffPayload, actionLabel) {
+  try {
+    await window.DB?.logAction?.(actionType, {
+      message: `Admin đã cập nhật thông tin nhân viên ${staffPayload?.full_name || 'không rõ tên'}`,
+      actionLabel,
+      staff_id: staffPayload?.staff_id || null,
+      full_name: staffPayload?.full_name || '',
+      role: staffPayload?.role || '',
+      status: staffPayload?.status || '',
+    });
+  } catch (err) {
+    console.warn(`[Audit] ${actionType}`, err);
+  }
 }
 
 async function submitUser(e) {
   e.preventDefault();
-  const u = document.getElementById('user-edit-username').value.trim();
-  const p = document.getElementById('user-edit-password').value.trim();
-  let r = document.getElementById('user-edit-role').value;
-  
-  if(!u) return;
-  if(u.toLowerCase() === 'admin') r = 'admin'; // security enforcement
-  
-  const users = _getManagedUsers(true);
-  const existing = users.find(x => String(x.username || '').toLowerCase() === u.toLowerCase());
-  
-  if(existing) {
-    if(p) {
-      showToast('⚠️ Không thể đổi mật khẩu nhân viên khác từ tài khoản này', 'danger');
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được cập nhật nhân sự.', 'danger');
+    return;
+  }
+
+  const staffId = document.getElementById('user-edit-id').value.trim();
+  const fullName = document.getElementById('user-edit-full-name').value.trim();
+  const pinCode = document.getElementById('user-edit-pin').value.trim();
+  const role = _normalizeStaffRole(document.getElementById('user-edit-role').value);
+  const status = _normalizeStaffStatus(document.getElementById('user-edit-status').value);
+  const submitBtn = document.getElementById('user-save-btn');
+
+  if (!fullName) {
+    showToast('Vui lòng nhập tên nhân sự.', 'warning');
+    return;
+  }
+  if (!/^\d{4}$/.test(pinCode)) {
+    showToast('PIN phải gồm đúng 4 số.', 'warning');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang lưu...';
+  }
+
+  try {
+    const duplicatePin = window.DB?.Staff?.isPinDuplicate
+      ? await window.DB.Staff.isPinDuplicate(pinCode, staffId || null)
+      : _getManagedStaff(true).some(item =>
+          String(item.pin_code || '') === pinCode && _getStaffIdentity(item) !== String(staffId || '')
+        );
+    if (duplicatePin) {
+      showToast('PIN này đã được sử dụng cho nhân sự khác.', 'danger');
+      return;
     }
-    // Update role sang Firebase
-    if (window.DB && window.DB.Users) {
-      await window.DB.Users.setRole(existing.uid || existing.username, r);
-    }
-  } else {
-    if(!p) return; // Must have password for new user
-    const emailStr = u.includes('@') ? u : u + '@ganhkho.vn';
-      // FIX 3: Dùng Users.add (Shadow App) để Admin KHÔNG bị vòng phiên
-    if (window.DB && window.DB.Users && window.DB.Users.add) {
-      try {
-        await window.DB.Users.add(emailStr, p, u, r);
-      } catch (err) {
-        showToast('Lỗi tạo tài khoản: ' + err.message, 'danger');
-        return;
-      }
+
+    const payload = {
+      staff_id: staffId || null,
+      full_name: fullName,
+      pin_code: pinCode,
+      role,
+      status,
+    };
+
+    if (staffId) {
+      await window.DB?.Staff?.update?.(staffId, payload);
+      await logStaffManagementAction('staff_updated', payload, 'update');
     } else {
-      const lsUsers = Store.getUsers();
-      lsUsers.push({ username: u, password: p, role: r });
-      Store.setUsers(lsUsers);
+      const newId = await window.DB?.Staff?.add?.(payload);
+      payload.staff_id = newId;
+      await logStaffManagementAction('staff_created', payload, 'create');
+    }
+
+    document.getElementById('user-modal').classList.remove('active');
+    showToast('✅ Cập nhật thành công', 'success');
+    renderUserManagement();
+    renderSystemLogs();
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi lưu nhân sự: ' + (err?.message || err), 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Lưu';
     }
   }
-  
-  document.getElementById('user-modal').classList.remove('active');
-  showToast('✅ Đã lưu nhân viên ' + u);
-  renderUserManagement();
 }
 
 async function deleteUserById(userId) {
-  const users = _getManagedUsers(true);
-  const u = users.find(x => _getUserIdentity(x) === String(userId));
-  if (!u) return;
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được xóa nhân sự.', 'danger');
+    return;
+  }
 
-  const uname = u.username || u.displayName || u.email || 'nhân viên';
-  if (uname.toLowerCase() === 'admin' || String(u.role || '').toLowerCase() === 'admin') {
+  const staff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(userId));
+  if (!staff) return;
+
+  const fullName = staff.full_name || 'nhân viên';
+  if (_normalizeStaffRole(staff.role) === 'admin') {
     showToast('Không thể xóa tài khoản quản trị.', 'warning');
     return;
   }
-  if (String(currentUser?.username || '').toLowerCase() === String(uname).toLowerCase()) {
+  if (String(currentUser?.staff_id || currentUser?.id || '') === _getStaffIdentity(staff)) {
     showToast('Không thể tự xóa tài khoản đang đăng nhập.', 'warning');
     return;
   }
-  if (!confirm(`Xóa nhân viên ${uname}?`)) return;
+  if (!confirm(`Xóa nhân viên ${fullName}?`)) return;
 
-  // Cloud-first: disable user trên Firestore để đồng bộ toàn hệ thống
-  if (window.DB?.Users?.disable && u.uid) {
-    try {
-      await window.DB.Users.disable(u.uid);
-      if (window.appState?.users) {
-        window.appState.users = window.appState.users.map(x =>
-          (x.uid === u.uid ? { ...x, role: 'disabled' } : x)
-        );
-      }
-      showToast(`✅ Đã xóa nhân viên ${uname}`, 'success');
-      renderUserManagement();
-      return;
-    } catch (err) {
-      showToast('Lỗi xóa nhân viên: ' + (err.message || err), 'danger');
-      return;
-    }
+  try {
+    await window.DB?.Staff?.delete?.(_getStaffIdentity(staff));
+    await logStaffManagementAction('staff_deleted', staff, 'delete');
+    showToast(`✅ Đã xóa nhân viên ${fullName}`, 'success');
+    renderUserManagement();
+    renderSystemLogs();
+  } catch (err) {
+    showToast('Lỗi xóa nhân viên: ' + (err?.message || err), 'danger');
   }
-
-  // Fallback local
-  let localUsers = Store.getUsers();
-  localUsers = localUsers.filter(x => _getUserIdentity(x) !== String(userId));
-  Store.setUsers(localUsers);
-  if (window.appState?.users) {
-    window.appState.users = (window.appState.users || []).filter(x => _getUserIdentity(x) !== String(userId));
-  }
-  showToast(`✅ Đã xóa nhân viên ${uname}`, 'success');
-  renderUserManagement();
 }
 
 function deleteUser(username) {
-  const users = _getManagedUsers(true);
-  const u = users.find(x => String((x.username || '')).toLowerCase() === String(username || '').toLowerCase());
-  if (!u) return;
-  deleteUserById(_getUserIdentity(u));
+  const staff = _getManagedStaff(true).find(item =>
+    String(item.full_name || '').toLowerCase() === String(username || '').toLowerCase()
+  );
+  if (!staff) return;
+  deleteUserById(_getStaffIdentity(staff));
+}
+
+function syncCurrentStaffSession() {
+  if (!currentUser) return;
+  if (currentUser.bootstrap) {
+    if (_getManagedStaff(true).length === 0) return;
+    lockPosSession('Đã có danh sách nhân sự. Vui lòng đăng nhập lại bằng PIN.');
+    showToast('Đã khởi tạo nhân sự. Hãy đăng nhập lại bằng PIN.', 'info');
+    return;
+  }
+  const activeStaff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(currentUser.staff_id || currentUser.id || ''));
+  if (!activeStaff || _normalizeStaffStatus(activeStaff.status) !== 'active') {
+    lockPosSession('Phiên nhân sự đã bị vô hiệu hóa. Vui lòng nhập lại PIN.');
+    showToast('Phiên nhân sự không còn hiệu lực.', 'warning');
+    return;
+  }
+
+  const nextUser = _buildCurrentUserFromStaff(activeStaff, activeStaff.pin_code);
+  const changed = JSON.stringify(nextUser) !== JSON.stringify(currentUser);
+  if (!changed) return;
+  currentUser = nextUser;
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  updateLockScreenUI(`Đã cập nhật quyền cho ${activeStaff.full_name}`);
+}
+
+async function renderSystemLogs() {
+  const card = document.getElementById('settings-system-logs');
+  const list = document.getElementById('system-logs-list');
+  if (!card || !list) return;
+
+  if (!isAdminUser()) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  list.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang tải nhật ký hệ thống...</div></div>';
+
+  try {
+    const rows = await window.DB?.SystemLogs?.listRecent?.(25);
+    if (!Array.isArray(rows) || !rows.length) {
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có nhật ký hệ thống</div></div>';
+      return;
+    }
+
+    list.innerHTML = rows.map(row => {
+      const actor = row.createdBy?.name || row.createdBy?.id || 'Hệ thống';
+      const when = row.timestamp ? fmtDateTime(row.timestamp) : '';
+      const message = row.details?.message || row.actionType || 'Cập nhật hệ thống';
+      return `
+      <div class="list-item">
+        <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">🧾</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${_escapeHtml(message)}</div>
+          <div class="list-item-sub">${_escapeHtml(actor)}${when ? ` · ${_escapeHtml(when)}` : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Không tải được System Logs</div></div>';
+    console.warn('[SystemLogs] render error', err);
+  }
 }
 
 // ---- Init ----
@@ -791,6 +1091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Khi db.js báo signedOut: luôn đưa về màn hình đăng nhập
   window.addEventListener('db:signedOut', () => {
     currentUser = null;
+    syncCurrentPosUserToAppState();
     masterAuthUser = null;
     if (posIdleTimer) {
       clearTimeout(posIdleTimer);
@@ -807,9 +1108,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Cloud data có thể chứa text lỗi font từ các bản cũ -> chạy migration lại trên dữ liệu cloud.
     runMigrations();
     applyStoreSettings();
-    renderTables();
-    updateAlertBadge();
-    renderUserManagement();
+    bootstrapStaffSetupSessionIfNeeded(true);
+    Promise.resolve()
+      .then(() => ensureEmergencyAdminStaffIfNeeded())
+      .finally(() => {
+        syncCurrentStaffSession();
+        renderTables();
+        updateAlertBadge();
+        renderUserManagement();
+        renderSystemLogs();
+      });
 
     // Re-render các màn hình dựa trên current page để tránh bị trống
     if (typeof currentPage !== 'undefined') {
@@ -838,7 +1146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const key = e.detail && e.detail.key;
     if (key === 'tables' || key === 'orders') renderTables();
     if (key === 'settings')                   applyStoreSettings();
-    if (key === 'users' || key === 'presence') renderUserManagement();
+    if (key === 'users' || key === 'presence' || key === 'staff') renderUserManagement();
+    if (key === 'staff') syncCurrentStaffSession();
     if (key === 'menu') {
       renderMenuItems();
       renderCatTabs();
@@ -1213,6 +1522,15 @@ function initNav() {
 }
 
 function navigate(page) {
+  const targetPage = String(page || '').trim().toLowerCase();
+  if (!canAccessPage(targetPage)) {
+    if (currentUser && !isAdminUser()) {
+      showToast('Tài khoản staff chỉ được dùng Order và Thanh toán.', 'warning');
+    }
+    page = 'tables';
+  } else {
+    page = targetPage;
+  }
   try { closeCartSheet(); } catch(_) {}
   currentPage = page;
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
@@ -1235,6 +1553,10 @@ function closeMoreModal() {
 }
 
 function navigateMore(page) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được truy cập mục cấu hình.', 'warning');
+    return;
+  }
   closeMoreModal();
   if (page === 'users' || page === 'settings') {
     navigate('settings');
@@ -1276,6 +1598,10 @@ function renderPage(page) {
 }
 
 function switchSettingsTab(tabId, btn) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được truy cập cài đặt.', 'warning');
+    return;
+  }
   const tabsWrap = btn.parentElement;
   tabsWrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -1461,8 +1787,9 @@ function _getOrders() {
 function _getMenu() {
   const inv = _getInventory();
   const hasMasterMenu = Array.isArray(window.appState?.masterData?.products);
+  const cloudMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
   const menu = hasMasterMenu
-    ? (Array.isArray(window.appState?.menu) ? window.appState.menu : [])
+    ? (cloudMenu.length > 0 ? cloudMenu : Store.getMenu())
     : ((window.appState && window.appState.menu && window.appState.menu.length > 0)
       ? window.appState.menu
       : Store.getMenu());
@@ -1470,8 +1797,9 @@ function _getMenu() {
 }
 function _getInventory() {
   const hasMasterInventory = Array.isArray(window.appState?.masterData?.inventoryItems);
+  const cloudInventory = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
   const inventory = hasMasterInventory
-    ? (Array.isArray(window.appState?.inventory) ? window.appState.inventory : [])
+    ? (cloudInventory.length > 0 ? cloudInventory : Store.getInventory())
     : ((window.appState && window.appState.inventory && window.appState.inventory.length > 0)
       ? window.appState.inventory
       : Store.getInventory());
@@ -1514,9 +1842,7 @@ const ITEM_TYPE_LABELS = {
 };
 
 function getCurrentUserRole() {
-  return (currentUser && currentUser.role)
-    || (window.appState && window.appState.userDoc && window.appState.userDoc.role)
-    || '';
+  return (currentUser && currentUser.role) || '';
 }
 
 function isAdminUser() {
@@ -2050,7 +2376,21 @@ function renderTables() {
   }).join('');
 }
 
+function requireOpenShiftForOrderFlow(actionLabel = 'thao tác này') {
+  const shift = Store.getCurrentShift();
+  if (shift) return true;
+  showToast('Bạn phải mở ca trước khi chọn bàn và chọn món.', 'warning');
+  if (actionLabel) {
+    console.warn(`[ShiftGuard] blocked ${actionLabel}: shift_not_open`);
+  }
+  try {
+    updateShiftBtnUI();
+  } catch (_) {}
+  return false;
+}
+
 function openTakeaway() {
+  if (!requireOpenShiftForOrderFlow('open_takeaway')) return;
   currentTable = 'takeaway';
   const orders = Store.getOrders();
   if(!orderItems['takeaway']) {
@@ -2061,6 +2401,7 @@ function openTakeaway() {
 }
 
 function openTable(tableId) {
+  if (!requireOpenShiftForOrderFlow('open_table')) return;
   const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
   currentTable = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? tableId : tid);
 
@@ -2098,6 +2439,7 @@ async function clearTable() {
   }
 
   const key = String(currentTable);
+  let cancelledViaCloud = false;
 
   // Cloud: huỷ đơn nếu tồn tại
   try {
@@ -2109,12 +2451,25 @@ async function clearTable() {
       const orderId = orderIdFromCache || orderIdFromAppState || orderIdFromForTable || orderIdFromTable;
       if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
         await window.DB.Orders.cancel(orderId, cancelReason);
+        cancelledViaCloud = true;
       }
       if (window._currentOrderId) delete window._currentOrderId[key];
       if (window.appState?.orders && window.appState.orders[key]) delete window.appState.orders[key];
     }
   } catch(e) {
     console.warn('[clearTable] cloud cancel error', e);
+  }
+
+  if (!cancelledViaCloud) {
+    try {
+      await window.DB?.logAction?.('order_cancelled_local', {
+        tableId: key,
+        cancelReason,
+        mode: currentTable === 'takeaway' ? 'takeaway' : 'local_only',
+      });
+    } catch (auditErr) {
+      console.warn('[Audit] order_cancelled_local', auditErr);
+    }
   }
 
   // Local: xoá giỏ
@@ -2384,6 +2739,7 @@ function renderMenuItems() {
 }
 
 function addToOrder(itemId) {
+  if (!requireOpenShiftForOrderFlow('add_to_order')) return;
   const menu = _getMenu(); // đđ Cloud-first
   const dish = menu.find(m => m.id === itemId);
   if(!dish) return;
@@ -3525,6 +3881,15 @@ async function submitInvEdit(e) {
     try {
       if (id) {
         await window.DB.Inventory.update(id, updateData);
+        try {
+          await window.DB?.logAction?.('inventory_manual_update', {
+            inventoryId: id,
+            before: existing || null,
+            after: { ...(existing || {}), ...updateData, id },
+          });
+        } catch (auditErr) {
+          console.warn('[Audit] inventory_manual_update', auditErr);
+        }
         if (window.appState?.inventory) {
           const idx = window.appState.inventory.findIndex(i => i.id === id);
           if (idx >= 0) window.appState.inventory[idx] = { ...window.appState.inventory[idx], ...updateData };
@@ -3535,7 +3900,15 @@ async function submitInvEdit(e) {
         document.getElementById('inv-edit-modal').classList.remove('active');
         showToast('✅ Đã cập nhật nguyên liệu');
       } else {
-        await window.DB.Inventory.add({ qty: 0, ...updateData });
+        const newInventoryId = await window.DB.Inventory.add({ qty: 0, ...updateData });
+        try {
+          await window.DB?.logAction?.('inventory_manual_create', {
+            inventoryId: newInventoryId,
+            after: { id: newInventoryId, qty: 0, ...updateData },
+          });
+        } catch (auditErr) {
+          console.warn('[Audit] inventory_manual_create', auditErr);
+        }
         refreshIngredientDependentViews();
         document.getElementById('inv-edit-modal').classList.remove('active');
         showToast('✅ Đã tạo nguyên liệu mới');
@@ -6650,8 +7023,8 @@ function renderSettings() {
   if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
   updateStorageQuotaInfo();
   
-  // Hiển thị danh sách user nếu là admin
   try { renderUserManagement(); } catch(e){}
+  try { renderSystemLogs(); } catch(e){}
 }
 
 function submitSettings(e) {
