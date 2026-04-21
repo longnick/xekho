@@ -410,7 +410,7 @@ function _hasActiveAdminStaff() {
 
 function bootstrapStaffSetupSessionIfNeeded(showNotice = false) {
   const staff = Array.isArray(window.appState?.staff) ? window.appState.staff : null;
-  if (!hasMasterAuthSession() || currentUser || !Array.isArray(staff) || _hasActiveAdminStaff() || !isMasterAdminAccount()) {
+  if (!hasMasterAuthSession() || currentUser || !isMasterAdminAccount() || !Array.isArray(staff) || staff.length > 0) {
     return false;
   }
 
@@ -430,12 +430,14 @@ function bootstrapStaffSetupSessionIfNeeded(showNotice = false) {
   showLoginScreen(false);
   showLockScreen(false);
   if (showNotice) {
-    showToast('Chưa có admin Staff. Đã mở quyền admin tạm để khởi tạo lại tài khoản quản trị.', 'warning');
+    showToast('Da vao giao dien admin. Ban co the tao user va PIN sau.', 'success');
+    return true;
   }
   return true;
 }
 
 async function ensureEmergencyAdminStaffIfNeeded() {
+  return false;
   if (!hasMasterAuthSession() || !isMasterAdminAccount()) return false;
   if (!Array.isArray(window.appState?.staff) || _hasActiveAdminStaff()) return false;
   if (!window.DB?.Staff?.add || !window.DB?.Staff?.update) return false;
@@ -684,9 +686,18 @@ function applyRoleRights() {
   const navMore = document.getElementById('nav-more');
   if (navMore) navMore.style.display = (isLocked || isStaff) ? 'none' : '';
   const headerLogoutBtn = document.getElementById('header-logout-btn');
-  if (headerLogoutBtn) headerLogoutBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (headerLogoutBtn) {
+    // Nếu máy đang khóa nhưng Firebase session còn sống -> luôn cho phép đổi tài khoản.
+    const canShowHeaderLogout = isLocked ? hasMasterAuthSession() : !isStaff;
+    headerLogoutBtn.style.display = canShowHeaderLogout ? '' : 'none';
+  }
   const lockLogoutBtn = document.getElementById('lock-screen-logout-btn');
-  if (lockLogoutBtn) lockLogoutBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  if (lockLogoutBtn) {
+    // Cho phép đổi tài khoản Firebase khi màn hình đang khóa.
+    // Staff đang đăng nhập PIN thì vẫn ẩn theo yêu cầu bảo mật UI.
+    const canShowLockLogout = isLocked ? hasMasterAuthSession() : !isStaff;
+    lockLogoutBtn.style.display = canShowLockLogout ? '' : 'none';
+  }
 
   const alertBtn = document.getElementById('header-alert-btn');
   if (alertBtn) alertBtn.style.display = (isLocked || isStaff) ? 'none' : '';
@@ -955,6 +966,17 @@ function deleteUser(username) {
 function syncCurrentStaffSession() {
   if (!currentUser) return;
   if (currentUser.bootstrap) {
+    if (_getManagedStaff(true).length === 0) {
+      syncCurrentPosUserToAppState();
+      applyRoleRights();
+      showLoginScreen(false);
+      showLockScreen(false);
+      return;
+    }
+    syncCurrentPosUserToAppState();
+    applyRoleRights();
+    showLoginScreen(false);
+    showLockScreen(false);
     if (_getManagedStaff(true).length === 0) return;
     lockPosSession('Đã có danh sách nhân sự. Vui lòng đăng nhập lại bằng PIN.');
     showToast('Đã khởi tạo nhân sự. Hãy đăng nhập lại bằng PIN.', 'info');
@@ -1080,6 +1102,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ud = e.detail && e.detail.userDoc;
     if (ud) {
       masterAuthUser = { uid: ud.uid, email: ud.email, role: ud.role, displayName: ud.displayName, username: ud.username };
+      currentUser = null;
+      syncCurrentPosUserToAppState();
       showLoginScreen(false);
       updateLockScreenUI('Nhập mã PIN để vào ca làm việc.');
       showLockScreen(true);
@@ -1109,15 +1133,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     runMigrations();
     applyStoreSettings();
     bootstrapStaffSetupSessionIfNeeded(true);
-    Promise.resolve()
-      .then(() => ensureEmergencyAdminStaffIfNeeded())
-      .finally(() => {
-        syncCurrentStaffSession();
-        renderTables();
-        updateAlertBadge();
-        renderUserManagement();
-        renderSystemLogs();
-      });
+    syncCurrentStaffSession();
+    renderTables();
+    updateAlertBadge();
+    renderUserManagement();
+    renderSystemLogs();
 
     // Re-render các màn hình dựa trên current page để tránh bị trống
     if (typeof currentPage !== 'undefined') {
@@ -1634,6 +1654,9 @@ function navigateToReport(type) {
 
 function addNoteToCartItem(itemId) {
   const items = orderItems[currentTable] || [];
+  const menu = [];
+  const availableCategories = new Set((menu || []).map(item => String(item.category || '').trim()).filter(Boolean));
+  if (currentCat !== 'Tất cả' && !availableCategories.has(currentCat)) currentCat = 'Tất cả';
   const item = items.find(i => i.id === itemId);
   if (!item) return;
 
@@ -2697,11 +2720,14 @@ function saveOrderForTable(tableId) {
 // ============================================================
 // PAGE: ORDERS
 // ============================================================
-let currentCat = CATEGORIES[0];
+let currentCat = 'Tất cả';
 let menuSearch = '';
 
 function renderOrderPage() {
   if(!currentTable) { navigate('tables'); return; }
+  const menu = _getMenu();
+  const availableCategories = new Set((menu || []).map(item => String(item.category || '').trim()).filter(Boolean));
+  if (currentCat !== 'Tất cả' && !availableCategories.has(currentCat)) currentCat = 'Tất cả';
   renderCatTabs();
   renderMenuItems();
   renderCart();
@@ -2986,33 +3012,12 @@ function openBillModal() {
   // Dynamically calculate cost based on current inventory
   const inv = _getInventory();
   const menu = _getMenu();
-  const menuById = new Map(menu.map(m => [m.id, m]));
-  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
   let cost = 0;
-<<<<<<< Updated upstream
-  items.forEach(item => {
-    const dish = menuById.get(item.id) || menuByName.get(normalizeViKey(item.name)) || null;
-    let dishCost = dish.cost || 0;
-    if (dish && dish.itemType === ITEM_TYPES.RETAIL) {
-      const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
-      dishCost = linked ? linked.costPerUnit || 0 : dishCost;
-    } else if (dish && dish.ingredients && dish.ingredients.length > 0) {
-      let calcCost = 0;
-      dish.ingredients.forEach(ing => {
-        const stock = inv.find(i => i.name === ing.name);
-        if (stock) calcCost += stock.costPerUnit * ing.qty;
-      });
-      dishCost = calcCost;
-    }
-    cost += dishCost * item.qty;
-  });
-=======
   items.forEach(item => {
     const dish = menu.find(m => m.id === item.id);
     const dishCost = _resolveDishCostPerUnit(dish, inv);
     cost += dishCost * item.qty;
   });
->>>>>>> Stashed changes
   const now = new Date();
   const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
 
@@ -5772,6 +5777,7 @@ function getFilteredReportExpenses() {
 function refreshReportViews() {
   renderTrendChart();
   renderTopItems();
+  renderDishReportList();
   renderCategoryChart();
   renderHourlyChart();
   renderOrderHistoryList();
@@ -5805,21 +5811,24 @@ function setReportPeriod(p) {
 function renderTopItems() {
   const orders = getFilteredReportOrders();
   const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
   const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
   const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
   const getOrderItemUnitCost = (item) => {
     const inlineCost = Number(item.cost || 0);
     if (inlineCost > 0) return inlineCost;
     const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
-    return Number(menuItem?.cost || 0);
+    return Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
   };
 
   const topMap = {};
   orders.forEach(o => {
     (o.items || []).forEach(item => {
-      if (!topMap[item.name]) topMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-      topMap[item.name].qty += Number(item.qty || 0);
-      topMap[item.name].revenue += Number(item.price || 0) * Number(item.qty || 0);
+      if (!topMap[item.name]) topMap[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0 };
+      const qty = Number(item.qty || 0);
+      topMap[item.name].qty += qty;
+      topMap[item.name].revenue += Number(item.price || 0) * qty;
+      topMap[item.name].cost += getOrderItemUnitCost(item) * qty;
     });
   });
   const top = Object.values(topMap).sort((a, b) => b.qty - a.qty).slice(0, 8);
@@ -5828,7 +5837,7 @@ function renderTopItems() {
       <div class="list-item-icon" style="background:rgba(255,107,53,0.1);color:var(--primary);font-weight:800;font-size:16px">${i+1}</div>
       <div class="list-item-content">
         <div class="list-item-title">${item.name}</div>
-        <div class="list-item-sub">Đã bán: ${item.qty} phần</div>
+        <div class="list-item-sub">Đã bán: ${item.qty} phần · Doanh thu: ${fmt(item.revenue)}đ · Vốn: ${fmt(item.cost)}đ</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount">${fmt(item.revenue)}đ</div>
@@ -5864,6 +5873,56 @@ function renderTopItems() {
       </div>
     </div>`
   ).join('') : '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">Chưa có dữ liệu</div></div>';
+}
+
+function renderDishReportList() {
+  const container = document.getElementById('dish-report-list');
+  if (!container) return;
+
+  const orders = getFilteredReportOrders();
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const stats = {};
+
+  orders.forEach(order => {
+    (order.items || []).forEach(item => {
+      const qty = Number(item.qty || 0);
+      if (!(qty > 0)) return;
+      const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name)) || null;
+      const key = String(menuItem?.id || item.id || normalizeViKey(item.name) || item.name || '');
+      if (!key) return;
+      if (!stats[key]) stats[key] = { id: key, name: menuItem?.name || item.name || 'Khong ro', qty: 0, revenue: 0, cost: 0 };
+
+      const revenue = Number(item.price || 0) * qty;
+      const unitCost = Number(item.cost || 0) > 0
+        ? Number(item.cost || 0)
+        : Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
+
+      stats[key].qty += qty;
+      stats[key].revenue += revenue;
+      stats[key].cost += unitCost * qty;
+    });
+  });
+
+  const rows = Object.values(stats)
+    .map(item => ({ ...item, profit: item.revenue - item.cost }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  container.innerHTML = rows.length ? rows.map(item => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">🍽️</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.name}</div>
+        <div class="list-item-sub">Đã bán: ${item.qty} phần</div>
+      </div>
+      <div class="list-item-right" style="text-align:right">
+        <div class="list-item-amount">${fmt(item.revenue)}đ</div>
+        <div style="font-size:11px;color:var(--text3)">Vốn: ${fmt(item.cost)}đ · Lãi: ${fmt(item.profit)}đ</div>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Chưa có dữ liệu theo món</div></div>';
 }
 
 function renderTrendChart() {
