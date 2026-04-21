@@ -57,13 +57,6 @@
           <span id="alert-badge-header"
             style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
         </button>
-        <button class="header-btn header-btn-reload" id="header-reload-btn" onclick="hardReloadApp()"
-          title="🔄 Reload (xoá cache)">
-          🔄
-        </button>
-        <button class="header-btn" id="header-lock-btn" onclick="lockPosSession('Khóa máy thủ công')" title="Khóa máy">
-          🔒
-        </button>
         <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -397,12 +390,9 @@
             <div style="font-weight:700;font-size:15px">📓 Danh mục & Thẻ Kho</div>
             <button class="btn btn-sm btn-primary" onclick="openAddInvItemModal()">+ Tạo nguyên liệu</button>
           </div>
-          <div class="date-filter mb-2" style="margin-bottom:12px; display:grid; gap:8px;">
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1; min-width:140px" onchange="renderLedger()">
-              <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1; min-width:140px" onchange="renderLedger()">
-            </div>
-            <select id="ledger-item-select" class="select select-sm" style="width:100%" onchange="renderLedger()">
+          <div class="date-filter mb-2" style="margin-bottom:12px; display:flex; gap:8px;">
+            <input type="month" id="ledger-month" class="input input-sm" style="flex:1" onchange="renderLedger()">
+            <select id="ledger-item-select" class="select select-sm" style="flex:2" onchange="renderLedger()">
               <option value="">-- Chọn Nguyên Liệu --</option>
             </select>
           </div>
@@ -604,42 +594,6 @@
             <input type="date" class="input input-sm date-input" id="report-single-date"
               onchange="applyDateFilter('report')">
           </div>
-        </div>
-
-        <div class="card" style="margin-bottom:14px;padding:14px 16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
-            <div>
-              <div class="card-title" style="font-size:14px;">Bộ lọc báo cáo</div>
-              <div class="card-sub" style="font-size:11px;color:var(--text3)">Lọc theo giao dịch đã chọn và nguyên liệu cần theo dõi</div>
-            </div>
-            <button type="button" class="btn btn-xs btn-outline" onclick="resetReportFilters()">Đặt lại lọc</button>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;">
-            <div>
-              <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Loại giao dịch</div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
-                  <input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)">
-                  <span>Đơn bán</span>
-                </label>
-                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
-                  <input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)">
-                  <span>Nhập hàng</span>
-                </label>
-                <label class="badge" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;">
-                  <input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)">
-                  <span>Chi phí khác</span>
-                </label>
-              </div>
-            </div>
-            <div>
-              <label class="input-label" for="report-menu-filter">Món ăn tùy chọn</label>
-              <select id="report-menu-filter" class="select" onchange="setReportMenuFilter(this.value)">
-                <option value="">Tất cả món ăn</option>
-              </select>
-            </div>
-          </div>
-          <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2);"></div>
         </div>
 
         <div class="tab-bar">
@@ -876,16 +830,10 @@
         <div id="set-tab-users" class="settings-tab-content" style="display:none;">
           <div id="settings-user-management" class="card">
             <div class="card-header">
-              <div class="card-title">👥 Cài đặt nhân sự</div>
+              <div class="card-title">👥 Quản lý nhân viên</div>
               <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
             </div>
             <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
-          </div>
-          <div id="settings-system-logs" class="card" style="margin-top:12px; display:none;">
-            <div class="card-header">
-              <div class="card-title">🧾 System Logs</div>
-            </div>
-            <div id="system-logs-list" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
         </div>
 
@@ -1083,21 +1031,20 @@
 
             <div class="card">
               <div class="card-header">
-                <div class="card-title">🧠 AI Server (Gemini)</div>
+                <div class="card-title">🧠 DeepSeek API</div>
               </div>
               <div class="input-group">
-                <label class="input-label">Bảo mật AI Server</label>
-                <input type="password" id="set-deepseekApiKey" class="input" placeholder="Được quản lý phía server" disabled>
-                <div style="font-size:11px;color:var(--text3);margin-top:6px">Khóa Gemini chỉ lưu trên server nội bộ, không lưu trên máy POS để tránh lộ key.</div>
+                <label class="input-label">DeepSeek API Key</label>
+                <input type="password" id="set-deepseekApiKey" class="input" placeholder="Dán DeepSeek API Key...">
               </div>
               <div class="input-group">
-                <label class="input-label">Gemini Provider</label>
-                <input type="text" id="set-deepseekEndpoint" class="input" placeholder="gemini-2.5-flash" disabled>
+                <label class="input-label">DeepSeek Endpoint</label>
+                <input type="text" id="set-deepseekEndpoint" class="input" placeholder="https://api.deepseek.com/v1/chat/completions">
               </div>
               <div class="input-group">
-                <label class="input-label">Gemini Model</label>
-                <input type="text" id="set-deepseekModel" class="input" placeholder="gemini-2.5-flash" disabled>
-                <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Chatbot sẽ ưu tiên AI server Gemini cho câu hỏi mở và fallback NLP Offline khi cần.</div>
+                <label class="input-label">DeepSeek Model</label>
+                <input type="text" id="set-deepseekModel" class="input" placeholder="deepseek-chat">
+                <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Chatbot hiện chỉ dùng 2 chế độ: NLP Offline và DeepSeek Online.</div>
               </div>
             </div>
 
@@ -1595,13 +1542,6 @@
               <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
             </div>
             <div class="input-group">
-              <label class="input-label">Giá vốn (đ)</label>
-              <input class="input" id="menu-item-cost" type="number" min="0" placeholder="Tự tính từ nguyên liệu..." readonly
-                style="background:var(--bg3);color:var(--text2);font-weight:700;cursor:default">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="input-group">
               <label class="input-label">Loại hàng *</label>
               <select class="select" id="menu-item-type" onchange="toggleMenuItemTypeUI()">
                 <option value="finished_good">🍳 Thành phẩm / Món ăn</option>
@@ -1661,7 +1601,7 @@
               <!-- Chuyển đổi Model AI -->
               <button id="ai-engine-toggle" class="badge badge-primary"
                 style="cursor:pointer; border:none; padding:4px 8px; font-size:10px; font-weight:700"
-                onclick="toggleAIEngine()" title="Chế độ AI hiện tại">Offline NLP + Gemini Server</button>
+                onclick="toggleAIEngine()" title="Chế độ AI hiện tại">Offline NLP + DeepSeek</button>
             </div>
             <div
               style="font-size:11px; font-weight:600; cursor:pointer; display:inline-block; margin-top:1px; padding:2px 6px; border-radius:4px; user-select:none; transition:all 0.2s"
@@ -1695,19 +1635,11 @@
         style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:160px;max-height:45vh">
         <div class="ai-bubble ai-bubble-bot" id="ai-welcome-msg">
           <div style="font-weight:700; margin-bottom:4px">👋 Xin chào! Em là Trợ lý Gánh Khô.</div>
-          <div style="margin-bottom:6px">Để chatbot hiểu đúng, anh chị nên nói <b>1 câu = 1 việc</b>, ngắn và rõ tên món/bàn/thời gian.</div>
-          <div style="margin-bottom:6px"><b>Lệnh đang hỗ trợ tốt nhất:</b></div>
-          • <b>Gọi món:</b> "Bàn 2 gọi 3 tiger bạc, 1 khô cá bò"<br>
-          • <b>Bớt món:</b> "Bớt 1 tiger bạc bàn 2"<br>
-          • <b>Mở/xem bàn:</b> "Mở bàn 5"<br>
-          • <b>Tính tiền:</b> "Tính tiền bàn 5"<br>
-          • <b>Hỏi doanh thu:</b> "Hôm nay bán được bao nhiêu?" hoặc "Doanh thu tháng này"<br>
-          • <b>Hỏi nhập hàng:</b> "Tháng này nhập hàng bao nhiêu?"<br>
-          • <b>Hỏi tồn kho:</b> "Kiểm tra tồn kho khô cá bò"<br>
-          • <b>Nhập kho nhanh:</b> "Nhập thêm 10 mực khô"<br>
-          <div style="margin-top:6px;color:var(--text2);font-size:12px">
-            Nên tránh: câu quá dài, nhiều việc trong 1 câu, hoặc các yêu cầu như sửa menu/xóa dữ liệu bằng chatbot.
-          </div>
+          Mời anh chị đọc lệnh hoặc gõ bên dưới. Em hỗ trợ:<br>
+          • <b>"Bàn 2 gọi 3 tiger bạc, 1 mực"</b><br>
+          • <b>"Bớt 1 bia bàn 2"</b> hoặc <b>"Tính tiền bàn 5"</b><br>
+          • <b>"Hôm nay bán được bao nhiêu rồi?"</b><br>
+          • <b>"Nhập thêm 10 mực khô"</b>
         </div>
       </div>
 
@@ -1742,7 +1674,7 @@
           </button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ai-text-input" class="input" placeholder="Ví dụ: Bàn 5 gọi 3 tiger bạc"
+          <input type="text" id="ai-text-input" class="input" placeholder="Lệnh: Bàn 5 gọi 3 cọp trắng..."
             style="flex:1" onkeydown="if(event.key==='Enter')sendAIText(false)">
           <button id="ai-send-btn" class="btn btn-secondary" onclick="sendAIText(false)"
             style="padding:10px 14px;flex-shrink:0">
@@ -1763,22 +1695,6 @@
               <line x1="8" y1="23" x2="16" y2="23"></line>
             </svg>
           </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="ai-confirm-modal" onclick="if(event.target===this)closeAIConfirmModal(false)">
-    <div class="modal-sheet-center" style="padding:0;overflow:hidden;max-width:420px;width:calc(100% - 24px)">
-      <div class="modal-header" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
-        <div class="modal-title">🤖 Xác nhận lệnh AI</div>
-        <button class="modal-close" onclick="closeAIConfirmModal(false)">✕</button>
-      </div>
-      <div style="padding:18px;display:flex;flex-direction:column;gap:12px">
-        <div id="ai-confirm-message" style="font-size:14px;line-height:1.55;color:var(--text)"></div>
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-secondary btn-block" onclick="closeAIConfirmModal(false)">Huỷ</button>
-          <button class="btn btn-success btn-block" onclick="closeAIConfirmModal(true)">Xác nhận</button>
         </div>
       </div>
     </div>
@@ -1925,13 +1841,13 @@
       </div>
 
       <div class="login-card">
-        <div class="card-title" style="font-size:18px;margin-bottom:6px">Master Login</div>
-        <div class="card-sub" style="margin-bottom:14px">Quản lý đăng nhập bằng Email/Password Firebase để mở máy POS</div>
+        <div class="card-title" style="font-size:18px;margin-bottom:6px">Đăng nhập hệ thống</div>
+        <div class="card-sub" style="margin-bottom:14px">Nhập tài khoản nhân sự để tiếp tục</div>
 
         <form id="login-form" onsubmit="handleLoginSubmit(event)">
           <div class="input-group">
-            <label class="input-label">Email</label>
-            <input id="login-username" class="input" placeholder="manager@domain.com" autocomplete="username" required>
+            <label class="input-label">Tài khoản</label>
+            <input id="login-username" class="input" placeholder="admin hoặc email" autocomplete="username" required>
           </div>
           <div class="input-group">
             <label class="input-label">Mật khẩu</label>
@@ -1940,33 +1856,6 @@
           <button id="login-submit-btn" type="submit" class="btn btn-primary btn-block">Đăng nhập</button>
         </form>
 
-      </div>
-    </div>
-  </div>
-
-  <div id="lock-screen" class="login-screen">
-    <div class="login-shell">
-      <div class="login-brand">
-        <div class="login-logo">🔒</div>
-        <div>
-          <div class="login-title">Màn hình khóa POS</div>
-          <div class="login-sub" id="lock-screen-master-label">Đăng nhập Firebase thành công</div>
-        </div>
-      </div>
-
-      <div class="login-card">
-        <div class="card-title" style="font-size:18px;margin-bottom:6px">Nhập mã PIN nhân viên</div>
-        <div class="card-sub" style="margin-bottom:14px">Ví dụ: `1111` cho Nhân viên, `9999` cho Quản lý</div>
-
-        <form id="pin-form" onsubmit="handlePinSubmit(event)">
-          <div class="input-group">
-            <label class="input-label">Mã PIN 4 số</label>
-            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="••••" autocomplete="one-time-code" required>
-          </div>
-          <div id="pin-session-hint" class="card-sub" style="margin-bottom:14px"></div>
-          <button id="pin-submit-btn" type="submit" class="btn btn-primary btn-block">Mở máy</button>
-          <button type="button" class="btn btn-secondary btn-block" id="lock-screen-logout-btn" style="margin-top:10px" onclick="handleLogout()">Đăng xuất Firebase</button>
-        </form>
       </div>
     </div>
   </div>
@@ -2291,37 +2180,29 @@
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
-        <div class="modal-title" id="user-modal-title">Thêm Nhân Sự</div>
+        <div class="modal-title" id="user-modal-title">Thêm Nhân Viên</div>
         <button type="button" class="modal-close"
           onclick="document.getElementById('user-modal').classList.remove('active')">✕</button>
       </div>
       <div class="modal-body">
         <form id="user-form" onsubmit="submitUser(event)">
-          <input type="hidden" id="user-edit-id">
           <div class="input-group">
-            <label class="input-label">Họ và tên *</label>
-            <input class="input" id="user-edit-full-name" placeholder="Nguyễn Văn A" required autocomplete="off">
+            <label class="input-label">Tên đăng nhập *</label>
+            <input class="input" id="user-edit-username" placeholder="nguyenvana" required autocomplete="off">
           </div>
           <div class="input-group">
-            <label class="input-label">Mã PIN (4 số) *</label>
-            <input type="password" class="input" id="user-edit-pin" placeholder="1234" required maxlength="4"
-              inputmode="numeric" pattern="[0-9]{4}" autocomplete="one-time-code">
+            <label class="input-label">Mật khẩu *</label>
+            <input type="password" class="input" id="user-edit-password" placeholder="***" required
+              autocomplete="new-password">
           </div>
           <div class="input-group">
             <label class="input-label">Quyền hạn</label>
             <select class="select" id="user-edit-role">
-              <option value="staff">Nhân viên (Order / Thanh toán)</option>
-              <option value="admin">Admin (Toàn quyền)</option>
+              <option value="staff">Nhân viên (Chỉ Bàn, Order)</option>
+              <option value="admin">Quản lý (Toàn quyền)</option>
             </select>
           </div>
-          <div class="input-group">
-            <label class="input-label">Trạng thái</label>
-            <select class="select" id="user-edit-status">
-              <option value="active">Đang hoạt động</option>
-              <option value="inactive">Ngưng hoạt động</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block" id="user-save-btn" style="margin-top:8px">✅ Lưu</button>
+          <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px">✅ Lưu</button>
         </form>
       </div>
     </div>
