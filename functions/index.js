@@ -1,4 +1,5 @@
 const { onRequest } = require('firebase-functions/v2/https');
+const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const cors = require('cors')({ origin: true });
@@ -11,6 +12,63 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
+async function buildRestockMapFromHistoryOrder(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const parentIds = [...new Set(items.map(item => String(item.id || '').trim()).filter(Boolean))];
+  if (!parentIds.length) return {};
+
+  const recipesByParent = new Map();
+  for (const chunk of chunkArray(parentIds, 10)) {
+    const snap = await db.collection('Recipes_BOM')
+      .where('parent_item_id', 'in', chunk)
+      .get();
+    snap.docs.forEach(doc => {
+      const row = doc.data() || {};
+      const parentId = String(row.parent_item_id || '').trim();
+      if (!parentId) return;
+      if (!recipesByParent.has(parentId)) recipesByParent.set(parentId, []);
+      recipesByParent.get(parentId).push(row);
+    });
+  }
+
+  const productDocs = await Promise.all(parentIds.map(id => db.collection('Product_Catalog').doc(id).get()));
+  const productsById = new Map();
+  productDocs.forEach(doc => {
+    if (!doc.exists) return;
+    productsById.set(String(doc.id), doc.data() || {});
+  });
+
+  const restockMap = {};
+  items.forEach(item => {
+    const parentId = String(item.id || '').trim();
+    const itemQty = Number(item.qty || 0);
+    if (!parentId || !(itemQty > 0)) return;
+
+    const product = productsById.get(parentId) || {};
+    const itemType = String(product.item_type || '').toLowerCase();
+    const linkedInventoryId = String(product.linkedInventoryId || '').trim();
+    if (itemType === 'retail' && linkedInventoryId) {
+      restockMap[linkedInventoryId] = (restockMap[linkedInventoryId] || 0) + itemQty;
+    }
+
+    const bomLines = recipesByParent.get(parentId) || [];
+    bomLines.forEach(line => {
+      const ingredientId = String(line.ingredient_inv_id || '').trim();
+      const qtyNeeded = Number(line.quantity_needed ?? line.qty ?? 0);
+      if (!ingredientId || !(qtyNeeded > 0)) return;
+      restockMap[ingredientId] = (restockMap[ingredientId] || 0) + (qtyNeeded * itemQty);
+    });
+  });
+
+  return restockMap;
+}
 
 const AI_PROVIDER = defineString('AI_PROVIDER', { default: 'none' });
 const DEEPSEEK_API_KEY = defineSecret('DEEPSEEK_API_KEY');
@@ -336,6 +394,45 @@ exports.apiVoice = onRequest({ region: 'asia-southeast1' }, (req, res) => {
     }
   });
 });
+
+exports.onHistoryOrderCancelled = onDocumentUpdated(
+  { document: 'history/{historyId}', region: 'asia-southeast1' },
+  async event => {
+    const before = event.data?.before?.data() || null;
+    const after = event.data?.after?.data() || null;
+    if (!after) return;
+    if (String(before?.status || '').toLowerCase() === 'cancelled') return;
+    if (String(after.status || '').toLowerCase() !== 'cancelled') return;
+    if (after.inventoryRestockedAt) return;
+
+    const restockMap = await buildRestockMapFromHistoryOrder(after);
+    const orderRef = event.data.after.ref;
+    const inventoryIds = Object.keys(restockMap);
+
+    await db.runTransaction(async tx => {
+      const invSnaps = await Promise.all(inventoryIds.map(id => tx.get(db.collection('Inventory_Items').doc(id))));
+
+      invSnaps.forEach(snap => {
+        if (!snap.exists) return;
+        const addQty = Number(restockMap[snap.id] || 0);
+        if (!(addQty > 0)) return;
+        const currentQty = Number(snap.data().current_stock ?? snap.data().qty ?? 0);
+        tx.update(snap.ref, { current_stock: currentQty + addQty });
+      });
+
+      tx.update(orderRef, {
+        inventoryRestockedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    logger.info('Restocked inventory for cancelled history order', {
+      historyId: event.params.historyId,
+      cancelReason: after.cancelReason || '',
+      itemCount: Array.isArray(after.items) ? after.items.length : 0,
+      inventoryCount: inventoryIds.length,
+    });
+  }
+);
 
 function pickProvider() {
   const p = String(AI_PROVIDER.value() || '').trim().toLowerCase();
