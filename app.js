@@ -315,6 +315,38 @@ function updateLockScreenUI(reason = '') {
   }
 }
 
+function ensureHeaderLockButton() {
+  const headerActions = document.querySelector('.header-actions');
+  const logoutBtn = document.getElementById('header-logout-btn');
+  if (!headerActions || !logoutBtn || document.getElementById('header-lock-btn')) return;
+
+  const lockBtn = document.createElement('button');
+  lockBtn.className = 'header-btn';
+  lockBtn.id = 'header-lock-btn';
+  lockBtn.title = 'Khóa màn hình';
+  lockBtn.style.display = 'none';
+  lockBtn.onclick = handleLockScreen;
+  lockBtn.innerHTML = `
+    <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>`;
+  headerActions.insertBefore(lockBtn, logoutBtn);
+}
+
+function syncMenuCostFieldText() {
+  const costEl = document.getElementById('menu-item-cost');
+  if (!costEl) return;
+  const group = costEl.closest('.input-group');
+  const labelEl = group?.querySelector('.input-label');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
+  if (labelEl) labelEl.textContent = 'Giá vốn tự tính (đ)';
+  if (formulaEl && !String(formulaEl.textContent || '').trim()) {
+    formulaEl.textContent = 'Giá vốn sẽ tự động cộng từ các nguyên liệu trong công thức.';
+  }
+}
+
 function hasMasterAuthSession() {
   return !!(window.DB?.currentUser || masterAuthUser?.uid);
 }
@@ -633,6 +665,12 @@ function continueLocalMode() {
   showToast('Chế độ nội bộ đã bị tắt. Hãy đăng nhập Firebase rồi nhập PIN.', 'warning');
 }
 
+function handleLockScreen() {
+  if (!hasMasterAuthSession()) return;
+  lockPosSession('Đã khóa màn hình. Vui lòng nhập PIN 4 số để tiếp tục.');
+  showToast('Đã khóa màn hình. Vui lòng nhập PIN để mở lại.', 'info');
+}
+
 function handleLogout() {
   const ok = confirm('Bạn có chắc muốn đăng xuất không');
   if (!ok) return;
@@ -716,7 +754,7 @@ function applyRoleRights() {
   const mainFab = document.getElementById('main-fab');
   if (mainFab) mainFab.style.display = (isLocked || isStaff) ? 'none' : '';
   const lockBtn = document.getElementById('header-lock-btn');
-  if (lockBtn) lockBtn.style.display = hasMasterAuthSession() ? '' : 'none';
+  if (lockBtn) lockBtn.style.display = (hasMasterAuthSession() && !isLocked) ? '' : 'none';
   const aiPanel = document.getElementById('ai-assistant-panel');
   if (aiPanel && (isLocked || isStaff)) aiPanel.classList.remove('active');
 
@@ -1039,6 +1077,8 @@ async function renderSystemLogs() {
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', async () => {
+  ensureHeaderLockButton();
+  syncMenuCostFieldText();
   checkLoginState();
   bindPosActivityWatchers();
 
@@ -1937,12 +1977,17 @@ function normalizeUnitText(unit) {
 
 function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
   const itemType = inferMenuItemType(item);
-  return {
+  const normalized = {
     ...item,
     unit: normalizeUnitText(item.unit),
     itemType,
     linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
     ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
+  };
+  const liveCost = _resolveDishCostPerUnit(normalized, inventory);
+  return {
+    ...normalized,
+    cost: Number(liveCost || item.cost || 0),
   };
 }
 
@@ -6476,6 +6521,7 @@ function openAddMenuModal(id) {
   document.getElementById('menu-item-price').value = formDish.price || '';
   const costEl = document.getElementById('menu-item-cost');
   if (costEl) costEl.value = (typeof formDish.cost === 'number' ? formDish.cost : (parseFloat(formDish.cost) || 0));
+  syncMenuCostFieldText();
   document.getElementById('menu-item-category').value = formDish.category || CATEGORIES[0];
   document.getElementById('menu-item-type').value = formDish.itemType || ITEM_TYPES.FINISHED;
 
@@ -6741,11 +6787,13 @@ window.updateIngUnitDropdown = function(selectEl, selectedUnit = '') {
 
 window.updateMenuCostFromForm = function updateMenuCostFromForm() {
   const costEl = document.getElementById('menu-item-cost');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
   if (!costEl) return;
 
   const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
   const inv = _getInventory();
   const convs = Store.getUnitConversions();
+  const fmtCost = (value) => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString('vi-VN')}d`;
 
   let cost = 0;
 
@@ -6754,12 +6802,23 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
     const stock = linkedInventoryId ? inv.find(i => i.id === linkedInventoryId) : null;
     cost = stock ? (Number(stock.costPerUnit) || 0) : 0;
     costEl.value = Math.max(0, Math.round(cost));
+    if (formulaEl) {
+      formulaEl.textContent = stock
+        ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
+        : 'GiÃ¡ vá»‘n hÃ ng bÃ¡n tháº³ng sáº½ láº¥y tá»« hÃ ng tá»“n kho liÃªn káº¿t.';
+    }
     return;
   }
 
   const rows = Array.from(document.querySelectorAll('#menu-ingredients-list > .ingredient-row'));
   const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
-  if (!hasAny) return;
+  if (!hasAny) {
+    costEl.value = 0;
+    if (formulaEl) formulaEl.textContent = 'ChÆ°a cÃ³ nguyÃªn liá»‡u nÃ o trong cÃ´ng thá»©c.';
+    return;
+  }
+
+  const formulaParts = [];
 
   rows.forEach(row => {
     const ingName = (row.querySelector('.ing-name-sel')?.value || '').trim();
@@ -6776,7 +6835,9 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
     if (!unitToUse || !stockUnit) return;
 
     if (unitToUse === stockUnit) {
-      cost += qty * stockCost;
+      const rowCost = qty * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
       return;
     }
 
@@ -6787,11 +6848,97 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
     );
     if (conv && Number(conv.recipeQty) > 0) {
       const stockQtyUsed = qty * (Number(conv.purchaseQty) / Number(conv.recipeQty));
-      cost += stockQtyUsed * stockCost;
+      const rowCost = stockQtyUsed * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} = ${stockQtyUsed.toFixed(4).replace(/\.?0+$/, '')} ${stockUnit} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
     }
   });
 
   costEl.value = Math.max(0, Math.round(cost));
+  if (formulaEl) {
+    formulaEl.textContent = formulaParts.length
+      ? `${formulaParts.join(' + ')} | Tá»•ng: ${fmtCost(cost)}`
+      : 'KhÃ´ng tá»‘nh Ä‘Æ°á»£c giÃ¡ vá»‘n. HÃ£y kiá»ƒm tra láº¡i Ä‘Æ¡n vá»‹ quy Ä‘á»•i trong cÃ´ng thá»©c.';
+  }
+};
+
+window.updateMenuCostFromForm = function updateMenuCostFromForm() {
+  const costEl = document.getElementById('menu-item-cost');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
+  if (!costEl) return;
+
+  syncMenuCostFieldText();
+
+  const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
+  const inv = _getInventory();
+  const convs = Store.getUnitConversions();
+  const fmtCost = (value) => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString('vi-VN')}d`;
+
+  let cost = 0;
+
+  if (type === ITEM_TYPES.RETAIL) {
+    const linkedInventoryId = document.getElementById('menu-linked-inventory-id')?.value || '';
+    const stock = linkedInventoryId ? inv.find(i => i.id === linkedInventoryId) : null;
+    cost = stock ? (Number(stock.costPerUnit) || 0) : 0;
+    costEl.value = Math.max(0, Math.round(cost));
+    if (formulaEl) {
+      formulaEl.textContent = stock
+        ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
+        : 'Giá vốn hàng bán thẳng sẽ lấy từ hàng tồn kho liên kết.';
+    }
+    return;
+  }
+
+  const rows = Array.from(document.querySelectorAll('#menu-ingredients-list > .ingredient-row'));
+  const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
+  if (!hasAny) {
+    costEl.value = 0;
+    if (formulaEl) formulaEl.textContent = 'Chưa có nguyên liệu nào trong công thức.';
+    return;
+  }
+
+  const formulaParts = [];
+
+  rows.forEach(row => {
+    const ingName = (row.querySelector('.ing-name-sel')?.value || '').trim();
+    const qty = parseFloat(row.querySelector('.ing-qty-val')?.value || '0') || 0;
+    const recipeUnit = (row.querySelector('.ing-unit-sel')?.value || '').trim();
+    if (!ingName || !(qty > 0)) return;
+
+    const stock = inv.find(i => i.name === ingName);
+    if (!stock) return;
+
+    const stockUnit = String(stock.unit || '').trim();
+    const stockCost = Number(stock.costPerUnit) || 0;
+    const unitToUse = recipeUnit || stockUnit;
+    if (!unitToUse || !stockUnit) return;
+
+    if (unitToUse === stockUnit) {
+      const rowCost = qty * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+      return;
+    }
+
+    const conv = convs.find(c =>
+      c.ingredientName === ingName &&
+      c.recipeUnit === unitToUse &&
+      c.purchaseUnit === stockUnit
+    );
+    if (conv && Number(conv.recipeQty) > 0) {
+      const stockQtyUsed = qty * (Number(conv.purchaseQty) / Number(conv.recipeQty));
+      const rowCost = stockQtyUsed * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} = ${stockQtyUsed.toFixed(4).replace(/\.?0+$/, '')} ${stockUnit} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+    }
+  });
+
+  costEl.value = Math.max(0, Math.round(cost));
+  if (formulaEl) {
+    formulaEl.textContent = formulaParts.length
+      ? `${formulaParts.join(' + ')} | Tổng: ${fmtCost(cost)}`
+      : 'Không tính được giá vốn. Hãy kiểm tra lại đơn vị quy đổi trong công thức.';
+  }
 };
 
 
