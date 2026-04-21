@@ -5741,6 +5741,87 @@ function populateReportMenuFilter() {
   select.value = menu.some(item => String(item.id) === current) ? current : '';
 }
 
+function ensureReportSummaryLayout() {
+  const revenueTab = document.getElementById('report-tab-revenue');
+  if (!revenueTab) return;
+
+  const legacyCards = Array.from(revenueTab.querySelectorAll('.card')).filter(card =>
+    card.querySelector('#report-filter-summary') || card.querySelector('#report-menu-filter')
+  );
+  legacyCards.forEach(card => {
+    card.style.display = 'none';
+    card.setAttribute('aria-hidden', 'true');
+  });
+
+  if (!document.getElementById('report-menu-summary-card')) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'report-menu-summary-card';
+    card.style.marginBottom = '16px';
+    card.innerHTML = `
+      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">Tóm tắt theo món ăn</div>
+      <div id="report-menu-summary-content"></div>
+    `;
+    revenueTab.insertBefore(card, revenueTab.firstElementChild);
+  }
+}
+
+function getReportMenuIngredientKeys(menuItem) {
+  if (!menuItem) return [];
+  const inventory = _getInventory();
+  const ingredientNames = new Set();
+
+  if (Array.isArray(menuItem.ingredients)) {
+    menuItem.ingredients.forEach(ing => {
+      const name = String(ing?.name || '').trim();
+      if (name) ingredientNames.add(normalizeViKey(name));
+    });
+  }
+
+  if (menuItem.itemType === ITEM_TYPES.RETAIL && menuItem.linkedInventoryId) {
+    const stock = inventory.find(item => String(item.id || '') === String(menuItem.linkedInventoryId));
+    const stockName = String(stock?.name || '').trim();
+    if (stockName) ingredientNames.add(normalizeViKey(stockName));
+  }
+
+  const ownName = String(menuItem.name || '').trim();
+  if (ownName) ingredientNames.add(normalizeViKey(ownName));
+
+  return Array.from(ingredientNames).filter(Boolean);
+}
+
+function getReportMenuSalesSummary(menuItem) {
+  if (!menuItem) return null;
+
+  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const targetId = String(menuItem.id || '');
+  const targetName = normalizeViKey(menuItem.name);
+
+  return orders.reduce((summary, order) => {
+    (order.items || []).forEach(item => {
+      const itemId = String(item.id || '');
+      const itemNameKey = normalizeViKey(item.name);
+      if (itemId !== targetId && itemNameKey !== targetName) return;
+
+      const qty = Number(item.qty || 0);
+      const revenue = Number(item.price || 0) * qty;
+      const itemMenu = menuById.get(itemId) || menuByName.get(itemNameKey) || menuItem;
+      const unitCost = Number(item.cost || 0) > 0
+        ? Number(item.cost || 0)
+        : Number(_resolveDishCostPerUnit(itemMenu, inventory) || itemMenu?.cost || 0);
+
+      summary.qty += qty;
+      summary.revenue += revenue;
+      summary.cost += unitCost * qty;
+    });
+    return summary;
+  }, { qty: 0, revenue: 0, cost: 0, profit: 0 });
+}
+
 function renderReportFilterSummary() {
   const summaryEl = document.getElementById('report-filter-summary');
   if (!summaryEl) return;
@@ -5794,11 +5875,23 @@ function doesOrderMatchReportMenuItem(order, menuItem) {
 }
 
 function doesPurchaseMatchReportMenuItem(purchase, menuItem) {
-  return true;
+  if (!menuItem) return true;
+  const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+  if (!ingredientKeys.length) return false;
+  const purchaseKey = normalizeViKey(purchase?.name || '');
+  return ingredientKeys.includes(purchaseKey);
 }
 
 function doesExpenseMatchReportMenuItem(expense, menuItem) {
-  return true;
+  if (!menuItem) return true;
+  const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+  if (!ingredientKeys.length) return false;
+  const haystack = normalizeViKey([
+    expense?.name || '',
+    expense?.note || '',
+    expense?.category || '',
+  ].join(' '));
+  return ingredientKeys.some(key => key && haystack.includes(key));
 }
 
 function getFilteredReportOrders() {
@@ -5820,8 +5913,10 @@ function getFilteredReportExpenses() {
 }
 
 function refreshReportViews() {
+  ensureReportSummaryLayout();
   renderTrendChart();
   renderTopItems();
+  renderReportMenuSummary();
   renderDishReportList();
   renderCategoryChart();
   renderHourlyChart();
@@ -5830,6 +5925,7 @@ function refreshReportViews() {
 }
 
 function renderReports() {
+  ensureReportSummaryLayout();
   syncReportFilterUI();
   setReportPeriod(reportPeriod);
 }
@@ -5918,6 +6014,40 @@ function renderTopItems() {
       </div>
     </div>`
   ).join('') : '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">Chưa có dữ liệu</div></div>';
+}
+
+function renderReportMenuSummary() {
+  const titleEl = document.getElementById('report-menu-summary-title');
+  const contentEl = document.getElementById('report-menu-summary-content');
+  if (!titleEl || !contentEl) return;
+
+  const menuItem = getSelectedReportMenuItem();
+  if (!menuItem) {
+    titleEl.textContent = 'Tóm tắt theo món ăn';
+    contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Chọn một món ăn để xem tổng số lượng, thành tiền và lãi.</div></div>';
+    return;
+  }
+
+  const summary = getReportMenuSalesSummary(menuItem);
+  const profit = Number(summary?.revenue || 0) - Number(summary?.cost || 0);
+
+  titleEl.textContent = `Doanh thu món: ${menuItem.name}`;
+  contentEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Tổng số lượng</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.qty || 0)}</div>
+      </div>
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Thành tiền</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}đ</div>
+      </div>
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Lãi</div>
+        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}đ</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderDishReportList() {
