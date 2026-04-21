@@ -933,19 +933,6 @@ function parseViDateFromText(text) {
   const t = _normalizeQueryKey(text);
   const now = new Date();
 
-<<<<<<< Updated upstream
-  if (/hôm nay|hom nay/i.test(t)) {
-    return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
-  }
-  if (/hôm qua|hom qua/i.test(t)) {
-    const d = new Date(now); d.setDate(d.getDate()-1);
-    return { period: 'day', dateStr: d.toISOString().split('T')[0], label: 'hôm qua' };
-  }
-  if (/tuần này|tuan nay/i.test(t)) {
-    return { period: 'week', label: 'tuần này' };
-  }
-  if (/tuần trước|tuan truoc/i.test(t)) {
-=======
   // "hôm nay" / "hom nay"
   if (/\bhom nay\b/i.test(t)) {
     return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
@@ -961,51 +948,33 @@ function parseViDateFromText(text) {
   }
   // "tuần trước"
   if (/\btuan truoc\b/i.test(t)) {
->>>>>>> Stashed changes
     const from = new Date(now); from.setDate(from.getDate()-14);
     const to   = new Date(now); to.setDate(to.getDate()-7);
     return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: 'tuần trước' };
   }
-<<<<<<< Updated upstream
-  if (/tháng này|thang nay/i.test(t)) {
-    return { period: 'month', label: 'tháng này' };
-  }
-  if (/tháng trước|thang truoc/i.test(t)) {
-=======
   // "tháng này"
   if (/\bthang nay\b/i.test(t)) {
     return { period: 'month', label: 'tháng này' };
   }
   // "tháng trước"
   if (/\bthang truoc\b/i.test(t)) {
->>>>>>> Stashed changes
     const d = new Date(now.getFullYear(), now.getMonth()-1, 1);
     const from = d.toISOString().split('T')[0];
     const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
     const to = lastDay.toISOString().split('T')[0];
     return { period: 'range', fromDate: from, toDate: to, label: 'tháng trước' };
   }
-<<<<<<< Updated upstream
-  if (/năm nay|nam nay/i.test(t)) {
-=======
   // "năm nay"
   if (/\bnam nay\b/i.test(t)) {
->>>>>>> Stashed changes
     const from = `${now.getFullYear()}-01-01`;
     const to   = `${now.getFullYear()}-12-31`;
     return { period: 'range', fromDate: from, toDate: to, label: `năm ${now.getFullYear()}` };
   }
 
-<<<<<<< Updated upstream
-  const dayMonthMatch = t.match(/ng[àa]y\s*(\d{1,2})[\/-](\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
-                        t.match(/(\d{1,2})\s*tháng\s*(\d{1,2})/) ||
-=======
   // Ngày cụ thể: "ngày 7/4", "7 tháng 4", "ngày 7 tháng 4"
   const dayMonthMatch = t.match(/ngay\s*(\d{1,2})[\/-](\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/) ||
->>>>>>> Stashed changes
                         t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/);
   if (dayMonthMatch) {
     const day = parseInt(dayMonthMatch[1]);
@@ -1017,12 +986,8 @@ function parseViDateFromText(text) {
     }
   }
 
-<<<<<<< Updated upstream
-  const monthMatch = t.match(/tháng\s*(\d{1,2})|thang\s*(\d{1,2})/);
-=======
   // Tháng cụ thể: "tháng 3", "tháng 12"
   const monthMatch = t.match(/thang\s*(\d{1,2})/);
->>>>>>> Stashed changes
   if (monthMatch) {
     const m = parseInt(monthMatch[1] || monthMatch[2]);
     const year = now.getFullYear();
@@ -1032,28 +997,18 @@ function parseViDateFromText(text) {
     return { period: 'range', fromDate: from, toDate: to, label: `tháng ${m}` };
   }
 
-<<<<<<< Updated upstream
-  const weekMatch = t.match(/tuần\s*(\d+)|tuan\s*(\d+)/);
-  if (weekMatch) {
-    const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
-=======
   // Tuần số cụ thể: "tuần 2", "tuần 15"
   const weekMatch = t.match(/tuan\s*(\d+)/);
   if (weekMatch) {
     const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
     // Ước tính bắt đầu tuần theo weekNum trong năm hiện tại
->>>>>>> Stashed changes
     const jan1 = new Date(now.getFullYear(), 0, 1);
     const from = new Date(jan1.getTime() + (weekNum-1)*7*86400000);
     const to   = new Date(from.getTime() + 6*86400000);
     return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: `tuần ${weekNum}` };
   }
 
-<<<<<<< Updated upstream
-  return null;
-=======
   return null; // Không phân tích được
->>>>>>> Stashed changes
 }
 
 function buildDetailedReportReply(type, periodInfo) {
