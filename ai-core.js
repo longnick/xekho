@@ -198,6 +198,13 @@ function _pickMentionedItem(text, menu) {
   } catch (_) {}
 
   const q = _normalizeQueryKey(text);
+  if (Array.isArray(menu) && menu.length) {
+    const ranked = menu
+      .map(item => ({ item, key: _normalizeQueryKey(item?.name || '') }))
+      .filter(x => x.key && (q.includes(x.key) || x.key.includes(q)))
+      .sort((a, b) => b.key.length - a.key.length);
+    if (ranked.length) return ranked[0].item.name;
+  }
   const aliases = [
     ['ken lon', ['ken lon', 'heineken', 'ken']],
     ['bia sai gon', ['sai gon', 'bia sai gon', 'saigon']],
@@ -216,7 +223,37 @@ function _isOpenAnalyticsQuestion(text) {
   // Không can thiệp các lệnh thao tác đơn hàng
   if (/(dat|goi|them|bot|xoa|huy|thanh toan|tinh tien|mo ban|xem ban|nhap hang)\b/.test(t)) return false;
 
-  return /(hom qua|hom nay|so voi|so sanh|ban duoc|doanh thu|mon nao|ban nhieu nhat|top|bao nhieu|nhieu nhat)/.test(t);
+  return /(hom qua|hom nay|tuan nay|thang nay|nam nay|so voi|so sanh|ban duoc|doanh thu|loi nhuan|lai|chi phi|mon nao|ban nhieu nhat|top|bao nhieu|nhieu nhat|phan tich|analyst|xu huong|ton kho)/.test(t);
+}
+
+function _classifyAnalyticsTopic(text) {
+  const t = _normalizeQueryKey(text);
+  if (!t) return 'general';
+  if (/(ton kho|het hang|sap het|nguyen lieu)/.test(t)) return 'inventory';
+  if (/(xu huong|trend|7 ngay|7 hom|tang giam)/.test(t)) return 'trend';
+  if (/(top|nhieu nhat|ban chay|mon nao)/.test(t)) return 'top_item';
+  if (/(chi phi)/.test(t)) return 'expense';
+  if (/(loi nhuan|lai|gross|profit)/.test(t)) return 'profit';
+  if (/(doanh thu|ban duoc|bao nhieu|so voi|so sanh)/.test(t)) return 'revenue';
+  return 'general';
+}
+
+function _buildDailyRevenueSeries(days = 7) {
+  const out = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const summary = getRevenueSummary('day', { date: dateStr });
+    out.push({
+      date: dateStr,
+      revenue: Number(summary?.revenue || 0),
+      orders: Number(summary?.orders || 0),
+      profit: Number(summary?.profit || 0),
+    });
+  }
+  return out;
 }
 
 async function tryAnswerOpenAnalyticsQuestion(text, settings, menu) {
@@ -249,13 +286,17 @@ async function tryAnswerOpenAnalyticsQuestion(text, settings, menu) {
       : getRevenueSummary(pi.period, pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {}));
 
   const question = String(text || '');
+  const topic = _classifyAnalyticsTopic(question);
+  const last7d = _buildDailyRevenueSeries(7);
   const context = {
     question,
+    topic,
     today: { date: todayStr, revenue: today.revenue, orders: today.orders, profit: today.profit },
     yesterday: { date: yStr, revenue: yesterday.revenue, orders: yesterday.orders, profit: yesterday.profit },
     targetPeriod: { label: pi.label || 'kỳ được hỏi', fromDate: range.fromDate, toDate: range.toDate, revenue: target.revenue, orders: target.orders, profit: target.profit },
     mentionItem: mention ? { key: mention, soldQty: mentionQty } : null,
     topItems,
+    last7d,
   };
 
   const prompt = `Bạn là trợ lý phân tích dữ liệu POS. Trả lời tiếng Việt ngắn gọn, chính xác theo số liệu sau.
@@ -288,10 +329,36 @@ Chỉ trả về câu trả lời tự nhiên (không markdown JSON).`;
     const trend = diff >= 0 ? 'tăng' : 'giảm';
     return `So với hôm qua, hôm nay ${trend} ${fmtDong(Math.abs(diff))} doanh thu (${Math.abs(pct).toFixed(1)}%). Hôm nay: ${fmtDong(today.revenue)} (${today.orders} đơn), hôm qua: ${fmtDong(yesterday.revenue)} (${yesterday.orders} đơn).`;
   }
+  if (topic === 'trend') {
+    const first = last7d[0] || { revenue: 0 };
+    const last = last7d[last7d.length - 1] || { revenue: 0 };
+    const diff = last.revenue - first.revenue;
+    const pct = first.revenue > 0 ? (diff / first.revenue) * 100 : 0;
+    const trend = diff >= 0 ? 'tăng' : 'giảm';
+    const topDay = [...last7d].sort((a, b) => b.revenue - a.revenue)[0];
+    return `Xu hướng 7 ngày: doanh thu ${trend} ${fmtDong(Math.abs(diff))} (${Math.abs(pct).toFixed(1)}%). Ngày cao nhất là ${topDay?.date || 'N/A'} với ${fmtDong(topDay?.revenue || 0)}.`;
+  }
   if (q.includes('nhieu nhat') || q.includes('ban chay')) {
     const top = topItems[0];
     if (!top) return `Kỳ ${pi.label || 'được hỏi'} chưa có dữ liệu bán hàng.`;
     return `Món bán nhiều nhất ${pi.label || 'kỳ này'} là ${top.name} với ${top.qty} phần/lon/chai đã bán.`;
+  }
+  if (topic === 'profit') {
+    return `${pi.label || 'Kỳ được hỏi'}: doanh thu ${fmtDong(target.revenue)}, lợi nhuận ${fmtDong(target.profit)}, số đơn ${target.orders}.`;
+  }
+  if (topic === 'expense') {
+    const expenses = filterExpenses(pi.period, pi.dateStr ? { date: pi.dateStr } : (pi.fromDate ? { fromDate: pi.fromDate, toDate: pi.toDate } : {}));
+    const expenseTotal = expenses.reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+    return `${pi.label || 'Kỳ được hỏi'} có ${expenses.length} khoản chi, tổng chi phí ${fmtDong(expenseTotal)}.`;
+  }
+  if (topic === 'inventory') {
+    const alerts = getInventoryAlerts();
+    const critical = alerts?.critical || [];
+    const low = alerts?.low || [];
+    if (!critical.length && !low.length) return 'Tồn kho hiện ổn định, chưa có mặt hàng nào dưới ngưỡng cảnh báo.';
+    const criticalNames = critical.slice(0, 5).map(i => i.name).join(', ');
+    const lowNames = low.slice(0, 5).map(i => i.name).join(', ');
+    return `Tồn kho cảnh báo: ${critical.length} mặt hàng mức gấp và ${low.length} mặt hàng mức thấp. ${criticalNames ? `Cần nhập gấp: ${criticalNames}.` : ''} ${lowNames ? `Sắp hết: ${lowNames}.` : ''}`.trim();
   }
   if ((q.includes('bao nhieu') || q.includes('ban duoc')) && mention) {
     return `${pi.label || 'Kỳ được hỏi'}, ${mention} bán được ${mentionQty} đơn vị.`;
@@ -863,9 +930,10 @@ function fmtDong(n) {
 // PhÃ¢n tÃ­ch ngÃ y thÃ¡ng tiáº¿ng Viá»‡t tá»« vÄƒn báº£n
 // Tráº£ vá» { period, dateStr, label } hoáº·c null
 function parseViDateFromText(text) {
-  const t = text.toLowerCase().normalize('NFC');
+  const t = _normalizeQueryKey(text);
   const now = new Date();
 
+<<<<<<< Updated upstream
   if (/hôm nay|hom nay/i.test(t)) {
     return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
   }
@@ -877,29 +945,67 @@ function parseViDateFromText(text) {
     return { period: 'week', label: 'tuần này' };
   }
   if (/tuần trước|tuan truoc/i.test(t)) {
+=======
+  // "hôm nay" / "hom nay"
+  if (/\bhom nay\b/i.test(t)) {
+    return { period: 'today', dateStr: now.toISOString().split('T')[0], label: 'hôm nay' };
+  }
+  // "hôm qua"
+  if (/\bhom qua\b/i.test(t)) {
+    const d = new Date(now); d.setDate(d.getDate()-1);
+    return { period: 'day', dateStr: d.toISOString().split('T')[0], label: 'hôm qua' };
+  }
+  // "tuần này"
+  if (/\btuan nay\b/i.test(t)) {
+    return { period: 'week', label: 'tuần này' };
+  }
+  // "tuần trước"
+  if (/\btuan truoc\b/i.test(t)) {
+>>>>>>> Stashed changes
     const from = new Date(now); from.setDate(from.getDate()-14);
     const to   = new Date(now); to.setDate(to.getDate()-7);
     return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: 'tuần trước' };
   }
+<<<<<<< Updated upstream
   if (/tháng này|thang nay/i.test(t)) {
     return { period: 'month', label: 'tháng này' };
   }
   if (/tháng trước|thang truoc/i.test(t)) {
+=======
+  // "tháng này"
+  if (/\bthang nay\b/i.test(t)) {
+    return { period: 'month', label: 'tháng này' };
+  }
+  // "tháng trước"
+  if (/\bthang truoc\b/i.test(t)) {
+>>>>>>> Stashed changes
     const d = new Date(now.getFullYear(), now.getMonth()-1, 1);
     const from = d.toISOString().split('T')[0];
     const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
     const to = lastDay.toISOString().split('T')[0];
     return { period: 'range', fromDate: from, toDate: to, label: 'tháng trước' };
   }
+<<<<<<< Updated upstream
   if (/năm nay|nam nay/i.test(t)) {
+=======
+  // "năm nay"
+  if (/\bnam nay\b/i.test(t)) {
+>>>>>>> Stashed changes
     const from = `${now.getFullYear()}-01-01`;
     const to   = `${now.getFullYear()}-12-31`;
     return { period: 'range', fromDate: from, toDate: to, label: `năm ${now.getFullYear()}` };
   }
 
+<<<<<<< Updated upstream
   const dayMonthMatch = t.match(/ng[àa]y\s*(\d{1,2})[\/-](\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
                         t.match(/(\d{1,2})\s*tháng\s*(\d{1,2})/) ||
+=======
+  // Ngày cụ thể: "ngày 7/4", "7 tháng 4", "ngày 7 tháng 4"
+  const dayMonthMatch = t.match(/ngay\s*(\d{1,2})[\/-](\d{1,2})/) ||
+                        t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/) ||
+                        t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/) ||
+>>>>>>> Stashed changes
                         t.match(/(\d{1,2})\s*thang\s*(\d{1,2})/);
   if (dayMonthMatch) {
     const day = parseInt(dayMonthMatch[1]);
@@ -911,7 +1017,12 @@ function parseViDateFromText(text) {
     }
   }
 
+<<<<<<< Updated upstream
   const monthMatch = t.match(/tháng\s*(\d{1,2})|thang\s*(\d{1,2})/);
+=======
+  // Tháng cụ thể: "tháng 3", "tháng 12"
+  const monthMatch = t.match(/thang\s*(\d{1,2})/);
+>>>>>>> Stashed changes
   if (monthMatch) {
     const m = parseInt(monthMatch[1] || monthMatch[2]);
     const year = now.getFullYear();
@@ -921,16 +1032,28 @@ function parseViDateFromText(text) {
     return { period: 'range', fromDate: from, toDate: to, label: `tháng ${m}` };
   }
 
+<<<<<<< Updated upstream
   const weekMatch = t.match(/tuần\s*(\d+)|tuan\s*(\d+)/);
   if (weekMatch) {
     const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
+=======
+  // Tuần số cụ thể: "tuần 2", "tuần 15"
+  const weekMatch = t.match(/tuan\s*(\d+)/);
+  if (weekMatch) {
+    const weekNum = parseInt(weekMatch[1] || weekMatch[2]);
+    // Ước tính bắt đầu tuần theo weekNum trong năm hiện tại
+>>>>>>> Stashed changes
     const jan1 = new Date(now.getFullYear(), 0, 1);
     const from = new Date(jan1.getTime() + (weekNum-1)*7*86400000);
     const to   = new Date(from.getTime() + 6*86400000);
     return { period: 'range', fromDate: from.toISOString().split('T')[0], toDate: to.toISOString().split('T')[0], label: `tuần ${weekNum}` };
   }
 
+<<<<<<< Updated upstream
   return null;
+=======
+  return null; // Không phân tích được
+>>>>>>> Stashed changes
 }
 
 function buildDetailedReportReply(type, periodInfo) {

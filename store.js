@@ -762,7 +762,28 @@ function getTopItems(period, optsOrLimit, maybeLimit) {
   return Object.values(map).sort((a,b) => b.qty - a.qty).slice(0, limit || 10);
 }
 
+function _resolveHistoryItemUnitCost(item, menu, inventory) {
+  const direct = Number(item?.cost || 0);
+  if (direct > 0) return direct;
+  const dish = (menu || []).find(m => m.id === item?.id)
+    || (menu || []).find(m => _slugVi(m.name) === _slugVi(item?.name));
+  if (!dish) return 0;
+  if (dish.itemType === ITEM_TYPES.RETAIL) {
+    const linked = (inventory || []).find(i => i.id === dish.linkedInventoryId)
+      || (inventory || []).find(i => _slugVi(i.name) === _slugVi(dish.name));
+    return Number(linked?.costPerUnit || dish?.cost || 0);
+  }
+  if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+    return dish.ingredients.reduce((sum, ing) => {
+      const stock = (inventory || []).find(i => _slugVi(i.name) === _slugVi(ing.name));
+      return sum + Number(stock?.costPerUnit || 0) * Number(ing.qty || 0);
+    }, 0);
+  }
+  return Number(dish.cost || 0);
+}
+
 // Most profitable items
+<<<<<<< Updated upstream
 function getTopProfitableItems(period, optsOrLimit, maybeLimit) {
   const { opts, limit } = _normalizeTopMetricArgs(optsOrLimit, maybeLimit);
   const orders = filterHistory(period, opts);
@@ -775,14 +796,28 @@ function getTopProfitableItems(period, optsOrLimit, maybeLimit) {
     const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
     return Number(menuItem?.cost || 0);
   };
+=======
+function getTopProfitableItems(period, limit) {
+  const orders = filterHistory(period);
+  const menu = Store.getMenu();
+  const inventory = Store.getInventory();
+>>>>>>> Stashed changes
   const map = {};
   orders.forEach(o => {
     (o.items||[]).forEach(item => {
       if(!map[item.name]) map[item.name] = { name:item.name, qty:0, revenue:0, cost:0 };
       const qty = Number(item.qty || 0);
+<<<<<<< Updated upstream
       map[item.name].qty += qty;
       map[item.name].revenue += Number(item.price || 0) * qty;
       map[item.name].cost += getOrderItemUnitCost(item) * qty;
+=======
+      const price = Number(item.price || 0);
+      const unitCost = _resolveHistoryItemUnitCost(item, menu, inventory);
+      map[item.name].qty += qty;
+      map[item.name].revenue += price * qty;
+      map[item.name].cost += unitCost * qty;
+>>>>>>> Stashed changes
     });
   });
   return Object.values(map)

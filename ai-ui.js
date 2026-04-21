@@ -699,6 +699,39 @@ function recordAIMetric(data) {
   } catch (_) {}
 }
 
+function _isLowConfidenceAIReply(reply) {
+  const t = String(reply || '').toLowerCase();
+  if (!t) return true;
+  return (
+    t.includes('em chua hieu') ||
+    t.includes('khong nhan ra lenh') ||
+    t.includes('khong xac dinh') ||
+    t.includes('khong tim thay') ||
+    t.includes('thu noi ro hon')
+  );
+}
+
+function recordAILearningEvent(payload) {
+  try {
+    if (!window.DB?.logAction) return;
+    const input = String(payload?.input || '').slice(0, 240);
+    const output = String(payload?.output || '').replace(/<[^>]+>/g, '').slice(0, 400);
+    const data = {
+      channel: 'ai_chat',
+      stage: payload?.stage || 'reply',
+      ok: !!payload?.ok,
+      lowConfidence: !!payload?.lowConfidence,
+      engine: String(payload?.engine || 'unknown'),
+      intent: String(payload?.intent || 'unknown'),
+      latencyMs: Number(payload?.latencyMs || 0),
+      input,
+      output,
+      ts: new Date().toISOString(),
+    };
+    Promise.resolve(window.DB.logAction('ai_learning_event', data)).catch(() => {});
+  } catch (_) {}
+}
+
 // ------ Text send ------
 function sendAITextGeminiLegacy(isVoice = false) {
   const inp = document.getElementById('ai-text-input');
@@ -735,6 +768,16 @@ function sendAITextGeminiLegacy(isVoice = false) {
     addAIBubble(reply, 'bot');
     const latencyMs = Date.now() - startTs;
     recordAIMetric({ ok: true, engine: activeEngine, intent: intent, latencyMs: latencyMs });
+    recordAILearningEvent({
+      stage: 'reply',
+      ok: true,
+      lowConfidence: _isLowConfidenceAIReply(reply),
+      engine: activeEngine,
+      intent,
+      latencyMs,
+      input: rawText,
+      output: reply,
+    });
     updateAIActiveDot(activeEngine === 'offline' ? 'offline' : 'idle');
     const latEl = document.getElementById('ai-latency-text');
     if (latEl) latEl.textContent = `⏱️ ${(latencyMs/1000).toFixed(2)}s - Engine: ${activeEngine}`;
@@ -745,6 +788,16 @@ function sendAITextGeminiLegacy(isVoice = false) {
     const latencyMs = Date.now() - startTs;
     addAIBubble(`❌ Lỗi: ${err.message || 'Không xác định'}`, 'error');
     recordAIMetric({ ok: false, engine: activeEngine, intent: 'error', latencyMs: latencyMs });
+    recordAILearningEvent({
+      stage: 'error',
+      ok: false,
+      lowConfidence: true,
+      engine: activeEngine,
+      intent: 'error',
+      latencyMs,
+      input: rawText,
+      output: err?.message || 'unknown_error',
+    });
     updateAIActiveDot('error');
     const latEl = document.getElementById('ai-latency-text');
     if (latEl) latEl.textContent = `❌ ${(latencyMs/1000).toFixed(2)}s - Engine: ${activeEngine}`;

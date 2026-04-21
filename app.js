@@ -2738,20 +2738,40 @@ function renderMenuItems() {
   }).join('') || `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>`;
 }
 
+function _resolveDishCostPerUnit(dish, inventoryList) {
+  if (!dish) return 0;
+  const inv = Array.isArray(inventoryList) ? inventoryList : [];
+  let dishCost = Number(dish.cost || 0);
+  if (dish.itemType === ITEM_TYPES.RETAIL) {
+    const linked = inv.find(i => i.id === dish.linkedInventoryId)
+      || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
+    return Number(linked?.costPerUnit || dishCost || 0);
+  }
+  if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+    dishCost = dish.ingredients.reduce((sum, ing) => {
+      const stock = inv.find(i => i.name === ing.name);
+      return sum + (Number(stock?.costPerUnit || 0) * Number(ing.qty || 0));
+    }, 0);
+  }
+  return Number(dishCost || 0);
+}
+
 function addToOrder(itemId) {
   if (!requireOpenShiftForOrderFlow('add_to_order')) return;
   const menu = _getMenu(); // đđ Cloud-first
+  const inv = _getInventory();
   const dish = menu.find(m => m.id === itemId);
   if(!dish) return;
+  const unitCost = _resolveDishCostPerUnit(dish, inv);
   if(!orderItems[currentTable]) orderItems[currentTable] = [];
   const existing = orderItems[currentTable].find(i => i.id === itemId);
   if(existing) { existing.qty++; }
-  else { orderItems[currentTable].push({ id: dish.id, name: dish.name, price: dish.price, cost: dish.cost||0, qty:1 }); }
+  else { orderItems[currentTable].push({ id: dish.id, name: dish.name, price: dish.price, cost: unitCost, qty:1 }); }
   saveOrder(); // localStorage + table status
   // Cloud: Transaction-based addItem (tránh race condition khi 2 nhân viên cùng thêm món)
   _cloudSyncItem({
     type: 'add',
-    item: { id: dish.id, name: dish.name, price: dish.price, cost: dish.cost||0, qty: 1 },
+    item: { id: dish.id, name: dish.name, price: dish.price, cost: unitCost, qty: 1 },
   }, currentTable);
   renderMenuItems();
   renderCart();
@@ -2969,6 +2989,7 @@ function openBillModal() {
   const menuById = new Map(menu.map(m => [m.id, m]));
   const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
   let cost = 0;
+<<<<<<< Updated upstream
   items.forEach(item => {
     const dish = menuById.get(item.id) || menuByName.get(normalizeViKey(item.name)) || null;
     let dishCost = dish.cost || 0;
@@ -2985,6 +3006,13 @@ function openBillModal() {
     }
     cost += dishCost * item.qty;
   });
+=======
+  items.forEach(item => {
+    const dish = menu.find(m => m.id === item.id);
+    const dishCost = _resolveDishCostPerUnit(dish, inv);
+    cost += dishCost * item.qty;
+  });
+>>>>>>> Stashed changes
   const now = new Date();
   const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
 
