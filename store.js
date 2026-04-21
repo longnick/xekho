@@ -631,6 +631,12 @@ function isDateInPeriod(value, period, opts) {
   return date >= range.start && date <= range.end;
 }
 
+function isCompletedHistoryOrder(order) {
+  const status = String(order?.status || '').trim().toLowerCase();
+  if (!status) return !order?.cancelledAt && !order?.cancelReason;
+  return status === 'completed' || status === 'closed';
+}
+
 // Filter history by period
 // period: 'today'|'day'|'week'|'month'|'all'|'range'
 // opts: { date: 'YYYY-MM-DD', fromDate: 'YYYY-MM-DD', toDate: 'YYYY-MM-DD' }
@@ -640,7 +646,7 @@ function filterHistory(period, opts) {
     ? window.appState.history
     : Store.getHistory();
 
-  return h.filter(o => isDateInPeriod(o.paidAt, period, opts));
+  return h.filter(o => isCompletedHistoryOrder(o) && isDateInPeriod(o.paidAt, period, opts));
 }
 
 
@@ -665,6 +671,11 @@ function _computeOrderCost(order) {
   const lineCost = items.reduce((sum, item) => sum + (Number(item.cost || 0) * Number(item.qty || 0)), 0);
   if (lineCost > 0) return lineCost;
   return Number(order?.cost || 0);
+}
+
+function normalizePositiveAmount(value) {
+  const amount = Number(value) || 0;
+  return amount > 0 ? amount : 0;
 }
 
 // Revenue summary
@@ -699,11 +710,11 @@ function getRevenueSummary(period, opts) {
       /^nhập hàng:/i.test(String(e.name || ''))
     )
   );
-  const expenseTotal = expenses.reduce((s,e) => s + e.amount, 0);
+  const expenseTotal = expenses.reduce((s,e) => s + normalizePositiveAmount(e.amount), 0);
   
   // Tính tổng purchase cho biểu đồ "Chi phí" (bao gồm expense + purchase)
   const purchases = filterPurchases(period, opts);
-  const purchaseTotal = purchases.reduce((s,p) => s + p.price, 0);
+  const purchaseTotal = purchases.reduce((s,p) => s + normalizePositiveAmount(p.price), 0);
   const totalExpenseAndPurchase = expenseTotal + purchaseTotal;
 
   // Lợi nhuận ròng (Net Profit) = Lợi nhuận gộp - OPEX
@@ -716,7 +727,7 @@ function getRevenueSummary(period, opts) {
     cost, 
     gross, 
     expenseTotal: totalExpenseAndPurchase, // Trả ra tổng chi phí + nhập hàng cho fin-expense
-    expenseTotal,
+    operatingExpenseTotal: expenseTotal,
     purchaseTotal,
     cashOutTotal: totalExpenseAndPurchase,
     profit, 
@@ -755,13 +766,23 @@ function getTopItems(period, optsOrLimit, maybeLimit) {
 function getTopProfitableItems(period, optsOrLimit, maybeLimit) {
   const { opts, limit } = _normalizeTopMetricArgs(optsOrLimit, maybeLimit);
   const orders = filterHistory(period, opts);
+  const menu = Store.getMenu().filter(item => !item.hidden);
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const getOrderItemUnitCost = item => {
+    const inlineCost = Number(item.cost || 0);
+    if (inlineCost > 0) return inlineCost;
+    const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
+    return Number(menuItem?.cost || 0);
+  };
   const map = {};
   orders.forEach(o => {
     (o.items||[]).forEach(item => {
       if(!map[item.name]) map[item.name] = { name:item.name, qty:0, revenue:0, cost:0 };
-      map[item.name].qty += item.qty;
-      map[item.name].revenue += item.price * item.qty;
-      map[item.name].cost += (item.cost || 0) * item.qty;
+      const qty = Number(item.qty || 0);
+      map[item.name].qty += qty;
+      map[item.name].revenue += Number(item.price || 0) * qty;
+      map[item.name].cost += getOrderItemUnitCost(item) * qty;
     });
   });
   return Object.values(map)
@@ -781,7 +802,7 @@ function getRevenueByDay(days) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const ds = d.toDateString();
-    const dayOrders = h.filter(o => new Date(o.paidAt).toDateString() === ds);
+    const dayOrders = h.filter(o => isCompletedHistoryOrder(o) && new Date(o.paidAt).toDateString() === ds);
     result.push({
       date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       revenue: dayOrders.reduce((s,o) => s + o.total, 0),
