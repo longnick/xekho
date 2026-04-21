@@ -2575,14 +2575,65 @@ window.DB = {
   rtdb: _rtdb,      // Trỏ thẳng vào Realtime Database instance
   
   // Hàm đăng nhập/xuất/tạo NV 
-  login: async (email, pass) => {
-    try {
-      await Auth.signIn(email, pass);
-      return { success: true };
-    } catch (e) {
-      console.error(e);
-      return { success: false, error: 'Đăng nhập Firebase thất bại.' };
+  login: async (identifier, pass) => {
+    const raw = String(identifier || '').trim();
+    const password = String(pass || '');
+    if (!raw || !password) {
+      return { success: false, error: 'Thiếu tài khoản hoặc mật khẩu.', code: 'auth/missing-credentials' };
     }
+
+    const attempts = [];
+    const pushAttempt = (value) => {
+      const v = String(value || '').trim();
+      if (!v || attempts.includes(v)) return;
+      attempts.push(v);
+    };
+
+    if (raw.includes('@')) {
+      pushAttempt(raw);
+    } else {
+      pushAttempt(raw); // giữ lại để tương thích nếu backend dùng username
+      if (raw.toLowerCase() === 'admin') pushAttempt(OWNER_EMAIL);
+      pushAttempt(`${raw}@ganhkho.vn`);
+    }
+
+    let lastErr = null;
+    const retryableCodes = new Set([
+      'auth/invalid-email',
+      'auth/user-not-found',
+      'auth/invalid-credential',
+      'auth/wrong-password',
+    ]);
+    for (const email of attempts) {
+      try {
+        await Auth.signIn(email, password);
+        return { success: true, email };
+      } catch (e) {
+        lastErr = e;
+        const code = String(e?.code || '');
+        // Firebase mới thường trả invalid-credential rất sớm, kể cả khi identifier đầu tiên chỉ là alias.
+        // Vì vậy phải thử hết các alias ứng viên trước khi kết luận đăng nhập thất bại.
+        if (retryableCodes.has(code)) continue;
+        break;
+      }
+    }
+
+    const code = String(lastErr?.code || '');
+    let error = 'Đăng nhập Firebase thất bại.';
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+      error = 'Sai tài khoản hoặc mật khẩu.';
+    } else if (code === 'auth/invalid-email') {
+      error = 'Email đăng nhập không hợp lệ.';
+    } else if (code === 'auth/network-request-failed') {
+      error = 'Không kết nối được tới Firebase. Kiểm tra mạng và thử lại.';
+    } else if (code === 'auth/too-many-requests') {
+      error = 'Đăng nhập quá nhiều lần thất bại. Vui lòng thử lại sau ít phút.';
+    } else if (code === 'auth/operation-not-allowed') {
+      error = 'Firebase Auth chưa bật Email/Password trong Console.';
+    }
+
+    console.error('[DB.login]', { code, attempts, error: lastErr });
+    return { success: false, error, code };
   },
   logout: Auth.signOut,
   createUser: Auth.createUser,

@@ -783,41 +783,21 @@ function _resolveHistoryItemUnitCost(item, menu, inventory) {
 }
 
 // Most profitable items
-<<<<<<< Updated upstream
 function getTopProfitableItems(period, optsOrLimit, maybeLimit) {
   const { opts, limit } = _normalizeTopMetricArgs(optsOrLimit, maybeLimit);
   const orders = filterHistory(period, opts);
   const menu = Store.getMenu().filter(item => !item.hidden);
-  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
-  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
-  const getOrderItemUnitCost = item => {
-    const inlineCost = Number(item.cost || 0);
-    if (inlineCost > 0) return inlineCost;
-    const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
-    return Number(menuItem?.cost || 0);
-  };
-=======
-function getTopProfitableItems(period, limit) {
-  const orders = filterHistory(period);
-  const menu = Store.getMenu();
   const inventory = Store.getInventory();
->>>>>>> Stashed changes
   const map = {};
   orders.forEach(o => {
     (o.items||[]).forEach(item => {
       if(!map[item.name]) map[item.name] = { name:item.name, qty:0, revenue:0, cost:0 };
       const qty = Number(item.qty || 0);
-<<<<<<< Updated upstream
-      map[item.name].qty += qty;
-      map[item.name].revenue += Number(item.price || 0) * qty;
-      map[item.name].cost += getOrderItemUnitCost(item) * qty;
-=======
       const price = Number(item.price || 0);
       const unitCost = _resolveHistoryItemUnitCost(item, menu, inventory);
       map[item.name].qty += qty;
       map[item.name].revenue += price * qty;
       map[item.name].cost += unitCost * qty;
->>>>>>> Stashed changes
     });
   });
   return Object.values(map)
