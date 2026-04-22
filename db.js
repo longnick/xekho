@@ -1,6 +1,6 @@
 // ============================================================
 // DB.JS  –  Online Data Layer · Firebase Web SDK v9 (Modular)
-// Gánh Khô Chữa Lành POS
+// XE KHÔ CHỮA LÀNH POS
 //
 // KIẾN TRÚC:
 //   • Firestore   → tất cả nghiệp vụ (bàn, đơn, menu, kho,
@@ -79,13 +79,13 @@ const SETTINGS_DEFAULTS = {
   tableCount:                      20,
   currency:                        'đ',
   taxRate:                         0,
-  storeName:                       'Gánh Khô Chữa Lành',
+  storeName:                       'XE KHÔ CHỮA LÀNH',
   storeAddress:                    '',
   storePhone:                      '0937707900',
   storeSlogan:                     'Ăn là nhớ, nhớ là ghiền!',
   bankName:                        'Vietinbank',
   bankAccount:                     '0937707900',
-  bankOwner:                       'Gánh Khô Chữa Lành',
+  bankOwner:                       'XE KHÔ CHỮA LÀNH',
   autoBackup:                      true,
   storageQuotaMb:                  500,
   ocrMode:                         'auto',
@@ -293,8 +293,8 @@ function _repairAppStateData(kind, rows, options = {}) {
 
 function _repairSettingsText(settings = {}) {
   const next = { ...settings };
-  if (_hasBrokenVietnamese(next.storeName)) next.storeName = 'Gánh Khô Chữa Lành';
-  if (_hasBrokenVietnamese(next.bankOwner)) next.bankOwner = 'Gánh Khô Chữa Lành';
+  if (_hasBrokenVietnamese(next.storeName)) next.storeName = 'XE KHÔ CHỮA LÀNH';
+  if (_hasBrokenVietnamese(next.bankOwner)) next.bankOwner = 'XE KHÔ CHỮA LÀNH';
   if (_hasBrokenVietnamese(next.storeSlogan)) next.storeSlogan = 'Ăn là nhớ, nhớ là ghiền!';
   return next;
 }
@@ -1912,6 +1912,10 @@ const Expenses = {
       date: data.date || new Date().toISOString(),
     }, undefined, 'expenses.add');
     return ref.id;
+  },
+
+  async update(id, data) {
+    await _safeUpdateDoc(_doc('expenses', id), sanitize(data), `expenses.update(${id})`);
   },
 
   async delete(id) {
