@@ -1879,7 +1879,7 @@ function _getPurchases() {
 }
 
 function _getHistory() {
-  const history = (window.appState && window.appState.history && window.appState.history.length > 0)
+  const history = Array.isArray(window.appState?.history)
     ? window.appState.history
     : Store.getHistory();
   return history || [];
@@ -2589,8 +2589,14 @@ async function clearTable() {
 /** Lấy orderId hiđơ tại của 1 bàn từ Cloud (appState hoặc cache) */
 function _getCloudOrderId(key) {
   const ordersMap = window.appState && window.appState.orders;
+  const tableOrderId = Array.isArray(window.appState?.tables)
+    ? (window.appState.tables.find(t => String(t.id) === String(key))?.orderId || null)
+    : null;
+  const liveOrderId = window.DB?.Orders?.forTable ? (window.DB.Orders.forTable(key)?.id || null) : null;
   return (window._currentOrderId && window._currentOrderId[String(key)])
     || (ordersMap && ordersMap[String(key)] && ordersMap[String(key)].id)
+    || liveOrderId
+    || tableOrderId
     || null;
 }
 
@@ -2704,15 +2710,27 @@ function _markTableEmptyEverywhere(tableKey) {
  */
 async function _ensureCloudOrder(key) {
   if (!window.DB || key === 'takeaway') return null;
+  window.__ensureCloudOrderPromises = window.__ensureCloudOrderPromises || {};
   let orderId = _getCloudOrderId(key);
   if (orderId) return orderId;
+  if (window.__ensureCloudOrderPromises[key]) return window.__ensureCloudOrderPromises[key];
   const staffUid = window.appState && window.appState.uid;
-  const tableName = `Bàn ${key}`;
+  const tableName = `Ban ${key}`;
   const posUser = getCurrentPosUser();
-  orderId = await window.DB.Orders.open(key, tableName, staffUid, posUser);
-  window._currentOrderId = window._currentOrderId || {};
-  window._currentOrderId[String(key)] = orderId;
-  return orderId;
+  window.__ensureCloudOrderPromises[key] = (async () => {
+    const existingId = _getCloudOrderId(key);
+    if (existingId) return existingId;
+    const nextOrderId = await window.DB.Orders.open(key, tableName, staffUid, posUser);
+    window._currentOrderId = window._currentOrderId || {};
+    window._currentOrderId[String(key)] = nextOrderId;
+    return nextOrderId;
+  })();
+  try {
+    orderId = await window.__ensureCloudOrderPromises[key];
+    return orderId;
+  } finally {
+    delete window.__ensureCloudOrderPromises[key];
+  }
 }
 
 /**
@@ -3131,7 +3149,7 @@ function openBillModal() {
   const desc = `Thanh toan ${currentTable === 'takeaway' ? 'Mang ve' : 'Ban ' + currentTable} - ${billNo}`;
   const bank = s.bankAccount || PAYMENT_INFO.account;
   const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
-  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.pngamount=${total}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
+  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${encodeURIComponent(total)}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
 
   // Store bill data for payment confirmation (include VAT)
   window._pendingBill = { billNo, total, cost, extras, tableLabel, vatAmount, taxRate };
@@ -4392,8 +4410,6 @@ function renderPurchaseList() {
     .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
     .slice(0, 50);
   const inv = _getInventory();
-  const isCloud = !!window.DB;
-
   const purchasesHtml = purchases.length ? purchases.map(p => {
     const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
@@ -4413,7 +4429,7 @@ function renderPurchaseList() {
       <div class="list-item-right">
         <div class="list-item-amount">-${fmt(p.price)}đ</div>
         <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
-          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')" ${isCloud ? 'disabled' : ''}>✏️</button>
+          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')">✏️</button>
           <button class="btn btn-xs btn-danger" onclick="deletePurchase('${p.id}')">🗑️</button>
         </div>
       </div>
@@ -4426,11 +4442,7 @@ function renderPurchaseList() {
 }
 
 function editPurchase(purchaseId) {
-  if (window.DB) {
-    showToast('⚠️ Tạm thời chưa hỗ trợ sửa phiếu nhập khi đang đồng bộ Cloud.', 'warning');
-    return;
-  }
-  const purchases = Store.getPurchases();
+  const purchases = _getPurchases();
   const p = purchases.find(x => x.id === purchaseId);
   if(!p) return;
   renderPurchaseSupplierDropdown();
@@ -4922,7 +4934,99 @@ function submitPurchase(e) {
 
   if (window.DB && window.DB.Inventory) {
     if (editId) {
-      showToast('⚠️ Tạm thời chưa hỗ trợ sửa phiếu nhập khi đang đồng bộ Cloud.', 'warning');
+      const purchases = _getPurchases().slice();
+      const pIdx = purchases.findIndex(p => p.id === editId);
+      if (pIdx < 0) {
+        showToast('⚠️ Không tìm thấy phiếu nhập cần sửa.', 'warning');
+        return;
+      }
+
+      const oldPurchase = purchases[pIdx];
+      const inv = Store.getInventory();
+      const oldItem = inv.find(i => String(i.id) === String(oldPurchase.inventoryItemId)) || inv.find(i => String(i.name || '').toLowerCase() === String(oldPurchase.name || '').toLowerCase());
+      const nextItem = inv.find(i => String(i.id) === String(liveItem.id)) || liveItem;
+      if (!oldItem || !nextItem) {
+        showToast('⚠️ Không tìm thấy nguyên liệu để cập nhật phiếu nhập.', 'warning');
+        return;
+      }
+
+      if (currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
+        persistCurrentPurchasePhotosBatch();
+      }
+
+      const oldQty = Number(oldPurchase.qty || 0);
+      const oldPrice = Number(oldPurchase.price || 0);
+      const sameItem = String(oldItem.id) === String(nextItem.id);
+
+      const oldBaseQty = Number(oldItem.qty || 0);
+      const oldBaseCost = Number(oldItem.costPerUnit || 0);
+      const revertedQty = Math.max(0, oldBaseQty - oldQty);
+      const revertedTotalValue = Math.max(0, (oldBaseQty * oldBaseCost) - oldPrice);
+      const revertedCostPerUnit = revertedQty > 0 ? (revertedTotalValue / revertedQty) : (oldBaseCost || 0);
+
+      const updates = [];
+      let nextQty;
+      let nextCostPerUnit;
+
+      if (sameItem) {
+        nextQty = revertedQty + qty;
+        nextCostPerUnit = nextQty > 0 ? ((revertedQty * revertedCostPerUnit) + price) / nextQty : revertedCostPerUnit;
+        updates.push(window.DB.Inventory.update(nextItem.id, { qty: nextQty, costPerUnit: nextCostPerUnit, unit }));
+      } else {
+        updates.push(window.DB.Inventory.update(oldItem.id, { qty: revertedQty, costPerUnit: revertedCostPerUnit, unit: oldItem.unit || oldPurchase.unit || 'đvt' }));
+        const currentQty = Number(nextItem.qty || 0);
+        const currentCost = Number(nextItem.costPerUnit || 0);
+        nextQty = currentQty + qty;
+        nextCostPerUnit = nextQty > 0 ? ((currentQty * currentCost) + price) / nextQty : currentCost;
+        updates.push(window.DB.Inventory.update(nextItem.id, { qty: nextQty, costPerUnit: nextCostPerUnit, unit }));
+      }
+
+      const nextPurchase = {
+        ...oldPurchase,
+        name,
+        qty,
+        price,
+        unit,
+        itemType: nextItem.itemType,
+        inventoryItemId: nextItem.id,
+        costPerUnit: qty > 0 ? price / qty : 0,
+        supplier: supplierName,
+        supplierId: supplierId || null,
+        supplierPhone,
+        supplierAddress: supplierAddr,
+        note,
+        photoBatchId: currentPurchasePhotosBatchId || oldPurchase.photoBatchId || null,
+      };
+
+      updates.push(window.DB.Purchases?.update ? window.DB.Purchases.update(editId, nextPurchase) : Promise.resolve());
+
+      Promise.all(updates).then(() => {
+        purchases[pIdx] = nextPurchase;
+        Store.setPurchases(purchases);
+
+        const invIdx = inv.findIndex(i => String(i.id) === String(nextItem.id));
+        if (invIdx >= 0) {
+          inv[invIdx] = { ...inv[invIdx], qty: nextQty, costPerUnit: nextCostPerUnit, unit };
+        }
+        if (!sameItem) {
+          const oldIdx = inv.findIndex(i => String(i.id) === String(oldItem.id));
+          if (oldIdx >= 0) {
+            inv[oldIdx] = { ...inv[oldIdx], qty: revertedQty, costPerUnit: revertedCostPerUnit };
+          }
+        }
+        Store.setInventory(inv);
+
+        delete form.dataset.editId;
+        document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
+        document.getElementById('purchase-modal').classList.remove('active');
+        form.reset();
+        resetPurchasePhotoFileInputs();
+        currentPurchasePhotos = [];
+        currentPurchasePhotosBatchId = null;
+        refreshIngredientDependentViews();
+        renderPurchaseList();
+        showToast('✅ Đã cập nhật nhập hàng!', 'success');
+      }).catch(err => showToast('Lỗi cập nhật nhập hàng: ' + err.message, 'danger'));
       return;
     }
 
@@ -5083,7 +5187,11 @@ function submitPurchase(e) {
 // STOCKTAKE (Kiđm kê)
 // ============================================================
 function renderStocktakeHistory() {
-  const expenses = Store.getExpenses().filter(e => ['Lãi/Lỗ do kiểm kê', 'Lãi/Lđ do kiđm kê'].includes(e.category));
+  const stocktakeCategory = normalizeExpenseCategoryLabel('\u004c\u00e3\u0069\u002f\u004c\u1ed7 \u0064\u006f \u006b\u0069\u1ec3\u006d \u006b\u00ea');
+  const expenses = _getExpenses()
+    .filter(e => normalizeExpenseCategoryLabel(e.category) === stocktakeCategory)
+    .slice()
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   const listEl = document.getElementById('stocktake-history-list');
   if(!listEl) return;
 
@@ -5447,7 +5555,7 @@ function renderExpenseList() {
       <div class="list-item-icon" style="background:${e.type === 'purchase' ? 'rgba(255,193,7,0.12)' : 'rgba(255,61,113,0.1)'}">${e.type === 'purchase' ? '📦' : '💸'}</div>
       <div class="list-item-content">
         <div class="list-item-title">${repairVietnameseText(e.type === 'purchase' ? ('Nhập hàng: ' + e.name) : e.name)}</div>
-        <div class="list-item-sub">${repairVietnameseText(e.category)}${e.type === 'purchase' ? ` · ${fmt(e.qty)} ${repairVietnameseText(e.unit || '')}` : ''} · ${fmtTime(e.date)}</div>
+        <div class="list-item-sub">${normalizeExpenseCategoryLabel(e.category)}${e.type === 'purchase' ? ` · ${fmt(e.qty)} ${repairVietnameseText(e.unit || '')}` : ''} · ${fmtTime(e.date)}</div>
       </div>
       <div class="list-item-right">
         <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.amount)}đ</div>
@@ -5462,14 +5570,14 @@ function editExpense(expenseId) {
   const e = expenses.find(x => x.id === expenseId);
   if(!e) return;
   
-  if (e.category === 'Nhập hàng' || e.name.startsWith('Nhập hàng:')) {
+  if (normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || e.name.startsWith('Nhập hàng:')) {
     showToast('Chi phí nhập hàng được tạo tự động. Vui lòng chuyển sang mục Nhập hàng để chỉnh sửa phiếu nhập.', 'warning');
     return;
   }
 
   document.getElementById('exp-name').value = repairVietnameseText(e.name);
   document.getElementById('exp-amount').value = e.amount;
-  document.getElementById('exp-category').value = repairVietnameseText(e.category || 'Chi phí khác');
+  document.getElementById('exp-category').value = normalizeExpenseCategoryLabel(e.category || 'Chi phí khác');
   
   const form = document.getElementById('expense-form');
   form.dataset.editId = expenseId;
@@ -5525,10 +5633,10 @@ function submitExpense(e) {
 setTimeout(async () => {
   try {
     const expenses = Store.getExpenses() || [];
-    const toDelete = expenses.filter(e => e.category === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:')));
+    const toDelete = expenses.filter(e => normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:')));
     if (toDelete.length > 0) {
       console.log('[Cleanup] Found wrong auto-generated expenses:', toDelete.length);
-      const newExpenses = expenses.filter(e => !(e.category === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:'))));
+      const newExpenses = expenses.filter(e => !(normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:'))));
       Store.set(KEYS.expenses, newExpenses);
       
       if (window.DB && window.DB.Expenses && window.DB.Expenses.delete) {
@@ -5568,22 +5676,51 @@ function openDiscountDetails() {
 }
 
 function renderRevenueChart() {
-  const days = 7;
   const data = [];
-
-  for(let i = days-1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateKey = d.toISOString().split('T')[0];
+  const now = new Date();
+  const localIsoDate = (date) => {
+    const d = new Date(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const buildDayPoint = (date) => {
+    const dateKey = localIsoDate(date);
     const dayOrders = filterHistory('range', { fromDate: dateKey, toDate: dateKey });
     const dayRows = getFinanceExpenseRows('range', { fromDate: dateKey, toDate: dateKey });
     const dayNetSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0) - (o.discount || 0), 0);
     const dayCashOut = dayRows.reduce((s,row) => s + (Number(row.amount) || 0), 0);
-    data.push({
-      date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
+    return {
+      date: new Date(date),
+      label: new Date(date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       income: dayNetSales,
-      expense: dayCashOut
-    });
+      expense: dayCashOut,
+    };
+  };
+
+  if (financePeriod === 'today') {
+    data.push(buildDayPoint(now));
+  } else if (financePeriod === 'day' && financeDateOpts?.singleDate) {
+    data.push(buildDayPoint(financeDateOpts.singleDate));
+  } else {
+    const periodRange = getPeriodDateRange(financePeriod, financeDateOpts);
+    let startDate;
+    let endDate;
+    if (periodRange) {
+      startDate = new Date(periodRange.start);
+      endDate = new Date(periodRange.end);
+    } else {
+      endDate = new Date(now);
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 6);
+    }
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      data.push(buildDayPoint(d));
+    }
   }
 
   const ctx = document.getElementById('revenue-chart');
@@ -5593,7 +5730,7 @@ function renderRevenueChart() {
   chartInstances.revenue = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: data.map(d => d.date),
+      labels: data.map(d => d.label),
       datasets: [
         {
           label: 'DOANH THU',
@@ -5602,7 +5739,8 @@ function renderRevenueChart() {
           borderRadius: 4,
           borderSkipped: false,
           barPercentage: 0.6,
-          categoryPercentage: 0.8
+          categoryPercentage: 0.8,
+          yAxisID: 'yIncome'
         },
         {
           label: 'CHI PHÍ',
@@ -5611,7 +5749,8 @@ function renderRevenueChart() {
           borderRadius: 4,
           borderSkipped: false,
           barPercentage: 0.6,
-          categoryPercentage: 0.8
+          categoryPercentage: 0.8,
+          yAxisID: 'yExpense'
         }
       ]
     },
@@ -5631,12 +5770,23 @@ function renderRevenueChart() {
         } 
       },
       scales: {
-        y: { 
+        yIncome: { 
+          position: 'left',
+          beginAtZero: true,
           ticks: { 
             color: '#A0A0B5', 
             callback: v => v >= 1000 ? `${(v/1000)}k` : v
           }, 
           grid: { color: 'rgba(255,255,255,0.05)' } 
+        },
+        yExpense: {
+          position: 'right',
+          beginAtZero: true,
+          ticks: {
+            color: '#A0A0B5',
+            callback: v => v >= 1000 ? `${(v/1000)}k` : v
+          },
+          grid: { drawOnChartArea: false }
         },
         x: { 
           ticks: { color: '#A0A0B5' }, 
@@ -5917,16 +6067,20 @@ function getSelectedReportMenuItem() {
 }
 
 function populateReportMenuFilter() {
-  const select = document.getElementById('report-menu-filter');
-  if (!select) return;
+  const selects = Array.from(document.querySelectorAll('#report-menu-filter'));
+  if (!selects.length) return;
   const menu = _getMenu()
     .filter(item => !item.hidden)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
   const current = String(reportFilters.menuItemId || '');
-  select.innerHTML = '<option value="">Tất cả món ăn</option>' + menu
+  const html = '<option value="">\u0054\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e</option>' + menu
     .map(item => `<option value="${item.id}">${item.name}</option>`)
     .join('');
-  select.value = menu.some(item => String(item.id) === current) ? current : '';
+  const nextValue = menu.some(item => String(item.id) === current) ? current : '';
+  selects.forEach(select => {
+    select.innerHTML = html;
+    select.value = nextValue;
+  });
 }
 
 function ensureReportSummaryLayout() {
@@ -5947,7 +6101,7 @@ function ensureReportSummaryLayout() {
     card.id = 'report-menu-summary-card';
     card.style.marginBottom = '16px';
     card.innerHTML = `
-      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">Tóm tắt theo món ăn</div>
+      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">\u0054\u00f3\u006d \u0074\u1eaft \u0074\u0068\u0065\u006f \u006d\u00f3\u006e \u0103\u006e</div>
       <div id="report-menu-summary-content"></div>
     `;
     revenueTab.insertBefore(card, revenueTab.firstElementChild);
@@ -5979,21 +6133,19 @@ function getReportMenuIngredientKeys(menuItem) {
 }
 
 function getReportMenuSalesSummary(menuItem) {
-  if (!menuItem) return null;
-
-  const orders = filterHistory(reportPeriod, reportDateOpts);
+  const orders = getFilteredReportOrders();
   const menu = _getMenu().filter(item => !item.hidden);
   const inventory = _getInventory();
   const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
   const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
-  const targetId = String(menuItem.id || '');
-  const targetName = normalizeViKey(menuItem.name);
+  const targetId = menuItem ? String(menuItem.id || '') : '';
+  const targetName = menuItem ? normalizeViKey(menuItem.name) : '';
 
   return orders.reduce((summary, order) => {
     (order.items || []).forEach(item => {
       const itemId = String(item.id || '');
       const itemNameKey = normalizeViKey(item.name);
-      if (itemId !== targetId && itemNameKey !== targetName) return;
+      if (menuItem && itemId !== targetId && itemNameKey !== targetName) return;
 
       const qty = Number(item.qty || 0);
       const revenue = Number(item.price || 0) * qty;
@@ -6011,27 +6163,24 @@ function getReportMenuSalesSummary(menuItem) {
 }
 
 function renderReportFilterSummary() {
-  const summaryEl = document.getElementById('report-filter-summary');
-  if (!summaryEl) return;
+  const summaryEls = Array.from(document.querySelectorAll('#report-filter-summary'));
+  if (!summaryEls.length) return;
   const labels = [];
-  if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
-  if (isReportTransactionEnabled('purchases')) labels.push('Nhập hàng');
-  if (isReportTransactionEnabled('expenses')) labels.push('Chi phí khác');
+  if (isReportTransactionEnabled('sales')) labels.push('\u0110\u01a1\u006e \u0062\u00e1\u006e');
+  if (isReportTransactionEnabled('purchases')) labels.push('\u004e\u0068\u1ead\u0070 \u0068\u00e0\u006e\u0067');
+  if (isReportTransactionEnabled('expenses')) labels.push('\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063');
   const menuItem = getSelectedReportMenuItem();
-  summaryEl.textContent = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${menuItem ? ` · Món ăn: ${menuItem.name}` : ' · Tất cả món ăn'}`;
+  const text = `\u0110\u0061\u006e\u0067 \u0078\u0065\u006d: ${labels.length ? labels.join(', ') : '\u0063\u0068\u01b0\u0061 \u0063\u0068\u1ecd\u006e \u0067\u0069\u0061\u006f \u0064\u1ecb\u0063\u0068 \u006e\u00e0\u006f'}${menuItem ? ` \u00b7 \u004d\u00f3\u006e \u0103\u006e: ${menuItem.name}` : ' \u00b7 \u0054\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e'}`;
+  summaryEls.forEach(summaryEl => { summaryEl.textContent = text; });
 }
 
 function syncReportFilterUI() {
-  const sales = document.getElementById('report-filter-sales');
-  const purchases = document.getElementById('report-filter-purchases');
-  const expenses = document.getElementById('report-filter-expenses');
-  if (sales) sales.checked = isReportTransactionEnabled('sales');
-  if (purchases) purchases.checked = isReportTransactionEnabled('purchases');
-  if (expenses) expenses.checked = isReportTransactionEnabled('expenses');
+  document.querySelectorAll('#report-filter-sales').forEach(el => { el.checked = isReportTransactionEnabled('sales'); });
+  document.querySelectorAll('#report-filter-purchases').forEach(el => { el.checked = isReportTransactionEnabled('purchases'); });
+  document.querySelectorAll('#report-filter-expenses').forEach(el => { el.checked = isReportTransactionEnabled('expenses'); });
   populateReportMenuFilter();
   renderReportFilterSummary();
 }
-
 function setReportTransactionFilter(type, checked) {
   reportFilters.transactions[type] = !!checked;
   renderReportFilterSummary();
@@ -6210,29 +6359,23 @@ function renderReportMenuSummary() {
   if (!titleEl || !contentEl) return;
 
   const menuItem = getSelectedReportMenuItem();
-  if (!menuItem) {
-    titleEl.textContent = 'Tóm tắt theo món ăn';
-    contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Chọn một món ăn để xem tổng số lượng, thành tiền và lãi.</div></div>';
-    return;
-  }
-
   const summary = getReportMenuSalesSummary(menuItem);
   const profit = Number(summary?.revenue || 0) - Number(summary?.cost || 0);
 
-  titleEl.textContent = `Doanh thu món: ${menuItem.name}`;
+  titleEl.textContent = menuItem ? `\u0044\u006f\u0061\u006e\u0068 \u0074\u0068\u0075 \u006d\u00f3\u006e: ${menuItem.name}` : '\u0054\u00f3\u006d \u0074\u1eaft \u0074\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e';
   contentEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">Tổng số lượng</div>
+        <div class="stat-label">\u0054\u1ed5\u006e\u0067 \u0073\u1ed1 \u006c\u01b0\u1ee3\u006e\u0067</div>
         <div class="stat-value" style="font-size:24px">${fmt(summary?.qty || 0)}</div>
       </div>
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">Thành tiền</div>
-        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}đ</div>
+        <div class="stat-label">\u0054\u0068\u00e0\u006e\u0068 \u0074\u0069\u1ec1\u006e</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}\u0111</div>
       </div>
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">Lãi</div>
-        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}đ</div>
+        <div class="stat-label">\u004c\u00e3\u0069</div>
+        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}\u0111</div>
       </div>
     </div>
   `;
@@ -6550,10 +6693,10 @@ function renderExpenseReport() {
 
   const sums = {};
   rawPurchases.forEach(p => {
-    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.price);
+    sums['\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075'] = (sums['\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075'] || 0) + (p.price);
   });
   rawExpenses.forEach(e => {
-    const cat = e.category || 'Chi phí khác';
+    const cat = normalizeExpenseCategoryLabel(e.category || '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063');
     sums[cat] = (sums[cat] || 0) + e.amount;
   });
 
@@ -6579,8 +6722,8 @@ function renderExpenseReport() {
 
     // Render list
     const allItems = [
-      ...rawPurchases.map(p => ({ type: 'purchase', id: p.id, name: `Nhập: ${p.name}`, amount: p.price, date: p.date, note: `${p.qty} ${p.unit} - ${p.supplier||''}` })),
-      ...rawExpenses.map(e => ({ type: 'expense', id: e.id, name: e.name, amount: e.amount, date: e.date, note: e.category }))
+      ...rawPurchases.map(p => ({ type: 'purchase', id: p.id, name: `Nhập: ${repairVietnameseText(p.name)}`, amount: p.price, date: p.date, note: `${p.qty} ${repairVietnameseText(p.unit || '')} - ${repairVietnameseText(p.supplier || '')}` })),
+      ...rawExpenses.map(e => ({ type: 'expense', id: e.id, name: repairVietnameseText(e.name), amount: e.amount, date: e.date, note: repairVietnameseText(e.category || '') }))
     ].sort((a,b) => new Date(b.date) - new Date(a.date));
 
     listEl.innerHTML = allItems.map(item => `
@@ -6637,21 +6780,112 @@ function renderOrderHistoryList() {
       const detailId = o.historyId || o.id;
       const itemNames = (o.items||[]).slice(0,3).map(i=>`${i.name} x${i.qty}`).join(', ');
       const moreItems = (o.items||[]).length > 3 ? ` +${(o.items||[]).length-3}` : '';
+      const adminActions = isAdminUser()
+        ? `<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            <button class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editHistoryOrder('${detailId}')">Sua</button>
+            <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteHistoryOrder('${detailId}')">Xoa</button>
+          </div>`
+        : '';
       return `<div class="list-item" onclick="viewOrderDetail('${detailId}')" style="cursor:pointer">
-        <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">🧾</div>
+        <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">HD</div>
         <div class="list-item-content">
           <div class="list-item-title">${o.tableName} · ${o.id}</div>
-          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${totalItems} phần · ${payIcon} ${payLabel}${discountLabel}${shippingLabel}${vatLabel}${noteLabel}${photoIcon ? ' · ' + photoIcon : ''}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${totalItems} mon · ${payIcon} ${payLabel}${discountLabel}${shippingLabel}${vatLabel}${noteLabel}${photoIcon ? ' · ' + photoIcon : ''}</div>
           <div class="list-item-sub" style="color:var(--text3);font-size:10px;margin-top:2px">${itemNames}${moreItems}</div>
+          ${adminActions}
         </div>
         <div class="list-item-right">
-          <div class="list-item-amount">${fmt(o.total)}đ</div>
-          ${o.cost > 0 ? `<div style="font-size:10px;color:var(--text3)">Vốn: ${fmt(o.cost)}đ</div>` : ''}
+          <div class="list-item-amount">${fmt(o.total)}d</div>
+          ${o.cost > 0 ? `<div style="font-size:10px;color:var(--text3)">Von: ${fmt(o.cost)}d</div>` : ''}
         </div>
       </div>`;
     }).join('');
   }
   document.getElementById('order-history-list').innerHTML = html;
+}
+
+async function editHistoryOrder(orderId) {
+  const history = _getHistory();
+  const order = history.find(x => (x.historyId || x.id) === orderId);
+  if (!order) return;
+
+  const nextNoteInput = prompt('Ghi chú đơn hàng:', order.note || '');
+  if (nextNoteInput === null) return;
+  const nextDiscountInput = prompt('Giảm giá (đ):', String(Number(order.discount || 0)));
+  if (nextDiscountInput === null) return;
+  const nextShippingInput = prompt('Phí ship (đ):', String(Number(order.shipping || 0)));
+  if (nextShippingInput === null) return;
+  const nextPayMethodInput = prompt('Phương thức thanh toán (cash/bank):', String(order.payMethod || 'cash'));
+  if (nextPayMethodInput === null) return;
+
+  const discount = Math.max(0, Number(nextDiscountInput) || 0);
+  const shipping = Math.max(0, Number(nextShippingInput) || 0);
+  const payMethod = String(nextPayMethodInput || 'cash').trim().toLowerCase() === 'bank' ? 'bank' : 'cash';
+  const itemsTotal = (order.items || []).reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+  const subtotal = Math.max(0, itemsTotal - discount + shipping);
+  const taxRate = Number(order.taxRate || 0);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : Number(order.vatAmount || 0);
+  const total = subtotal + vatAmount;
+  const nextOrder = {
+    ...order,
+    note: String(nextNoteInput || '').trim(),
+    discount,
+    shipping,
+    payMethod,
+    vatAmount,
+    total,
+  };
+
+  const nextHistory = history.map(item => ((item.historyId || item.id) === orderId ? nextOrder : item));
+  Store.set('gkhl_history', nextHistory);
+  if (Array.isArray(window.appState?.history)) {
+    window.appState.history = nextHistory;
+  }
+
+  if (window.DB?.History?.update) {
+    const historyDocId = order.historyId || order.id;
+    await window.DB.History.update(historyDocId, {
+      note: nextOrder.note,
+      discount: nextOrder.discount,
+      shipping: nextOrder.shipping,
+      payMethod: nextOrder.payMethod,
+      vatAmount: nextOrder.vatAmount,
+      total: nextOrder.total,
+    }).catch(err => console.error('[History.update]', err));
+  }
+
+  try { renderFinance(); } catch (_) {}
+  try { refreshReportViews(); } catch (_) {}
+  try { viewOrderDetail(orderId); } catch (_) {}
+  showToast('Đã cập nhật đơn hàng.', 'success');
+}
+
+async function deleteHistoryOrder(orderId) {
+  const history = _getHistory();
+  const order = history.find(x => (x.historyId || x.id) === orderId);
+  if (!order) return;
+  if (!confirm(`Xóa lịch sử đơn ${order.id || order.historyId}?`)) return;
+
+  const nextHistory = history.filter(item => (item.historyId || item.id) !== orderId);
+  Store.set('gkhl_history', nextHistory);
+  if (Array.isArray(window.appState?.history)) {
+    window.appState.history = nextHistory;
+  }
+
+  const photoKey = order.historyId ? ('history_' + order.historyId) : null;
+  if (photoKey) {
+    try { await PhotoDB.remove(photoKey); } catch (_) {}
+  }
+
+  if (window.DB?.History?.delete) {
+    const historyDocId = order.historyId || order.id;
+    await window.DB.History.delete(historyDocId).catch(err => console.error('[History.delete]', err));
+  }
+
+  document.getElementById('order-detail-modal')?.classList.remove('active');
+  try { renderFinance(); } catch (_) {}
+  try { refreshReportViews(); } catch (_) {}
+  showToast('Đã xóa lịch sử đơn hàng.', 'success');
 }
 
 async function viewOrderDetail(orderId) {
@@ -6689,6 +6923,12 @@ async function viewOrderDetail(orderId) {
         </div>
       </div>`
     : '';
+  const adminActionsHtml = isAdminUser()
+    ? `<div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-secondary" style="flex:1" onclick="editHistoryOrder('${orderId}')">Sua don</button>
+        <button class="btn btn-danger" style="flex:1" onclick="deleteHistoryOrder('${orderId}')">Xoa don</button>
+      </div>`
+    : '';
   document.getElementById('order-detail-content').innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">${o.tableName}</div>
@@ -6707,6 +6947,7 @@ async function viewOrderDetail(orderId) {
     </div>
     ${o.cost > 0 ? `<div style="font-size:11px;color:var(--text3);text-align:right">Giá vốn: ${fmtFull(o.cost)} · Lãi gộp: ${fmtFull(o.total - o.cost)}</div>` : ''}
     ${photosHtml}
+    ${adminActionsHtml}
   `;
   document.getElementById('order-detail-modal').classList.add('active');
 }
@@ -7123,7 +7364,7 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
     if (formulaEl) {
       formulaEl.textContent = stock
         ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
-        : 'GiÃ¡ vá»‘n hÃ ng bÃ¡n tháº³ng sáº½ láº¥y tá»« hÃ ng tá»“n kho liÃªn káº¿t.';
+        : 'Gi? v?n h?ng b?n th?ng s? l?y t? h?ng t?n kho li?n k?t.';
     }
     return;
   }
@@ -7132,7 +7373,7 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
   const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
   if (!hasAny) {
     costEl.value = 0;
-    if (formulaEl) formulaEl.textContent = 'ChÆ°a cÃ³ nguyÃªn liá»‡u nÃ o trong cÃ´ng thá»©c.';
+    if (formulaEl) formulaEl.textContent = 'Ch?a c? nguy?n li?u n?o trong c?ng th?c.';
     return;
   }
 
@@ -7175,8 +7416,8 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
   costEl.value = Math.max(0, Math.round(cost));
   if (formulaEl) {
     formulaEl.textContent = formulaParts.length
-      ? `${formulaParts.join(' + ')} | Tá»•ng: ${fmtCost(cost)}`
-      : 'KhÃ´ng tá»‘nh Ä‘Æ°á»£c giÃ¡ vá»‘n. HÃ£y kiá»ƒm tra láº¡i Ä‘Æ¡n vá»‹ quy Ä‘á»•i trong cÃ´ng thá»©c.';
+      ? `${formulaParts.join(' + ' )} | T?ng: ${fmtCost(cost)}`
+      : 'Kh?ng t?nh ???c gi? v?n. H?y ki?m tra l?i ??n v? quy ??i trong c?ng th?c.';
   }
 };
 
@@ -7340,6 +7581,27 @@ function repairVietnameseText(input) {
     } catch (_) {}
   }
   return str;
+}
+
+function normalizeExpenseCategoryLabel(input) {
+  const raw = repairVietnameseText(input || '').trim();
+  const key = normalizeViKey(raw);
+  if (!key) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063';
+
+  if (key.includes('nguyen lieu')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075';
+  if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return '\u004c\u00e3\u0069\u002f\u004c\u1ed7 \u0064\u006f \u006b\u0069\u1ec3\u006d \u006b\u00ea';
+  if (key.includes('chenh lech ca')) return '\u0043\u0068\u00ea\u006e\u0068 \u006c\u1ec7\u0063\u0068 \u0063\u0061';
+  if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return '\u004e\u0068\u1ead\u0070 \u0068\u00e0\u006e\u0067';
+  if (key.includes('nhan su') || /nh n s/.test(key)) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0068\u00e2\u006e \u0073\u1ef1';
+  if (key.includes('marketing')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006d\u0061\u0072\u006b\u0065\u0074\u0069\u006e\u0067';
+  if (key.includes('van chuyen') || key.includes('giao hang')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0076\u1ead\u006e \u0063\u0068\u0075\u0079\u1ec3\u006e';
+  if (key.includes('dien nuoc')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0111\u0069\u1ec7\u006e \u006e\u01b0\u1edb\u0063';
+  if (key.includes('mat bang')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006d\u1eb7\u0074 \u0062\u1eb1\u006e\u0067';
+  if (key.includes('nhap so') || /nh p s/.test(key)) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0068\u1ead\u0070 \u0073\u1ed5';
+  if (key.includes('hao hut')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0068\u0061\u006f \u0068\u1ee5\u0074';
+  if (key.includes('khac')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063';
+
+  return raw;
 }
 
 function showToast(msg, type, duration) {

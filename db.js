@@ -1885,6 +1885,12 @@ const History = {
     }, undefined, 'history.add');
     return histRef.id;
   },
+  async update(historyId, data) {
+    await _safeUpdateDoc(_doc('history', historyId), sanitize(data), `history.update(${historyId})`);
+  },
+  async delete(historyId) {
+    await _safeDeleteDoc(_doc('history', historyId), `history.delete(${historyId})`);
+  },
   async cancel(historyId, cancelReason = 'Void order') {
     await _safeUpdateDoc(_doc('history', historyId), sanitize({
       status: 'cancelled',
