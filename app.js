@@ -3983,8 +3983,13 @@ function resizeImageToDataUrl(file, maxSize, quality) {
 function renderStockList() {
   const inv = _getInventory();
   const search = (document.getElementById('inv-search')||{}).value || '';
+  const typeFilter = (document.getElementById('inv-type-filter')||{}).value || 'all';
   const filtered = inv
-    .filter(i => !i.hidden && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
+    .filter(i => {
+      if (i.hidden) return false;
+      if (typeFilter !== 'all' && String(i.itemType || ITEM_TYPES.RAW) !== typeFilter) return false;
+      return !search || i.name.toLowerCase().includes(search.toLowerCase());
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'vi')); // Sắp xếp theo alphabet tiếng Việt
   const {critical, low} = getInventoryAlerts();
   const critSet = new Set(critical.map(i=>i.id));
