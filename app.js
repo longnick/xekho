@@ -3166,14 +3166,134 @@ function closeBillModal() {
   document.getElementById('bill-modal').classList.remove('active');
 }
 
+function buildStandaloneBillPrintHtml(printableMarkup) {
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>In bill</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 12px;
+      width: 80mm;
+    }
+    body { padding: 6px 8px 12px; }
+    .bill-container {
+      background: #fff;
+      color: #000;
+      padding: 0;
+      border-radius: 0;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 11px;
+      width: 100%;
+      max-width: 80mm;
+      page-break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .bill-header { text-align: center; margin-bottom: 8px; }
+    .bill-logo { font-size: 14px; font-weight: 900; color: #000; display: block; }
+    .bill-sub { font-size: 10px; color: #333; margin-top: 2px; }
+    .bill-divider { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+    .bill-info { font-size: 10px; margin-bottom: 6px; line-height: 1.6; }
+    .bill-info span { font-weight: 700; }
+    .bill-items { width: 100%; font-size: 10px; border-collapse: collapse; }
+    .bill-items th {
+      text-align: left;
+      border-bottom: 1px solid #000;
+      padding: 3px 0;
+      font-size: 10px;
+      color: #000;
+    }
+    .bill-items td { padding: 3px 0; vertical-align: top; color: #000; }
+    .bill-items .amount { text-align: right; font-weight: 700; }
+    .bill-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 900;
+      margin-top: 6px;
+      border-top: 2px solid #000;
+      padding-top: 6px;
+      color: #000;
+    }
+    .bill-qr {
+      text-align: center;
+      margin-top: 10px;
+      page-break-inside: avoid;
+      background: #f9f9f9;
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .bill-qr img {
+      width: 160px;
+      height: 160px;
+      object-fit: contain;
+      display: block;
+      margin: 6px auto;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .bill-qr-label, .bill-qr-bank { font-size: 10px; color: #333; }
+    .bill-qr-amount { font-size: 13px; font-weight: 900; color: #E55A25; }
+    .bill-thanks {
+      text-align: center;
+      font-size: 11px;
+      color: #333;
+      margin-top: 8px;
+      padding-bottom: 4px;
+    }
+    .bill-photo-page { margin-top: 12px; page-break-before: auto; }
+    .bill-photo-page img { width: 100%; max-width: 100%; height: auto; display: block; }
+  </style>
+</head>
+<body>
+  ${printableMarkup}
+  <script>
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        try { window.focus(); } catch (e) {}
+        try { window.print(); } catch (e) {}
+      }, 250);
+    });
+    window.onafterprint = function () {
+      setTimeout(function () {
+        try { window.close(); } catch (e) {}
+      }, 150);
+    };
+  <\/script>
+</body>
+</html>`;
+}
+
 function printBill() {
-  const qrImg = document.querySelector('#bill-print-area img');
-  if(qrImg && !qrImg.complete) {
-    qrImg.onload  = () => window.print();
-    qrImg.onerror = () => window.print();
-    setTimeout(() => window.print(), 3000);
-  } else {
+  const billContent = document.getElementById('bill-content');
+  if (!billContent) return;
+
+  const clone = billContent.cloneNode(true);
+  clone.querySelectorAll('button, #pay-watch-status').forEach(node => node.remove());
+  const printableMarkup = clone.innerHTML.trim();
+  if (!printableMarkup) return;
+
+  const printWindow = window.open('', '_blank', 'width=420,height=900');
+  if (printWindow && printWindow.document) {
+    printWindow.document.open();
+    printWindow.document.write(buildStandaloneBillPrintHtml(printableMarkup));
+    printWindow.document.close();
+    return;
+  }
+
+  try {
     window.print();
+  } catch (_) {
+    showToast('Không mở được cửa sổ in trên iPhone. Hãy thử lại bằng Safari.', 'warning');
   }
 }
 
@@ -7188,40 +7308,34 @@ window.hardReloadApp = async function hardReloadApp() {
     return false;
   };
 
-  try {
-    const localKeys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k) localKeys.push(k);
-    }
-    localKeys.forEach(k => {
-      if (preserveKey(k)) return;
-      if (k.startsWith('gkhl_') || k === 'gkhl_backup_latest') {
-        localStorage.removeItem(k);
+  const clearStorage = (storage, label) => {
+    try {
+      const keys = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k) keys.push(k);
       }
-    });
-  } catch (err) {
-    console.error('[hardReloadApp] localStorage error:', err);
-  }
-
-  try {
-    const sessKeys = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
-      if (k) sessKeys.push(k);
+      keys.forEach(k => {
+        if (preserveKey(k)) return;
+        storage.removeItem(k);
+      });
+    } catch (err) {
+      console.error(`[hardReloadApp] ${label} error:`, err);
     }
-    sessKeys.forEach(k => {
-      if (preserveKey(k)) return;
-      sessionStorage.removeItem(k);
-    });
-  } catch (err) {
-    console.error('[hardReloadApp] sessionStorage error:', err);
-  }
+  };
+
+  clearStorage(localStorage, 'localStorage');
+  clearStorage(sessionStorage, 'sessionStorage');
 
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
+      await Promise.all(regs.map(async r => {
+        try {
+          if (typeof r.update === 'function') await r.update();
+        } catch (_) {}
+        return r.unregister();
+      }));
     }
   } catch (err) {
     console.error('[hardReloadApp] serviceWorker error:', err);
@@ -7241,8 +7355,16 @@ window.hardReloadApp = async function hardReloadApp() {
   const url = new URL(window.location.href);
   url.searchParams.set('_v', String(Date.now()));
   setTimeout(() => {
-    try { window.location.replace(url.toString()); }
-    catch (_) { window.location.reload(); }
+    try {
+      window.location.href = url.toString();
+      if (typeof window.location.reload === 'function') {
+        try { window.location.reload(true); }
+        catch (_) { window.location.reload(); }
+      }
+    } catch (_) {
+      try { window.location.replace(url.toString()); }
+      catch (_) { window.location.reload(); }
+    }
   }, 150);
 };
 
