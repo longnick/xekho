@@ -2661,6 +2661,42 @@ async function _flushWholeOrderCloudSync(tableKey) {
   await _syncWholeOrderToCloud(key);
 }
 
+function _markTableEmptyEverywhere(tableKey) {
+  const key = String(tableKey);
+
+  const orders = Store.getOrders();
+  delete orders[key];
+  Store.setOrders(orders);
+
+  if (key !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => String(t.id) === key);
+    if (table) {
+      table.status = 'empty';
+      table.orderId = null;
+      table.openTime = null;
+      table.note = '';
+      Store.setTables(tables);
+    }
+  }
+
+  if (window._currentOrderId) delete window._currentOrderId[key];
+
+  if (window.appState?.orders && typeof window.appState.orders === 'object') {
+    delete window.appState.orders[key];
+  }
+
+  if (key !== 'takeaway' && Array.isArray(window.appState?.tables)) {
+    const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+    if (cloudTable) {
+      cloudTable.status = 'empty';
+      cloudTable.orderId = null;
+      cloudTable.openTime = null;
+      cloudTable.note = '';
+    }
+  }
+}
+
 /**
  * Đảm bảo tđơ tại đơn hàng Cloud cho bàn key.
  * Nếu chưa có để gọi Orders.open() và cache lại orderId.
@@ -2727,26 +2763,33 @@ async function _cloudSyncItem(action, tableKey) {
 function saveOrderForTable(tableId) {
   const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
   const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
+  const hasItems = (orderItems[key] || []).length > 0;
 
   // --- LocalStorage (offline backup) ---
   const orders = Store.getOrders();
-  orders[key] = orderItems[key] || [];
+  if (hasItems) orders[key] = orderItems[key] || [];
+  else delete orders[key];
   Store.setOrders(orders);
 
   if(key !== 'takeaway') {
     const tables = Store.getTables();
     const table = tables.find(t => t.id === key);
     if(table) {
-      const hasItems = (orderItems[key] || []).length > 0;
       if(hasItems) {
         table.status   = 'occupied';
         table.openTime = table.openTime || Date.now();
       } else if(!hasItems) {
         table.status   = 'empty';
+        table.orderId  = null;
         table.openTime = null;
+        table.note     = '';
       }
       Store.setTables(tables);
     }
+  }
+
+  if (!hasItems) {
+    _markTableEmptyEverywhere(key);
   }
 
   // --- Firestore (cloud sync để AI batch write) ---
@@ -2916,23 +2959,30 @@ function saveOrder() {
 
   // --- LocalStorage (offline backup) ---
   const orders = Store.getOrders();
-  orders[currentTable] = orderItems[currentTable] || [];
+  const hasItems = (orderItems[currentTable] || []).length > 0;
+  if (hasItems) orders[currentTable] = orderItems[currentTable] || [];
+  else delete orders[currentTable];
   Store.setOrders(orders);
 
   if (currentTable !== 'takeaway') {
     const tables = Store.getTables();
     const table = tables.find(t => t.id === currentTable);
     if(table) {
-      const hasItems = (orderItems[currentTable]||[]).length > 0;
       if(hasItems) {
         table.status   = 'occupied';
         table.openTime = table.openTime || Date.now();
       } else if(!hasItems) {
         table.status   = 'empty';
+        table.orderId  = null;
         table.openTime = null;
+        table.note     = '';
       }
       Store.setTables(tables);
     }
+  }
+
+  if (!hasItems) {
+    _markTableEmptyEverywhere(currentTable);
   }
 
   if (window.DB && currentTable !== 'takeaway') {
