@@ -1381,8 +1381,8 @@ function runMigrations() {
     // 1) Settings text
     const settings = Store.getSettings();
     let settingsChanged = false;
-    if (hasBad(settings.storeName)) { settings.storeName = 'Gánh Khô Chữa Lành'; settingsChanged = true; }
-    if (hasBad(settings.bankOwner)) { settings.bankOwner = 'Gánh Khô Chữa Lành'; settingsChanged = true; }
+    if (hasBad(settings.storeName)) { settings.storeName = 'XE KHÔ CHỮA LÀNH'; settingsChanged = true; }
+    if (hasBad(settings.bankOwner)) { settings.bankOwner = 'XE KHÔ CHỮA LÀNH'; settingsChanged = true; }
     if (hasBad(settings.storeSlogan)) { settings.storeSlogan = 'Ăn là nhớ, nhớ là ghiền!'; settingsChanged = true; }
     Store.setSettings(settings);
     if (window.appState?.settings) window.appState.settings = { ...window.appState.settings, ...settings };
@@ -1497,7 +1497,7 @@ function applyStoreSettings() {
   if(s.bankOwner)   PAYMENT_INFO.name    = s.bankOwner;
 
   const logoText = document.querySelector('.logo-text');
-  if(logoText) logoText.textContent = s.storeName || 'Gánh Khô Chữa Lành';
+  if(logoText) logoText.textContent = s.storeName || 'XE KHÔ CHỮA LÀNH';
 
   const logoIcon = document.querySelector('.logo-icon');
   if(logoIcon) {
@@ -3179,7 +3179,7 @@ function openBillModal() {
   document.getElementById('bill-content').innerHTML = `
     <div class="bill-container" id="bill-print-area">
       <div class="bill-header">
-        <div class="bill-logo">🧾 ${s.storeName||'Gánh Khô Chữa Lành'}</div>
+        <div class="bill-logo">🧾 ${s.storeName||'XE KHÔ CHỮA LÀNH'}</div>
         ${s.storeSlogan ? `<div class="bill-sub">${s.storeSlogan}</div>` : ''}
         ${s.storePhone ? `<div class="bill-sub" style="margin-top:4px">ĐT: ${s.storePhone}</div>` : ''}
         ${s.storeAddress ? `<div class="bill-sub">${s.storeAddress}</div>` : ''}
@@ -3850,7 +3850,7 @@ async function runOnlinePurchaseOcr(dataUrl) {
   const s = Store.getSettings();
   if(!s.geminiApiKey) throw new Error('Chưa cấu hình Gemini API Key cho OCR Online.');
   const base64 = dataUrl.split(',')[1];
-  const prompt = `Bạn là trợ lý nhập hàng cho quán ăn "Gánh Khô Chữa Lành".
+  const prompt = `Bạn là trợ lý nhập hàng cho quán ăn "XE KHÔ CHỮA LÀNH".
 Đây là ảnh hóa đơn / phiếu nhập nguyên liệu. Hãy cố gắng trích xuất:
 - Tên nguyên liệu chính (name)
 - Số lượng (qty)
@@ -5188,12 +5188,63 @@ function submitPurchase(e) {
 // ============================================================
 function renderStocktakeHistory() {
   const stocktakeCategory = normalizeExpenseCategoryLabel('\u004c\u00e3\u0069\u002f\u004c\u1ed7 \u0064\u006f \u006b\u0069\u1ec3\u006d \u006b\u00ea');
+  const periodEl = document.getElementById('stocktake-history-period');
+  const fromEl = document.getElementById('stocktake-history-from');
+  const toEl = document.getElementById('stocktake-history-to');
+  const totalEl = document.getElementById('stocktake-history-total');
+  const now = new Date();
+  const todayKey = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  if (fromEl && !fromEl.dataset.initialized) {
+    fromEl.value = todayKey;
+    fromEl.dataset.initialized = '1';
+  }
+  if (toEl && !toEl.dataset.initialized) {
+    toEl.value = todayKey;
+    toEl.dataset.initialized = '1';
+  }
+
+  const period = periodEl?.value || 'month';
+  const inRange = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return false;
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (period === 'all') return true;
+    if (period === 'today') return d >= startOfToday;
+    if (period === 'week') {
+      const start = new Date(startOfToday);
+      start.setDate(start.getDate() - 6);
+      const end = new Date(startOfToday);
+      end.setDate(end.getDate() + 1);
+      return d >= start && d < end;
+    }
+    if (period === 'month') {
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }
+    if (period === 'custom') {
+      const fromDate = fromEl?.value ? new Date(`${fromEl.value}T00:00:00`) : null;
+      const toDate = toEl?.value ? new Date(`${toEl.value}T23:59:59.999`) : null;
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    }
+    return true;
+  };
+
   const expenses = _getExpenses()
     .filter(e => normalizeExpenseCategoryLabel(e.category) === stocktakeCategory)
+    .filter(e => inRange(e.date))
     .slice()
     .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   const listEl = document.getElementById('stocktake-history-list');
   if(!listEl) return;
+  if (fromEl) fromEl.disabled = period !== 'custom';
+  if (toEl) toEl.disabled = period !== 'custom';
+  if (totalEl) {
+    const total = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    totalEl.textContent = `${total < 0 ? '+' : '-'}${fmt(Math.abs(total))}đ`;
+    totalEl.style.color = total > 0 ? 'var(--danger)' : total < 0 ? 'var(--success)' : 'var(--text)';
+  }
 
   listEl.innerHTML = expenses.map(e => `
     <div class="list-item">
@@ -5207,10 +5258,40 @@ function renderStocktakeHistory() {
         <div class="list-item-amount" style="color:${e.amount > 0 ? 'var(--danger)' : 'var(--success)'}">
           ${e.amount > 0 ? '-' : '+'}${fmt(Math.abs(e.amount))}đ
         </div>
+        <button class="btn btn-xs btn-outline" onclick="editStocktakeNote('${e.id}')">Ghi chú</button>
       </div>
     </div>
   `).join('') || '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử kiểm kê</div></div>';
 }
+
+window.applyStocktakeHistoryFilter = function applyStocktakeHistoryFilter() {
+  renderStocktakeHistory();
+};
+
+window.editStocktakeNote = async function editStocktakeNote(expenseId) {
+  const expenses = _getExpenses().slice();
+  const idx = expenses.findIndex(e => String(e.id || '') === String(expenseId || ''));
+  if (idx < 0) return;
+
+  const current = expenses[idx];
+  const nextNote = prompt('Ghi chú chênh lệch kiểm kê:', repairVietnameseText(current.note || ''));
+  if (nextNote === null) return;
+
+  expenses[idx] = { ...current, note: String(nextNote || '').trim() };
+  Store.set(KEYS.expenses, expenses);
+  if (Array.isArray(window.appState?.expenses)) {
+    window.appState.expenses = expenses;
+  }
+
+  if (window.DB?.Expenses?.update) {
+    await window.DB.Expenses.update(expenseId, { note: expenses[idx].note }).catch(err => {
+      console.error('[Expenses.update]', err);
+    });
+  }
+
+  renderStocktakeHistory();
+  showToast('Đã cập nhật ghi chú kiểm kê.', 'success');
+};
 
 function openStocktakeModal() {
   const inv = _getInventory().filter(i => !i.hidden);
@@ -6481,46 +6562,45 @@ function renderTrendChart() {
     const dayExp = expenses.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0);
     const dayPur = purchases.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0);
     
-    const totalOut = dayCost + dayDiscount + dayVat + dayExp + dayPur;
-    const profit = dayGrossSales - totalOut;
-
     data.push({
       date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       label: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       revenue: dayGrossSales,
-      profit: profit
+      cost: dayCost
     });
   }
 
   chartInstances.trend = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: data.map(d => d.label),
       datasets: [
         {
-          label: 'revenue',
+          label: '\u0044\u006f\u0061\u006e\u0068 \u0074\u0068\u0075',
           data: data.map(d => d.revenue),
-          borderColor: '#00E5FF', // Cyan
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          pointBackgroundColor: '#00E5FF',
-          pointBorderColor: '#fff',
-          pointRadius: 4,
-          tension: 0.4, // Curved line
-          fill: false,
+          backgroundColor: 'rgba(0, 229, 255, 0.85)',
+          borderColor: '#00E5FF',
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+          grouped: false,
+          barPercentage: 0.72,
+          categoryPercentage: 0.62,
+          maxBarThickness: 42,
           yAxisID: 'y'
         },
         {
-          label: 'profit',
-          data: data.map(d => d.profit),
-          borderColor: '#FFD700', // Yellow/Orange
-          backgroundColor: 'rgba(255, 215, 0, 0.2)', // Gradient effect will be handled via config if needed, using simple fill for now
-          borderWidth: 2,
-          pointBackgroundColor: '#FFD700',
-          pointBorderColor: '#fff',
-          pointRadius: 4,
-          tension: 0.4, // Curved line
-          fill: true,
+          label: '\u0054\u0069\u1ec1\u006e \u0076\u1ed1\u006e',
+          data: data.map(d => d.cost),
+          backgroundColor: 'rgba(255, 215, 0, 0.92)',
+          borderColor: '#FFD700',
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+          grouped: false,
+          barPercentage: 0.42,
+          categoryPercentage: 0.62,
+          maxBarThickness: 24,
           yAxisID: 'y'
         }
       ]
@@ -6533,7 +6613,16 @@ function renderTrendChart() {
         intersect: false,
       },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#A0A0B5',
+            usePointStyle: true,
+            boxWidth: 10
+          }
+        },
         tooltip: {
           backgroundColor: 'rgba(15, 23, 42, 0.9)',
           titleColor: '#fff',
@@ -6552,18 +6641,17 @@ function renderTrendChart() {
                 label += ' : ';
               }
               if (context.parsed.y !== null) {
-                label += context.parsed.y;
+                label += `${fmt(context.parsed.y)}đ`;
               }
               return label;
             },
             labelColor: (context) => {
               return {
-                borderColor: 'transparent',
-                backgroundColor: 'transparent',
+                borderColor: context.dataset.borderColor,
+                backgroundColor: Array.isArray(context.dataset.backgroundColor)
+                  ? context.dataset.backgroundColor[context.dataIndex]
+                  : context.dataset.backgroundColor,
               };
-            },
-            labelTextColor: (context) => {
-              return context.datasetIndex === 0 ? '#00E5FF' : '#FFD700';
             }
           }
         }

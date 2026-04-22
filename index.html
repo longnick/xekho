@@ -10,9 +10,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Gánh Khô">
+  <meta name="apple-mobile-web-app-title" content="XE KHÔ CHỮA LÀNH">
   <meta name="theme-color" content="#0F0F14">
-  <title>Gánh Khô Chữa Lành – POS</title>
+  <title>XE KHÔ CHỮA LÀNH – POS</title>
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
   <link rel="stylesheet" href="style.css?v=20260418-font">
@@ -27,7 +27,7 @@
       <div class="header-logo">
         <div class="logo-icon">🍢</div>
         <div>
-          <div class="logo-text">Gánh Khô Chữa Lành</div>
+          <div class="logo-text">XE KHÔ CHỮA LÀNH</div>
           <div class="logo-sub">POS System</div>
         </div>
       </div>
@@ -268,9 +268,35 @@
 
         <!-- STOCKTAKE TAB -->
         <div id="inv-tab-stocktake" style="display:none">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 4px;gap:10px;flex-wrap:wrap">
             <div style="font-weight:700;font-size:15px">📋 Lịch sử Kiểm Kê</div>
             <button class="btn btn-sm btn-primary" onclick="openStocktakeModal()">+ Tạo phiếu kiểm kê</button>
+          </div>
+          <div class="card" style="padding:12px;margin-bottom:12px">
+            <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;align-items:end">
+              <div class="input-group" style="margin:0">
+                <label class="input-label">Thời gian</label>
+                <select class="select" id="stocktake-history-period" onchange="applyStocktakeHistoryFilter()">
+                  <option value="today">Hôm nay</option>
+                  <option value="week">7 ngày gần nhất</option>
+                  <option value="month" selected>Tháng này</option>
+                  <option value="all">Tất cả</option>
+                  <option value="custom">Tùy chọn</option>
+                </select>
+              </div>
+              <div class="input-group" style="margin:0">
+                <label class="input-label">Từ ngày</label>
+                <input class="input" id="stocktake-history-from" type="date" onchange="applyStocktakeHistoryFilter()">
+              </div>
+              <div class="input-group" style="margin:0">
+                <label class="input-label">Đến ngày</label>
+                <input class="input" id="stocktake-history-to" type="date" onchange="applyStocktakeHistoryFilter()">
+              </div>
+            </div>
+            <div class="stat-card" style="padding:12px;margin-top:10px">
+              <div class="stat-label">Tổng chênh lệch kiểm kê trong kỳ</div>
+              <div class="stat-value" id="stocktake-history-total" style="font-size:24px">0đ</div>
+            </div>
           </div>
           <div id="stocktake-history-list"></div>
         </div>
@@ -666,7 +692,7 @@
 
           <!-- Charts -->
           <div class="chart-wrap">
-            <div class="card-title" style="margin-bottom:10px">📈 Xu hướng Doanh thu & Lợi nhuận</div>
+            <div class="card-title" style="margin-bottom:10px">&#128200; Xu hướng Doanh thu &amp; Tiền vốn</div>
             <canvas id="trend-chart"></canvas>
           </div>
           <div class="chart-wrap">
@@ -930,7 +956,7 @@
 
               <div class="input-group">
                 <label class="input-label">Tên quán *</label>
-                <input class="input" id="set-storeName" placeholder="Gánh Khô Chữa Lành" required>
+                <input class="input" id="set-storeName" placeholder="XE KHÔ CHỮA LÀNH" required>
               </div>
               <div class="input-group">
                 <label class="input-label">Slogan / Khẩu hiệu</label>
@@ -1909,7 +1935,7 @@
       <div class="login-brand">
         <div class="login-logo">🍜</div>
         <div>
-          <div class="login-title">Gánh Khô Chữa Lành</div>
+          <div class="login-title">XE KHÔ CHỮA LÀNH</div>
           <div class="login-sub">POS System</div>
         </div>
       </div>
