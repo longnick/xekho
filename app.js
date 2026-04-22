@@ -3987,7 +3987,9 @@ function renderStockList() {
   const filtered = inv
     .filter(i => {
       if (i.hidden) return false;
-      if (typeFilter !== 'all' && String(i.itemType || ITEM_TYPES.RAW) !== typeFilter) return false;
+      const normalizedType = String(i.itemType || ITEM_TYPES.RAW);
+      const expectedType = typeFilter === 'raw' ? ITEM_TYPES.RAW : typeFilter;
+      if (expectedType !== 'all' && normalizedType !== expectedType) return false;
       return !search || i.name.toLowerCase().includes(search.toLowerCase());
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'vi')); // Sắp xếp theo alphabet tiếng Việt
