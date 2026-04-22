@@ -1830,18 +1830,20 @@ function quickAddStockFromAlert(invId) {
  * Đây là "Lđp đăm Fallback" chđơg Race Condition.
  */
 function _getTables() {
-  return (window.appState && window.appState.tables && window.appState.tables.length > 0)
-    ? window.appState.tables
-    : Store.getTables();
+  if (Array.isArray(window.appState?.tables)) {
+    return window.appState.tables;
+  }
+  return Store.getTables();
 }
 function _getOrders() {
   // appState.orders = { [tableId]: orderObject } (online format)
   // Store.getOrders() = { [tableId]: itemsArray } (offline format)
   // Trả về offline format đă không vỡ các hàm cũ
-  if (window.appState && window.appState.orders && Object.keys(window.appState.orders).length > 0) {
+  if (window.appState && window.appState.orders && typeof window.appState.orders === 'object') {
     const map = {};
     Object.entries(window.appState.orders).forEach(([tid, order]) => {
-      map[tid] = order.items || [];
+      if (!order || order.status === 'cancelled') return;
+      map[tid] = Array.isArray(order.items) ? order.items : [];
     });
     return map;
   }
@@ -2476,12 +2478,15 @@ function openTable(tableId) {
   // Load existing order:
   // Ưu tiên từ Cloud (appState.orders), fallback LocalStorage
   if (!orderItems[currentTable]) {
-    const cloudOrder = window.appState && window.appState.orders && window.appState.orders[String(currentTable)];
+    const hasCloudOrdersState = !!(window.appState && window.appState.orders && typeof window.appState.orders === 'object');
+    const cloudOrder = hasCloudOrdersState ? window.appState.orders[String(currentTable)] : null;
     if (cloudOrder && cloudOrder.items && cloudOrder.items.length > 0) {
       orderItems[currentTable] = [...cloudOrder.items];
       // Ghi cưđc orderId vào bđ nhđ tiền cho phase write
       window._currentOrderId = window._currentOrderId || {};
       window._currentOrderId[currentTable] = cloudOrder.id || cloudOrder.orderId;
+    } else if (hasCloudOrdersState) {
+      orderItems[currentTable] = [];
     } else {
       const localOrders = Store.getOrders();
       orderItems[currentTable] = localOrders[currentTable] ? [...localOrders[currentTable]] : [];
@@ -2508,6 +2513,7 @@ async function clearTable() {
 
   const key = String(currentTable);
   let cancelledViaCloud = false;
+  _cancelWholeOrderCloudSync(key);
 
   // Cloud: huỷ đơn nếu tồn tại
   try {
@@ -2640,13 +2646,18 @@ function _queueWholeOrderCloudSync(tableKey) {
   }, 250);
 }
 
-async function _flushWholeOrderCloudSync(tableKey) {
-  if (!window.DB || tableKey === 'takeaway') return;
+function _cancelWholeOrderCloudSync(tableKey) {
   const key = String(tableKey);
   if (window.__orderCloudSyncTimers && window.__orderCloudSyncTimers[key]) {
     clearTimeout(window.__orderCloudSyncTimers[key]);
     delete window.__orderCloudSyncTimers[key];
   }
+}
+
+async function _flushWholeOrderCloudSync(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  _cancelWholeOrderCloudSync(key);
   await _syncWholeOrderToCloud(key);
 }
 
