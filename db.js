@@ -1251,6 +1251,7 @@ const Orders = {
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
       if (!snap.exists()) throw new Error('Đơn không tồn tại: ' + orderId);
+      if (String(snap.data()?.status || 'open') !== 'open') return;
 
       const items = (snap.data().items || [])
         .map(sanitize)
@@ -1279,6 +1280,7 @@ const Orders = {
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
       if (!snap.exists()) throw new Error('Đơn không tồn tại: ' + orderId);
+      if (String(snap.data()?.status || 'open') !== 'open') return;
 
       let items = (snap.data().items || [])
         .map(sanitize)
@@ -1301,6 +1303,7 @@ const Orders = {
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
       if (!snap.exists()) return;
+      if (String(snap.data()?.status || 'open') !== 'open') return;
 
       const noteKey = itemNote || '';
       const items   = (snap.data().items || [])
@@ -1317,6 +1320,7 @@ const Orders = {
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
       if (!snap.exists()) return;
+      if (String(snap.data()?.status || 'open') !== 'open') return;
 
       const items = (snap.data().items || [])
         .map(sanitize)
@@ -1331,7 +1335,13 @@ const Orders = {
 
   /** Cập nhật metadata đơn (discount, shipping, vatAmount, note, discountType) */
   async updateMeta(orderId, meta) {
-    await _safeUpdateDoc(_doc('orders', orderId), _withUpdateAudit(meta), `orders.updateMeta(${orderId})`);
+    const orderRef = _doc('orders', orderId);
+    await runTransaction(_db, async tx => {
+      const snap = await tx.get(orderRef);
+      if (!snap.exists()) return;
+      if (String(snap.data()?.status || 'open') !== 'open') return;
+      tx.update(orderRef, _withUpdateAudit(meta));
+    });
   },
 
   /**
