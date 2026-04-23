@@ -1,0 +1,16 @@
+{
+  "name": "XE KHO POS",
+  "short_name": "XEKHO POS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F0F14",
+  "theme_color": "#0F0F14",
+  "icons": [
+    {
+      "src": "/kitchen-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
