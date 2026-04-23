@@ -3598,80 +3598,79 @@ function buildStandaloneBillPrintHtml(printableMarkup) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>In bill</title>
   <style>
-    @page { size: 80mm auto; margin: 0; }
+    @page { size: A4 portrait; margin: 12mm; }
     html, body {
       margin: 0;
       padding: 0;
       background: #fff;
       color: #000;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 12px;
-      width: 80mm;
+      font-family: "Times New Roman", Georgia, serif;
+      font-size: 12pt;
     }
-    body { padding: 6px 8px 12px; }
+    body { padding: 0; }
     .bill-container {
       background: #fff;
       color: #000;
       padding: 0;
       border-radius: 0;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 11px;
+      font-family: "Times New Roman", Georgia, serif;
+      font-size: 12pt;
       width: 100%;
-      max-width: 80mm;
+      max-width: none;
       page-break-inside: avoid;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .bill-header { text-align: center; margin-bottom: 8px; }
-    .bill-logo { font-size: 14px; font-weight: 900; color: #000; display: block; }
-    .bill-sub { font-size: 10px; color: #333; margin-top: 2px; }
-    .bill-divider { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    .bill-info { font-size: 10px; margin-bottom: 6px; line-height: 1.6; }
+    .bill-header { text-align: center; margin-bottom: 16px; }
+    .bill-logo { font-size: 24pt; font-weight: 900; color: #000; display: block; }
+    .bill-sub { font-size: 11pt; color: #333; margin-top: 4px; line-height: 1.5; }
+    .bill-divider { border: none; border-top: 1px solid #000; margin: 12px 0; }
+    .bill-info { font-size: 11pt; margin-bottom: 10px; line-height: 1.6; }
     .bill-info span { font-weight: 700; }
-    .bill-items { width: 100%; font-size: 10px; border-collapse: collapse; }
+    .bill-items { width: 100%; font-size: 11pt; border-collapse: collapse; }
     .bill-items th {
       text-align: left;
       border-bottom: 1px solid #000;
-      padding: 3px 0;
-      font-size: 10px;
+      padding: 7px 0;
+      font-size: 10pt;
       color: #000;
     }
-    .bill-items td { padding: 3px 0; vertical-align: top; color: #000; }
+    .bill-items td { padding: 7px 0; vertical-align: top; color: #000; }
     .bill-items .amount { text-align: right; font-weight: 700; }
     .bill-total {
       display: flex;
       justify-content: space-between;
-      font-size: 13px;
+      font-size: 18pt;
       font-weight: 900;
-      margin-top: 6px;
+      margin-top: 14px;
       border-top: 2px solid #000;
-      padding-top: 6px;
+      padding-top: 12px;
       color: #000;
     }
     .bill-qr {
       text-align: center;
-      margin-top: 10px;
+      margin-top: 16px;
       page-break-inside: avoid;
       background: #f9f9f9;
-      border-radius: 8px;
-      padding: 10px;
+      border-radius: 12px;
+      padding: 16px;
     }
     .bill-qr img {
-      width: 160px;
-      height: 160px;
+      width: 220px;
+      height: 220px;
       object-fit: contain;
       display: block;
-      margin: 6px auto;
+      margin: 10px auto;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .bill-qr-label, .bill-qr-bank { font-size: 10px; color: #333; }
-    .bill-qr-amount { font-size: 13px; font-weight: 900; color: #E55A25; }
+    .bill-qr-label, .bill-qr-bank { font-size: 11pt; color: #333; }
+    .bill-qr-amount { font-size: 16pt; font-weight: 900; color: #E55A25; }
     .bill-thanks {
       text-align: center;
-      font-size: 11px;
+      font-size: 11pt;
       color: #333;
-      margin-top: 8px;
+      margin-top: 12px;
       padding-bottom: 4px;
     }
     .bill-photo-page { margin-top: 12px; page-break-before: auto; }
@@ -8191,6 +8190,8 @@ function renderSettings() {
     ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
     ['set-webPushVapidKey', s.webPushVapidKey || ''],
+    ['set-zaloMessagePrefix', s.zaloMessagePrefix || '[XE KHO POS]'],
+    ['set-zaloGroupLabel', s.zaloGroupLabel || ''],
   ];
   fields.forEach(([id, val]) => {
     const el = document.getElementById(id);
@@ -8248,6 +8249,12 @@ function renderSettings() {
     if (paySoundValEl) paySoundValEl.textContent = (s.paySoundVolume ?? 80) + '%';
     paySoundEl.oninput = () => { if (paySoundValEl) paySoundValEl.textContent = paySoundEl.value + '%'; };
   }
+  const zaloOaEnabledEl = document.getElementById('set-zaloOaEnabled');
+  if (zaloOaEnabledEl) zaloOaEnabledEl.checked = s.zaloOaEnabled !== false;
+  const zaloNotifyReadyEl = document.getElementById('set-zaloNotifyReady');
+  if (zaloNotifyReadyEl) zaloNotifyReadyEl.checked = s.zaloNotifyReady !== false;
+  const zaloNotifyDelayEl = document.getElementById('set-zaloNotifyDelay');
+  if (zaloNotifyDelayEl) zaloNotifyDelayEl.checked = s.zaloNotifyDelay !== false;
 
   // Theme radio buttons
   const themeInput = document.querySelector(`input[name="appTheme"][value="${s.appTheme || 'hien-dai'}"]`);
@@ -8306,6 +8313,11 @@ function submitSettings(e) {
   const ocrModeEl            = document.getElementById('set-ocrMode');
   const photoRetentionEl     = document.getElementById('set-photoRetentionDays');
   const webPushVapidKeyEl    = document.getElementById('set-webPushVapidKey');
+  const zaloOaEnabledEl      = document.getElementById('set-zaloOaEnabled');
+  const zaloNotifyReadyEl    = document.getElementById('set-zaloNotifyReady');
+  const zaloNotifyDelayEl    = document.getElementById('set-zaloNotifyDelay');
+  const zaloMessagePrefixEl  = document.getElementById('set-zaloMessagePrefix');
+  const zaloGroupLabelEl     = document.getElementById('set-zaloGroupLabel');
   
   // Theme value
   const themeInput = document.querySelector('input[name="appTheme"]:checked');
@@ -8349,6 +8361,11 @@ function submitSettings(e) {
     googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
     webPushVapidKey: webPushVapidKeyEl ? webPushVapidKeyEl.value.trim() : (s.webPushVapidKey || ''),
+    zaloOaEnabled: zaloOaEnabledEl ? zaloOaEnabledEl.checked : (s.zaloOaEnabled !== false),
+    zaloNotifyReady: zaloNotifyReadyEl ? zaloNotifyReadyEl.checked : (s.zaloNotifyReady !== false),
+    zaloNotifyDelay: zaloNotifyDelayEl ? zaloNotifyDelayEl.checked : (s.zaloNotifyDelay !== false),
+    zaloMessagePrefix: zaloMessagePrefixEl ? zaloMessagePrefixEl.value.trim() : (s.zaloMessagePrefix || '[XE KHO POS]'),
+    zaloGroupLabel: zaloGroupLabelEl ? zaloGroupLabelEl.value.trim() : (s.zaloGroupLabel || ''),
     ocrMode: (ocrModeEl && ['auto', 'offline', 'online'].includes(ocrModeEl.value)) ? ocrModeEl.value : (s.ocrMode || 'auto'),
     photoRetentionDays: photoRetentionEl ? Math.max(0, parseInt(photoRetentionEl.value, 10) || 0) : Number(s.photoRetentionDays || 0),
     activeAIEngine: 'deepseek',

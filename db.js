@@ -109,6 +109,11 @@ const SETTINGS_DEFAULTS = {
   googleDriveUploadUrl:            '',
   googleDriveFolderId:             '',
   webPushVapidKey:                 '',
+  zaloOaEnabled:                   true,
+  zaloNotifyReady:                 true,
+  zaloNotifyDelay:                 true,
+  zaloMessagePrefix:               '[XE KHO POS]',
+  zaloGroupLabel:                  '',
 };
 
 

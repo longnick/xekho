@@ -1026,6 +1026,40 @@
                 </div>
               </div>
             </div>
+            <div class="card" style="border-color:rgba(0,149,255,0.28)">
+              <div class="card-header">
+                <div class="card-title">Zalo OA backup thong bao bep</div>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Bat gui Zalo OA khi bep co cap nhat</div>
+                <label class="toggle"><input type="checkbox" id="set-zaloOaEnabled" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Gui khi mon xong / san sang mang ra</div>
+                <label class="toggle"><input type="checkbox" id="set-zaloNotifyReady" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Gui khi bep bao cham</div>
+                <label class="toggle"><input type="checkbox" id="set-zaloNotifyDelay" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Tien to noi dung thong bao</label>
+                <input class="input" id="set-zaloMessagePrefix" placeholder="[XE KHO POS]">
+                <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">
+                  Vi du: <b>[XE KHO POS]</b>, <b>[BEP XE KHO]</b>. De trong neu khong muon chen tien to.
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Ten nhom / mo ta noi bo</label>
+                <input class="input" id="set-zaloGroupLabel" placeholder="Nhom bep - thu ngan">
+                <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">
+                  Truong nay chi de ghi nho trong app, khong thay the <b>ZALO_GROUP_ID</b> that.
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--warning);line-height:1.6">
+                Luu y: de bao mat, <b>ZALO_OA_ACCESS_TOKEN</b> va <b>ZALO_GROUP_ID</b> van phai cai bang Firebase Functions params, khong luu trong giao dien POS.
+              </div>
+            </div>
             <!-- Bank Info -->
             <div class="card">
               <div class="card-header">
