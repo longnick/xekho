@@ -83,11 +83,15 @@ function kitchenNotifDocRef(docId) {
   return db.collection('kitchen_notifications').doc(String(docId));
 }
 
-function buildKitchenNotifMessage(notif = {}) {
+function buildKitchenNotifMessage(notif = {}, options = {}) {
   const type = String(notif.type || '').toLowerCase();
   const tableName = String(notif.tableName || notif.tableId || 'Ban');
   const items = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
   const body = items.join(', ');
+  const prefix = String(options.prefix || '').trim();
+  const prefixText = prefix ? `${prefix}\n` : '';
+  const groupLabel = String(options.groupLabel || '').trim();
+  const groupLine = groupLabel ? `\nNhom: ${groupLabel}` : '';
   if (type === 'ready') {
     return {
       title: `🍽️ ${tableName} - Xong roi!`,
@@ -484,6 +488,21 @@ exports.onKitchenNotificationCreated = onDocumentCreated(
     if (!['ready', 'delay'].includes(type)) return;
     if (notif.zaloSent === true) return;
 
+    const settingsSnap = await db.collection('config').doc('settings').get().catch(() => null);
+    const settings = settingsSnap?.exists ? (settingsSnap.data() || {}) : {};
+    if (settings.zaloOaEnabled === false) {
+      logger.info('Skipping Zalo send: disabled in settings', { docId, type });
+      return;
+    }
+    if (type === 'ready' && settings.zaloNotifyReady === false) {
+      logger.info('Skipping Zalo send: ready notifications disabled', { docId });
+      return;
+    }
+    if (type === 'delay' && settings.zaloNotifyDelay === false) {
+      logger.info('Skipping Zalo send: delay notifications disabled', { docId });
+      return;
+    }
+
     const token = ZALO_OA_ACCESS_TOKEN.value();
     const groupId = String(ZALO_GROUP_ID.value() || '').trim();
     if (!token || !groupId) {
@@ -492,7 +511,15 @@ exports.onKitchenNotificationCreated = onDocumentCreated(
     }
 
     const { zaloText } = buildKitchenNotifMessage(notif);
-    if (!zaloText) return;
+    const prefix = String(settings.zaloMessagePrefix || '[XE KHO POS]').trim();
+    const groupLabel = String(settings.zaloGroupLabel || '').trim();
+    const normalizedZaloText = String(zaloText || '')
+      .replace('[XE KHO POS]', prefix)
+      .trim();
+    const finalZaloText = groupLabel
+      ? `${normalizedZaloText}\nNhom: ${groupLabel}`
+      : normalizedZaloText;
+    if (!finalZaloText) return;
 
     try {
       const res = await fetch('https://openapi.zalo.me/v2.0/oa/message/cs', {
@@ -503,7 +530,7 @@ exports.onKitchenNotificationCreated = onDocumentCreated(
         },
         body: JSON.stringify({
           recipient: { group_id: groupId },
-          message: { text: zaloText },
+          message: { text: finalZaloText },
         }),
       });
 
