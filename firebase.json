@@ -1,4 +1,30 @@
 {
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      ".git/**",
+      "**/.git/**",
+      ".vscode/**",
+      "**/.vscode/**",
+      "**/node_modules/**",
+      "functions/**",
+      "*.md",
+      "*.ps1",
+      "*.json",
+      "!package.json",
+      "!manifest.json",
+      "serviceAccountKey.json",
+      "pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json"
+    ],
+    "rewrites": [
+      {
+        "source": "/kitchen",
+        "destination": "/kitchen.html"
+      }
+    ]
+  },
   "firestore": {
     "rules": "firestore.rules"
   },

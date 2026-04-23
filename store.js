@@ -830,8 +830,8 @@ function getRevenueByDay(days) {
 // Inventory alerts
 function getInventoryAlerts() {
   const inv = Store.getInventory().filter(i => !i.hidden);
-  const critical = inv.filter(i => i.qty <= i.minQty * 0.5);
-  const low = inv.filter(i => i.qty > i.minQty * 0.5 && i.qty <= i.minQty);
+  const critical = inv.filter(i => Number(i.qty || 0) <= Number(i.minQty || 0));
+  const low = [];
   return { critical, low };
 }
 
