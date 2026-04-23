@@ -10053,23 +10053,25 @@ function renderKdsMonitor() {
     const m = Math.floor(s / 60);
     return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   }
-  const headerHtml = `<div style="display:grid;grid-template-columns:80px minmax(0,1fr) 50px 68px 80px;gap:8px;padding:8px 14px 6px;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">
+  const headerHtml = `<div class="kds-monitor-head">
     <div>Ban</div><div>Mon</div><div>SL</div><div>Cho</div><div>Trang thai</div>
   </div>`;
   const rowsHtml = rows.map(({ tableName, item, ks, elapsedMs }) => {
     const isOverdue = elapsedMs >= 8 * 60 * 1000;
     const isCooking = ks === 'cooking';
-    const rowBg  = isOverdue ? 'background:rgba(255,61,113,0.07);border-left:3px solid var(--danger);' : isCooking ? 'background:rgba(255,191,31,0.06);border-left:3px solid #f59e0b;' : '';
-    const chip   = isCooking ? 'color:#c57a06;background:#fff5df;' : 'color:#d94949;background:#fff1f1;';
+    const rowClass = isOverdue ? ' overdue' : isCooking ? ' cooking' : '';
+    const chipClass = isCooking ? ' cooking' : '';
     const label  = isCooking ? 'Dang lam' : 'Cho lam';
-    const wc     = isOverdue ? 'color:var(--danger);font-weight:800;' : 'color:var(--text2);';
     const tShort = String(tableName).replace('Ban ', 'B');
-    return `<div style="display:grid;grid-template-columns:80px minmax(0,1fr) 50px 68px 80px;gap:8px;padding:9px 14px;align-items:center;border-bottom:1px solid var(--border);${rowBg}">
-      <div style="font-size:13px;font-weight:800;">${tShort}</div>
-      <div><div style="font-size:13px;font-weight:700;">${item.name||'Mon'}</div>${item.note?`<div style="font-size:10px;color:var(--text3);">&#x1F4DD; ${item.note}</div>`:''}</div>
-      <div style="font-size:14px;font-weight:800;color:var(--primary);">x${Number(item.qty||1)}</div>
-      <div style="font-size:12px;${wc}">${_fmtWait(elapsedMs)}</div>
-      <div><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;${chip}">${label}</span></div>
+    return `<div class="kds-monitor-row${rowClass}">
+      <div class="kds-monitor-table">${tShort}</div>
+      <div class="kds-monitor-dish">
+        <div class="kds-monitor-dish-name">${item.name||'Mon'}</div>
+        ${item.note ? `<div class="kds-monitor-dish-note">&#x1F4DD; ${item.note}</div>` : ''}
+      </div>
+      <div class="kds-monitor-qty">x${Number(item.qty||1)}</div>
+      <div class="kds-monitor-wait${isOverdue ? ' overdue' : ''}">${_fmtWait(elapsedMs)}</div>
+      <div class="kds-monitor-status"><span class="kds-monitor-chip${chipClass}">${label}</span></div>
     </div>`;
   }).join('');
   listEl.innerHTML = headerHtml + rowsHtml;

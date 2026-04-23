@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "xe-kho",
     "public": ".",
     "ignore": [
       "firebase.json",
