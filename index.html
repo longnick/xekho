@@ -104,10 +104,24 @@
         <!-- Table Grid -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">🪑 Sơ đồ bàn</div>
-            <button class="btn btn-sm btn-secondary" onclick="renderTables()">🔄 Làm mới</button>
+            <div class="card-title">&#x1FA91; S&#417; &#273;&#7891; b&#224;n</div>
+            <button class="btn btn-sm btn-secondary" onclick="renderTables()">&#x1F504; L&#224;m m&#7899;i</button>
           </div>
           <div class="table-grid" id="table-grid"></div>
+        </div>
+
+        <!-- KDS Monitor: Mon dang cho bep (read-only, real-time) -->
+        <div class="card" id="kds-monitor-card" style="margin-top:12px;">
+          <div class="card-header">
+            <div class="card-title">&#x1F37D;&#xFE0F; M&#224;n h&#236;nh b&#7871;p &#8211; M&#243;n &#273;ang ch&#7901;</div>
+            <span class="badge badge-primary" id="kds-monitor-badge">0 m&#243;n</span>
+          </div>
+          <div id="kds-monitor-list" style="max-height:280px;overflow-y:auto;padding:0 0 4px;">
+            <div class="empty-state" style="padding:20px;font-size:13px;">
+              <div style="font-size:28px;margin-bottom:6px;">&#x2705;</div>
+              <div>Ch&#432;a c&#243; m&#243;n n&#224;o &#273;ang ch&#7901; b&#7871;p</div>
+            </div>
+          </div>
         </div>
       </div>
 

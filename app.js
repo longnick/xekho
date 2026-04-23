@@ -1382,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('db:update', (e) => {
     const key = e.detail && e.detail.key;
     if (key === 'tables' || key === 'orders') renderTables();
-    if (key === 'orders') syncLocalOrderCacheFromCloud();
+    if (key === 'orders') { syncLocalOrderCacheFromCloud(); try { renderKdsMonitor(); } catch(_) {} }
     if (key === 'settings') {
       applyStoreSettings();
       initKitchenPushClient().catch(err => console.warn('[KitchenPush] settings init error', err));
@@ -2054,7 +2054,37 @@ function syncLocalOrderCacheFromCloud() {
   const cloudOrders = {};
   Object.entries(window.appState.orders).forEach(([tid, order]) => {
     if (!order || String(order.status || '').toLowerCase() !== 'open') return;
-    cloudOrders[tid] = normalizeKitchenOrderItems(Array.isArray(order.items) ? order.items : []);
+    const cloudItems = normalizeKitchenOrderItems(Array.isArray(order.items) ? order.items : []);
+    cloudOrders[tid] = cloudItems;
+
+    // Smart merge: Cập nhật trạng thái bếp từ Cloud về orderItems trên RAM
+    // Điều này giúp POS không bị "ngậm" trạng thái cũ (pending) rồi push đè lên cloud làm bếp bị nhảy lại món.
+    if (typeof orderItems !== 'undefined' && Array.isArray(orderItems[tid])) {
+      let needsRender = false;
+      orderItems[tid].forEach(localItem => {
+        // Match theo lineItemId hoặc id+note
+        const cItem = cloudItems.find(c => {
+          if (localItem.lineItemId) {
+            return c.lineItemId === localItem.lineItemId;
+          }
+          return !c.lineItemId && c.id === localItem.id && String(c.note||'') === String(localItem.note||'');
+        });
+        if (cItem && cItem.kitchenStatus && cItem.kitchenStatus !== localItem.kitchenStatus) {
+          localItem.kitchenStatus = cItem.kitchenStatus;
+          if (cItem.kitchenSentAt) localItem.kitchenSentAt = cItem.kitchenSentAt;
+          needsRender = true;
+        }
+      });
+      // Nếu đang đứng đúng bàn này ở trang orders, tự refresh cart + grid
+      if (needsRender && typeof currentTable !== 'undefined' && String(currentTable) === String(tid)) {
+        if (typeof currentPage !== 'undefined' && currentPage === 'orders') {
+          setTimeout(() => {
+            if (typeof renderCart === 'function') renderCart();
+            if (typeof renderMenuItems === 'function') renderMenuItems();
+          }, 10);
+        }
+      }
+    }
   });
   Store.setOrders(cloudOrders);
 }
@@ -2156,7 +2186,7 @@ function getKitchenLineItemId(item = {}) {
 
 function isKitchenFinalStatus(status) {
   const normalized = String(status || '').trim().toLowerCase();
-  return normalized === 'served' || normalized === 'skip';
+  return normalized === 'served';
 }
 
 function canToggleServedStatus(item = {}) {
@@ -2699,6 +2729,7 @@ function renderTables() {
       ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${isOccupied ? 'Đang phục vụ' : 'Trống'}</div>`}
     </div>`;
   }).join('');
+  try { renderKdsMonitor(); } catch(_) {}
 }
 
 function requireOpenShiftForOrderFlow(actionLabel = 'thao tác này') {
@@ -3360,25 +3391,30 @@ function renderCart() {
   } else {
       document.getElementById('cart-items').innerHTML = items.map(item => {
         const itemKey = getKitchenLineItemId(item) || item.id;
-        const finalStatus = isKitchenFinalStatus(item.kitchenStatus);
-        const served = String(item.kitchenStatus || '').toLowerCase() === 'served';
-        return `<div class="cart-item ${served ? 'cart-item-served' : ''}">
+        // Chỉ khóa khi bếp đã mang ra (served) — KHÔNG khóa hàng bán thẳng (skip)
+        const isServed = String(item.kitchenStatus || '').toLowerCase() === 'served';
+        const isSkip   = String(item.kitchenStatus || '').toLowerCase() === 'skip';
+        const lockControls = isServed; // chỉ lock khi served, không lock skip
+        return `<div class="cart-item ${isServed ? 'cart-item-served' : ''}">
           <div>
-            <div class="cart-item-name" style="display:flex;align-items:center;gap:8px;"><button class="qty-btn" style="width:28px;height:28px;border-radius:999px;color:${served ? 'var(--success)' : 'var(--text3)'};background:${served ? 'rgba(16,185,129,0.14)' : 'rgba(255,255,255,0.06)'};${canToggleServedStatus(item) ? '' : 'opacity:.45;cursor:default;'}" onclick="toggleServedCartItem('${itemKey}')" title="Danh dau da mang ra">✓</button><span>${item.name}</span></div>
+            <div class="cart-item-name" style="display:flex;align-items:center;gap:8px;">
+              <span title="${isServed ? 'Bếp đã mang ra' : isSkip ? 'Bán thẳng (không qua bếp)' : 'Chưa mang ra'}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;font-size:14px;font-weight:900;flex-shrink:0;cursor:default;user-select:none;background:${isServed ? 'rgba(16,185,129,0.18)' : isSkip ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.04)'};color:${isServed ? 'var(--success)' : 'var(--text3)'};">✓</span>
+              <span>${item.name}</span>
+            </div>
             <div style="font-size:10px; color:var(--text2); margin-top:2px;">${getCartItemStatusLabel(item)}${item.note ? ` · Ghi chú: ${item.note}` : ''}</div>
           </div>
           <div class="cart-qty-ctrl">
-            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} onclick="changeQty('${itemKey}',-1)">−</button>
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} onclick="changeQty('${itemKey}',-1)">−</button>
             <input type="number" class="cart-qty-input" min="1" max="99" value="${item.qty}"
-              ${finalStatus ? 'disabled' : ''}
+              ${lockControls ? 'disabled' : ''}
               onchange="setCartQty('${itemKey}', this.value)"
               onclick="this.select()" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;padding:2px 4px">
-            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} onclick="changeQty('${itemKey}',1)">+</button>
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} onclick="changeQty('${itemKey}',1)">+</button>
           </div>
           <div style="display:flex; align-items:center; gap:6px">
             <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
             <button class="qty-btn" style="color:var(--primary); background:rgba(0,149,255,0.1); width:28px;" onclick="addNoteToCartItem('${itemKey}')" title="Thêm ghi chú">📝</button>
-            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${itemKey}')">✕</button>
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${itemKey}')">✕</button>
           </div>
         </div>`;
       }).join('');
@@ -9960,3 +9996,81 @@ function syncPurchaseSupplierSelectFromPurchase(p) {
 }
 
 // Legacy duplicate AI block removed for maintainability.
+
+/**
+ * KDS Monitor - Man hinh theo doi mon cho bep (read-only, no interaction)
+ * Hien thi tat ca mon co kitchenStatus = pending | cooking tu tat ca don dang mo.
+ */
+function renderKdsMonitor() {
+  const listEl  = document.getElementById('kds-monitor-list');
+  const badgeEl = document.getElementById('kds-monitor-badge');
+  if (!listEl) return;
+  const rows = [];
+  const now  = Date.now();
+  const cloudOrders = (window.appState && typeof window.appState.orders === 'object')
+    ? window.appState.orders : null;
+  if (cloudOrders) {
+    Object.entries(cloudOrders).forEach(([tableId, order]) => {
+      if (!order || order.status === 'cancelled') return;
+      const items = Array.isArray(order.items) ? order.items : [];
+      const tableName = order.tableName || `Ban ${tableId}`;
+      items.forEach(item => {
+        const ks = String(item.kitchenStatus || '').toLowerCase();
+        if (ks !== 'pending' && ks !== 'cooking') return;
+        const sentAt = Number(item.kitchenSentAt || 0);
+        rows.push({ tableName, item, ks, elapsedMs: sentAt > 0 ? now - sentAt : 0 });
+      });
+    });
+  } else {
+    const orders = Store.getOrders();
+    Object.entries(orders).forEach(([tableId, items]) => {
+      const tableName = tableId === 'takeaway' ? 'Mang ve' : `Ban ${tableId}`;
+      (Array.isArray(items) ? items : []).forEach(item => {
+        const ks = String(item.kitchenStatus || '').toLowerCase();
+        if (ks !== 'pending' && ks !== 'cooking') return;
+        const sentAt = Number(item.kitchenSentAt || 0);
+        rows.push({ tableName, item, ks, elapsedMs: sentAt > 0 ? now - sentAt : 0 });
+      });
+    });
+  }
+  rows.sort((a, b) => b.elapsedMs - a.elapsedMs);
+  const count = rows.length;
+  if (badgeEl) {
+    badgeEl.textContent = `${count} mon`;
+    badgeEl.style.background = count > 0 ? 'var(--danger)' : '';
+    badgeEl.style.color      = count > 0 ? '#fff' : '';
+  }
+  if (!count) {
+    listEl.innerHTML = `<div class="empty-state" style="padding:20px;font-size:13px;">
+      <div style="font-size:28px;margin-bottom:6px;">&#x2705;</div>
+      <div>Chua co mon nao dang cho bep</div>
+    </div>`;
+    return;
+  }
+  function _fmtWait(ms) {
+    if (!ms || ms < 0) return '-';
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }
+  const headerHtml = `<div style="display:grid;grid-template-columns:80px minmax(0,1fr) 50px 68px 80px;gap:8px;padding:8px 14px 6px;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">
+    <div>Ban</div><div>Mon</div><div>SL</div><div>Cho</div><div>Trang thai</div>
+  </div>`;
+  const rowsHtml = rows.map(({ tableName, item, ks, elapsedMs }) => {
+    const isOverdue = elapsedMs >= 8 * 60 * 1000;
+    const isCooking = ks === 'cooking';
+    const rowBg  = isOverdue ? 'background:rgba(255,61,113,0.07);border-left:3px solid var(--danger);' : isCooking ? 'background:rgba(255,191,31,0.06);border-left:3px solid #f59e0b;' : '';
+    const chip   = isCooking ? 'color:#c57a06;background:#fff5df;' : 'color:#d94949;background:#fff1f1;';
+    const label  = isCooking ? 'Dang lam' : 'Cho lam';
+    const wc     = isOverdue ? 'color:var(--danger);font-weight:800;' : 'color:var(--text2);';
+    const tShort = String(tableName).replace('Ban ', 'B');
+    return `<div style="display:grid;grid-template-columns:80px minmax(0,1fr) 50px 68px 80px;gap:8px;padding:9px 14px;align-items:center;border-bottom:1px solid var(--border);${rowBg}">
+      <div style="font-size:13px;font-weight:800;">${tShort}</div>
+      <div><div style="font-size:13px;font-weight:700;">${item.name||'Mon'}</div>${item.note?`<div style="font-size:10px;color:var(--text3);">&#x1F4DD; ${item.note}</div>`:''}</div>
+      <div style="font-size:14px;font-weight:800;color:var(--primary);">x${Number(item.qty||1)}</div>
+      <div style="font-size:12px;${wc}">${_fmtWait(elapsedMs)}</div>
+      <div><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;${chip}">${label}</span></div>
+    </div>`;
+  }).join('');
+  listEl.innerHTML = headerHtml + rowsHtml;
+}
