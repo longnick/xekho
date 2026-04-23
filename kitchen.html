@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#121417">
+  <title>Bếp Xe Khô</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #111315;
+      --bg-soft: #171a1d;
+      --panel: rgba(24, 27, 31, 0.94);
+      --panel-2: #1d2126;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f5f7fa;
+      --muted: #aeb7c2;
+      --accent: #ffbf1f;
+      --accent-2: #ff8a1f;
+      --ok: #28c76f;
+      --warn: #ff9f43;
+      --danger: #ff5b5b;
+      --info: #3b82f6;
+      --radius: 24px;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Be Vietnam Pro", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255, 191, 31, 0.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(40, 199, 111, 0.09), transparent 24%),
+        linear-gradient(180deg, #121417 0%, #0d0f11 100%);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app-shell {
+      width: min(1600px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .login-screen,
+    .app-screen {
+      display: none;
+    }
+
+    .login-screen.active,
+    .app-screen.active {
+      display: block;
+    }
+
+    .login-wrap {
+      min-height: calc(100vh - 40px);
+      display: grid;
+      place-items: center;
+    }
+
+    .login-card {
+      width: min(460px, 100%);
+      padding: 32px;
+      border-radius: 28px;
+      background: rgba(22, 25, 29, 0.92);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .brand-mark {
+      width: 56px;
+      height: 56px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      font-size: 28px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 14px 30px rgba(255, 138, 31, 0.28);
+    }
+
+    .brand-title {
+      font-size: 29px;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: 0.01em;
+    }
+
+    .brand-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .input-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #dfe6ee;
+    }
+
+    .input,
+    .btn {
+      width: 100%;
+      min-height: 54px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      padding: 0 16px;
+    }
+
+    .input {
+      background: #0f1215;
+      color: var(--text);
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: rgba(255, 191, 31, 0.45);
+      box-shadow: 0 0 0 4px rgba(255, 191, 31, 0.12);
+    }
+
+    .btn {
+      border: none;
+      cursor: pointer;
+      font-weight: 800;
+      transition: transform 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn.primary {
+      color: #101216;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    }
+
+    .btn.secondary {
+      color: var(--text);
+      background: #232830;
+      border: 1px solid var(--line);
+    }
+
+    .login-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .error-box {
+      display: none;
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 91, 91, 0.12);
+      border: 1px solid rgba(255, 91, 91, 0.28);
+      color: #ffd8d8;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .error-box.show { display: block; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      margin: -20px -20px 18px;
+      padding: 18px 20px 16px;
+      background: rgba(12, 14, 17, 0.88);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-row,
+    .stats-row,
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+
+    .stats-row {
+      justify-content: flex-start;
+      margin-top: 14px;
+    }
+
+    .toolbar-row {
+      justify-content: space-between;
+      margin-top: 14px;
+    }
+
+    .toolbar-left,
+    .toolbar-right,
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .header-title {
+      font-size: clamp(28px, 3vw, 36px);
+      font-weight: 900;
+      line-height: 1.02;
+      letter-spacing: 0.01em;
+    }
+
+    .header-sub {
+      margin-top: 6px;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .pill,
+    .filter-btn,
+    .ghost-btn,
+    .view-btn {
+      min-height: 52px;
+      border-radius: 999px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .pill {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .pill strong {
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .filter-btn,
+    .ghost-btn,
+    .view-btn {
+      cursor: pointer;
+    }
+
+    .filter-btn.active,
+    .view-btn.active {
+      color: #111315;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 12px 24px rgba(255, 138, 31, 0.2);
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 18px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .dashboard-panel {
+      background: rgba(246, 242, 235, 0.94);
+      color: #3f3429;
+      border-radius: 28px;
+      border: 1px solid rgba(121, 93, 58, 0.14);
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.14);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(121, 93, 58, 0.12);
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    .panel-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #2f261d;
+    }
+
+    .panel-pill {
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      background: #e7eef9;
+      color: #3c68b1;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .panel-pill.flat {
+      background: #f3eadb;
+      color: #8c6a27;
+    }
+
+    .panel-body {
+      padding: 18px;
+      background: #f6f2eb;
+    }
+
+    .flat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .flat-head,
+    .flat-row {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr) 70px 90px 120px;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .flat-head {
+      padding: 0 12px 8px;
+      color: #685947;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .flat-row {
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(121, 93, 58, 0.12);
+      color: #2f261d;
+    }
+
+    .flat-row.danger {
+      border-color: rgba(255, 91, 91, 0.5);
+    }
+
+    .flat-row.warning {
+      border-color: rgba(255, 159, 67, 0.45);
+    }
+
+    .flat-row.done {
+      opacity: 0.72;
+    }
+
+    .flat-table {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .flat-name {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .flat-qty,
+    .flat-wait {
+      font-size: 16px;
+      font-weight: 700;
+      color: #d65b18;
+    }
+
+    .status-chip {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(121, 93, 58, 0.16);
+      font-size: 14px;
+      font-weight: 700;
+      background: #f7efe8;
+    }
+
+    .status-chip.pending {
+      color: #d94949;
+      border-color: rgba(217, 73, 73, 0.3);
+      background: #fff1f1;
+    }
+
+    .status-chip.cooking {
+      color: #c57a06;
+      border-color: rgba(197, 122, 6, 0.28);
+      background: #fff5df;
+    }
+
+    .status-chip.done,
+    .status-chip.served {
+      color: #2d9d59;
+      border-color: rgba(45, 157, 89, 0.24);
+      background: #ecfbf1;
+    }
+
+    .legend-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .legend-card {
+      padding: 18px 20px;
+      border-radius: 22px;
+      background: rgba(246, 242, 235, 0.96);
+      color: #2f261d;
+      border: 1px solid rgba(121, 93, 58, 0.12);
+    }
+
+    .legend-title {
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .legend-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .cards-grid.compact {
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .table-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 28px;
+      padding: 20px;
+      background:
+        linear-gradient(180deg, rgba(28, 31, 35, 0.98), rgba(20, 22, 25, 0.98));
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .table-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent 35%);
+      pointer-events: none;
+    }
+
+    .table-card.warning {
+      border-color: rgba(255, 159, 67, 0.56);
+      box-shadow: 0 24px 50px rgba(255, 159, 67, 0.14);
+    }
+
+    .table-card.danger {
+      border-color: rgba(255, 91, 91, 0.64);
+      box-shadow: 0 24px 50px rgba(255, 91, 91, 0.18);
+    }
+
+    .table-card.done {
+      border-color: rgba(40, 199, 111, 0.44);
+    }
+
+    .table-card-header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .table-name {
+      font-size: 32px;
+      font-weight: 900;
+      line-height: 1.02;
+    }
+
+    .table-note {
+      display: inline-flex;
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.14);
+      color: #bfdbfe;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .table-timer {
+      min-width: 116px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-size: 32px;
+      font-weight: 900;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .alert-banner {
+      position: relative;
+      z-index: 1;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 91, 91, 0.3);
+      background: rgba(255, 91, 91, 0.12);
+      color: #ffd8d8;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .item-list {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .item-row {
+      display: grid;
+      grid-template-columns: 32px 1fr auto auto;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .cards-grid.compact .table-card {
+      padding: 18px;
+    }
+
+    .cards-grid.compact .table-card-header {
+      margin-bottom: 12px;
+    }
+
+    .cards-grid.compact .table-name {
+      font-size: 26px;
+    }
+
+    .cards-grid.compact .table-timer {
+      font-size: 26px;
+      min-width: 96px;
+    }
+
+    .cards-grid.compact .item-list {
+      gap: 10px;
+    }
+
+    .cards-grid.compact .item-row {
+      grid-template-columns: 26px 1fr auto auto;
+      padding: 12px 14px;
+    }
+
+    .item-row.done {
+      opacity: 0.62;
+    }
+
+    .item-row.done .item-name {
+      text-decoration: line-through;
+    }
+
+    .item-status {
+      font-size: 22px;
+      text-align: center;
+    }
+
+    .item-name {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .cards-grid.compact .item-name {
+      font-size: 18px;
+    }
+
+    .item-meta {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .qty-chip {
+      min-width: 56px;
+      height: 40px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      background: rgba(255, 191, 31, 0.14);
+      color: #ffe199;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .cards-grid.compact .qty-chip {
+      min-width: 50px;
+      height: 36px;
+      font-size: 16px;
+    }
+
+    .mini-btn,
+    .action-btn {
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 900;
+      transition: transform 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
+    }
+
+    .mini-btn:disabled,
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .mini-btn {
+      min-height: 44px;
+      border-radius: 14px;
+      padding: 0 18px;
+      font-size: 16px;
+    }
+
+    .mini-btn.accept {
+      background: rgba(255, 191, 31, 0.18);
+      color: #ffdf8a;
+    }
+
+    .mini-btn.done {
+      background: rgba(40, 199, 111, 0.18);
+      color: #9af0bc;
+    }
+
+    .card-actions {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .action-btn {
+      min-height: 64px;
+      border-radius: 18px;
+      padding: 0 14px;
+      font-size: 22px;
+      color: #101216;
+    }
+
+    .cards-grid.compact .action-btn {
+      min-height: 56px;
+      font-size: 18px;
+    }
+
+    .action-btn.accept { background: linear-gradient(135deg, #ffd439, #ffb700); }
+    .action-btn.done { background: linear-gradient(135deg, #33d46b, #1fb851); }
+    .action-btn.delay { background: linear-gradient(135deg, #ffab39, #ff7b1b); }
+
+    .action-btn.served {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, #34d97d, #11b46d);
+    }
+
+    .empty-state {
+      padding: 72px 20px;
+      border-radius: 28px;
+      border: 1px dashed rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 99;
+      max-width: min(420px, calc(100vw - 24px));
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #1b1f24;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast.success { border-color: rgba(40, 199, 111, 0.42); }
+    .toast.warning { border-color: rgba(255, 159, 67, 0.42); }
+    .toast.danger { border-color: rgba(255, 91, 91, 0.42); }
+
+    @media (max-width: 1100px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      .legend-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .app-shell { padding: 12px; }
+      .topbar { margin: -12px -12px 14px; padding: 14px 12px; }
+      .header-title { font-size: 24px; }
+      .pill,
+      .filter-btn,
+      .ghost-btn,
+      .view-btn {
+        min-height: 46px;
+        font-size: 14px;
+        padding: 0 14px;
+      }
+      .pill strong { font-size: 18px; }
+      .table-card { padding: 16px; }
+      .table-name { font-size: 24px; }
+      .table-timer { font-size: 24px; min-width: 88px; }
+      .item-row {
+        grid-template-columns: 26px 1fr auto;
+      }
+      .item-row .mini-btn {
+        grid-column: 1 / -1;
+      }
+      .item-name { font-size: 18px; }
+      .card-actions { grid-template-columns: 1fr; }
+      .action-btn {
+        min-height: 54px;
+        font-size: 18px;
+      }
+      .login-actions {
+        grid-template-columns: 1fr;
+      }
+      .legend-row {
+        grid-template-columns: 1fr;
+      }
+      .flat-head,
+      .flat-row {
+        grid-template-columns: 70px minmax(0, 1fr) 56px 74px 92px;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <section id="login-screen" class="login-screen active">
+      <div class="login-wrap">
+        <div class="login-card">
+          <div class="brand">
+            <div class="brand-mark">🔥</div>
+            <div>
+              <div class="brand-title">Bếp Xe Khô</div>
+              <div class="brand-sub">Màn hình điều phối bếp theo thời gian thực</div>
+            </div>
+          </div>
+
+          <form id="login-form">
+            <div class="input-group">
+              <label class="input-label" for="login-email">Email</label>
+              <input class="input" id="login-email" type="email" autocomplete="username" required placeholder="bep@xekho.app">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="login-password">Mật khẩu</label>
+              <input class="input" id="login-password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu">
+            </div>
+            <div class="login-actions">
+              <button class="btn primary" id="login-submit" type="submit">Đăng nhập bếp</button>
+              <a class="btn secondary" href="/">Về POS</a>
+            </div>
+          </form>
+
+          <div id="login-error" class="error-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="app-screen" class="app-screen">
+      <header class="topbar">
+        <div class="topbar-row">
+          <div>
+            <div class="header-title">Bếp Xe Khô Chữa Lành</div>
+            <div class="header-sub" id="user-role-label">Đang đồng bộ dữ liệu bếp...</div>
+          </div>
+          <div class="header-actions">
+            <div class="pill" id="clock-label">--:--:--</div>
+            <a class="ghost-btn" href="/">Về POS</a>
+            <button class="ghost-btn" id="logout-btn" type="button">Đăng xuất</button>
+          </div>
+        </div>
+
+        <div class="stats-row">
+          <div class="pill">Chờ làm <strong id="stat-pending">0</strong></div>
+          <div class="pill">Đang làm <strong id="stat-cooking">0</strong></div>
+          <div class="pill">Đã xong <strong id="stat-done">0</strong></div>
+          <div class="pill">Số bàn <strong id="stat-tables">0</strong></div>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="toolbar-left" id="filter-row">
+            <button class="filter-btn active" data-filter="all">Tất cả</button>
+            <button class="filter-btn" data-filter="pending">Chờ làm</button>
+            <button class="filter-btn" data-filter="cooking">Đang làm</button>
+            <button class="filter-btn" data-filter="done">Đã xong</button>
+          </div>
+          <div class="toolbar-right" id="view-row">
+            <button class="view-btn active" data-view="split">Tổng quan</button>
+            <button class="view-btn" data-view="cards">Theo bàn</button>
+            <button class="view-btn" data-view="flat">Theo món</button>
+            <button class="ghost-btn" id="audio-toggle" type="button">Chuông: Bật</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="kitchen-main">
+        <div id="dashboard-grid" class="dashboard-grid">
+          <section class="dashboard-panel" id="board-panel">
+            <div class="panel-head">
+              <div class="panel-title">Tùy chọn 1 — Theo bàn</div>
+              <div class="panel-pill">Card grid</div>
+            </div>
+            <div class="panel-body">
+              <div id="cards-grid" class="cards-grid"></div>
+            </div>
+          </section>
+
+          <section class="dashboard-panel" id="flat-panel">
+            <div class="panel-head">
+              <div class="panel-title">Tùy chọn 2 — Theo món</div>
+              <div class="panel-pill flat">Flat list</div>
+            </div>
+            <div class="panel-body">
+              <div id="flat-list" class="flat-list"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="legend-row">
+          <div class="legend-card">
+            <div class="legend-title"><span class="legend-dot" style="background:var(--danger)"></span>Chờ làm</div>
+            <div>Mới gọi</div>
+          </div>
+          <div class="legend-card">
+            <div class="legend-title"><span class="legend-dot" style="background:var(--warn)"></span>Đang làm</div>
+            <div>Bếp đã nhận</div>
+          </div>
+          <div class="legend-card">
+            <div class="legend-title"><span class="legend-dot" style="background:var(--ok)"></span>Xong</div>
+            <div>Chờ mang ra</div>
+          </div>
+          <div class="legend-card" style="border-color:rgba(239,68,68,0.2);background:rgba(255,235,235,0.92);color:#d72626;">
+            <div class="legend-title"><span class="legend-dot" style="background:#ef4444"></span>Quá lâu</div>
+            <div>&gt; 8 phút</div>
+          </div>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      onAuthStateChanged,
+      signOut,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      orderBy,
+      onSnapshot,
+      doc,
+      getDoc,
+      addDoc,
+      runTransaction,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyDOxVZDZ1JkpermI-J2L7AEioP0CWERqOY',
+      authDomain: 'pos-v2-909ff.firebaseapp.com',
+      projectId: 'pos-v2-909ff',
+      storageBucket: 'pos-v2-909ff.firebasestorage.app',
+      messagingSenderId: '774115283908',
+      appId: '1:774115283908:web:55ed845aad8ade281d8a91',
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const savedViewMode = String(localStorage.getItem('kds:viewMode') || 'split');
+    const state = {
+      currentUser: null,
+      currentRole: '',
+      filter: 'all',
+      viewMode: ['split', 'cards', 'flat'].includes(savedViewMode) ? savedViewMode : 'split',
+      tables: new Map(),
+      orders: new Map(),
+      tableUnsub: null,
+      orderUnsub: null,
+      seenPendingKeys: new Set(),
+      audioUnlocked: false,
+      audioContext: null,
+      audioEnabled: localStorage.getItem('kds:audioEnabled') !== 'off',
+    };
+
+    const loginScreen = document.getElementById('login-screen');
+    const appScreen = document.getElementById('app-screen');
+    const loginForm = document.getElementById('login-form');
+    const loginError = document.getElementById('login-error');
+    const loginSubmit = document.getElementById('login-submit');
+    const dashboardGrid = document.getElementById('dashboard-grid');
+    const boardPanel = document.getElementById('board-panel');
+    const flatPanel = document.getElementById('flat-panel');
+    const cardsGrid = document.getElementById('cards-grid');
+    const flatList = document.getElementById('flat-list');
+    const toastEl = document.getElementById('toast');
+    const userRoleLabel = document.getElementById('user-role-label');
+    const clockLabel = document.getElementById('clock-label');
+    const filterRow = document.getElementById('filter-row');
+    const viewRow = document.getElementById('view-row');
+    const audioToggle = document.getElementById('audio-toggle');
+
+    function showLogin(error = '') {
+      loginScreen.classList.add('active');
+      appScreen.classList.remove('active');
+      loginError.textContent = error || '';
+      loginError.classList.toggle('show', !!error);
+    }
+
+    function showApp() {
+      loginScreen.classList.remove('active');
+      appScreen.classList.add('active');
+    }
+
+    function showToast(message, type = 'success') {
+      toastEl.textContent = String(message || '');
+      toastEl.className = `toast show ${type}`;
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => {
+        toastEl.className = 'toast';
+      }, 2600);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      clockLabel.textContent = now.toLocaleTimeString('vi-VN', { hour12: false });
+    }
+
+    function normalizeTableName(tableId, tableData) {
+      return tableData?.name || tableData?.tableName || `Bàn ${tableId}`;
+    }
+
+    function isKitchenItem(item) {
+      const status = String(item?.kitchenStatus || '').toLowerCase();
+      const itemType = String(item?.itemType || '').toLowerCase();
+      const saleMode = String(item?.saleMode || '').toLowerCase();
+      if (status === 'skip' || status === 'served') return false;
+      if (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true) return false;
+      return true;
+    }
+
+    function getKitchenLineKey(item, index = 0) {
+      return String(item?.lineItemId || `${item?.id || 'item'}:${item?.kitchenSentAt || 0}:${index}`);
+    }
+
+    function getStatusLabel(status) {
+      if (status === 'cooking') return 'Đang làm';
+      if (status === 'done') return 'Xong';
+      return 'Chờ';
+    }
+
+    function getStatusChipClass(status) {
+      if (status === 'cooking') return 'cooking';
+      if (status === 'done') return 'done';
+      if (status === 'served') return 'served';
+      return 'pending';
+    }
+
+    function getElapsedMs(items) {
+      const sentTimes = items
+        .map(item => Number(item?.kitchenSentAt || 0))
+        .filter(value => value > 0);
+      if (!sentTimes.length) return 0;
+      return Date.now() - Math.min(...sentTimes);
+    }
+
+    function formatElapsed(ms) {
+      const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function buildCards() {
+      const rows = [];
+      state.orders.forEach(order => {
+        if (!order || String(order.status || '').toLowerCase() !== 'open') return;
+        const tableId = String(order.tableId || '');
+        const tableData = state.tables.get(tableId) || {};
+        const items = (Array.isArray(order.items) ? order.items : [])
+          .filter(isKitchenItem)
+          .map((item, index) => ({ ...item, _lineKey: getKitchenLineKey(item, index) }));
+        if (!items.length) return;
+
+        const elapsedMs = getElapsedMs(items);
+        const allDone = items.every(item => String(item.kitchenStatus || '').toLowerCase() === 'done');
+        const hasPending = items.some(item => String(item.kitchenStatus || '').toLowerCase() === 'pending');
+        const hasCooking = items.some(item => String(item.kitchenStatus || '').toLowerCase() === 'cooking');
+        const hasDone = items.some(item => String(item.kitchenStatus || '').toLowerCase() === 'done');
+
+        rows.push({
+          tableId,
+          tableName: normalizeTableName(tableId, tableData),
+          note: String(order.note || tableData?.note || '').trim(),
+          orderId: String(order.id || order.orderId || ''),
+          items,
+          elapsedMs,
+          allDone,
+          hasPending,
+          hasCooking,
+          hasDone,
+        });
+      });
+
+      rows.sort((a, b) => b.elapsedMs - a.elapsedMs);
+      return rows.filter(card => {
+        if (state.filter === 'pending') return card.hasPending;
+        if (state.filter === 'cooking') return card.hasCooking;
+        if (state.filter === 'done') return card.allDone || (card.hasDone && !card.hasPending && !card.hasCooking);
+        return true;
+      });
+    }
+
+    function renderStats(cards) {
+      let pending = 0;
+      let cooking = 0;
+      let done = 0;
+
+      cards.forEach(card => {
+        card.items.forEach(item => {
+          const status = String(item.kitchenStatus || '').toLowerCase();
+          if (status === 'pending') pending += 1;
+          else if (status === 'cooking') cooking += 1;
+          else if (status === 'done') done += 1;
+        });
+      });
+
+      document.getElementById('stat-pending').textContent = String(pending);
+      document.getElementById('stat-cooking').textContent = String(cooking);
+      document.getElementById('stat-done').textContent = String(done);
+      document.getElementById('stat-tables').textContent = String(cards.length);
+    }
+
+    function getCardTone(card) {
+      if (card.allDone) return 'done';
+      if (card.elapsedMs >= 8 * 60 * 1000) return 'danger';
+      if (card.elapsedMs >= 5 * 60 * 1000) return 'warning';
+      return '';
+    }
+
+    function buildItemMarkup(card) {
+      return card.items.map((item, index) => {
+        const status = String(item.kitchenStatus || '').toLowerCase();
+        return `
+          <div class="item-row ${status === 'done' ? 'done' : ''}">
+            <div class="item-status">
+              <span class="legend-dot" style="background:${status === 'done' ? 'var(--ok)' : status === 'cooking' ? 'var(--warn)' : 'var(--danger)'}"></span>
+            </div>
+            <div>
+              <div class="item-name ${status === 'done' ? 'done' : ''}">${item.name || 'Món chưa đặt tên'}</div>
+              <div class="item-meta">${getStatusLabel(status)}${item.note ? ` · Ghi chú: ${item.note}` : ''}</div>
+            </div>
+            <div class="qty-chip">x${Number(item.qty || 0)}</div>
+            ${status === 'pending'
+              ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">Nhận</button>`
+              : status === 'cooking'
+                ? `<button class="mini-btn done" data-action="item-done" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">Xong</button>`
+                : `<div class="status-chip ${getStatusChipClass(status)}">${getStatusLabel(status)}</div>`}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function buildCardMarkup(card) {
+      const urgencyClass = getCardTone(card);
+      const showDangerBanner = !card.allDone && card.elapsedMs >= 8 * 60 * 1000;
+
+      return `
+        <section class="table-card ${urgencyClass}">
+          <div class="table-card-header">
+            <div>
+              <div class="table-name">${card.tableName}</div>
+              ${card.note ? `<div class="table-note">${card.note}</div>` : ''}
+            </div>
+            <div class="table-timer">${formatElapsed(card.elapsedMs)}</div>
+          </div>
+          ${showDangerBanner ? '<div class="alert-banner">Đang chậm, ưu tiên xử lý ngay.</div>' : ''}
+          <div class="item-list">${buildItemMarkup(card)}</div>
+          ${card.allDone
+            ? `
+              <div class="card-actions">
+                <button class="action-btn served" data-action="served-all" data-order-id="${card.orderId}" data-table-id="${card.tableId}" data-table-name="${card.tableName}">
+                  Đã mang ra
+                </button>
+              </div>
+            `
+            : `
+              <div class="card-actions">
+                <button class="action-btn accept" data-action="accept-all" data-order-id="${card.orderId}">Nhận tất cả</button>
+                <button class="action-btn done" data-action="done-all" data-order-id="${card.orderId}">Xong tất cả</button>
+                <button class="action-btn delay" data-action="delay" data-order-id="${card.orderId}" data-table-id="${card.tableId}" data-table-name="${card.tableName}">Báo chậm</button>
+              </div>
+            `}
+        </section>
+      `;
+    }
+
+    function buildFlatRows(cards) {
+      const rows = [];
+      cards.forEach(card => {
+        card.items.forEach(item => {
+          rows.push({
+            orderId: card.orderId,
+            tableId: card.tableId,
+            tableName: card.tableName,
+            lineKey: item._lineKey,
+            elapsedMs: card.elapsedMs,
+            qty: Number(item.qty || 0),
+            name: item.name || 'Món chưa đặt tên',
+            note: String(item.note || '').trim(),
+            status: String(item.kitchenStatus || '').toLowerCase(),
+          });
+        });
+      });
+      rows.sort((a, b) => b.elapsedMs - a.elapsedMs);
+      return rows;
+    }
+
+    function buildFlatRowMarkup(row) {
+      const rowClass = row.status === 'done'
+        ? 'done'
+        : row.elapsedMs >= 8 * 60 * 1000
+          ? 'danger'
+          : row.status === 'cooking'
+            ? 'warning'
+            : '';
+
+      const actionMarkup = row.status === 'pending'
+        ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">Nhận</button>`
+        : row.status === 'cooking'
+          ? `<button class="mini-btn done" data-action="item-done" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">Xong</button>`
+          : `<span class="status-chip ${getStatusChipClass(row.status)}">${getStatusLabel(row.status)}</span>`;
+
+      return `
+        <div class="flat-row ${rowClass}">
+          <div class="flat-table">${row.tableName.replace('Bàn ', 'B')}</div>
+          <div class="flat-name">
+            <div>${row.name}</div>
+            ${row.note ? `<div class="item-meta">Ghi chú: ${row.note}</div>` : ''}
+          </div>
+          <div class="flat-qty">×${row.qty}</div>
+          <div class="flat-wait">${formatElapsed(row.elapsedMs)}</div>
+          <div>${actionMarkup}</div>
+        </div>
+      `;
+    }
+
+    function renderLayout(cards) {
+      const flatRows = buildFlatRows(cards);
+      renderStats(cards);
+
+      boardPanel.style.display = state.viewMode === 'flat' ? 'none' : '';
+      flatPanel.style.display = state.viewMode === 'cards' ? 'none' : '';
+      dashboardGrid.style.gridTemplateColumns = state.viewMode === 'split' ? '1fr 1fr' : '1fr';
+
+      if (!cards.length) {
+        const emptyMarkup = `
+          <div class="empty-state" style="grid-column:1 / -1;">
+            <div style="font-size:48px; margin-bottom:14px;">🍽️</div>
+            <div style="font-size:22px; font-weight:900; color:var(--text); margin-bottom:8px;">Chưa có món nào chờ bếp</div>
+            <div>Món mới sẽ xuất hiện ngay khi nhân viên thêm vào order.</div>
+          </div>
+        `;
+        cardsGrid.innerHTML = emptyMarkup;
+        flatList.innerHTML = `
+          <div class="flat-head">
+            <div>Bàn</div>
+            <div>Món</div>
+            <div>SL</div>
+            <div>Chờ</div>
+            <div>Trạng thái</div>
+          </div>
+          <div class="empty-state" style="padding:22px 18px; color:#6f604d;">Chưa có món nào chờ bếp.</div>
+        `;
+        return;
+      }
+
+      cardsGrid.innerHTML = cards.map(buildCardMarkup).join('');
+      flatList.innerHTML = `
+        <div class="flat-head">
+          <div>Bàn</div>
+          <div>Món</div>
+          <div>SL</div>
+          <div>Chờ</div>
+          <div>Trạng thái</div>
+        </div>
+        ${flatRows.map(buildFlatRowMarkup).join('')}
+      `;
+    }
+
+    function maybePlayNewPendingSound(cards) {
+      if (!state.audioEnabled) return;
+      const newPendingKeys = [];
+      cards.forEach(card => {
+        card.items.forEach(item => {
+          if (String(item.kitchenStatus || '').toLowerCase() !== 'pending') return;
+          const sentAt = Number(item.kitchenSentAt || 0);
+          const key = `${card.orderId}:${item._lineKey}:${sentAt}`;
+          if (!state.seenPendingKeys.has(key)) {
+            state.seenPendingKeys.add(key);
+            newPendingKeys.push(key);
+          }
+        });
+      });
+
+      if (newPendingKeys.length) beep();
+    }
+
+    function ensureAudioUnlocked() {
+      if (state.audioUnlocked) return;
+      try {
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor) return;
+        state.audioContext = state.audioContext || new AudioCtor();
+        state.audioUnlocked = true;
+      } catch (_) {}
+    }
+
+    function beep() {
+      if (!state.audioEnabled || !state.audioUnlocked || !state.audioContext) return;
+      const ctx = state.audioContext;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 920;
+      gain.gain.value = 0.0001;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    }
+
+    async function updateOrderItems(orderId, updater) {
+      const orderRef = doc(db, 'orders', String(orderId));
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(orderRef);
+        if (!snap.exists()) throw new Error('Không tìm thấy order');
+        const data = snap.data() || {};
+        if (String(data.status || '').toLowerCase() !== 'open') throw new Error('Order đã đóng');
+        const currentItems = Array.isArray(data.items) ? data.items.map(item => ({ ...item })) : [];
+        const nextItems = updater(currentItems);
+        tx.update(orderRef, { items: nextItems });
+      });
+    }
+
+    async function createKitchenNotification({ type, tableId, tableName, orderId, items, message }) {
+      await addDoc(collection(db, 'kitchen_notifications'), {
+        type,
+        tableId: String(tableId || ''),
+        tableName: String(tableName || `Bàn ${tableId || ''}`),
+        orderId: String(orderId || ''),
+        message: String(message || ''),
+        items: Array.isArray(items) ? items : [],
+        createdAt: Date.now(),
+        createdByUid: String(state.currentUser?.uid || ''),
+        createdByRole: String(state.currentRole || ''),
+        readBy: [],
+        status: 'unread',
+        zaloSent: false,
+        pushSent: false,
+      });
+    }
+
+    function getOrderSummaryItems(orderId) {
+      const order = state.orders.get(String(orderId));
+      const items = Array.isArray(order?.items) ? order.items : [];
+      return items
+        .filter(isKitchenItem)
+        .map(item => `${item.name || 'Món'} x${Number(item.qty || 0)}`);
+    }
+
+    function updateLineStatus(items, lineKey, nextStatus) {
+      return items.map((item, index) => {
+        if (getKitchenLineKey(item, index) !== String(lineKey || '')) return item;
+        return { ...item, kitchenStatus: nextStatus, kitchenUpdatedAt: Date.now() };
+      });
+    }
+
+    async function acceptAll(orderId) {
+      await updateOrderItems(orderId, items => items.map(item => {
+        if (!isKitchenItem(item) || String(item.kitchenStatus || '').toLowerCase() !== 'pending') return item;
+        return { ...item, kitchenStatus: 'cooking', kitchenUpdatedAt: Date.now() };
+      }));
+      showToast('Đã nhận tất cả món cho bếp.');
+    }
+
+    async function doneAll(orderId) {
+      await updateOrderItems(orderId, items => items.map(item => {
+        const status = String(item.kitchenStatus || '').toLowerCase();
+        if (!isKitchenItem(item) || (status !== 'pending' && status !== 'cooking')) return item;
+        return { ...item, kitchenStatus: 'done', kitchenUpdatedAt: Date.now() };
+      }));
+      showToast('Đã đánh dấu xong tất cả món.');
+    }
+
+    async function updateSingleItem(orderId, lineKey, nextStatus) {
+      await updateOrderItems(orderId, items => updateLineStatus(items, lineKey, nextStatus));
+      showToast(nextStatus === 'done' ? 'Món đã xong.' : 'Đã nhận món.');
+    }
+
+    async function sendDelay(orderId, tableId, tableName) {
+      await createKitchenNotification({
+        type: 'delay',
+        tableId,
+        tableName,
+        orderId,
+        items: getOrderSummaryItems(orderId),
+        message: `${tableName} đang chậm, báo khách chờ thêm`,
+      });
+      showToast('Đã gửi báo chậm.', 'warning');
+    }
+
+    async function markServed(orderId, tableId, tableName) {
+      const summaryItems = getOrderSummaryItems(orderId);
+      await createKitchenNotification({
+        type: 'ready',
+        tableId,
+        tableName,
+        orderId,
+        items: summaryItems,
+        message: `${tableName} đã xong, mang ra ngay`,
+      });
+
+      await updateOrderItems(orderId, items => items.map(item => {
+        if (!isKitchenItem(item) || String(item.kitchenStatus || '').toLowerCase() !== 'done') return item;
+        return {
+          ...item,
+          kitchenStatus: 'served',
+          kitchenUpdatedAt: Date.now(),
+          servedAt: Date.now(),
+        };
+      }));
+
+      showToast('Đã báo sẵn sàng và đóng thẻ bàn.');
+    }
+
+    function attachListeners() {
+      state.tableUnsub?.();
+      state.orderUnsub?.();
+
+      state.tableUnsub = onSnapshot(query(collection(db, 'tables'), orderBy('id')), snap => {
+        const nextMap = new Map();
+        snap.docs.forEach(docSnap => {
+          nextMap.set(String(docSnap.id), { id: docSnap.id, ...docSnap.data() });
+        });
+        state.tables = nextMap;
+        const cards = buildCards();
+        maybePlayNewPendingSound(cards);
+        renderLayout(cards);
+      });
+
+      state.orderUnsub = onSnapshot(query(collection(db, 'orders'), where('status', '==', 'open')), snap => {
+        const nextMap = new Map();
+        snap.docs.forEach(docSnap => {
+          nextMap.set(String(docSnap.id), { id: docSnap.id, ...docSnap.data() });
+        });
+        state.orders = nextMap;
+        const cards = buildCards();
+        maybePlayNewPendingSound(cards);
+        renderLayout(cards);
+      });
+    }
+
+    async function resolveRole(user) {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      return String(snap.data()?.role || '').toLowerCase();
+    }
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      loginSubmit.disabled = true;
+      loginSubmit.textContent = 'Đang đăng nhập...';
+      loginError.classList.remove('show');
+
+      try {
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        showLogin(error?.message || 'Đăng nhập thất bại');
+      } finally {
+        loginSubmit.disabled = false;
+        loginSubmit.textContent = 'Đăng nhập bếp';
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await signOut(auth);
+      state.tableUnsub?.();
+      state.orderUnsub?.();
+      showLogin();
+    });
+
+    filterRow.addEventListener('click', event => {
+      const btn = event.target.closest('[data-filter]');
+      if (!btn) return;
+      state.filter = String(btn.dataset.filter || 'all');
+      filterRow.querySelectorAll('.filter-btn').forEach(node => {
+        node.classList.toggle('active', node === btn);
+      });
+      renderLayout(buildCards());
+    });
+
+    viewRow.addEventListener('click', event => {
+      const btn = event.target.closest('[data-view]');
+      if (!btn) return;
+      state.viewMode = String(btn.dataset.view || 'split');
+      localStorage.setItem('kds:viewMode', state.viewMode);
+      viewRow.querySelectorAll('.view-btn').forEach(node => {
+        node.classList.toggle('active', node === btn);
+      });
+      renderLayout(buildCards());
+    });
+
+    audioToggle.addEventListener('click', () => {
+      state.audioEnabled = !state.audioEnabled;
+      localStorage.setItem('kds:audioEnabled', state.audioEnabled ? 'on' : 'off');
+      audioToggle.textContent = `Chuông: ${state.audioEnabled ? 'Bật' : 'Tắt'}`;
+      showToast(state.audioEnabled ? 'Đã bật chuông báo món mới.' : 'Đã tắt chuông báo món mới.', state.audioEnabled ? 'success' : 'warning');
+    });
+
+    appScreen.addEventListener('click', async event => {
+      ensureAudioUnlocked();
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) return;
+      const action = String(actionEl.dataset.action || '');
+      const orderId = String(actionEl.dataset.orderId || '');
+
+      try {
+        actionEl.disabled = true;
+        if (action === 'accept-all') await acceptAll(orderId);
+        if (action === 'done-all') await doneAll(orderId);
+        if (action === 'delay') await sendDelay(orderId, actionEl.dataset.tableId, actionEl.dataset.tableName);
+        if (action === 'served-all') await markServed(orderId, actionEl.dataset.tableId, actionEl.dataset.tableName);
+        if (action === 'item-accept') await updateSingleItem(orderId, actionEl.dataset.lineKey, 'cooking');
+        if (action === 'item-done') await updateSingleItem(orderId, actionEl.dataset.lineKey, 'done');
+      } catch (error) {
+        showToast(error?.message || 'Không thể cập nhật món', 'danger');
+      } finally {
+        actionEl.disabled = false;
+      }
+    });
+
+    window.addEventListener('pointerdown', ensureAudioUnlocked, { once: true });
+    setInterval(() => {
+      updateClock();
+      renderLayout(buildCards());
+    }, 1000);
+    updateClock();
+    audioToggle.textContent = `Chuông: ${state.audioEnabled ? 'Bật' : 'Tắt'}`;
+
+    viewRow.querySelectorAll('.view-btn').forEach(node => {
+      node.classList.toggle('active', node.dataset.view === state.viewMode);
+    });
+
+    onAuthStateChanged(auth, async user => {
+      if (!user) {
+        state.currentUser = null;
+        state.currentRole = '';
+        state.tableUnsub?.();
+        state.orderUnsub?.();
+        showLogin();
+        return;
+      }
+
+      try {
+        const role = await resolveRole(user);
+        if (!['kitchen', 'admin', 'manager'].includes(role)) {
+          await signOut(auth);
+          showLogin('Tài khoản này không có quyền vào màn hình bếp.');
+          return;
+        }
+
+        state.currentUser = user;
+        state.currentRole = role;
+        userRoleLabel.textContent = `${role.toUpperCase()} · ${user.email || ''}`;
+        showApp();
+        attachListeners();
+        renderLayout(buildCards());
+      } catch (error) {
+        await signOut(auth);
+        showLogin(error?.message || 'Không thể xác thực quyền bếp');
+      }
+    });
+  </script>
+</body>
+</html>

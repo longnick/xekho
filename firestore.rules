@@ -19,6 +19,10 @@ service cloud.firestore {
       return userRole() in ['admin', 'manager'];
     }
 
+    function isKitchen() {
+      return userRole() == 'kitchen';
+    }
+
     match /System_Logs/{logId} {
       allow create: if signedIn();
       allow read: if isAdmin();
@@ -35,15 +39,35 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if signedIn() && !isKitchen();
     }
 
     match /tables/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if signedIn() && !isKitchen();
     }
 
     match /orders/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow create, delete: if signedIn() && !isKitchen();
+      allow update: if (signedIn() && !isKitchen()) || (
+        isKitchen() &&
+        resource.data.status == 'open' &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.tableId == resource.data.tableId &&
+        request.resource.data.tableName == resource.data.tableName &&
+        request.resource.data.staffUid == resource.data.staffUid &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.createdByRole == resource.data.createdByRole &&
+        request.resource.data.discount == resource.data.discount &&
+        request.resource.data.discountType == resource.data.discountType &&
+        request.resource.data.shipping == resource.data.shipping &&
+        request.resource.data.vatAmount == resource.data.vatAmount &&
+        request.resource.data.note == resource.data.note &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.openedAt == resource.data.openedAt
+      );
     }
 
     match /menu/{docId} {
@@ -72,6 +96,13 @@ service cloud.firestore {
 
     match /shiftLogs/{docId} {
       allow read, write: if signedIn();
+    }
+
+    match /kitchen_notifications/{docId} {
+      allow read: if signedIn();
+      allow create: if isKitchen() || isAdmin();
+      allow update: if signedIn();
+      allow delete: if isAdmin();
     }
 
     match /aiHistory/{docId} {
