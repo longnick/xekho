@@ -289,6 +289,10 @@ let currentUser = null;
 let masterAuthUser = null;
 let posIdleTimer = null;
 let posActivityBound = false;
+let kitchenNotifUnsub = null;
+let kitchenNotifSeenDocIds = new Set();
+let kitchenPushForegroundUnsub = null;
+let kitchenPushInitTimer = null;
 
 function showLoginScreen(show) {
   const loginScreen = document.getElementById('login-screen');
@@ -772,6 +776,168 @@ function applyRoleRights() {
   if (isStaff && !STAFF_ALLOWED_PAGES.has(String(currentPage || '').toLowerCase())) {
     navigate('tables');
   }
+
+  updateKitchenBadge(Number(document.getElementById('kitchen-notif-badge')?.dataset.count || 0));
+}
+
+function stopKitchenNotificationListener() {
+  if (typeof kitchenNotifUnsub === 'function') {
+    try { kitchenNotifUnsub(); } catch (_) {}
+  }
+  kitchenNotifUnsub = null;
+  kitchenNotifSeenDocIds.clear();
+  updateKitchenBadge(0);
+}
+
+function updateKitchenBadge(count) {
+  const host = document.getElementById('header-kitchen-btn');
+  const badge = document.getElementById('kitchen-notif-badge');
+  if (!host || !badge) return;
+
+  const nextCount = Math.max(0, Number(count || 0));
+  badge.dataset.count = String(nextCount);
+  badge.textContent = nextCount > 99 ? '99+' : String(nextCount);
+  badge.style.display = nextCount > 0 ? 'inline-flex' : 'none';
+  host.classList.toggle('has-kitchen-alert', nextCount > 0);
+  host.classList.toggle('badge-pulse', nextCount > 0);
+
+  const isLocked = !currentUser;
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  const canShow = !!masterAuthUser && !isLocked && role !== 'kitchen';
+  host.style.display = canShow ? 'inline-flex' : 'none';
+}
+
+function showKitchenToast(notif = {}, docId = '') {
+  if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
+  const isReady = String(notif.type || '').toLowerCase() === 'ready';
+  const toast = document.createElement('div');
+  toast.className = `kitchen-toast ${isReady ? 'ready' : 'delay'}`;
+  toast.dataset.docId = docId;
+
+  const safeTitle = _escapeHtml(notif.tableName || 'Bep');
+  const safeItems = Array.isArray(notif.items) && notif.items.length
+    ? _escapeHtml(notif.items.join(', '))
+    : _escapeHtml(notif.message || 'Co cap nhat tu bep');
+
+  toast.innerHTML = `
+    <div class="kitchen-toast-icon">${isReady ? '🍽️' : '⚠️'}</div>
+    <div class="kitchen-toast-body">
+      <div class="kitchen-toast-title">${safeTitle} - ${isReady ? 'SAN SANG' : 'BAO CHAM'}</div>
+      <div class="kitchen-toast-items">${safeItems}</div>
+    </div>
+    <button class="kitchen-toast-close" type="button" aria-label="Dong">×</button>
+  `;
+
+  const closeToast = () => {
+    if (toast.dataset.closing === '1') return;
+    toast.dataset.closing = '1';
+    toast.classList.add('closing');
+    setTimeout(() => {
+      try { toast.remove(); } catch (_) {}
+    }, 220);
+  };
+
+  const markReadAndClose = async () => {
+    try { await markKitchenNotifRead(docId); } catch (_) {}
+    closeToast();
+  };
+
+  toast.querySelector('.kitchen-toast-close')?.addEventListener('click', () => {
+    markReadAndClose().catch(() => closeToast());
+  });
+
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    markReadAndClose().catch(() => closeToast());
+  }, 8000);
+}
+
+async function markKitchenNotifRead(docId) {
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  if (!uid || !docId || !window.DB?.KitchenNotifications?.markRead) return;
+  await window.DB.KitchenNotifications.markRead(docId, uid);
+}
+
+function initKitchenNotificationListener() {
+  if (!window.DB?.KitchenNotifications?.listenUnread) return;
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  if (!uid || role === 'kitchen') {
+    stopKitchenNotificationListener();
+    return;
+  }
+  if (typeof kitchenNotifUnsub === 'function') return;
+
+  kitchenNotifUnsub = window.DB.KitchenNotifications.listenUnread((docs) => {
+    let unreadCount = 0;
+    docs.forEach(notif => {
+      const readBy = Array.isArray(notif.readBy) ? notif.readBy.map(String) : [];
+      const docId = String(notif.id || '');
+      if (!docId || readBy.includes(String(uid))) return;
+      unreadCount++;
+      if (!kitchenNotifSeenDocIds.has(docId)) {
+        kitchenNotifSeenDocIds.add(docId);
+        showKitchenToast(notif, docId);
+      }
+    });
+    updateKitchenBadge(unreadCount);
+  });
+}
+
+function stopKitchenPushClient() {
+  if (typeof kitchenPushForegroundUnsub === 'function') {
+    try { kitchenPushForegroundUnsub(); } catch (_) {}
+  }
+  kitchenPushForegroundUnsub = null;
+  if (kitchenPushInitTimer) {
+    clearTimeout(kitchenPushInitTimer);
+    kitchenPushInitTimer = null;
+  }
+}
+
+function handleKitchenPushForeground(payload = {}) {
+  if (!document.hidden && typeof kitchenNotifUnsub === 'function') return;
+  const data = payload?.data || {};
+  const notification = payload?.notification || {};
+  showKitchenToast({
+    type: data.type || 'ready',
+    tableId: data.tableId || '',
+    tableName: data.tableName || notification.title || 'Bep',
+    orderId: data.orderId || '',
+    items: notification.body ? [notification.body] : [],
+    message: notification.body || 'Co cap nhat tu bep',
+  }, `${data.type || 'push'}:${data.orderId || ''}:${data.tableId || ''}:${Date.now()}`);
+}
+
+async function initKitchenPushClient(options = {}) {
+  if (!window.DB?.Messaging?.registerCurrentDevice || !window.DB?.Messaging?.listenForeground) return;
+
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  const vapidKey = String(Store.getSettings()?.webPushVapidKey || window.appState?.settings?.webPushVapidKey || '').trim();
+  const retryLater = options.retryLater === true;
+
+  if (!uid || role === 'kitchen' || !vapidKey) {
+    stopKitchenPushClient();
+    return;
+  }
+
+  if (typeof kitchenPushForegroundUnsub !== 'function') {
+    kitchenPushForegroundUnsub = await window.DB.Messaging.listenForeground(handleKitchenPushForeground);
+  }
+
+  try {
+    const result = await window.DB.Messaging.registerCurrentDevice();
+    if (result?.reason === 'permission-default' && !retryLater) {
+      kitchenPushInitTimer = setTimeout(() => {
+        initKitchenPushClient({ retryLater: true }).catch(err => console.warn('[KitchenPush] retry error', err));
+      }, 5000);
+    }
+  } catch (err) {
+    console.warn('[KitchenPush] init error', err);
+  }
 }
 
 // ==== Quản lý nhân sự (collection Staff) ====
@@ -1141,6 +1307,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('db:signedIn', (e) => {
     const ud = e.detail && e.detail.userDoc;
     if (ud) {
+      if (String(ud.role || '').toLowerCase() === 'kitchen') {
+        showLockScreen(false);
+        showLoginScreen(false);
+        window.location.href = '/kitchen';
+        return;
+      }
       masterAuthUser = { uid: ud.uid, email: ud.email, role: ud.role, displayName: ud.displayName, username: ud.username };
       currentUser = null;
       syncCurrentPosUserToAppState();
@@ -1148,6 +1320,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateLockScreenUI('Nhập mã PIN để vào ca làm việc.');
       showLockScreen(true);
       applyRoleRights();
+      initKitchenNotificationListener();
+      initKitchenPushClient().catch(err => console.warn('[KitchenPush] signedIn init error', err));
       console.log('[Bridge] db:signedIn ->', ud.role, ud.email);
     }
   });
@@ -1157,6 +1331,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentUser = null;
     syncCurrentPosUserToAppState();
     masterAuthUser = null;
+    stopKitchenNotificationListener();
+    stopKitchenPushClient();
     if (posIdleTimer) {
       clearTimeout(posIdleTimer);
       posIdleTimer = null;
@@ -1172,6 +1348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Cloud data có thể chứa text lỗi font từ các bản cũ -> chạy migration lại trên dữ liệu cloud.
     runMigrations();
     applyStoreSettings();
+    syncLocalOrderCacheFromCloud();
     bootstrapStaffSetupSessionIfNeeded(true);
     syncCurrentStaffSession();
     renderTables();
@@ -1205,7 +1382,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('db:update', (e) => {
     const key = e.detail && e.detail.key;
     if (key === 'tables' || key === 'orders') renderTables();
-    if (key === 'settings')                   applyStoreSettings();
+    if (key === 'orders') syncLocalOrderCacheFromCloud();
+    if (key === 'settings') {
+      applyStoreSettings();
+      initKitchenPushClient().catch(err => console.warn('[KitchenPush] settings init error', err));
+    }
     if (key === 'users' || key === 'presence' || key === 'staff') renderUserManagement();
     if (key === 'staff') syncCurrentStaffSession();
     if (key === 'menu') {
@@ -1694,18 +1875,15 @@ function navigateToReport(type) {
 
 function addNoteToCartItem(itemId) {
   const items = orderItems[currentTable] || [];
-  const menu = [];
-  const availableCategories = new Set((menu || []).map(item => String(item.category || '').trim()).filter(Boolean));
-  if (currentCat !== 'Tất cả' && !availableCategories.has(currentCat)) currentCat = 'Tất cả';
-  const item = items.find(i => i.id === itemId);
+  const item = items.find(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
   if (!item) return;
 
   const currentNote = item.note || '';
   const newNote = prompt(`Nhập ghi chú cho món [${item.name}]:`, currentNote);
 
   if (newNote !== null) {
-    // Treat as valid update, trim if present
     item.note = newNote.trim();
+    saveOrder();
     renderCart();
   }
 }
@@ -1871,6 +2049,16 @@ function _getInventory() {
   return (inventory || []).map(normalizeInventoryItemModel);
 }
 
+function syncLocalOrderCacheFromCloud() {
+  if (!window.appState?.ready || !window.appState?.orders || typeof window.appState.orders !== 'object') return;
+  const cloudOrders = {};
+  Object.entries(window.appState.orders).forEach(([tid, order]) => {
+    if (!order || String(order.status || '').toLowerCase() !== 'open') return;
+    cloudOrders[tid] = normalizeKitchenOrderItems(Array.isArray(order.items) ? order.items : []);
+  });
+  Store.setOrders(cloudOrders);
+}
+
 function _getPurchases() {
   const purchases = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
     ? window.appState.purchases
@@ -1952,6 +2140,73 @@ function findLinkedInventoryIdForMenuItem(item = {}, inventory = []) {
   if (item.linkedInventoryId && inventory.some(inv => inv.id === item.linkedInventoryId)) return item.linkedInventoryId;
   const exact = inventory.find(inv => !inv.hidden && normalizeViKey(inv.name) === normalizeViKey(item.name));
   return exact ? exact.id : null;
+}
+
+function _isKitchenSkippedItem(item = {}) {
+  return String(item?.itemType || '').trim().toLowerCase() === String(ITEM_TYPES.RETAIL).toLowerCase();
+}
+
+function createKitchenLineItemId() {
+  return `li_${Date.now()}_${uid().slice(0, 6)}`;
+}
+
+function getKitchenLineItemId(item = {}) {
+  return String(item?.lineItemId || '').trim();
+}
+
+function isKitchenFinalStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'served' || normalized === 'skip';
+}
+
+function canToggleServedStatus(item = {}) {
+  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
+  return status === 'done' || status === 'served';
+}
+
+function getCartItemStatusLabel(item = {}) {
+  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
+  if (status === 'served') return 'Da mang ra';
+  if (status === 'done') return 'Cho mang ra';
+  if (status === 'cooking') return 'Dang lam';
+  if (status === 'skip') return 'Ban thang';
+  return 'Cho lam';
+}
+
+function normalizeKitchenOrderItem(item = {}, menuMap = null) {
+  const base = { ...item };
+  const menuItem = menuMap instanceof Map ? menuMap.get(String(base.id || '')) : null;
+  const inferredItemType = menuItem?.itemType || base.itemType || inferMenuItemType(menuItem || base);
+  const normalized = {
+    ...base,
+    itemType: inferredItemType,
+    linkedInventoryId: menuItem?.linkedInventoryId || base.linkedInventoryId || null,
+    lineItemId: getKitchenLineItemId(base) || createKitchenLineItemId(),
+  };
+
+  if (_isKitchenSkippedItem(normalized)) {
+    normalized.kitchenStatus = 'skip';
+    if (normalized.kitchenSentAt == null) normalized.kitchenSentAt = null;
+    if (normalized.kitchenUpdatedAt == null) normalized.kitchenUpdatedAt = null;
+    if (normalized.servedAt == null) normalized.servedAt = null;
+    return normalized;
+  }
+
+  const existingStatus = String(normalized.kitchenStatus || '').trim().toLowerCase();
+  const validStatuses = new Set(['pending', 'cooking', 'done', 'served']);
+  const nextStatus = validStatuses.has(existingStatus) ? existingStatus : 'pending';
+  const now = Date.now();
+  normalized.kitchenStatus = nextStatus;
+  normalized.kitchenSentAt = Number(normalized.kitchenSentAt || 0) > 0 ? Number(normalized.kitchenSentAt) : now;
+  normalized.kitchenUpdatedAt = Number(normalized.kitchenUpdatedAt || 0) > 0 ? Number(normalized.kitchenUpdatedAt) : normalized.kitchenSentAt;
+  normalized.servedAt = normalized.servedAt != null ? normalized.servedAt : null;
+  return normalized;
+}
+
+function normalizeKitchenOrderItems(items = []) {
+  const menu = _getMenu();
+  const menuMap = new Map((Array.isArray(menu) ? menu : []).map(item => [String(item.id || ''), item]));
+  return (Array.isArray(items) ? items : []).map(item => normalizeKitchenOrderItem(item, menuMap));
 }
 
 function normalizeUnitText(unit) {
@@ -2481,7 +2736,7 @@ function openTable(tableId) {
     const hasCloudOrdersState = !!(window.appState && window.appState.orders && typeof window.appState.orders === 'object');
     const cloudOrder = hasCloudOrdersState ? window.appState.orders[String(currentTable)] : null;
     if (cloudOrder && cloudOrder.items && cloudOrder.items.length > 0) {
-      orderItems[currentTable] = [...cloudOrder.items];
+      orderItems[currentTable] = normalizeKitchenOrderItems(cloudOrder.items);
       // Ghi cưđc orderId vào bđ nhđ tiền cho phase write
       window._currentOrderId = window._currentOrderId || {};
       window._currentOrderId[currentTable] = cloudOrder.id || cloudOrder.orderId;
@@ -2489,7 +2744,7 @@ function openTable(tableId) {
       orderItems[currentTable] = [];
     } else {
       const localOrders = Store.getOrders();
-      orderItems[currentTable] = localOrders[currentTable] ? [...localOrders[currentTable]] : [];
+      orderItems[currentTable] = localOrders[currentTable] ? normalizeKitchenOrderItems(localOrders[currentTable]) : [];
     }
   }
 
@@ -2609,10 +2864,11 @@ function getCurrentOrderActorMeta() {
 }
 
 async function _syncWholeOrderToCloud(tableKey) {
-  if (!window.DB || tableKey === 'takeaway') return;
+  if (!window.DB || !window.appState || !window.appState.ready || tableKey === 'takeaway') return;
   const key = String(tableKey);
-  const items = Array.isArray(orderItems[key]) ? orderItems[key].map(item => ({ ...item })) : [];
+  const items = normalizeKitchenOrderItems(Array.isArray(orderItems[key]) ? orderItems[key].map(item => ({ ...item })) : []);
   const extras = orderExtras[key] || {};
+  orderItems[key] = items.map(item => ({ ...item }));
 
   if (!items.length) {
     const orderId = _getCloudOrderId(key);
@@ -2709,7 +2965,7 @@ function _markTableEmptyEverywhere(tableKey) {
  * Trả về Promise<orderId|null>
  */
 async function _ensureCloudOrder(key) {
-  if (!window.DB || key === 'takeaway') return null;
+  if (!window.DB || !window.appState || !window.appState.ready || key === 'takeaway') return null;
   window.__ensureCloudOrderPromises = window.__ensureCloudOrderPromises || {};
   let orderId = _getCloudOrderId(key);
   if (orderId) return orderId;
@@ -2748,7 +3004,7 @@ async function _ensureCloudOrder(key) {
  * Không ném exception ra ngoài để chđ log lđi đă UI không bđ block.
  */
 async function _cloudSyncItem(action, tableKey) {
-  if (!window.DB || tableKey === 'takeaway') return;
+  if (!window.DB || !window.appState || !window.appState.ready || tableKey === 'takeaway') return;
   const key = String(tableKey);
   try {
     let orderId;
@@ -2762,9 +3018,9 @@ async function _cloudSyncItem(action, tableKey) {
       orderId = _getCloudOrderId(key);
       if (!orderId) return;
       if (action.type === 'change') {
-        await window.DB.Orders.changeQty(orderId, action.itemId, action.itemNote || '', action.delta);
+        await window.DB.Orders.changeQty(orderId, action.itemId, action.itemNote || '', action.delta, action.lineItemId || '');
       } else if (action.type === 'remove') {
-        await window.DB.Orders.removeItem(orderId, action.itemId, action.itemNote || '');
+        await window.DB.Orders.removeItem(orderId, action.itemId, action.itemNote || '', action.lineItemId || '');
       }
     }
   } catch (e) {
@@ -2781,6 +3037,7 @@ async function _cloudSyncItem(action, tableKey) {
 function saveOrderForTable(tableId) {
   const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
   const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
+  orderItems[key] = normalizeKitchenOrderItems(orderItems[key] || []);
   const hasItems = (orderItems[key] || []).length > 0;
 
   // --- LocalStorage (offline backup) ---
@@ -2818,7 +3075,7 @@ function saveOrderForTable(tableId) {
     if (items.length > 0) {
       _ensureCloudOrder(key)
         .then(orderId => {
-          if (orderId) return window.DB.Orders.updateMeta(orderId, { items, ...getCurrentOrderActorMeta() });
+          if (orderId) return window.DB.Orders.updateMeta(orderId, { items: normalizeKitchenOrderItems(items), ...getCurrentOrderActorMeta() });
         })
         .catch(console.error);
     } else {
@@ -2872,9 +3129,11 @@ function renderMenuItems() {
   if(menuSearch) filtered = filtered.filter(m => m.name.toLowerCase().includes(menuSearch.toLowerCase()));
 
   document.getElementById('menu-grid').innerHTML = filtered.map(m => {
-    const inOrder = items.find(i => i.id === m.id);
-    return `<div class="menu-item ${inOrder ? 'in-order' : ''}" onclick="addToOrder('${m.id}')">
-      ${inOrder ? `<div class="menu-item-qty">${inOrder.qty}</div>` : ''}
+    const activeQty = items
+      .filter(i => i.id === m.id && !isKitchenFinalStatus(i.kitchenStatus))
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    return `<div class="menu-item ${activeQty > 0 ? 'in-order' : ''}" onclick="addToOrder('${m.id}')">
+      ${activeQty > 0 ? `<div class="menu-item-qty">${activeQty}</div>` : ''}
       <div class="menu-item-name">${m.name}</div>
       <div class="menu-item-price">${fmt(m.price)}đ</div>
     </div>`;
@@ -2907,15 +3166,38 @@ function addToOrder(itemId) {
   if(!dish) return;
   const unitCost = _resolveDishCostPerUnit(dish, inv);
   if(!orderItems[currentTable]) orderItems[currentTable] = [];
-  const existing = orderItems[currentTable].find(i => i.id === itemId);
-  if(existing) { existing.qty++; }
-  else { orderItems[currentTable].push({ id: dish.id, name: dish.name, price: dish.price, cost: unitCost, qty:1 }); }
+  const existing = orderItems[currentTable].find(i =>
+    i.id === itemId &&
+    !isKitchenFinalStatus(i.kitchenStatus) &&
+    String(i.note || '').trim() === ''
+  );
+  let cloudAction = null;
+  if(existing) {
+    existing.qty++;
+    cloudAction = {
+      type: 'change',
+      itemId,
+      lineItemId: getKitchenLineItemId(existing),
+      itemNote: existing.note || '',
+      delta: 1,
+    };
+  }
+  else {
+    const nextItem = normalizeKitchenOrderItem({
+      id: dish.id,
+      name: dish.name,
+      price: dish.price,
+      cost: unitCost,
+      qty: 1,
+      itemType: dish.itemType || inferMenuItemType(dish),
+      linkedInventoryId: dish.linkedInventoryId || null,
+    });
+    orderItems[currentTable].push(nextItem);
+    cloudAction = { type: 'add', item: nextItem };
+  }
   saveOrder(); // localStorage + table status
   // Cloud: Transaction-based addItem (tránh race condition khi 2 nhân viên cùng thêm món)
-  _cloudSyncItem({
-    type: 'add',
-    item: { id: dish.id, name: dish.name, price: dish.price, cost: unitCost, qty: 1 },
-  }, currentTable);
+  _cloudSyncItem(cloudAction, currentTable);
   renderMenuItems();
   renderCart();
   if(navigator.vibrate) navigator.vibrate(30);
@@ -2924,12 +3206,13 @@ function addToOrder(itemId) {
 function removeCartItem(itemId) {
   const items = orderItems[currentTable];
   if(!items) return;
-  const idx = items.findIndex(i => i.id === itemId);
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
   if(idx < 0) return;
+  const targetItem = items[idx];
   items.splice(idx, 1);
   saveOrder();
   // Cloud: Transaction-based removeItem
-  _cloudSyncItem({ type: 'remove', itemId, itemNote: '' }, currentTable);
+  _cloudSyncItem({ type: 'remove', itemId, lineItemId: getKitchenLineItemId(targetItem), itemNote: targetItem?.note || '' }, currentTable);
   renderMenuItems();
   renderCart();
 }
@@ -2937,18 +3220,19 @@ function removeCartItem(itemId) {
 function changeQty(itemId, delta) {
   const items = orderItems[currentTable];
   if(!items) return;
-  const idx = items.findIndex(i => i.id === itemId);
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
   if(idx < 0) return;
+  const targetItem = items[idx];
   items[idx].qty += delta;
   if(items[idx].qty <= 0) {
     items.splice(idx, 1);
     saveOrder();
     // Cloud: xóa dòng món khỏi đơn
-    _cloudSyncItem({ type: 'remove', itemId, itemNote: '' }, currentTable);
+    _cloudSyncItem({ type: 'remove', itemId, lineItemId: getKitchenLineItemId(targetItem), itemNote: targetItem?.note || '' }, currentTable);
   } else {
     saveOrder();
     // Cloud: Transaction-based changeQty (tránh race condition)
-    _cloudSyncItem({ type: 'change', itemId, itemNote: '', delta }, currentTable);
+    _cloudSyncItem({ type: 'change', itemId, lineItemId: getKitchenLineItemId(items[idx]), itemNote: items[idx]?.note || '', delta }, currentTable);
   }
   renderMenuItems();
   renderCart();
@@ -2959,14 +3243,34 @@ function setCartQty(itemId, val) {
   if(isNaN(qty) || qty <= 0) { renderCart(); return; }
   const items = orderItems[currentTable];
   if(!items) return;
-  const idx = items.findIndex(i => i.id === itemId);
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
   if(idx < 0) return;
   const delta = qty - items[idx].qty; // tính delta đă dùng Transaction
   items[idx].qty = qty;
   saveOrder();
   // Cloud: Transaction-based changeQty vđi delta thực tế
-  if(delta !== 0) _cloudSyncItem({ type: 'change', itemId, itemNote: '', delta }, currentTable);
+  if(delta !== 0) _cloudSyncItem({ type: 'change', itemId, lineItemId: getKitchenLineItemId(items[idx]), itemNote: items[idx]?.note || '', delta }, currentTable);
   renderMenuItems();
+  renderCart();
+}
+
+function toggleServedCartItem(itemId) {
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if(idx < 0) return;
+  const targetItem = items[idx];
+  if (!canToggleServedStatus(targetItem)) return;
+
+  const nextStatus = String(targetItem.kitchenStatus || '').toLowerCase() === 'served' ? 'done' : 'served';
+  items[idx] = normalizeKitchenOrderItem({
+    ...targetItem,
+    kitchenStatus: nextStatus,
+    servedAt: nextStatus === 'served' ? Date.now() : null,
+    kitchenUpdatedAt: Date.now(),
+  });
+  saveOrder();
+  _queueWholeOrderCloudSync(currentTable);
   renderCart();
 }
 
@@ -2976,6 +3280,7 @@ function saveOrder() {
   // (addToOrder, changeQty, removeCartItem, setCartQty) dùng Transaction-based API.
 
   // --- LocalStorage (offline backup) ---
+  orderItems[currentTable] = normalizeKitchenOrderItems(orderItems[currentTable] || []);
   const orders = Store.getOrders();
   const hasItems = (orderItems[currentTable] || []).length > 0;
   if (hasItems) orders[currentTable] = orderItems[currentTable] || [];
@@ -3053,26 +3358,30 @@ function renderCart() {
   if(items.length === 0) {
     document.getElementById('cart-items').innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:32px">🛒</div><div class="empty-text">Chưa có món</div></div>`;
   } else {
-      document.getElementById('cart-items').innerHTML = items.map(item =>
-        `<div class="cart-item">
+      document.getElementById('cart-items').innerHTML = items.map(item => {
+        const itemKey = getKitchenLineItemId(item) || item.id;
+        const finalStatus = isKitchenFinalStatus(item.kitchenStatus);
+        const served = String(item.kitchenStatus || '').toLowerCase() === 'served';
+        return `<div class="cart-item ${served ? 'cart-item-served' : ''}">
           <div>
-            <div class="cart-item-name">${item.name}</div>
-            ${item.note ? `<div style="font-size:10px; color:var(--text2); margin-top:2px;">( Ghi chú: ${item.note} )</div>` : ''}
+            <div class="cart-item-name" style="display:flex;align-items:center;gap:8px;"><button class="qty-btn" style="width:28px;height:28px;border-radius:999px;color:${served ? 'var(--success)' : 'var(--text3)'};background:${served ? 'rgba(16,185,129,0.14)' : 'rgba(255,255,255,0.06)'};${canToggleServedStatus(item) ? '' : 'opacity:.45;cursor:default;'}" onclick="toggleServedCartItem('${itemKey}')" title="Danh dau da mang ra">✓</button><span>${item.name}</span></div>
+            <div style="font-size:10px; color:var(--text2); margin-top:2px;">${getCartItemStatusLabel(item)}${item.note ? ` · Ghi chú: ${item.note}` : ''}</div>
           </div>
           <div class="cart-qty-ctrl">
-            <button class="qty-btn" onclick="changeQty('${item.id}',-1)">−</button>
+            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} onclick="changeQty('${itemKey}',-1)">−</button>
             <input type="number" class="cart-qty-input" min="1" max="99" value="${item.qty}"
-              onchange="setCartQty('${item.id}', this.value)"
+              ${finalStatus ? 'disabled' : ''}
+              onchange="setCartQty('${itemKey}', this.value)"
               onclick="this.select()" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;padding:2px 4px">
-            <button class="qty-btn" onclick="changeQty('${item.id}',1)">+</button>
+            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} onclick="changeQty('${itemKey}',1)">+</button>
           </div>
           <div style="display:flex; align-items:center; gap:6px">
             <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
-            <button class="qty-btn" style="color:var(--primary); background:rgba(0,149,255,0.1); width:28px;" onclick="addNoteToCartItem('${item.id}')" title="Thêm ghi chú">📝</button>
-            <button class="qty-btn" style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${item.id}')">✕</button>
+            <button class="qty-btn" style="color:var(--primary); background:rgba(0,149,255,0.1); width:28px;" onclick="addNoteToCartItem('${itemKey}')" title="Thêm ghi chú">📝</button>
+            <button class="qty-btn" ${finalStatus ? 'disabled' : ''} style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${itemKey}')">✕</button>
           </div>
-        </div>`
-      ).join('');
+        </div>`;
+      }).join('');
   }
 
   // Hiđơ thđ VAT trong tđơg nếu có
@@ -7845,6 +8154,7 @@ function renderSettings() {
     ['set-googleTTSKey', s.googleTTSKey|| ''],
     ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
+    ['set-webPushVapidKey', s.webPushVapidKey || ''],
   ];
   fields.forEach(([id, val]) => {
     const el = document.getElementById(id);
@@ -7959,6 +8269,7 @@ function submitSettings(e) {
   const taxRateEl            = document.getElementById('set-taxRate');
   const ocrModeEl            = document.getElementById('set-ocrMode');
   const photoRetentionEl     = document.getElementById('set-photoRetentionDays');
+  const webPushVapidKeyEl    = document.getElementById('set-webPushVapidKey');
   
   // Theme value
   const themeInput = document.querySelector('input[name="appTheme"]:checked');
@@ -8001,6 +8312,7 @@ function submitSettings(e) {
     autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
     googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
+    webPushVapidKey: webPushVapidKeyEl ? webPushVapidKeyEl.value.trim() : (s.webPushVapidKey || ''),
     ocrMode: (ocrModeEl && ['auto', 'offline', 'online'].includes(ocrModeEl.value)) ? ocrModeEl.value : (s.ocrMode || 'auto'),
     photoRetentionDays: photoRetentionEl ? Math.max(0, parseInt(photoRetentionEl.value, 10) || 0) : Number(s.photoRetentionDays || 0),
     activeAIEngine: 'deepseek',

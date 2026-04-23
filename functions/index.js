@@ -1,5 +1,5 @@
 const { onRequest } = require('firebase-functions/v2/https');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const cors = require('cors')({ origin: true });
@@ -76,6 +76,42 @@ const DEEPSEEK_ENDPOINT = defineString('DEEPSEEK_ENDPOINT', { default: 'https://
 const DEEPSEEK_MODEL = defineString('DEEPSEEK_MODEL', { default: 'deepseek-chat' });
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = defineString('GEMINI_MODEL', { default: 'gemini-1.5-flash' });
+const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
+const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
+
+function kitchenNotifDocRef(docId) {
+  return db.collection('kitchen_notifications').doc(String(docId));
+}
+
+function buildKitchenNotifMessage(notif = {}) {
+  const type = String(notif.type || '').toLowerCase();
+  const tableName = String(notif.tableName || notif.tableId || 'Ban');
+  const items = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
+  const body = items.join(', ');
+  if (type === 'ready') {
+    return {
+      title: `🍽️ ${tableName} - Xong roi!`,
+      body: body || 'Mang ra ngay.',
+      zaloText: `✅ [XE KHO POS]\n${tableName} xong roi! Mang ra ngay!\n\nMon:\n• ${items.join('\n• ') || 'Khong co chi tiet'}`,
+    };
+  }
+  if (type === 'delay') {
+    return {
+      title: `⚠️ ${tableName} - Dang cham`,
+      body: body || 'Bao khach cho them.',
+      zaloText: `⚠️ [XE KHO POS]\n${tableName} dang cham - Bao khach cho them${items.length ? `\n\nMon:\n• ${items.join('\n• ')}` : ''}`,
+    };
+  }
+  return {
+    title: `📣 ${tableName}`,
+    body: body || String(notif.message || 'Co cap nhat tu bep'),
+    zaloText: '',
+  };
+}
+
+function uniqueTokens(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(Boolean))];
+}
 
 function normalizeVi(text) {
   return String(text || '')
@@ -431,6 +467,154 @@ exports.onHistoryOrderCancelled = onDocumentUpdated(
       itemCount: Array.isArray(after.items) ? after.items.length : 0,
       inventoryCount: inventoryIds.length,
     });
+  }
+);
+
+exports.onKitchenNotificationCreated = onDocumentCreated(
+  {
+    document: 'kitchen_notifications/{docId}',
+    region: 'asia-southeast1',
+  },
+  async event => {
+    const notif = event.data?.data() || null;
+    const docId = event.params?.docId;
+    if (!notif || !docId) return;
+
+    const type = String(notif.type || '').toLowerCase();
+    if (!['ready', 'delay'].includes(type)) return;
+    if (notif.zaloSent === true) return;
+
+    const token = ZALO_OA_ACCESS_TOKEN.value();
+    const groupId = String(ZALO_GROUP_ID.value() || '').trim();
+    if (!token || !groupId) {
+      logger.warn('Skipping Zalo send: missing config', { docId, hasToken: !!token, hasGroupId: !!groupId });
+      return;
+    }
+
+    const { zaloText } = buildKitchenNotifMessage(notif);
+    if (!zaloText) return;
+
+    try {
+      const res = await fetch('https://openapi.zalo.me/v2.0/oa/message/cs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          access_token: token,
+        },
+        body: JSON.stringify({
+          recipient: { group_id: groupId },
+          message: { text: zaloText },
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.error) {
+        logger.error('Zalo OA send failed', { docId, status: res.status, data });
+        return;
+      }
+
+      await kitchenNotifDocRef(docId).set({
+        zaloSent: true,
+        zaloSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      logger.info('Zalo OA message sent', { docId, type });
+    } catch (err) {
+      logger.error('Zalo OA send exception', { docId, error: err?.message || String(err) });
+    }
+  }
+);
+
+exports.sendPushOnKitchenNotif = onDocumentCreated(
+  {
+    document: 'kitchen_notifications/{docId}',
+    region: 'asia-southeast1',
+  },
+  async event => {
+    const notif = event.data?.data() || null;
+    const docId = event.params?.docId;
+    if (!notif || !docId) return;
+    if (notif.pushSent === true) return;
+
+    const usersSnap = await db.collection('users')
+      .where('role', 'in', ['staff', 'admin', 'manager'])
+      .get();
+
+    const tokens = [];
+    const tokenOwners = new Map();
+    usersSnap.forEach(docSnap => {
+      const data = docSnap.data() || {};
+      const userTokens = uniqueTokens(data.fcmTokens || []);
+      userTokens.forEach(token => {
+        tokens.push(token);
+        tokenOwners.set(token, docSnap.ref);
+      });
+    });
+
+    const unique = uniqueTokens(tokens);
+    if (!unique.length) {
+      logger.info('Skipping push send: no FCM tokens', { docId });
+      return;
+    }
+
+    const { title, body } = buildKitchenNotifMessage(notif);
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens: unique,
+        notification: {
+          title,
+          body: body || String(notif.message || ''),
+        },
+        data: {
+          type: String(notif.type || ''),
+          tableId: String(notif.tableId || ''),
+          tableName: String(notif.tableName || ''),
+          orderId: String(notif.orderId || ''),
+        },
+        webpush: {
+          notification: {
+            icon: '/kitchen-icon.svg',
+            badge: '/kitchen-badge.svg',
+            tag: 'kitchen-alert',
+            renotify: true,
+          },
+        },
+      });
+
+      const invalidByUser = new Map();
+      response.responses.forEach((item, index) => {
+        if (item.success) return;
+        const code = String(item.error?.code || '');
+        const token = unique[index];
+        if (!token) return;
+        if (!['messaging/registration-token-not-registered', 'messaging/invalid-argument'].includes(code)) return;
+        const ownerRef = tokenOwners.get(token);
+        if (!ownerRef) return;
+        if (!invalidByUser.has(ownerRef.path)) invalidByUser.set(ownerRef.path, { ref: ownerRef, tokens: [] });
+        invalidByUser.get(ownerRef.path).tokens.push(token);
+      });
+
+      await Promise.all([...invalidByUser.values()].map(({ ref, tokens: badTokens }) =>
+        ref.set({
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(...badTokens),
+        }, { merge: true })
+      ));
+
+      await kitchenNotifDocRef(docId).set({
+        pushSent: true,
+        pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        pushTargetCount: unique.length,
+      }, { merge: true });
+
+      logger.info('Kitchen push sent', {
+        docId,
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+        tokenCount: unique.length,
+      });
+    } catch (err) {
+      logger.error('Kitchen push send exception', { docId, error: err?.message || String(err) });
+    }
   }
 );
 

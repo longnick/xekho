@@ -44,6 +44,7 @@ import {
   Timestamp,
   writeBatch,
   increment,
+  arrayUnion,
 }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -56,6 +57,14 @@ import {
   serverTimestamp as rtServerTimestamp,
 }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+
+import {
+  getMessaging,
+  getToken,
+  onMessage,
+  isSupported as isMessagingSupported,
+}
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 
 
 // ============================================================
@@ -99,6 +108,7 @@ const SETTINGS_DEFAULTS = {
   autoUploadToGoogleDrive:         false,
   googleDriveUploadUrl:            '',
   googleDriveFolderId:             '',
+  webPushVapidKey:                 '',
 };
 
 
@@ -117,6 +127,9 @@ const _db          = initializeFirestore(_firebaseApp, {
   }),
 });
 const _rtdb        = getDatabase(_firebaseApp);
+const _messagingSupported = isMessagingSupported().catch(() => false);
+let _messaging = null;
+let _pushSwRegistration = null;
 
 
 // ============================================================
@@ -1151,6 +1164,77 @@ const Auth = {
   get currentUser() { return _auth.currentUser; },
 };
 
+const Messaging = {
+  async isSupported() {
+    return _messagingSupported;
+  },
+
+  async _instance() {
+    const supported = await _messagingSupported;
+    if (!supported) return null;
+    if (!_messaging) _messaging = getMessaging(_firebaseApp);
+    return _messaging;
+  },
+
+  async _serviceWorker() {
+    if (!('serviceWorker' in navigator)) {
+      throw new Error('Trinh duyet khong ho tro service worker');
+    }
+    if (_pushSwRegistration) return _pushSwRegistration;
+    _pushSwRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    return _pushSwRegistration;
+  },
+
+  async registerCurrentDevice() {
+    const supported = await _messagingSupported;
+    if (!supported) return { supported: false, reason: 'unsupported' };
+
+    const user = _auth.currentUser;
+    if (!user?.uid) return { supported: true, skipped: true, reason: 'no-user' };
+
+    const vapidKey = String(window.appState?.settings?.webPushVapidKey || '').trim();
+    if (!vapidKey) return { supported: true, skipped: true, reason: 'missing-vapid' };
+
+    if (typeof Notification === 'undefined') {
+      return { supported: false, reason: 'notification-api-missing' };
+    }
+
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== 'granted') {
+      return { supported: true, skipped: true, reason: `permission-${permission}`, permission };
+    }
+
+    const messaging = await Messaging._instance();
+    if (!messaging) return { supported: false, reason: 'unsupported' };
+
+    const registration = await Messaging._serviceWorker();
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: registration,
+    });
+    if (!token) return { supported: true, skipped: true, reason: 'no-token', permission };
+
+    await setDoc(_doc('users', user.uid), sanitize({
+      fcmTokens: arrayUnion(token),
+      pushPermission: permission,
+      pushTokenUpdatedAt: serverTimestamp(),
+    }), { merge: true });
+
+    return { supported: true, token, permission };
+  },
+
+  async listenForeground(handler) {
+    const supported = await _messagingSupported;
+    if (!supported || typeof handler !== 'function') return () => {};
+    const messaging = await Messaging._instance();
+    if (!messaging) return () => {};
+    return onMessage(messaging, payload => handler(payload));
+  },
+};
+
 
 // ============================================================
 // §8  TABLES API
@@ -1257,9 +1341,11 @@ const Orders = {
         .map(sanitize)
         .filter(Boolean);
 
-      // Gộp nếu trùng id + note
+      const lineItemId = String(item.lineItemId || '').trim();
       const noteKey = item.note || '';
-      const idx     = items.findIndex(i => i.id === item.id && (i.note || '') === noteKey);
+      const idx = lineItemId
+        ? items.findIndex(i => String(i.lineItemId || '') === lineItemId)
+        : items.findIndex(i => i.id === item.id && (i.note || '') === noteKey && String(i.kitchenStatus || '').toLowerCase() !== 'served');
 
       if (idx >= 0) {
         items[idx].qty = (items[idx].qty || 1) + (item.qty || 1);
@@ -1275,7 +1361,7 @@ const Orders = {
    * Thay đổi số lượng món (Transaction).
    * delta: +1 hoặc -1 (hoặc số lớn hơn)
    */
-  async changeQty(orderId, itemId, itemNote, delta) {
+  async changeQty(orderId, itemId, itemNote, delta, lineItemId = '') {
     const orderRef = _doc('orders', orderId);
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
@@ -1287,7 +1373,10 @@ const Orders = {
         .filter(Boolean);
 
       const noteKey = itemNote || '';
-      const idx     = items.findIndex(i => i.id === itemId && (i.note || '') === noteKey);
+      const lineKey = String(lineItemId || '').trim();
+      const idx = lineKey
+        ? items.findIndex(i => String(i.lineItemId || '') === lineKey)
+        : items.findIndex(i => i.id === itemId && (i.note || '') === noteKey);
       if (idx < 0) return;
 
       items[idx].qty = (items[idx].qty || 1) + delta;
@@ -1298,7 +1387,7 @@ const Orders = {
   },
 
   /** Xóa hẳn 1 dòng món khỏi đơn (Transaction) */
-  async removeItem(orderId, itemId, itemNote) {
+  async removeItem(orderId, itemId, itemNote, lineItemId = '') {
     const orderRef = _doc('orders', orderId);
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
@@ -1306,16 +1395,17 @@ const Orders = {
       if (String(snap.data()?.status || 'open') !== 'open') return;
 
       const noteKey = itemNote || '';
+      const lineKey = String(lineItemId || '').trim();
       const items   = (snap.data().items || [])
         .map(sanitize)
-        .filter(i => i && !(i.id === itemId && (i.note || '') === noteKey));
+        .filter(i => i && !(lineKey ? String(i.lineItemId || '') === lineKey : (i.id === itemId && (i.note || '') === noteKey)));
 
       tx.update(orderRef, { items });
     });
   },
 
   /** Cập nhật ghi chú trên 1 dòng món (Transaction) */
-  async updateItemNote(orderId, itemId, note) {
+  async updateItemNote(orderId, itemId, note, lineItemId = '') {
     const orderRef = _doc('orders', orderId);
     await runTransaction(_db, async tx => {
       const snap = await tx.get(orderRef);
@@ -1326,7 +1416,10 @@ const Orders = {
         .map(sanitize)
         .filter(Boolean);
 
-      const idx = items.findIndex(i => i.id === itemId);
+      const lineKey = String(lineItemId || '').trim();
+      const idx = lineKey
+        ? items.findIndex(i => String(i.lineItemId || '') === lineKey)
+        : items.findIndex(i => i.id === itemId);
       if (idx >= 0) items[idx].note = note || '';
 
       tx.update(orderRef, { items });
@@ -1920,6 +2013,34 @@ const Expenses = {
 
   async delete(id) {
     await _safeDeleteDoc(_doc('expenses', id), `expenses.delete(${id})`);
+  },
+};
+
+const KitchenNotifications = {
+  listenUnread(handler) {
+    if (typeof handler !== 'function') return () => {};
+    const q = query(
+      _col('kitchen_notifications'),
+      where('status', '==', 'unread')
+    );
+    return onSnapshot(q, snap => {
+      const docs = snap.docs
+        .map(_fromDoc)
+        .filter(Boolean)
+        .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+      handler(docs, snap);
+    }, _snapErr('kitchen_notifications'));
+  },
+
+  async markRead(docId, uid) {
+    if (!docId || !uid) return;
+    await updateDoc(_doc('kitchen_notifications', docId), {
+      readBy: arrayUnion(String(uid)),
+    });
+  },
+
+  async add(payload) {
+    return addDoc(_col('kitchen_notifications'), sanitize(payload));
   },
 };
 
@@ -2657,6 +2778,7 @@ window.DB = {
   },
   logout: Auth.signOut,
   createUser: Auth.createUser,
+  Messaging,
 
   // Reset Data Cloud
   resetCloudData: async (keepMenu, keepInventory) => {
@@ -2701,6 +2823,7 @@ window.DB = {
   Purchases,
   Suppliers,
   Presence,
+  KitchenNotifications,
   SystemLogs,
   ShiftLogs,    // FIX 3: Chốt ca Cloud
 
