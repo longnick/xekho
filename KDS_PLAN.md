@@ -975,4 +975,4 @@ Ban V2 duoc xem la xong khi:
 
 ---
 
-*Tai lieu V2 tao de thay the V1 vao ngay 23/04/2026, canh theo codebase hien tai cua repo xekho.*
+*Tai lieu V2 tao de thay the V1 vao ngay 23/04/2026, canh theo codebase hien tai 

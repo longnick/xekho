@@ -807,11 +807,60 @@ function updateKitchenBadge(count) {
   host.style.display = canShow ? 'inline-flex' : 'none';
 }
 
+function showKitchenBrowserAlert(notif = {}, docId = '') {
+  try {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+
+    const title = String(notif.tableName || 'Thong bao bep');
+    const body = Array.isArray(notif.items) && notif.items.length
+      ? String(notif.items.join(', '))
+      : String(notif.message || 'Co cap nhat tu bep');
+
+    const options = {
+      body,
+      tag: docId ? `kitchen-alert-${docId}` : `kitchen-alert-${Date.now()}`,
+      renotify: true,
+      icon: '/kitchen-icon.svg',
+      badge: '/kitchen-badge.svg',
+      data: {
+        url: '/',
+        tableId: String(notif.tableId || ''),
+        orderId: String(notif.orderId || ''),
+        type: String(notif.type || ''),
+      },
+    };
+
+    try {
+      const n = new Notification(title, options);
+      n.onclick = () => {
+        try { window.focus(); } catch (_) {}
+        try { window.location.href = '/'; } catch (_) {}
+        try { n.close(); } catch (_) {}
+      };
+      return;
+    } catch (_) {}
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker?.ready) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg && typeof reg.showNotification === 'function') {
+          reg.showNotification(title, options).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[KitchenPush] browser alert error', err);
+  }
+}
+
 function showKitchenToast(notif = {}, docId = '') {
   if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
-  const isReady = String(notif.type || '').toLowerCase() === 'ready';
+  const notifType = String(notif.type || '').toLowerCase();
+  const isReady = notifType === 'ready';
+  const isAccepted = notifType === 'accepted';
+  const isDelay = notifType === 'delay';
   const toast = document.createElement('div');
-  toast.className = `kitchen-toast ${isReady ? 'ready' : 'delay'}`;
+  toast.className = `kitchen-toast ${isReady || isAccepted ? 'ready' : 'delay'}`;
   toast.dataset.docId = docId;
 
   const safeTitle = _escapeHtml(notif.tableName || 'Bep');
@@ -826,6 +875,64 @@ function showKitchenToast(notif = {}, docId = '') {
       <div class="kitchen-toast-items">${safeItems}</div>
     </div>
     <button class="kitchen-toast-close" type="button" aria-label="Dong">×</button>
+  `;
+
+  const closeToast = () => {
+    if (toast.dataset.closing === '1') return;
+    toast.dataset.closing = '1';
+    toast.classList.add('closing');
+    setTimeout(() => {
+      try { toast.remove(); } catch (_) {}
+    }, 220);
+  };
+
+  const markReadAndClose = async () => {
+    try { await markKitchenNotifRead(docId); } catch (_) {}
+    closeToast();
+  };
+
+  toast.querySelector('.kitchen-toast-close')?.addEventListener('click', () => {
+    markReadAndClose().catch(() => closeToast());
+  });
+
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    markReadAndClose().catch(() => closeToast());
+  }, 8000);
+}
+
+function showKitchenToast(notif = {}, docId = '') {
+  if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
+  const notifType = String(notif.type || '').toLowerCase();
+  const tone = notifType === 'delay' ? 'delay' : 'ready';
+  const title = notifType === 'ready'
+    ? 'SAN SANG'
+    : notifType === 'accepted'
+      ? 'BEP DA NHAN'
+      : notifType === 'delay'
+        ? 'BAO CHAM'
+        : 'CAP NHAT BEP';
+  const icon = notifType === 'ready' ? 'OK' : notifType === 'accepted' ? 'BEP' : '!';
+
+  const toast = document.createElement('div');
+  toast.className = `kitchen-toast ${tone}`;
+  toast.dataset.docId = docId;
+
+  const safeTitle = _escapeHtml(notif.tableName || 'Bep');
+  const safeItems = Array.isArray(notif.items) && notif.items.length
+    ? _escapeHtml(notif.items.join(', '))
+    : _escapeHtml(notif.message || 'Co cap nhat tu bep');
+  showKitchenBrowserAlert(notif, docId);
+
+  toast.innerHTML = `
+    <div class="kitchen-toast-icon">${icon}</div>
+    <div class="kitchen-toast-body">
+      <div class="kitchen-toast-title">${safeTitle} - ${title}</div>
+      <div class="kitchen-toast-items">${safeItems}</div>
+    </div>
+    <button class="kitchen-toast-close" type="button" aria-label="Dong">x</button>
   `;
 
   const closeToast = () => {
@@ -897,10 +1004,44 @@ function stopKitchenPushClient() {
   }
 }
 
+async function showKitchenBrowserNotification(payload = {}) {
+  try {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    if (!('serviceWorker' in navigator)) return;
+
+    const registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js')
+      || await navigator.serviceWorker.getRegistration();
+    if (!registration || typeof registration.showNotification !== 'function') return;
+
+    const data = payload?.data || {};
+    const notification = payload?.notification || {};
+    const title = String(notification.title || data.tableName || 'Thong bao bep');
+    const body = String(notification.body || 'Co cap nhat moi tu bep');
+
+    await registration.showNotification(title, {
+      body,
+      icon: '/kitchen-icon.svg',
+      badge: '/kitchen-badge.svg',
+      tag: `kitchen-foreground-${data.type || 'update'}-${data.orderId || Date.now()}`,
+      renotify: true,
+      data: {
+        url: '/',
+        tableId: data.tableId || '',
+        orderId: data.orderId || '',
+        type: data.type || '',
+      },
+    });
+  } catch (err) {
+    console.warn('[KitchenPush] browser notification error', err);
+  }
+}
+
 function handleKitchenPushForeground(payload = {}) {
-  if (!document.hidden && typeof kitchenNotifUnsub === 'function') return;
   const data = payload?.data || {};
   const notification = payload?.notification || {};
+  showKitchenBrowserNotification(payload).catch(() => {});
+  if (!document.hidden && typeof kitchenNotifUnsub === 'function') return;
   showKitchenToast({
     type: data.type || 'ready',
     tableId: data.tableId || '',
@@ -1432,6 +1573,27 @@ function toggleWeeklyDriveCheckbox() {
   } else {
     driveEl.disabled = false;
   }
+}
+
+function ensureTelegramReportTimeOptions() {
+  const hourEl = document.getElementById('set-telegramReportSendHour');
+  const minuteEl = document.getElementById('set-telegramReportSendMinute');
+  if (hourEl && !hourEl.dataset.ready) {
+    hourEl.innerHTML = Array.from({ length: 24 }, (_, hour) =>
+      `<option value="${hour}">${String(hour).padStart(2, '0')} giờ</option>`
+    ).join('');
+    hourEl.dataset.ready = 'true';
+  }
+  if (minuteEl && !minuteEl.dataset.ready) {
+    minuteEl.innerHTML = Array.from({ length: 60 }, (_, minute) =>
+      `<option value="${minute}">${String(minute).padStart(2, '0')} phút</option>`
+    ).join('');
+    minuteEl.dataset.ready = 'true';
+  }
+}
+
+function getTelegramReportTestUrl() {
+  return 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram';
 }
 
 function getGoogleDriveConfigFromUi() {
@@ -2210,11 +2372,12 @@ function normalizeKitchenOrderItem(item = {}, menuMap = null) {
   const normalized = {
     ...base,
     itemType: inferredItemType,
+    kitchenRouting: menuItem?.kitchenRouting || base.kitchenRouting || 'all',
     linkedInventoryId: menuItem?.linkedInventoryId || base.linkedInventoryId || null,
     lineItemId: getKitchenLineItemId(base) || createKitchenLineItemId(),
   };
 
-  if (_isKitchenSkippedItem(normalized)) {
+  if (_isKitchenSkippedItem(normalized) || String(normalized.kitchenRouting || '').trim().toLowerCase() === 'skip') {
     normalized.kitchenStatus = 'skip';
     if (normalized.kitchenSentAt == null) normalized.kitchenSentAt = null;
     if (normalized.kitchenUpdatedAt == null) normalized.kitchenUpdatedAt = null;
@@ -2264,10 +2427,15 @@ function normalizeUnitText(unit) {
 
 function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
   const itemType = inferMenuItemType(item);
+  const kitchenRoutingRaw = String(item.kitchenRouting || item.kitchenStation || '').trim().toLowerCase();
+  const kitchenRouting = itemType === ITEM_TYPES.RETAIL
+    ? 'skip'
+    : (['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(kitchenRoutingRaw) ? kitchenRoutingRaw : 'all');
   const normalized = {
     ...item,
     unit: normalizeUnitText(item.unit),
     itemType,
+    kitchenRouting,
     linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
     ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
   };
@@ -7515,6 +7683,8 @@ function openAddMenuModal(id) {
   syncMenuCostFieldText();
   document.getElementById('menu-item-category').value = formDish.category || CATEGORIES[0];
   document.getElementById('menu-item-type').value = formDish.itemType || ITEM_TYPES.FINISHED;
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
+  if (kitchenRoutingEl) kitchenRoutingEl.value = formDish.kitchenRouting || 'all';
 
   const linkedSel = document.getElementById('menu-linked-inventory-id');
   if (linkedSel) {
@@ -7566,6 +7736,7 @@ function applyMenuItemOptimisticState(savedId, payload) {
     unit: payload.unit || 'phần',
     cost: Number(payload.cost || 0),
     itemType: payload.itemType || ITEM_TYPES.FINISHED,
+    kitchenRouting: payload.kitchenRouting || prev.kitchenRouting || 'all',
     linkedInventoryId: payload.linkedInventoryId || null,
     aliases: payload.aliases || prev.aliases || '',
     ingredients: Array.isArray(payload.ingredients) ? payload.ingredients : [],
@@ -7588,6 +7759,7 @@ function applyMenuItemOptimisticState(savedId, payload) {
       category: payload.category,
       sell_price: Number(payload.price || 0),
       item_type: payload.itemType === ITEM_TYPES.RETAIL ? 'Retail' : 'Finished',
+      kitchenRouting: payload.kitchenRouting || (idx >= 0 ? products[idx].kitchenRouting || 'all' : 'all'),
       linkedInventoryId: payload.linkedInventoryId || null,
       cost: Number(payload.cost || 0),
       unit: payload.unit || 'phần',
@@ -7637,6 +7809,8 @@ async function submitMenuItem(e) {
   const unit = document.getElementById('menu-item-unit').value.trim() || 'phần';
   const itemType = document.getElementById('menu-item-type').value || ITEM_TYPES.FINISHED;
   const linkedInventoryId = document.getElementById('menu-linked-inventory-id').value || null;
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
+  const kitchenRouting = kitchenRoutingEl ? String(kitchenRoutingEl.value || 'all') : 'all';
   const cost = parseFloat(document.getElementById('menu-item-cost')?.value || '0') || 0;
   if(!name || isNaN(price)) return;
 
@@ -7662,7 +7836,12 @@ async function submitMenuItem(e) {
   }
 
   setSaving(true);
-  const payload = { name, unit, price, cost, category, itemType, linkedInventoryId, ingredients: itemType === ITEM_TYPES.FINISHED ? ingredients : [] };
+  const payload = {
+    name, unit, price, cost, category, itemType,
+    kitchenRouting: itemType === ITEM_TYPES.RETAIL ? 'skip' : kitchenRouting,
+    linkedInventoryId,
+    ingredients: itemType === ITEM_TYPES.FINISHED ? ingredients : [],
+  };
 
   // FIX 4: Ghi thẳng lên Firestore
   if (window.DB && window.DB.Menu) {
@@ -7704,7 +7883,13 @@ function toggleMenuItemTypeUI() {
   const linkWrap = document.getElementById('menu-linked-inventory-wrap');
   const title = document.getElementById('menu-ingredients-title');
   const list = document.getElementById('menu-ingredients-list');
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
   if (linkWrap) linkWrap.style.display = type === ITEM_TYPES.RETAIL ? '' : 'none';
+  if (kitchenRoutingEl) {
+    kitchenRoutingEl.disabled = type === ITEM_TYPES.RETAIL;
+    if (type === ITEM_TYPES.RETAIL) kitchenRoutingEl.value = 'skip';
+    else if (!['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(String(kitchenRoutingEl.value || ''))) kitchenRoutingEl.value = 'all';
+  }
   if (title) title.textContent = type === ITEM_TYPES.RETAIL ? 'Công thức (không bắt buộc cho bán thẳng)' : 'Công thức (Nguyên liệu)';
   if (list && type === ITEM_TYPES.RETAIL && !list.children.length) list.innerHTML = '';
   try { updateMenuCostFromForm(); } catch (_) {}
@@ -8175,6 +8360,7 @@ async function confirmResetData(keepMenu, keepInventory) {
 // ============================================================
 function renderSettings() {
   const s = Store.getSettings();
+  ensureTelegramReportTimeOptions();
   const fields = [
     ['set-storeName',    s.storeName   || ''],
     ['set-storeSlogan',  s.storeSlogan || ''],
@@ -8190,12 +8376,16 @@ function renderSettings() {
     ['set-tableCount',   s.tableCount    || 20],
     ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
     ['set-webPushVapidKey', s.webPushVapidKey || ''],
+    ['set-kitchenNotifyAccepted', s.kitchenNotifyAccepted !== false],
+    ['set-kitchenNotifyReady', s.kitchenNotifyReady !== false],
     ['set-zaloMessagePrefix', s.zaloMessagePrefix || '[XE KHO POS]'],
     ['set-zaloGroupLabel', s.zaloGroupLabel || ''],
   ];
   fields.forEach(([id, val]) => {
     const el = document.getElementById(id);
-    if(el) el.value = val;
+    if(!el) return;
+    if (el.type === 'checkbox') el.checked = !!val;
+    else el.value = val;
   });
   // Update VAT display
   const vatDisplay = document.getElementById('vat-current-display');
@@ -8225,6 +8415,22 @@ function renderSettings() {
   if(reportPeriodEl && s.reportExportPeriod) reportPeriodEl.value = s.reportExportPeriod;
   const reportDateEl = document.getElementById('set-reportExportDate');
   if(reportDateEl && s.reportExportDate) reportDateEl.value = s.reportExportDate;
+  const telegramReportEnabledEl = document.getElementById('set-telegramReportEnabled');
+  if (telegramReportEnabledEl) telegramReportEnabledEl.checked = s.telegramReportEnabled !== false;
+  const telegramReportSendHourEl = document.getElementById('set-telegramReportSendHour');
+  if (telegramReportSendHourEl) telegramReportSendHourEl.value = String(Math.min(23, Math.max(0, Number(s.telegramReportSendHour ?? 7))));
+  const telegramReportSendMinuteEl = document.getElementById('set-telegramReportSendMinute');
+  if (telegramReportSendMinuteEl) telegramReportSendMinuteEl.value = String(Math.min(59, Math.max(0, Number(s.telegramReportSendMinute ?? 0))));
+  const telegramReportIncludeRevenueEl = document.getElementById('set-telegramReportIncludeRevenue');
+  if (telegramReportIncludeRevenueEl) telegramReportIncludeRevenueEl.checked = s.telegramReportIncludeRevenue !== false;
+  const telegramReportIncludePaymentBreakdownEl = document.getElementById('set-telegramReportIncludePaymentBreakdown');
+  if (telegramReportIncludePaymentBreakdownEl) telegramReportIncludePaymentBreakdownEl.checked = s.telegramReportIncludePaymentBreakdown !== false;
+  const telegramReportIncludeInvoiceCountEl = document.getElementById('set-telegramReportIncludeInvoiceCount');
+  if (telegramReportIncludeInvoiceCountEl) telegramReportIncludeInvoiceCountEl.checked = s.telegramReportIncludeInvoiceCount !== false;
+  const telegramReportIncludeTopItemEl = document.getElementById('set-telegramReportIncludeTopItem');
+  if (telegramReportIncludeTopItemEl) telegramReportIncludeTopItemEl.checked = s.telegramReportIncludeTopItem !== false;
+  const telegramReportIncludeRetailStockEl = document.getElementById('set-telegramReportIncludeRetailStock');
+  if (telegramReportIncludeRetailStockEl) telegramReportIncludeRetailStockEl.checked = s.telegramReportIncludeRetailStock !== false;
 
   const autoUploadDriveEl = document.getElementById('set-autoUploadToGoogleDrive');
   if(autoUploadDriveEl) autoUploadDriveEl.checked = !!s.autoUploadToGoogleDrive;
@@ -8284,7 +8490,7 @@ function renderSettings() {
   try { renderSystemLogs(); } catch(e){}
 }
 
-function submitSettings(e) {
+async function submitSettings(e) {
   if(e && e.preventDefault) e.preventDefault();
   const s = Store.getSettings();
   const oldTableCount = s.tableCount || 20;
@@ -8306,6 +8512,14 @@ function submitSettings(e) {
   const reportExportTypeEl   = document.getElementById('set-reportExportType');
   const reportExportPeriodEl = document.getElementById('set-reportExportPeriod');
   const reportExportDateEl   = document.getElementById('set-reportExportDate');
+  const telegramReportEnabledEl = document.getElementById('set-telegramReportEnabled');
+  const telegramReportSendHourEl = document.getElementById('set-telegramReportSendHour');
+  const telegramReportSendMinuteEl = document.getElementById('set-telegramReportSendMinute');
+  const telegramReportIncludeRevenueEl = document.getElementById('set-telegramReportIncludeRevenue');
+  const telegramReportIncludePaymentBreakdownEl = document.getElementById('set-telegramReportIncludePaymentBreakdown');
+  const telegramReportIncludeInvoiceCountEl = document.getElementById('set-telegramReportIncludeInvoiceCount');
+  const telegramReportIncludeTopItemEl = document.getElementById('set-telegramReportIncludeTopItem');
+  const telegramReportIncludeRetailStockEl = document.getElementById('set-telegramReportIncludeRetailStock');
   const autoUploadDriveEl    = document.getElementById('set-autoUploadToGoogleDrive');
   const gdriveUrlEl          = document.getElementById('set-googleDriveUploadUrl');
   const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
@@ -8313,6 +8527,8 @@ function submitSettings(e) {
   const ocrModeEl            = document.getElementById('set-ocrMode');
   const photoRetentionEl     = document.getElementById('set-photoRetentionDays');
   const webPushVapidKeyEl    = document.getElementById('set-webPushVapidKey');
+  const kitchenNotifyAcceptedEl = document.getElementById('set-kitchenNotifyAccepted');
+  const kitchenNotifyReadyEl    = document.getElementById('set-kitchenNotifyReady');
   const zaloOaEnabledEl      = document.getElementById('set-zaloOaEnabled');
   const zaloNotifyReadyEl    = document.getElementById('set-zaloNotifyReady');
   const zaloNotifyDelayEl    = document.getElementById('set-zaloNotifyDelay');
@@ -8327,6 +8543,12 @@ function submitSettings(e) {
   const quotaMbRaw = storageQuotaEl ? parseInt(storageQuotaEl.value, 10) : Number(s.storageQuotaMb || 500);
   const storageQuotaMb = Math.min(500, Math.max(10, Number.isFinite(quotaMbRaw) ? quotaMbRaw : 500));
   const newTaxRate = taxRateEl ? Math.min(100, Math.max(0, parseFloat(taxRateEl.value) || 0)) : (s.taxRate || 0);
+  const telegramReportSendHour = telegramReportSendHourEl
+    ? Math.min(23, Math.max(0, parseInt(telegramReportSendHourEl.value, 10) || 7))
+    : Math.min(23, Math.max(0, Number(s.telegramReportSendHour ?? 7)));
+  const telegramReportSendMinute = telegramReportSendMinuteEl
+    ? Math.min(59, Math.max(0, parseInt(telegramReportSendMinuteEl.value, 10) || 0))
+    : Math.min(59, Math.max(0, Number(s.telegramReportSendMinute ?? 0)));
 
   const updated = {
     ...s,
@@ -8357,10 +8579,20 @@ function submitSettings(e) {
     reportExportType: reportExportTypeEl ? reportExportTypeEl.value : (s.reportExportType || 'revenue'),
     reportExportPeriod: reportExportPeriodEl ? reportExportPeriodEl.value : (s.reportExportPeriod || 'today'),
     reportExportDate: reportExportDateEl ? reportExportDateEl.value : (s.reportExportDate || ''),
+    telegramReportEnabled: telegramReportEnabledEl ? telegramReportEnabledEl.checked : (s.telegramReportEnabled !== false),
+    telegramReportSendHour,
+    telegramReportSendMinute,
+    telegramReportIncludeRevenue: telegramReportIncludeRevenueEl ? telegramReportIncludeRevenueEl.checked : (s.telegramReportIncludeRevenue !== false),
+    telegramReportIncludePaymentBreakdown: telegramReportIncludePaymentBreakdownEl ? telegramReportIncludePaymentBreakdownEl.checked : (s.telegramReportIncludePaymentBreakdown !== false),
+    telegramReportIncludeInvoiceCount: telegramReportIncludeInvoiceCountEl ? telegramReportIncludeInvoiceCountEl.checked : (s.telegramReportIncludeInvoiceCount !== false),
+    telegramReportIncludeTopItem: telegramReportIncludeTopItemEl ? telegramReportIncludeTopItemEl.checked : (s.telegramReportIncludeTopItem !== false),
+    telegramReportIncludeRetailStock: telegramReportIncludeRetailStockEl ? telegramReportIncludeRetailStockEl.checked : (s.telegramReportIncludeRetailStock !== false),
     autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
     googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
     googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
     webPushVapidKey: webPushVapidKeyEl ? webPushVapidKeyEl.value.trim() : (s.webPushVapidKey || ''),
+    kitchenNotifyAccepted: kitchenNotifyAcceptedEl ? kitchenNotifyAcceptedEl.checked : (s.kitchenNotifyAccepted !== false),
+    kitchenNotifyReady: kitchenNotifyReadyEl ? kitchenNotifyReadyEl.checked : (s.kitchenNotifyReady !== false),
     zaloOaEnabled: zaloOaEnabledEl ? zaloOaEnabledEl.checked : (s.zaloOaEnabled !== false),
     zaloNotifyReady: zaloNotifyReadyEl ? zaloNotifyReadyEl.checked : (s.zaloNotifyReady !== false),
     zaloNotifyDelay: zaloNotifyDelayEl ? zaloNotifyDelayEl.checked : (s.zaloNotifyDelay !== false),
@@ -8382,7 +8614,11 @@ function submitSettings(e) {
   
   // FIX 4: Ghi settings lên Firestore (đồng bộ đa thiết bị)
   if (window.DB && window.DB.Settings) {
-    window.DB.Settings.save(updated).catch(e => console.warn('[Settings] Cloud save error:', e));
+    try {
+      await window.DB.Settings.save(updated);
+    } catch (e) {
+      console.warn('[Settings] Cloud save error:', e);
+    }
   }
   Store.setSettings(updated); // Giữ LocalStorage fallback offline
   // Update VAT display after save
@@ -8447,6 +8683,54 @@ function updateStorageQuotaInfo() {
   const BROWSER_LIMIT_NOTE = 'ℹ️ Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
   infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
   infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
+}
+
+async function testTelegramReportSettings() {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được test báo cáo Telegram.', 'danger');
+    return;
+  }
+
+  const btn = document.getElementById('telegram-report-test-btn');
+  const originalText = btn ? btn.textContent : '';
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Đang gửi test...';
+    }
+
+    await submitSettings();
+
+    const authUser = window.DB?.currentUser;
+    if (!authUser?.getIdToken) {
+      throw new Error('Chưa có phiên đăng nhập Firebase để xác thực.');
+    }
+
+    const token = await authUser.getIdToken();
+    const response = await fetch(getTelegramReportTestUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ source: 'settings-ui' }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok !== true) {
+      throw new Error(data?.error || 'Không gửi được báo cáo test Telegram.');
+    }
+
+    showToast('Đã gửi báo cáo test Telegram thành công.', 'success');
+  } catch (err) {
+    console.error('[TelegramReportTest] error', err);
+    showToast(err?.message || 'Không gửi được báo cáo test Telegram.', 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText || '🧪 Test báo cáo Telegram';
+    }
+  }
 }
 
 function handleLogoUpload(e) {
@@ -10092,4 +10376,12 @@ function renderKdsMonitor() {
     </div>`;
   }).join('');
   listEl.innerHTML = headerHtml + rowsHtml;
+}
+
+function getKitchenRoutingLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'kitchen_1') return 'Bep 1';
+  if (normalized === 'kitchen_2') return 'Bep 2';
+  if (normalized === 'skip') return 'Khong qua bep';
+  return 'Ca 2 bep';
 }

@@ -136,6 +136,11 @@ body {
 .header-actions { display: flex; gap: 8px; }
 .header-btn { width: 36px; height: 36px; border-radius: 10px; background: var(--bg3); border: none; color: var(--text2); font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
 .header-btn:active { transform: scale(0.92); }
+.header-actions #header-alert-btn,
+.header-actions #header-logout-btn,
+.header-actions #header-kitchen-btn {
+  display: none !important;
+}
 .header-btn.alert-dot { position: relative; }
 .header-btn.alert-dot::after { content:''; position:absolute; top:6px; right:6px; width:8px; height:8px; background:var(--danger); border-radius:50%; border:2px solid var(--bg2); }
 .header-btn-reload { color: var(--primary); font-weight: 800; }
