@@ -1,7 +1,9 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const { defineSecret, defineString } = require('firebase-functions/params');
+const axios = require('axios');
 const cors = require('cors')({ origin: true });
 const admin = require('firebase-admin');
 const { NlpManager } = require('node-nlp');
@@ -78,6 +80,10 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = defineString('GEMINI_MODEL', { default: 'gemini-1.5-flash' });
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
+const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
+const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
+const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
+const OWNER_EMAIL = 'owner@ganhkho.vn';
 
 function kitchenNotifDocRef(docId) {
   return db.collection('kitchen_notifications').doc(String(docId));
@@ -99,6 +105,13 @@ function buildKitchenNotifMessage(notif = {}, options = {}) {
       zaloText: `✅ [XE KHO POS]\n${tableName} xong roi! Mang ra ngay!\n\nMon:\n• ${items.join('\n• ') || 'Khong co chi tiet'}`,
     };
   }
+  if (type === 'accepted') {
+    return {
+      title: `BEP DA NHAN - ${tableName}`,
+      body: body || 'Nhan vien theo doi de lay mon khi can.',
+      zaloText: '',
+    };
+  }
   if (type === 'delay') {
     return {
       title: `⚠️ ${tableName} - Dang cham`,
@@ -111,6 +124,363 @@ function buildKitchenNotifMessage(notif = {}, options = {}) {
     body: body || String(notif.message || 'Co cap nhat tu bep'),
     zaloText: '',
   };
+}
+
+function parseKitchenItemSummary(itemText = '') {
+  const raw = String(itemText || '').trim();
+  if (!raw) return null;
+
+  const match = raw.match(/^(.*?)\s*x\s*(\d+(?:[.,]\d+)?)$/i);
+  if (!match) {
+    return {
+      name: raw,
+      qty: '',
+      summary: raw,
+    };
+  }
+
+  const name = String(match[1] || '').trim();
+  const qty = String(match[2] || '').replace(',', '.').trim();
+  return {
+    name: name || raw,
+    qty,
+    summary: `${name || raw} x${qty}`,
+  };
+}
+
+function buildTelegramFoodReadyMessage(notif = {}) {
+  const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
+  const parsedItems = rawItems
+    .map(parseKitchenItemSummary)
+    .filter(Boolean);
+
+  const itemNames = parsedItems.length
+    ? parsedItems.map(item => item.name).join(', ')
+    : 'Khong co chi tiet';
+  const qtyText = parsedItems.length
+    ? parsedItems.map(item => item.qty ? `${item.name} x${item.qty}` : item.summary).join(', ')
+    : '';
+  const tableName = String(notif.tableName || notif.tableId || 'Khong ro');
+
+  return [
+    '🔔 MÓN ĐÃ XONG!',
+    '',
+    `Món: ${itemNames}`,
+    '',
+    `Bàn: ${tableName}`,
+    '',
+    `Số lượng: ${qtyText || 'Khong ro'}`,
+    '',
+    'Tiếp thực vui lòng lấy món!',
+  ].join('\n');
+}
+
+function escapeTelegramHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function formatCurrencyVi(amount) {
+  return `${Number(amount || 0).toLocaleString('vi-VN')}đ`;
+}
+
+function formatQtyVi(amount) {
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value)) return '0';
+  if (Math.abs(value - Math.round(value)) < 1e-9) return Math.round(value).toLocaleString('vi-VN');
+  return value.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+const DEFAULT_TELEGRAM_REPORT_SETTINGS = {
+  enabled: true,
+  sendHour: 7,
+  sendMinute: 0,
+  includeRevenue: true,
+  includePaymentBreakdown: true,
+  includeInvoiceCount: true,
+  includeTopItem: true,
+  includeRetailStock: true,
+};
+
+function getVietnamDateParts(date = new Date()) {
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = dtf.formatToParts(date);
+  const map = {};
+  parts.forEach(part => {
+    if (part.type !== 'literal') map[part.type] = part.value;
+  });
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+  };
+}
+
+function getVietnamBusinessReportRange(now = new Date()) {
+  const parts = getVietnamDateParts(now);
+  const todaySixAmUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -1, 0, 0, 0));
+  const latestWindowEnd = (parts.hour >= 6)
+    ? todaySixAmUtc
+    : new Date(todaySixAmUtc.getTime() - (24 * 60 * 60 * 1000));
+  const from = new Date(latestWindowEnd.getTime() - (24 * 60 * 60 * 1000));
+  const toExclusive = latestWindowEnd;
+  const labelStart = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(from);
+  const labelEnd = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(toExclusive.getTime() - 1));
+
+  return {
+    from,
+    toExclusive,
+    label: `${labelStart} -> ${labelEnd}`,
+  };
+}
+
+function getTelegramReportSettings(raw = {}) {
+  const hour = Math.min(23, Math.max(0, parseInt(raw.telegramReportSendHour, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendHour));
+  const minute = Math.min(59, Math.max(0, parseInt(raw.telegramReportSendMinute, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendMinute));
+  return {
+    enabled: raw.telegramReportEnabled !== false,
+    sendHour: hour,
+    sendMinute: minute,
+    includeRevenue: raw.telegramReportIncludeRevenue !== false,
+    includePaymentBreakdown: raw.telegramReportIncludePaymentBreakdown !== false,
+    includeInvoiceCount: raw.telegramReportIncludeInvoiceCount !== false,
+    includeTopItem: raw.telegramReportIncludeTopItem !== false,
+    includeRetailStock: raw.telegramReportIncludeRetailStock !== false,
+    lastSentRangeKey: String(raw.telegramReportLastSentRangeKey || '').trim(),
+  };
+}
+
+function getTelegramReportRangeKey(range) {
+  return `${range.from.toISOString()}__${range.toExclusive.toISOString()}`;
+}
+
+function shouldSendTelegramReportNow(settings, now = new Date(), range = getVietnamBusinessReportRange(now)) {
+  if (!settings?.enabled) return { shouldSend: false, reason: 'disabled', range };
+  const parts = getVietnamDateParts(now);
+  const currentMinuteOfDay = (parts.hour * 60) + parts.minute;
+  const targetMinuteOfDay = (Number(settings.sendHour || 0) * 60) + Number(settings.sendMinute || 0);
+  if (currentMinuteOfDay < targetMinuteOfDay || currentMinuteOfDay >= (targetMinuteOfDay + 5)) {
+    return { shouldSend: false, reason: 'outside-window', range };
+  }
+  const rangeKey = getTelegramReportRangeKey(range);
+  if (String(settings.lastSentRangeKey || '') === rangeKey) {
+    return { shouldSend: false, reason: 'already-sent', range, rangeKey };
+  }
+  return { shouldSend: true, reason: 'ready', range, rangeKey };
+}
+
+async function sendTelegramHtmlMessage({ chatId, text, botToken }) {
+  const finalBotToken = String(botToken || '').trim();
+  const finalChatId = String(chatId || '').trim();
+  if (!finalBotToken || !finalChatId) {
+    throw new Error('Missing Telegram bot token or chat id');
+  }
+
+  const response = await axios.post(
+    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
+    {
+      chat_id: finalChatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 15000,
+    }
+  );
+
+  if (response?.data?.ok !== true) {
+    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
+  }
+
+  return response.data;
+}
+
+async function buildDailyReportTelegramData(range) {
+  const [historySnap, inventorySnap] = await Promise.all([
+    db.collection('history').get(),
+    db.collection('Inventory_Items').get(),
+  ]);
+
+  const orders = historySnap.docs
+    .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
+    .filter(order => {
+      const status = String(order?.status || '').trim().toLowerCase();
+      if (status && status !== 'completed' && status !== 'closed') return false;
+      if (!status && (order?.cancelledAt || order?.cancelReason)) return false;
+
+      const rawDate = order?.paidAt || order?.timestamp || null;
+      const orderDate = rawDate instanceof Date
+        ? rawDate
+        : (rawDate?.toDate ? rawDate.toDate() : new Date(rawDate));
+      if (!(orderDate instanceof Date) || Number.isNaN(orderDate.getTime())) return false;
+      return orderDate >= range.from && orderDate < range.toExclusive;
+    });
+  const inventoryItems = inventorySnap.docs.map(doc => ({ id: doc.id, ...(doc.data() || {}) }));
+
+  let revenue = 0;
+  let revenueCash = 0;
+  let revenueBank = 0;
+  const topItemMap = new Map();
+
+  orders.forEach(order => {
+    const total = Number(order.total || 0);
+    revenue += total;
+    if (String(order.payMethod || '').toLowerCase() === 'bank') revenueBank += total;
+    else revenueCash += total;
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    items.forEach(item => {
+      const name = String(item.name || 'Khong ro').trim();
+      const qty = Number(item.qty || 0);
+      const lineRevenue = (Number(item.price || 0) * qty);
+      if (!name || !(qty > 0)) return;
+      if (!topItemMap.has(name)) {
+        topItemMap.set(name, {
+          name,
+          qty: 0,
+          revenue: 0,
+        });
+      }
+      const current = topItemMap.get(name);
+      current.qty += qty;
+      current.revenue += lineRevenue;
+    });
+  });
+
+  const topItem = [...topItemMap.values()]
+    .sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return b.revenue - a.revenue;
+    })[0] || null;
+
+  const retailStocks = inventoryItems
+    .filter(item => {
+      if (item.hidden) return false;
+      return String(item.inv_type || item.itemType || '').trim().toLowerCase() === 'retail';
+    })
+    .map(item => ({
+      name: String(item.material_name || item.name || item.id || 'Khong ro').trim(),
+      qty: Number(item.current_stock ?? item.qty ?? 0),
+      unit: String(item.base_unit || item.unit || '').trim(),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+    .slice(0, 50);
+
+  return {
+    rangeLabel: range.label,
+    revenue,
+    revenueCash,
+    revenueBank,
+    invoiceCount: orders.length,
+    topItem,
+    retailStocks,
+  };
+}
+
+function buildDailyReportTelegramMessage(report) {
+  const topItemLine = report.topItem
+    ? `<b>${escapeTelegramHtml(report.topItem.name)}</b> - ${formatQtyVi(report.topItem.qty)} mon`
+    : '<i>Chua co du lieu</i>';
+
+  const retailLines = report.retailStocks.length
+    ? report.retailStocks
+      .map(item => `• <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
+      .join('\n')
+    : '<i>Khong co mat hang ban thang</i>';
+
+  return [
+    '<b>📊 BAO CAO NGAY - XE KHO</b>',
+    `<i>Khung gio: ${escapeTelegramHtml(report.rangeLabel)} (GMT+7)</i>`,
+    '',
+    '<b>Doanh thu</b>',
+    `• Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
+    `• Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`,
+    `• Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`,
+    `• Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`,
+    '',
+    '<b>Mon duoc goi nhieu nhat</b>',
+    `• ${topItemLine}`,
+    '',
+    '<b>Ton kho mat hang ban thang</b>',
+    retailLines,
+  ].join('\n');
+}
+
+function buildConfiguredDailyReportTelegramMessage(report, options = {}) {
+  const settings = {
+    ...DEFAULT_TELEGRAM_REPORT_SETTINGS,
+    ...(options || {}),
+  };
+  const topItemLine = report.topItem
+    ? `<b>${escapeTelegramHtml(report.topItem.name)}</b> - ${formatQtyVi(report.topItem.qty)} mon`
+    : '<i>Chua co du lieu</i>';
+
+  const retailLines = report.retailStocks.length
+    ? report.retailStocks
+      .map(item => `â€¢ <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
+      .join('\n')
+    : '<i>Khong co mat hang ban thang</i>';
+
+  const lines = [
+    settings.isTest ? '<b>🧪 BAO CAO TEST - XE KHO</b>' : '<b>ðŸ“Š BAO CAO NGAY - XE KHO</b>',
+    `<i>Khung gio: ${escapeTelegramHtml(report.rangeLabel)} (GMT+7)</i>`,
+  ];
+
+  const revenueLines = [];
+  if (settings.includeRevenue) {
+    revenueLines.push(`â€¢ Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`);
+  }
+  if (settings.includePaymentBreakdown) {
+    revenueLines.push(`â€¢ Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`);
+    revenueLines.push(`â€¢ Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`);
+  }
+  if (settings.includeInvoiceCount) {
+    revenueLines.push(`â€¢ Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`);
+  }
+  if (revenueLines.length) {
+    lines.push('', '<b>Doanh thu</b>', ...revenueLines);
+  }
+  if (settings.includeTopItem) {
+    lines.push('', '<b>Mon duoc goi nhieu nhat</b>', `â€¢ ${topItemLine}`);
+  }
+  if (settings.includeRetailStock) {
+    lines.push('', '<b>Ton kho mat hang ban thang</b>', retailLines);
+  }
+  if (!revenueLines.length && !settings.includeTopItem && !settings.includeRetailStock) {
+    lines.push('', '<i>Chua chon du lieu nao de gui.</i>');
+  }
+
+  return lines.join('\n');
 }
 
 function uniqueTokens(values = []) {
@@ -364,6 +734,39 @@ function json(res, code, data) {
   res.status(code).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(data));
 }
 
+exports.testDailyReportTelegram = onRequest({ region: 'asia-southeast1' }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+
+    try {
+      const actor = await verifyAdminRequest(req);
+      const result = await runDailyTelegramReport({
+        scheduleTime: new Date().toISOString(),
+        force: true,
+        isTest: true,
+      });
+
+      return json(res, 200, {
+        ok: true,
+        actor,
+        chatId: result.chatId,
+        revenue: result.report?.revenue || 0,
+        invoiceCount: result.report?.invoiceCount || 0,
+        rangeLabel: result.report?.rangeLabel || '',
+      });
+    } catch (err) {
+      const message = String(err?.message || err || '');
+      const status = /permission/i.test(message) ? 403 : (/token/i.test(message) ? 401 : 500);
+      logger.error('testDailyReportTelegram failed', {
+        error: message,
+        responseData: err?.response?.data || null,
+      });
+      return json(res, status, { ok: false, error: message || 'Request failed' });
+    }
+  });
+});
+
 exports.apiVoice = onRequest({ region: 'asia-southeast1' }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
@@ -580,67 +983,227 @@ exports.sendPushOnKitchenNotif = onDocumentCreated(
     const unique = uniqueTokens(tokens);
     if (!unique.length) {
       logger.info('Skipping push send: no FCM tokens', { docId });
+    } else {
+      const { title, body } = buildKitchenNotifMessage(notif);
+
+      try {
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: unique,
+          notification: {
+            title,
+            body: body || String(notif.message || ''),
+          },
+          data: {
+            type: String(notif.type || ''),
+            tableId: String(notif.tableId || ''),
+            tableName: String(notif.tableName || ''),
+            orderId: String(notif.orderId || ''),
+          },
+          webpush: {
+            notification: {
+              icon: '/kitchen-icon.svg',
+              badge: '/kitchen-badge.svg',
+              tag: 'kitchen-alert',
+              renotify: true,
+            },
+          },
+        });
+
+        const invalidByUser = new Map();
+        response.responses.forEach((item, index) => {
+          if (item.success) return;
+          const code = String(item.error?.code || '');
+          const token = unique[index];
+          if (!token) return;
+          if (!['messaging/registration-token-not-registered', 'messaging/invalid-argument'].includes(code)) return;
+          const ownerRef = tokenOwners.get(token);
+          if (!ownerRef) return;
+          if (!invalidByUser.has(ownerRef.path)) invalidByUser.set(ownerRef.path, { ref: ownerRef, tokens: [] });
+          invalidByUser.get(ownerRef.path).tokens.push(token);
+        });
+
+        await Promise.all([...invalidByUser.values()].map(({ ref, tokens: badTokens }) =>
+          ref.set({
+            fcmTokens: admin.firestore.FieldValue.arrayRemove(...badTokens),
+          }, { merge: true })
+        ));
+
+        await kitchenNotifDocRef(docId).set({
+          pushSent: true,
+          pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          pushTargetCount: unique.length,
+        }, { merge: true });
+
+        logger.info('Kitchen push sent', {
+          docId,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          tokenCount: unique.length,
+        });
+      } catch (err) {
+        logger.error('Kitchen push send exception', { docId, error: err?.message || String(err) });
+      }
+    }
+
+    if (String(notif.type || '').toLowerCase() !== 'ready') return;
+    if (notif.telegramSent === true) return;
+
+    const telegramBotToken = TELEGRAM_BOT_TOKEN.value();
+    const telegramGroupChatId = String(TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
+    if (!telegramBotToken || !telegramGroupChatId) {
+      logger.warn('Skipping Telegram send: missing config', {
+        docId,
+        hasBotToken: !!telegramBotToken,
+        hasGroupChatId: !!telegramGroupChatId,
+      });
       return;
     }
 
-    const { title, body } = buildKitchenNotifMessage(notif);
-
     try {
-      const response = await admin.messaging().sendEachForMulticast({
-        tokens: unique,
-        notification: {
-          title,
-          body: body || String(notif.message || ''),
+      const telegramText = buildTelegramFoodReadyMessage(notif);
+      const response = await axios.post(
+        `https://api.telegram.org/bot${telegramBotToken}/sendMessage`,
+        {
+          chat_id: telegramGroupChatId,
+          text: telegramText,
         },
-        data: {
-          type: String(notif.type || ''),
-          tableId: String(notif.tableId || ''),
-          tableName: String(notif.tableName || ''),
-          orderId: String(notif.orderId || ''),
-        },
-        webpush: {
-          notification: {
-            icon: '/kitchen-icon.svg',
-            badge: '/kitchen-badge.svg',
-            tag: 'kitchen-alert',
-            renotify: true,
+        {
+          headers: {
+            'Content-Type': 'application/json',
           },
-        },
-      });
+          timeout: 15000,
+        }
+      );
 
-      const invalidByUser = new Map();
-      response.responses.forEach((item, index) => {
-        if (item.success) return;
-        const code = String(item.error?.code || '');
-        const token = unique[index];
-        if (!token) return;
-        if (!['messaging/registration-token-not-registered', 'messaging/invalid-argument'].includes(code)) return;
-        const ownerRef = tokenOwners.get(token);
-        if (!ownerRef) return;
-        if (!invalidByUser.has(ownerRef.path)) invalidByUser.set(ownerRef.path, { ref: ownerRef, tokens: [] });
-        invalidByUser.get(ownerRef.path).tokens.push(token);
-      });
-
-      await Promise.all([...invalidByUser.values()].map(({ ref, tokens: badTokens }) =>
-        ref.set({
-          fcmTokens: admin.firestore.FieldValue.arrayRemove(...badTokens),
-        }, { merge: true })
-      ));
+      if (response?.data?.ok !== true) {
+        logger.error('Telegram send failed', { docId, data: response?.data || null });
+        return;
+      }
 
       await kitchenNotifDocRef(docId).set({
-        pushSent: true,
-        pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
-        pushTargetCount: unique.length,
+        telegramSent: true,
+        telegramSentAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      logger.info('Kitchen push sent', {
+      logger.info('Telegram ready notification sent', {
         docId,
-        successCount: response.successCount,
-        failureCount: response.failureCount,
-        tokenCount: unique.length,
+        chatId: telegramGroupChatId,
       });
     } catch (err) {
-      logger.error('Kitchen push send exception', { docId, error: err?.message || String(err) });
+      logger.error('Telegram send exception', {
+        docId,
+        error: err?.message || String(err),
+        responseData: err?.response?.data || null,
+      });
+    }
+  }
+);
+
+async function verifyAdminRequest(req) {
+  const authHeader = String(req.headers?.authorization || '');
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) throw new Error('Missing bearer token');
+
+  const decoded = await admin.auth().verifyIdToken(match[1]);
+  const email = String(decoded.email || '').trim().toLowerCase();
+  const userSnap = await db.collection('users').doc(String(decoded.uid || '')).get().catch(() => null);
+  const role = String(userSnap?.exists ? (userSnap.data()?.role || '') : '').trim().toLowerCase();
+  const isAdmin = ['admin', 'owner', 'superadmin', 'manager'].includes(role) || email === OWNER_EMAIL;
+  if (!isAdmin) throw new Error('Permission denied');
+  return {
+    uid: decoded.uid,
+    email: decoded.email || '',
+    role: role || (email === OWNER_EMAIL ? 'admin' : ''),
+  };
+}
+
+async function runDailyTelegramReport({ scheduleTime = null, force = false, isTest = false } = {}) {
+  const telegramBotToken = String(TELEGRAM_BOT_TOKEN.value() || '').trim();
+  const telegramReportChatId = String(TELEGRAM_REPORT_CHAT_ID.value() || TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
+  if (!telegramBotToken || !telegramReportChatId) {
+    logger.warn('Skipping dailyReportTelegram: missing Telegram config', {
+      hasBotToken: !!telegramBotToken,
+      hasReportChatId: !!telegramReportChatId,
+    });
+    return { skipped: true, reason: 'missing-config' };
+  }
+
+  const settingsRef = db.collection('config').doc('settings');
+  const settingsSnap = await settingsRef.get().catch(() => null);
+  const rawSettings = settingsSnap?.exists ? (settingsSnap.data() || {}) : {};
+  const telegramSettings = getTelegramReportSettings(rawSettings);
+  const range = getVietnamBusinessReportRange();
+  const scheduleCheck = shouldSendTelegramReportNow(telegramSettings, new Date(), range);
+
+  if (!force && !scheduleCheck.shouldSend) {
+    logger.info('Skipping dailyReportTelegram by settings', {
+      reason: scheduleCheck.reason,
+      rangeLabel: range.label,
+      sendHour: telegramSettings.sendHour,
+      sendMinute: telegramSettings.sendMinute,
+      enabled: telegramSettings.enabled,
+    });
+    return { skipped: true, reason: scheduleCheck.reason, rangeLabel: range.label };
+  }
+
+  const report = await buildDailyReportTelegramData(range);
+  const message = buildConfiguredDailyReportTelegramMessage(report, {
+    ...telegramSettings,
+    isTest,
+  });
+  await sendTelegramHtmlMessage({
+    chatId: telegramReportChatId,
+    text: message,
+    botToken: telegramBotToken,
+  });
+
+  const rangeKey = scheduleCheck.rangeKey || getTelegramReportRangeKey(range);
+  if (!isTest) {
+    await settingsRef.set({
+      telegramReportLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      telegramReportLastSentRangeKey: rangeKey,
+    }, { merge: true });
+  } else {
+    await settingsRef.set({
+      telegramReportLastTestAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
+  logger.info('Daily Telegram report sent', {
+    scheduleTime,
+    chatId: telegramReportChatId,
+    invoiceCount: report.invoiceCount,
+    revenue: report.revenue,
+    rangeLabel: report.rangeLabel,
+    isTest,
+    force,
+  });
+
+  return {
+    ok: true,
+    chatId: telegramReportChatId,
+    report,
+    rangeKey,
+  };
+}
+
+exports.dailyReportTelegram = onSchedule(
+  {
+    schedule: '*/5 * * * *',
+    timeZone: 'Asia/Ho_Chi_Minh',
+    region: 'asia-southeast1',
+  },
+  async event => {
+    try {
+      await runDailyTelegramReport({
+        scheduleTime: event.scheduleTime || null,
+      });
+    } catch (err) {
+      logger.error('dailyReportTelegram failed', {
+        error: err?.message || String(err),
+        responseData: err?.response?.data || null,
+        scheduleTime: event.scheduleTime || null,
+      });
     }
   }
 );
