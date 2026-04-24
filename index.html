@@ -1025,6 +1025,10 @@
                   Sau khi luu, mo lai POS va chap nhan quyen thong bao de trinh duyet tu dang ky token vao <b>users/{uid}.fcmTokens</b>.
                 </div>
               </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Gui thong bao cho nhan vien khi bep bam Mang ra</div>
+                <label class="toggle"><input type="checkbox" id="set-kitchenNotifyReady" onchange="submitSettings(event)"><span class="toggle-slider"></span></label>
+              </div>
             </div>
             <div class="card" style="border-color:rgba(0,149,255,0.28)">
               <div class="card-header">
@@ -1243,6 +1247,59 @@
 
         <div id="set-tab-data" class="settings-tab-content" style="display:none;">
           <form id="settings-form-data" onsubmit="submitSettings(event)">
+            <div class="card" style="border-color:rgba(44,182,125,0.28)">
+              <div class="card-header">
+                <div class="card-title">📲 Báo cáo Telegram</div>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Bật gửi báo cáo ngày qua Telegram</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportEnabled"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="form-row">
+                <div class="input-group">
+                  <label class="input-label">Giờ gửi</label>
+                  <select id="set-telegramReportSendHour" class="select"></select>
+                </div>
+                <div class="input-group">
+                  <label class="input-label">Phút gửi</label>
+                  <select id="set-telegramReportSendMinute" class="select"></select>
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin:-4px 0 12px;line-height:1.6">
+                Báo cáo tự động dùng khung giờ kinh doanh <b>06:00 hôm trước → 05:59 hôm sau</b>. Nên đặt giờ gửi từ <b>06:00</b> trở đi để nhận đúng ngày đã chốt.
+              </div>
+              <div class="section-header" style="margin:8px 0 10px">
+                <div class="card-title">Dữ liệu sẽ gửi</div>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Tổng doanh thu thực tế</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportIncludeRevenue"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Tiền mặt / chuyển khoản</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportIncludePaymentBreakdown"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Tổng số hóa đơn</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportIncludeInvoiceCount"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Món được gọi nhiều nhất</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportIncludeTopItem"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-wrap">
+                <div class="toggle-label">Tồn kho mặt hàng bán thẳng</div>
+                <label class="toggle"><input type="checkbox" id="set-telegramReportIncludeRetailStock"><span class="toggle-slider"></span></label>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+                <button type="submit" class="btn btn-primary btn-block">✅ Lưu cài đặt</button>
+                <button type="button" class="btn btn-secondary btn-block" id="telegram-report-test-btn" onclick="testTelegramReportSettings()">🧪 Test báo cáo Telegram</button>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.6">
+                Nút test sẽ dùng chính cấu hình hiện tại trong form này và gửi thử ngay vào nhóm báo cáo quản lý.
+              </div>
+            </div>
+
             <!-- Backup Section -->
             <div class="card">
               <div class="card-header">
@@ -1724,6 +1781,18 @@
                 <option>Rượu</option>
                 <option>Beer</option>
               </select>
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Gui vao bep nao</label>
+            <select class="select" id="menu-kitchen-routing">
+              <option value="all">Ca 2 bep</option>
+              <option value="kitchen_1">Bep 1</option>
+              <option value="kitchen_2">Bep 2</option>
+              <option value="skip">Khong gui vao bep</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">
+              Dung cho quan co 2 bep. Mon ban thang se tu dong de "Khong gui vao bep".
             </div>
           </div>
           <div class="input-group" id="menu-linked-inventory-wrap" style="display:none">
