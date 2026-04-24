@@ -46,9 +46,9 @@
     }
 
     .app-shell {
-      width: min(1600px, 100%);
+      width: min(1720px, 100%);
       margin: 0 auto;
-      padding: 20px;
+      padding: 12px 16px 16px;
     }
 
     .login-screen,
@@ -189,8 +189,8 @@
       position: sticky;
       top: 0;
       z-index: 30;
-      margin: -20px -20px 18px;
-      padding: 18px 20px 16px;
+      margin: -12px -16px 12px;
+      padding: 10px 14px 8px;
       background: rgba(12, 14, 17, 0.88);
       border-bottom: 1px solid var(--line);
       backdrop-filter: blur(18px);
@@ -201,19 +201,19 @@
     .toolbar-row {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       flex-wrap: wrap;
       justify-content: space-between;
     }
 
     .stats-row {
       justify-content: flex-start;
-      margin-top: 14px;
+      margin-top: 8px;
     }
 
     .toolbar-row {
       justify-content: space-between;
-      margin-top: 14px;
+      margin-top: 8px;
     }
 
     .toolbar-left,
@@ -221,20 +221,20 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
     }
 
     .header-title {
-      font-size: clamp(28px, 3vw, 36px);
+      font-size: clamp(20px, 2.2vw, 26px);
       font-weight: 900;
       line-height: 1.02;
       letter-spacing: 0.01em;
     }
 
     .header-sub {
-      margin-top: 6px;
-      font-size: 14px;
+      margin-top: 3px;
+      font-size: 11px;
       color: var(--muted);
       font-weight: 500;
     }
@@ -243,17 +243,17 @@
     .filter-btn,
     .ghost-btn,
     .view-btn {
-      min-height: 52px;
+      min-height: 36px;
       border-radius: 999px;
-      padding: 0 18px;
+      padding: 0 14px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.04);
       color: var(--text);
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       text-decoration: none;
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 700;
     }
 
@@ -262,7 +262,7 @@
     }
 
     .pill strong {
-      font-size: 20px;
+      font-size: 17px;
       font-weight: 900;
     }
 
@@ -289,7 +289,7 @@
     .dashboard-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 18px;
+      gap: 14px;
       align-items: start;
     }
 
@@ -307,13 +307,13 @@
       justify-content: space-between;
       align-items: center;
       gap: 12px;
-      padding: 20px 24px;
+      padding: 14px 18px;
       border-bottom: 1px solid rgba(121, 93, 58, 0.12);
       background: rgba(255, 255, 255, 0.55);
     }
 
     .panel-title {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 800;
       color: #2f261d;
     }
@@ -336,38 +336,85 @@
     }
 
     .panel-body {
-      padding: 18px;
+      padding: 12px;
       background: #f6f2eb;
     }
 
     .flat-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
 
     .flat-head,
     .flat-row {
       display: grid;
-      grid-template-columns: 72px minmax(0, 2.1fr) 48px 64px minmax(92px, auto);
-      gap: 10px;
+      grid-template-columns: 78px minmax(0, 2.8fr) 68px 88px minmax(150px, auto);
+      gap: 12px;
       align-items: center;
     }
 
     .flat-head {
-      padding: 0 12px 8px;
+      padding: 0 12px 6px;
       color: #685947;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .flat-row {
-      padding: 12px;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.82);
+      padding: 16px 18px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 239, 225, 0.92));
       border: 1px solid rgba(121, 93, 58, 0.12);
       color: #2f261d;
       overflow: hidden;
+      box-shadow: 0 10px 24px rgba(79, 55, 29, 0.08);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+    }
+
+    .flat-row:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(79, 55, 29, 0.12);
+    }
+
+    .flat-row.heat-1 {
+      background: linear-gradient(135deg, rgba(255, 252, 245, 0.98), rgba(249, 237, 206, 0.94));
+    }
+
+    .flat-row.heat-2 {
+      background: linear-gradient(135deg, rgba(255, 247, 232, 0.98), rgba(255, 222, 171, 0.96));
+      border-color: rgba(229, 154, 49, 0.24);
+    }
+
+    .flat-row.heat-3 {
+      background: linear-gradient(135deg, rgba(255, 235, 220, 0.98), rgba(255, 187, 141, 0.98));
+      border-color: rgba(224, 121, 45, 0.36);
+    }
+
+    .flat-row.heat-4 {
+      background: linear-gradient(135deg, rgba(255, 220, 218, 0.98), rgba(255, 140, 140, 0.98));
+      border-color: rgba(224, 63, 63, 0.48);
+      box-shadow: 0 18px 32px rgba(224, 63, 63, 0.16);
+    }
+
+    .flat-row.overdue {
+      background: linear-gradient(135deg, rgba(255, 206, 206, 0.98), rgba(255, 92, 92, 0.98));
+      border-color: rgba(201, 27, 27, 0.7);
+      box-shadow: 0 20px 36px rgba(201, 27, 27, 0.22);
+      animation: overdueBlink 1s ease-in-out infinite;
+    }
+
+    @keyframes overdueBlink {
+      0%, 100% {
+        filter: saturate(1);
+        box-shadow: 0 20px 36px rgba(201, 27, 27, 0.18);
+      }
+      50% {
+        filter: saturate(1.12) brightness(1.03);
+        box-shadow: 0 24px 42px rgba(201, 27, 27, 0.34);
+      }
     }
 
     .flat-row.danger {
@@ -383,46 +430,48 @@
     }
 
     .flat-table {
-      font-size: 18px;
+      font-size: 30px;
       font-weight: 800;
+      letter-spacing: 0.02em;
     }
 
     .flat-name {
       min-width: 0;
-      font-size: 17px;
-      font-weight: 700;
-      line-height: 1.14;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.05;
       overflow-wrap: anywhere;
     }
 
     .flat-qty,
     .flat-wait {
-      font-size: 16px;
-      font-weight: 700;
-      color: #d65b18;
+      font-size: 24px;
+      font-weight: 900;
+      color: #b74910;
     }
 
     .flat-action {
       min-width: 0;
       display: flex;
-      justify-content: flex-start;
+      justify-content: stretch;
     }
 
     .flat-action .mini-btn,
     .flat-action .status-chip {
       min-width: 0;
       max-width: 100%;
+      width: 100%;
     }
 
     .status-chip {
-      min-height: 36px;
-      padding: 0 14px;
+      min-height: 52px;
+      padding: 0 18px;
       border-radius: 12px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       border: 1px solid rgba(121, 93, 58, 0.16);
-      font-size: 14px;
+      font-size: 18px;
       font-weight: 700;
       background: #f7efe8;
     }
@@ -678,20 +727,23 @@
     }
 
     .mini-btn {
-      min-height: 44px;
-      border-radius: 14px;
-      padding: 0 18px;
-      font-size: 16px;
+      min-height: 64px;
+      border-radius: 18px;
+      padding: 0 24px;
+      font-size: 24px;
+      width: 100%;
     }
 
     .mini-btn.accept {
-      background: rgba(255, 191, 31, 0.18);
-      color: #ffdf8a;
+      background: linear-gradient(135deg, #ffd439, #ffb700);
+      color: #3a2400;
+      box-shadow: 0 14px 28px rgba(255, 183, 0, 0.24);
     }
 
     .mini-btn.done {
-      background: rgba(40, 199, 111, 0.18);
-      color: #9af0bc;
+      background: linear-gradient(135deg, #33d46b, #1fb851);
+      color: #082211;
+      box-shadow: 0 14px 28px rgba(31, 184, 81, 0.2);
     }
 
     .card-actions {
@@ -774,42 +826,47 @@
       }
       .flat-head,
       .flat-row {
-        grid-template-columns: 58px minmax(0, 2.5fr) 42px 56px minmax(84px, auto);
+        grid-template-columns: 60px minmax(0, 2.4fr) 56px 72px minmax(130px, auto);
         gap: 8px;
       }
       .flat-head {
         font-size: 12px;
       }
       .flat-name {
-        font-size: 15px;
+        font-size: 22px;
       }
       .flat-qty,
       .flat-wait {
-        font-size: 14px;
+        font-size: 18px;
+      }
+      .flat-table {
+        font-size: 22px;
       }
       .flat-action .mini-btn {
         padding: 0 12px;
-        font-size: 14px;
+        font-size: 18px;
+        min-height: 56px;
       }
       .flat-action .status-chip {
         padding: 0 10px;
-        font-size: 13px;
+        font-size: 16px;
+        min-height: 50px;
       }
     }
 
     @media (max-width: 820px) {
-      .app-shell { padding: 12px; }
-      .topbar { margin: -12px -12px 14px; padding: 14px 12px; }
-      .header-title { font-size: 24px; }
+      .app-shell { padding: 10px; }
+      .topbar { margin: -10px -10px 12px; padding: 10px; }
+      .header-title { font-size: 18px; }
       .pill,
       .filter-btn,
       .ghost-btn,
       .view-btn {
-        min-height: 46px;
-        font-size: 14px;
-        padding: 0 14px;
+        min-height: 34px;
+        font-size: 12px;
+        padding: 0 12px;
       }
-      .pill strong { font-size: 18px; }
+      .pill strong { font-size: 15px; }
       .table-card { padding: 16px; }
       .table-name { font-size: 24px; }
       .table-timer { font-size: 24px; min-width: 88px; }
@@ -833,26 +890,29 @@
       }
       .flat-head,
       .flat-row {
-        grid-template-columns: 52px minmax(0, 2.2fr) 34px 50px minmax(76px, auto);
+        grid-template-columns: 54px minmax(0, 1.8fr) 48px 62px minmax(118px, auto);
         font-size: 12px;
         gap: 6px;
       }
       .flat-name {
-        font-size: 14px;
+        font-size: 18px;
       }
       .flat-qty,
       .flat-wait {
-        font-size: 13px;
+        font-size: 16px;
+      }
+      .flat-table {
+        font-size: 18px;
       }
       .flat-action .mini-btn {
-        min-height: 38px;
+        min-height: 48px;
         padding: 0 10px;
-        font-size: 13px;
+        font-size: 16px;
       }
       .flat-action .status-chip {
-        min-height: 34px;
+        min-height: 42px;
         padding: 0 8px;
-        font-size: 12px;
+        font-size: 14px;
       }
     }
   </style>
@@ -923,6 +983,13 @@
             <button class="view-btn" data-view="cards">Theo bàn</button>
             <button class="view-btn" data-view="flat">Theo món</button>
             <button class="ghost-btn" id="audio-toggle" type="button">Chuông: Bật</button>
+          </div>
+        </div>
+        <div class="toolbar-row" style="margin-top:10px;">
+          <div class="toolbar-left" id="station-row">
+            <button class="filter-btn active" data-station="all">Ca 2 bep</button>
+            <button class="filter-btn" data-station="kitchen_1">Bep 1</button>
+            <button class="filter-btn" data-station="kitchen_2">Bep 2</button>
           </div>
         </div>
       </header>
@@ -1008,16 +1075,23 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    const savedViewMode = String(localStorage.getItem('kds:viewMode') || 'split');
+    const savedViewMode = String(localStorage.getItem('kds:viewMode') || 'flat');
+    const savedStation = String(localStorage.getItem('kds:station') || 'all');
     const state = {
       currentUser: null,
       currentRole: '',
       filter: 'all',
-      viewMode: ['split', 'cards', 'flat'].includes(savedViewMode) ? savedViewMode : 'split',
+      station: ['all', 'kitchen_1', 'kitchen_2'].includes(savedStation) ? savedStation : 'all',
+      viewMode: ['split', 'cards', 'flat'].includes(savedViewMode) ? savedViewMode : 'flat',
+      settings: {
+        kitchenNotifyAccepted: true,
+        kitchenNotifyReady: true,
+      },
       tables: new Map(),
       orders: new Map(),
       tableUnsub: null,
       orderUnsub: null,
+      settingsUnsub: null,
       seenPendingKeys: new Set(),
       audioUnlocked: false,
       audioContext: null,
@@ -1038,6 +1112,7 @@
     const userRoleLabel = document.getElementById('user-role-label');
     const clockLabel = document.getElementById('clock-label');
     const filterRow = document.getElementById('filter-row');
+    const stationRow = document.getElementById('station-row');
     const viewRow = document.getElementById('view-row');
     const audioToggle = document.getElementById('audio-toggle');
 
@@ -1074,9 +1149,12 @@
     function isKitchenItem(item) {
       const status = String(item?.kitchenStatus || '').toLowerCase();
       const itemType = String(item?.itemType || '').toLowerCase();
+      const kitchenRouting = String(item?.kitchenRouting || '').toLowerCase();
       const saleMode = String(item?.saleMode || '').toLowerCase();
       if (status === 'skip' || status === 'served') return false;
       if (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true) return false;
+      if (kitchenRouting === 'skip') return false;
+      if (state.station !== 'all' && kitchenRouting && kitchenRouting !== 'all' && kitchenRouting !== state.station) return false;
       return true;
     }
 
@@ -1087,6 +1165,7 @@
     function getStatusLabel(status) {
       if (status === 'cooking') return 'Đang làm';
       if (status === 'done') return 'Xong';
+      if (status === 'served') return 'Mang ra';
       return 'Chờ';
     }
 
@@ -1110,6 +1189,21 @@
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function getItemElapsedMs(item) {
+      const sentAt = Number(item?.kitchenSentAt || 0);
+      if (!(sentAt > 0)) return 0;
+      return Math.max(0, Date.now() - sentAt);
+    }
+
+    function getHeatLevel(elapsedMs) {
+      if (elapsedMs >= 10 * 60 * 1000) return 'overdue';
+      if (elapsedMs >= 8 * 60 * 1000) return 'heat-4';
+      if (elapsedMs >= 6 * 60 * 1000) return 'heat-3';
+      if (elapsedMs >= 3 * 60 * 1000) return 'heat-2';
+      if (elapsedMs >= 60 * 1000) return 'heat-1';
+      return '';
     }
 
     function buildCards() {
@@ -1193,10 +1287,12 @@
             </div>
             <div class="qty-chip">x${Number(item.qty || 0)}</div>
             ${status === 'pending'
-              ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">Nhận</button>`
+              ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">NH&#7852;N</button>`
               : status === 'cooking'
-                ? `<button class="mini-btn done" data-action="item-done" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">Xong</button>`
-                : `<div class="status-chip ${getStatusChipClass(status)}">${getStatusLabel(status)}</div>`}
+                ? `<button class="mini-btn done" data-action="item-done" data-order-id="${card.orderId}" data-line-key="${item._lineKey}">XONG</button>`
+                : status === 'done'
+                  ? `<button class="mini-btn done" data-action="item-served" data-order-id="${card.orderId}" data-line-key="${item._lineKey}" data-table-id="${card.tableId}" data-table-name="${card.tableName}">MANG RA</button>`
+                  : `<div class="status-chip ${getStatusChipClass(status)}">${getStatusLabel(status)}</div>`}
           </div>
         `;
       }).join('');
@@ -1240,12 +1336,13 @@
       const rows = [];
       cards.forEach(card => {
         card.items.forEach(item => {
+          const itemElapsedMs = getItemElapsedMs(item) || card.elapsedMs;
           rows.push({
             orderId: card.orderId,
             tableId: card.tableId,
             tableName: card.tableName,
             lineKey: item._lineKey,
-            elapsedMs: card.elapsedMs,
+            elapsedMs: itemElapsedMs,
             qty: Number(item.qty || 0),
             name: item.name || 'Món chưa đặt tên',
             note: String(item.note || '').trim(),
@@ -1258,28 +1355,39 @@
     }
 
     function buildFlatRowMarkup(row) {
+      const heatClass = getHeatLevel(row.elapsedMs);
       const rowClass = row.status === 'done'
         ? 'done'
-        : row.elapsedMs >= 8 * 60 * 1000
-          ? 'danger'
-          : row.status === 'cooking'
-            ? 'warning'
-            : '';
+        : heatClass === 'overdue'
+          ? 'danger overdue'
+          : heatClass === 'heat-4'
+            ? 'danger heat-4'
+            : heatClass === 'heat-3'
+              ? 'warning heat-3'
+              : heatClass === 'heat-2'
+                ? 'heat-2'
+                : heatClass === 'heat-1'
+                  ? 'heat-1'
+                  : row.status === 'cooking'
+                    ? 'warning'
+                    : '';
 
       const actionMarkup = row.status === 'pending'
-        ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">Nhận</button>`
+        ? `<button class="mini-btn accept" data-action="item-accept" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">NH&#7852;N</button>`
         : row.status === 'cooking'
-          ? `<button class="mini-btn done" data-action="item-done" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">Xong</button>`
-          : `<span class="status-chip ${getStatusChipClass(row.status)}">${getStatusLabel(row.status)}</span>`;
+          ? `<button class="mini-btn done" data-action="item-done" data-order-id="${row.orderId}" data-line-key="${row.lineKey}">XONG</button>`
+          : row.status === 'done'
+            ? `<button class="mini-btn done" data-action="item-served" data-order-id="${row.orderId}" data-line-key="${row.lineKey}" data-table-id="${row.tableId}" data-table-name="${row.tableName}">MANG RA</button>`
+            : `<span class="status-chip ${getStatusChipClass(row.status)}">${getStatusLabel(row.status)}</span>`;
 
       return `
         <div class="flat-row ${rowClass}">
           <div class="flat-table">${row.tableName.replace('Bàn ', 'B')}</div>
           <div class="flat-name">
             <div>${row.name}</div>
-            ${row.note ? `<div class="item-meta">Ghi chú: ${row.note}</div>` : ''}
+            ${row.note ? `<div class="item-meta">Ghi chu: ${row.note}</div>` : ''}
           </div>
-          <div class="flat-qty">×${row.qty}</div>
+          <div class="flat-qty">x${row.qty}</div>
           <div class="flat-wait">${formatElapsed(row.elapsedMs)}</div>
           <div class="flat-action">${actionMarkup}</div>
         </div>
@@ -1293,6 +1401,7 @@
       boardPanel.style.display = state.viewMode === 'flat' ? 'none' : '';
       flatPanel.style.display = state.viewMode === 'cards' ? 'none' : '';
       dashboardGrid.style.gridTemplateColumns = state.viewMode === 'split' ? '1fr 1fr' : '1fr';
+      dashboardGrid.style.alignItems = 'stretch';
 
       if (!cards.length) {
         const emptyMarkup = `
@@ -1405,12 +1514,36 @@
       });
     }
 
+    function shouldNotifyStaff(type) {
+      const normalized = String(type || '').toLowerCase();
+      if (normalized === 'ready') return state.settings.kitchenNotifyReady !== false;
+      return normalized !== 'accepted';
+    }
+
+    async function createKitchenStatusNotification(type, orderId, items, message) {
+      if (!shouldNotifyStaff(type)) return;
+      const order = state.orders.get(String(orderId));
+      await createKitchenNotification({
+        type,
+        tableId: order?.tableId || '',
+        tableName: order?.tableName || '',
+        orderId,
+        items: Array.isArray(items) ? items.filter(Boolean) : [],
+        message,
+      });
+    }
+
     function getOrderSummaryItems(orderId) {
       const order = state.orders.get(String(orderId));
       const items = Array.isArray(order?.items) ? order.items : [];
       return items
         .filter(isKitchenItem)
         .map(item => `${item.name || 'Món'} x${Number(item.qty || 0)}`);
+    }
+
+    function getVisibleOrderItemsLegacy(orderId) {
+      const order = state.orders.get(String(orderId));
+      return (Array.isArray(order?.items) ? order.items : []).filter(isKitchenItem);
     }
 
     function updateLineStatus(items, lineKey, nextStatus) {
@@ -1420,7 +1553,7 @@
       });
     }
 
-    async function acceptAll(orderId) {
+    async function acceptAllLegacy(orderId) {
       await updateOrderItems(orderId, items => items.map(item => {
         if (!isKitchenItem(item) || String(item.kitchenStatus || '').toLowerCase() !== 'pending') return item;
         return { ...item, kitchenStatus: 'cooking', kitchenUpdatedAt: Date.now() };
@@ -1428,7 +1561,7 @@
       showToast('Đã nhận tất cả món cho bếp.');
     }
 
-    async function doneAll(orderId) {
+    async function doneAllLegacy(orderId) {
       await updateOrderItems(orderId, items => items.map(item => {
         const status = String(item.kitchenStatus || '').toLowerCase();
         if (!isKitchenItem(item) || (status !== 'pending' && status !== 'cooking')) return item;
@@ -1437,7 +1570,7 @@
       showToast('Đã đánh dấu xong tất cả món.');
     }
 
-    async function updateSingleItem(orderId, lineKey, nextStatus) {
+    async function updateSingleItemLegacy(orderId, lineKey, nextStatus) {
       await updateOrderItems(orderId, items => updateLineStatus(items, lineKey, nextStatus));
       showToast(nextStatus === 'done' ? 'Món đã xong.' : 'Đã nhận món.');
     }
@@ -1454,7 +1587,7 @@
       showToast('Đã gửi báo chậm.', 'warning');
     }
 
-    async function markServed(orderId, tableId, tableName) {
+    async function markServedLegacy(orderId, tableId, tableName) {
       const summaryItems = getOrderSummaryItems(orderId);
       await createKitchenNotification({
         type: 'ready',
@@ -1478,9 +1611,71 @@
       showToast('Đã báo sẵn sàng và đóng thẻ bàn.');
     }
 
+    function getVisibleOrderItems(orderId) {
+      const order = state.orders.get(String(orderId));
+      return (Array.isArray(order?.items) ? order.items : [])
+        .filter(isKitchenItem)
+        .map((item, index) => ({ ...item, _lineKey: getKitchenLineKey(item, index) }));
+    }
+
+    async function acceptAll(orderId) {
+      await updateOrderItems(orderId, items => items.map(item => {
+        if (!isKitchenItem(item) || String(item.kitchenStatus || '').toLowerCase() !== 'pending') return item;
+        return { ...item, kitchenStatus: 'cooking', kitchenUpdatedAt: Date.now() };
+      }));
+      showToast('Da nhan tat ca mon cho bep.');
+    }
+
+    async function doneAll(orderId) {
+      await updateOrderItems(orderId, items => items.map(item => {
+        const status = String(item.kitchenStatus || '').toLowerCase();
+        if (!isKitchenItem(item) || (status !== 'pending' && status !== 'cooking')) return item;
+        return { ...item, kitchenStatus: 'done', kitchenUpdatedAt: Date.now() };
+      }));
+      showToast('Da danh dau xong tat ca mon.');
+    }
+
+    async function updateSingleItem(orderId, lineKey, nextStatus) {
+      await updateOrderItems(orderId, items => updateLineStatus(items, lineKey, nextStatus));
+      const targetItems = getVisibleOrderItems(orderId).filter(item => item._lineKey === String(lineKey || ''));
+      if (nextStatus === 'served' && targetItems.length) {
+        const order = state.orders.get(String(orderId));
+        await createKitchenStatusNotification(
+          'ready',
+          orderId,
+          targetItems.map(item => `${item.name || 'Mon'} x${Number(item.qty || 0)}`),
+          `${order?.tableName || 'Ban'} - mon da mang ra, nhan vien tiep nhan`,
+        );
+      }
+      showToast(nextStatus === 'done' ? 'Mon da xong.' : nextStatus === 'served' ? 'Da mang ra va gui thong bao.' : 'Da nhan mon.');
+    }
+
+    async function markServed(orderId, tableId, tableName) {
+      await createKitchenStatusNotification('ready', orderId, getOrderSummaryItems(orderId), `${tableName || 'Ban'} - mon da mang ra, nhan vien tiep nhan`);
+      await updateOrderItems(orderId, items => items.map(item => {
+        if (!isKitchenItem(item) || String(item.kitchenStatus || '').toLowerCase() !== 'done') return item;
+        return {
+          ...item,
+          kitchenStatus: 'served',
+          kitchenUpdatedAt: Date.now(),
+          servedAt: Date.now(),
+        };
+      }));
+      showToast('Da mang ra va gui thong bao.');
+    }
+
     function attachListeners() {
       state.tableUnsub?.();
       state.orderUnsub?.();
+      state.settingsUnsub?.();
+
+      state.settingsUnsub = onSnapshot(doc(db, 'config', 'settings'), snap => {
+        const settings = snap.exists() ? (snap.data() || {}) : {};
+        state.settings = {
+          kitchenNotifyAccepted: settings.kitchenNotifyAccepted !== false,
+          kitchenNotifyReady: settings.kitchenNotifyReady !== false,
+        };
+      });
 
       state.tableUnsub = onSnapshot(query(collection(db, 'tables'), orderBy('id')), snap => {
         const nextMap = new Map();
@@ -1532,6 +1727,7 @@
       await signOut(auth);
       state.tableUnsub?.();
       state.orderUnsub?.();
+      state.settingsUnsub?.();
       showLogin();
     });
 
@@ -1540,6 +1736,17 @@
       if (!btn) return;
       state.filter = String(btn.dataset.filter || 'all');
       filterRow.querySelectorAll('.filter-btn').forEach(node => {
+        node.classList.toggle('active', node === btn);
+      });
+      renderLayout(buildCards());
+    });
+
+    stationRow.addEventListener('click', event => {
+      const btn = event.target.closest('[data-station]');
+      if (!btn) return;
+      state.station = String(btn.dataset.station || 'all');
+      localStorage.setItem('kds:station', state.station);
+      stationRow.querySelectorAll('.filter-btn').forEach(node => {
         node.classList.toggle('active', node === btn);
       });
       renderLayout(buildCards());
@@ -1578,6 +1785,7 @@
         if (action === 'served-all') await markServed(orderId, actionEl.dataset.tableId, actionEl.dataset.tableName);
         if (action === 'item-accept') await updateSingleItem(orderId, actionEl.dataset.lineKey, 'cooking');
         if (action === 'item-done') await updateSingleItem(orderId, actionEl.dataset.lineKey, 'done');
+        if (action === 'item-served') await updateSingleItem(orderId, actionEl.dataset.lineKey, 'served');
       } catch (error) {
         showToast(error?.message || 'Không thể cập nhật món', 'danger');
       } finally {
@@ -1596,6 +1804,9 @@
     viewRow.querySelectorAll('.view-btn').forEach(node => {
       node.classList.toggle('active', node.dataset.view === state.viewMode);
     });
+    stationRow.querySelectorAll('.filter-btn').forEach(node => {
+      node.classList.toggle('active', node.dataset.station === state.station);
+    });
 
     onAuthStateChanged(auth, async user => {
       if (!user) {
@@ -1603,6 +1814,7 @@
         state.currentRole = '';
         state.tableUnsub?.();
         state.orderUnsub?.();
+        state.settingsUnsub?.();
         showLogin();
         return;
       }
@@ -1629,3 +1841,5 @@
   </script>
 </body>
 </html>
+
+

@@ -105,10 +105,20 @@ const SETTINGS_DEFAULTS = {
   reportExportType:                'revenue',
   reportExportPeriod:              'today',
   reportExportDate:                '',
+  telegramReportEnabled:           true,
+  telegramReportSendHour:          7,
+  telegramReportSendMinute:        0,
+  telegramReportIncludeRevenue:    true,
+  telegramReportIncludePaymentBreakdown: true,
+  telegramReportIncludeInvoiceCount: true,
+  telegramReportIncludeTopItem:    true,
+  telegramReportIncludeRetailStock: true,
   autoUploadToGoogleDrive:         false,
   googleDriveUploadUrl:            '',
   googleDriveFolderId:             '',
   webPushVapidKey:                 '',
+  kitchenNotifyAccepted:           true,
+  kitchenNotifyReady:              true,
   zaloOaEnabled:                   true,
   zaloNotifyReady:                 true,
   zaloNotifyDelay:                 true,
@@ -756,6 +766,7 @@ function _buildMenuViewFromMaster(products = [], inventoryRows = [], recipes = [
         unit: _normalizeUnitLabel(product.unit || (linkedInventory ? linkedInventory.unit : 'phan')),
         cost: Number(product.cost ?? 0),
         itemType,
+        kitchenRouting: String(product.kitchenRouting || '').trim().toLowerCase() || (itemType === 'retail_item' ? 'skip' : 'all'),
         linkedInventoryId: itemType === 'retail_item' ? (linkedInventory?.id || null) : null,
         ingredients,
         aliases: product.aliases || '',
@@ -1593,6 +1604,7 @@ const Menu = {
       sell_price: Number(item.price || 0),
       item_type: _appMenuTypeToMaster(item.itemType),
       aliases: item.aliases || '',
+      kitchenRouting: item.itemType === 'retail_item' ? 'skip' : (item.kitchenRouting || 'all'),
       linkedInventoryId: item.linkedInventoryId || null,
       cost: Number(item.cost || 0),
       unit: item.unit || 'phan',
@@ -1612,6 +1624,7 @@ const Menu = {
     if (Object.prototype.hasOwnProperty.call(data, 'price')) payload.sell_price = Number(data.price || 0);
     if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.item_type = _appMenuTypeToMaster(data.itemType);
     if (Object.prototype.hasOwnProperty.call(data, 'aliases')) payload.aliases = data.aliases || '';
+    if (Object.prototype.hasOwnProperty.call(data, 'kitchenRouting')) payload.kitchenRouting = data.itemType === 'retail_item' ? 'skip' : (data.kitchenRouting || 'all');
     if (Object.prototype.hasOwnProperty.call(data, 'linkedInventoryId')) payload.linkedInventoryId = data.linkedInventoryId || null;
     if (Object.prototype.hasOwnProperty.call(data, 'cost')) payload.cost = Number(data.cost || 0);
     if (Object.prototype.hasOwnProperty.call(data, 'unit')) payload.unit = data.unit || 'phan';
