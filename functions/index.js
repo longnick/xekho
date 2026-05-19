@@ -1474,7 +1474,7 @@ async function createTelegramOrderDraftFromPhoto({ chatId, sourceMessageId, user
     .filter(item => item.ten_mon);
 
   if (!items.length) {
-    throw new Error('Bot chÆ°a Ä‘á»c Ä‘Æ°á»£c mÃ³n nÃ o tá»« áº£nh phiáº¿u. Anh/chá»‹ chá»¥p láº¡i rÃµ hÆ¡n hoáº·c nháº­p tay báº±ng /fix.');
+    throw new Error('Bot chưa đọc được món nào từ ảnh phiếu. Anh/chị chụp lại rõ hơn hoặc nhập tay bằng /fix.');
   }
 
   const { createPendingOrderAction } = getAiDeps();
@@ -1726,7 +1726,7 @@ async function applyTelegramDraftFix({ draft, fixCommand, chatId, botToken }) {
 
   if (fixCommand.type === 'replace_item') {
     const idx = slotIndex(fixCommand.slot);
-    if (idx < 0) throw new Error(`KhÃ´ng tÃ¬m tháº¥y mÃ³n sá»‘ ${fixCommand.slot} Ä‘á»ƒ sá»­a.`);
+    if (idx < 0) throw new Error(`Không tìm thấy món số ${fixCommand.slot} để sửa.`);
     nextItems[idx] = {
       ...nextItems[idx],
       ten_mon: fixCommand.item.ten_mon,
@@ -1735,7 +1735,7 @@ async function applyTelegramDraftFix({ draft, fixCommand, chatId, botToken }) {
     };
   } else if (fixCommand.type === 'remove_item') {
     const idx = slotIndex(fixCommand.slot);
-    if (idx < 0) throw new Error(`KhÃ´ng tÃ¬m tháº¥y mÃ³n sá»‘ ${fixCommand.slot} Ä‘á»ƒ xÃ³a.`);
+    if (idx < 0) throw new Error(`Không tìm thấy món số ${fixCommand.slot} để xóa.`);
     nextItems.splice(idx, 1);
   } else if (fixCommand.type === 'add_item') {
     const maxSlot = nextItems.reduce((max, item) => Math.max(max, Number(item.slot || 0)), 0);
@@ -2126,9 +2126,9 @@ function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary 
       const lineTotal = price * qty;
       const itemNote = String(item?.note || '').trim();
       const noteText = itemNote ? ` (${escapeTelegramHtml(itemNote)})` : '';
-      return `â€¢ ${escapeTelegramHtml(name)} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${noteText}`;
+      return `• ${escapeTelegramHtml(name)} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${noteText}`;
     }).join('\n')
-    : 'â€¢ Khong co chi tiet';
+    : '• Khong co chi tiet';
 
   const lines = [
     '<b>✅ HOÀN TẤT ĐƠN HÀNG</b>',
@@ -2151,16 +2151,16 @@ function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary 
   );
 
   if (discount > 0) {
-    lines.push(`<b>Giáº£m giÃ¡${discountNote ? ` (${escapeTelegramHtml(discountNote)})` : ''}:</b> -${escapeTelegramHtml(formatCurrencyVi(discount))}`);
+    lines.push(`<b>Giảm giá${discountNote ? ` (${escapeTelegramHtml(discountNote)})` : ''}:</b> -${escapeTelegramHtml(formatCurrencyVi(discount))}`);
   }
-  if (shipping > 0) lines.push(`<b>PhÃ­ giao hÃ ng:</b> +${escapeTelegramHtml(formatCurrencyVi(shipping))}`);
+  if (shipping > 0) lines.push(`<b>Phí giao hàng:</b> +${escapeTelegramHtml(formatCurrencyVi(shipping))}`);
   if (vatAmount > 0) lines.push(`<b>VAT${order.taxRate ? ` (${escapeTelegramHtml(order.taxRate)}%)` : ''}:</b> +${escapeTelegramHtml(formatCurrencyVi(vatAmount))}`);
 
-  lines.push(`<b>Tá»”NG Cá»˜NG:</b> ${escapeTelegramHtml(formatCurrencyVi(total))}`);
+  lines.push(`<b>TỔNG CỘNG:</b> ${escapeTelegramHtml(formatCurrencyVi(total))}`);
   if (shiftSummary) {
     lines.push(
-      `<i>Tá»•ng Ä‘Æ¡n trong ca: ${escapeTelegramHtml(String(shiftSummary.totalOrders || 0))} Â· Tá»•ng tiá»n trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.totalAmount || 0))}</i>`,
-      `<i>Tiá»n máº·t trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.cashAmount || 0))} Â· Chuyá»ƒn khoáº£n trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.bankAmount || 0))}</i>`
+      `<i>Tổng đơn trong ca: ${escapeTelegramHtml(String(shiftSummary.totalOrders || 0))} · Tổng tiền trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.totalAmount || 0))}</i>`,
+      `<i>Tiền mặt trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.cashAmount || 0))} · Chuyển khoản trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.bankAmount || 0))}</i>`
     );
   }
 
@@ -2556,7 +2556,7 @@ function buildDailyReportTelegramMessage(report) {
 
   const retailLines = report.retailStocks.length
     ? report.retailStocks
-      .map(item => `â€¢ <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
+      .map(item => `• <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
       .join('\n')
     : '<i>Khong co mat hang ban thang</i>';
 
@@ -2565,13 +2565,13 @@ function buildDailyReportTelegramMessage(report) {
     `<i>Khung gio: ${escapeTelegramHtml(report.rangeLabel)} (GMT+7)</i>`,
     '',
     '<b>Doanh thu</b>',
-    `â€¢ Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `â€¢ Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`,
-    `â€¢ Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`,
-    `â€¢ Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`,
+    `• Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
+    `• Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`,
+    `• Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`,
+    `• Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`,
     '',
     '<b>Mon duoc goi nhieu nhat</b>',
-    `â€¢ ${topItemLine}`,
+    `• ${topItemLine}`,
     '',
     '<b>Ton kho mat hang ban thang</b>',
     retailLines,
@@ -2589,31 +2589,31 @@ function buildConfiguredDailyReportTelegramMessage(report, options = {}) {
 
   const retailLines = report.retailStocks.length
     ? report.retailStocks
-      .map(item => `Ã¢â‚¬Â¢ <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
+      .map(item => `• <b>${escapeTelegramHtml(item.name)}</b>: ${escapeTelegramHtml(formatQtyVi(item.qty))} ${escapeTelegramHtml(item.unit)}`.trim())
       .join('\n')
     : '<i>Khong co mat hang ban thang</i>';
 
   const lines = [
-    settings.isTest ? '<b>ðŸ§ª BAO CAO TEST - XE KHO</b>' : '<b>Ã°Å¸â€œÅ  BAO CAO NGAY - XE KHO</b>',
+    settings.isTest ? '<b>ðŸ§ª BAO CAO TEST - XE KHO</b>' : '<b>= BAO CAO NGAY - XE KHO</b>',
     `<i>Khung gio: ${escapeTelegramHtml(report.rangeLabel)} (GMT+7)</i>`,
   ];
 
   const revenueLines = [];
   if (settings.includeRevenue) {
-    revenueLines.push(`Ã¢â‚¬Â¢ Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`);
+    revenueLines.push(`• Tong doanh thu thuc te: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`);
   }
   if (settings.includePaymentBreakdown) {
-    revenueLines.push(`Ã¢â‚¬Â¢ Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`);
-    revenueLines.push(`Ã¢â‚¬Â¢ Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`);
+    revenueLines.push(`• Tien mat: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueCash))}</b>`);
+    revenueLines.push(`• Chuyen khoan: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenueBank))}</b>`);
   }
   if (settings.includeInvoiceCount) {
-    revenueLines.push(`Ã¢â‚¬Â¢ Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`);
+    revenueLines.push(`• Tong so hoa don: <b>${escapeTelegramHtml(String(report.invoiceCount))}</b>`);
   }
   if (revenueLines.length) {
     lines.push('', '<b>Doanh thu</b>', ...revenueLines);
   }
   if (settings.includeTopItem) {
-    lines.push('', '<b>Mon duoc goi nhieu nhat</b>', `Ã¢â‚¬Â¢ ${topItemLine}`);
+    lines.push('', '<b>Mon duoc goi nhieu nhat</b>', `• ${topItemLine}`);
   }
   if (settings.includeRetailStock) {
     lines.push('', '<b>Ton kho mat hang ban thang</b>', retailLines);
@@ -2643,11 +2643,11 @@ function normalizeVi(text) {
 function parseTimeEntity(text) {
   const t = normalizeVi(text);
   if (!t) return null;
-  if (/(hom nay)\b/.test(t)) return { key: 'today', label: 'hÃ´m nay' };
-  if (/(hom qua)\b/.test(t)) return { key: 'yesterday', label: 'hÃ´m qua' };
-  if (/(tuan nay)\b/.test(t)) return { key: 'this_week', label: 'tuáº§n nÃ y' };
-  if (/(thang nay)\b/.test(t)) return { key: 'this_month', label: 'thÃ¡ng nÃ y' };
-  if (/(nam nay)\b/.test(t)) return { key: 'this_year', label: 'nÄƒm nay' };
+  if (/(hom nay)\b/.test(t)) return { key: 'today', label: 'hôm nay' };
+  if (/(hom qua)\b/.test(t)) return { key: 'yesterday', label: 'hôm qua' };
+  if (/(tuan nay)\b/.test(t)) return { key: 'this_week', label: 'tuần này' };
+  if (/(thang nay)\b/.test(t)) return { key: 'this_month', label: 'tháng này' };
+  if (/(nam nay)\b/.test(t)) return { key: 'this_year', label: 'nm nay' };
   return null;
 }
 
@@ -3040,32 +3040,32 @@ async function buildAdsRevenueTelegramData(range) {
 
 function buildAdsRevenueTelegramMessage(report, options = {}) {
   return buildAdsRevenueDetailedMessage(report, options);
-  const title = options.isTest ? 'ðŸ§ª BÃO CÃO TEST ADS + DOANH THU' : 'ðŸ“Š BÃO CÃO ADS + DOANH THU';
+  const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '📊 BÁO CÁO ADS + DOANH THU';
   const singleDay = report.fromYmd === report.toYmd;
   const dateLine = singleDay
-    ? `NgÃ y: ${escapeTelegramHtml(formatVietnamDateDisplayFromYmd(report.fromYmd))}`
-    : `Khoáº£ng: ${escapeTelegramHtml(report.rangeLabel)}`;
+    ? `Ngày: ${escapeTelegramHtml(formatVietnamDateDisplayFromYmd(report.fromYmd))}`
+    : `Khoảng: ${escapeTelegramHtml(report.rangeLabel)}`;
 
-  const facebookMetricLabel = Number(report.facebook.interactions || 0) > 0 ? 'Click/tÆ°Æ¡ng tÃ¡c' : 'Click';
+  const facebookMetricLabel = Number(report.facebook.interactions || 0) > 0 ? 'Click/tương tác' : 'Click';
   const facebookLines = report.facebook.configured
     ? [
-      `Chi phÃ­: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.spend))}</b>`,
+      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.spend))}</b>`,
       `${facebookMetricLabel}: <b>${escapeTelegramHtml(String(Math.round(Number(report.facebook.interactions || report.facebook.clicks || 0))))}</b>`,
       `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.cpc || 0))}</b>`,
     ]
-    : ['<i>ChÆ°a cáº¥u hÃ¬nh hoáº·c chÆ°a cÃ³ dá»¯ liá»‡u.</i>'];
+    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
 
   const tiktokLines = report.tiktok.configured
     ? [
-      `Chi phÃ­: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.spend))}</b>`,
+      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.spend))}</b>`,
       `Click: <b>${escapeTelegramHtml(String(Math.round(Number(report.tiktok.clicks || 0))))}</b>`,
       `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.cpc || 0))}</b>`,
     ]
-    : ['<i>ChÆ°a cáº¥u hÃ¬nh hoáº·c chÆ°a cÃ³ dá»¯ liá»‡u.</i>'];
+    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
 
   const commentLine = report.totalAds > 0
-    ? `Hiá»‡u quáº£ tá»‘t náº¿u biÃªn lá»£i nhuáº­n gá»™p > ${formatPercentVi(report.adsRevenueRatio)}.`
-    : 'ChÆ°a cÃ³ dá»¯ liá»‡u ads Ä‘á»ƒ tÃ­nh tá»· lá»‡ hiá»‡u quáº£.';
+    ? `Hiệu quả tốt nếu biên lợi nhuận gộp > ${formatPercentVi(report.adsRevenueRatio)}.`
+    : 'Chưa có dữ liệu ads để tính tỷ lệ hiệu quả.';
 
   const lines = [
     `<b>${title}</b>`,
@@ -3073,8 +3073,8 @@ function buildAdsRevenueTelegramMessage(report, options = {}) {
     '',
     '<b>ðŸ’° POS</b>',
     `Doanh thu: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `Sá»‘ Ä‘Æ¡n: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
-    `TB/Ä‘Æ¡n: <b>${escapeTelegramHtml(formatCurrencyVi(report.averageOrder))}</b>`,
+    `Số đơn: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
+    `TB/đơn: <b>${escapeTelegramHtml(formatCurrencyVi(report.averageOrder))}</b>`,
     '',
     '<b>ðŸ”µ Facebook</b>',
     ...facebookLines,
@@ -3082,17 +3082,17 @@ function buildAdsRevenueTelegramMessage(report, options = {}) {
     '<b>âš« TikTok</b>',
     ...tiktokLines,
     '',
-    '<b>ðŸ“ˆ Tá»•ng há»£p</b>',
-    `Tá»•ng ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
-    `ROAS tham kháº£o: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
+    '<b>📈 Tổng hợp</b>',
+    `Tổng ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
+    `ROAS tham khảo: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
     `Ads / doanh thu: <b>${escapeTelegramHtml(formatPercentVi(report.adsRevenueRatio))}</b>`,
     '',
-    '<b>Nháº­n xÃ©t</b>',
+    '<b>Nhận xét</b>',
     escapeTelegramHtml(commentLine),
   ];
 
   if (Array.isArray(report.notes) && report.notes.length) {
-    lines.push('', '<b>Ghi chÃº</b>');
+    lines.push('', '<b>Ghi chú</b>');
     report.notes.forEach(note => lines.push(`- ${escapeTelegramHtml(note)}`));
   }
 
@@ -3263,10 +3263,10 @@ function expandTrainingPhrase(phrase, samples) {
   if (!p) return [];
 
   const slotValues = {
-    '%time%': ['hÃ´m nay', 'hÃ´m qua', 'tuáº§n nÃ y', 'thÃ¡ng nÃ y'],
+    '%time%': ['hôm nay', 'hôm qua', 'tuần này', 'tháng này'],
     '%qty%': ['1', '2', '3', '5'],
     '%table%': ['1', '2', '3', '5', '10'],
-    '%item%': samples.items.length ? samples.items : ['tiger báº¡c', 'ken lá»›n'],
+    '%item%': samples.items.length ? samples.items : ['tiger bạc', 'ken lớn'],
   };
 
   let results = [p];
@@ -3318,12 +3318,12 @@ async function ensureOpenOrder(tableId) {
 
   if (existingOrderId) {
     const orderSnap = await db.collection('orders').doc(existingOrderId).get();
-    if (orderSnap.exists) return { orderId: existingOrderId, tableName: table?.name || `BÃ n ${tid}` };
+    if (orderSnap.exists) return { orderId: existingOrderId, tableName: table?.name || `Bàn ${tid}` };
   }
 
   const orderId = `ORD-${tid}-${Date.now()}`;
   const orderRef = db.collection('orders').doc(orderId);
-  const tableName = table?.name || `BÃ n ${tid}`;
+  const tableName = table?.name || `Bàn ${tid}`;
 
   await db.runTransaction(async tx => {
     tx.set(orderRef, {
@@ -3354,7 +3354,7 @@ async function addItemsToOrder(orderId, items) {
   const orderRef = db.collection('orders').doc(orderId);
   await db.runTransaction(async tx => {
     const snap = await tx.get(orderRef);
-    if (!snap.exists) throw new Error('ÄÆ¡n khÃ´ng tá»“n táº¡i: ' + orderId);
+    if (!snap.exists) throw new Error('Đơn không tồn tại: ' + orderId);
     const current = snap.data() || {};
     const list = Array.isArray(current.items) ? current.items.map(i => ({ ...i })) : [];
     items.forEach(it => {
@@ -3383,7 +3383,7 @@ function buildPublicMenuPayload(productId, data = {}) {
     display_name: data.display_name || data.name || '',
     name: data.name || data.display_name || '',
     description: data.description || data.desc || '',
-    category: data.category || 'KhÃ¡c',
+    category: data.category || 'Khác',
     sell_price: Number(data.sell_price ?? data.price ?? 0) || 0,
     image_url: imageUrl,
     imageUrl,
@@ -3429,9 +3429,9 @@ function buildCustomerOrderRequestTelegramMessage(requestId, request = {}) {
         const name = escapeTelegramHtml(item.name || item.menuItemId || 'Mon');
         const qty = escapeTelegramHtml(formatQtyVi(item.quantity || item.qty || 1));
         const note = String(item.notes || item.note || '').trim();
-        return `â€¢ ${name} x${qty}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
+        return `• ${name} x${qty}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
       }).join('\n')
-    : 'â€¢ Khong co chi tiet';
+    : '• Khong co chi tiet';
 
   const notes = String(request.notes || '').trim();
   return [
@@ -3459,11 +3459,11 @@ function buildCustomerServiceRequestTelegramMessage(requestId, payload = {}) {
   ].join('\n');
 }
 
-function formatTelegramBillItems(items = [], { bullet = 'â€¢', includeNotes = true } = {}) {
+function formatTelegramBillItems(items = [], { bullet = '•', includeNotes = true } = {}) {
   const list = Array.isArray(items) ? items : [];
-  if (!list.length) return `${bullet} ChÆ°a cÃ³ chi tiáº¿t mÃ³n`;
+  if (!list.length) return `${bullet} Chưa có chi tiết món`;
   return list.map(item => {
-    const name = String(item?.name || 'MÃ³n').trim();
+    const name = String(item?.name || 'Món').trim();
     const qty = Number(item?.qty || item?.quantity || 0) || 1;
     const price = Number(item?.price || 0) || 0;
     const lineTotal = price * qty;
@@ -3475,7 +3475,7 @@ function formatTelegramBillItems(items = [], { bullet = 'â€¢', includeNotes 
 function mapRequestItemsToBillItems(items = []) {
   return (Array.isArray(items) ? items : []).map(item => ({
     id: String(item.menuItemId || item.id || '').trim(),
-    name: String(item.name || '').trim() || 'MÃ³n',
+    name: String(item.name || '').trim() || 'Món',
     qty: Number(item.quantity || item.qty || 1) || 1,
     price: Number(item.price || 0) || 0,
     note: String(item.notes || item.note || '').trim(),
@@ -3513,7 +3513,7 @@ async function buildPaymentBillContextFromRequest(paymentRequestOrId) {
   const billItems = sourceOrder?.items?.length
     ? (Array.isArray(sourceOrder.items) ? sourceOrder.items : []).map(item => ({
       id: String(item.id || '').trim(),
-      name: String(item.name || '').trim() || 'MÃ³n',
+      name: String(item.name || '').trim() || 'Món',
       qty: Number(item.qty || 1) || 1,
       price: Number(item.price || 0) || 0,
       note: String(item.note || '').trim(),
@@ -3527,7 +3527,7 @@ async function buildPaymentBillContextFromRequest(paymentRequestOrId) {
   const vatAmount = Number(sourceOrder?.vatAmount || 0) || 0;
   const total = Number(sourceOrder?.total || paymentDoc.finalBillTotal || paymentDoc.temporaryTotal || orderRequest?.totalPrice || subtotal + shipping + vatAmount - discount) || 0;
   const tableNumber = String(paymentDoc.tableNumber || orderRequest?.tableNumber || sourceOrder?.tableId || '?').trim();
-  const tableLabel = String(sourceOrder?.tableName || (tableNumber ? `BÃ n ${tableNumber}` : 'BÃ n ?')).trim();
+  const tableLabel = String(sourceOrder?.tableName || (tableNumber ? `Bàn ${tableNumber}` : 'Bàn ?')).trim();
   const billNo = String(sourceOrder?.billNo || sourceOrder?.id || paymentDoc.billNo || `TEMP-${String(paymentDoc.id || inputId || '').slice(-6).toUpperCase() || 'BILL'}`).trim();
 
   return {
@@ -3588,7 +3588,7 @@ async function findOpenPosOrderByTableId(tableId) {
 
   const tableSnap = await db.collection('tables').doc(tid).get().catch(() => null);
   const table = tableSnap?.exists ? (tableSnap.data() || {}) : null;
-  const tableName = String(table?.name || `BÃ n ${tid}`).trim();
+  const tableName = String(table?.name || `Bàn ${tid}`).trim();
   const preferredOrderId = String(table?.orderId || '').trim();
 
   if (preferredOrderId) {
@@ -3614,11 +3614,11 @@ async function findOpenPosOrderByTableId(tableId) {
 
 async function createOrReuseTelegramPaymentRequestByTable(tableNumber, userContext = {}) {
   const tid = String(tableNumber || '').trim();
-  if (!tid) return { ok: false, error: 'Thiáº¿u sá»‘ bÃ n.' };
+  if (!tid) return { ok: false, error: 'Thiếu số bàn.' };
 
   const posOrder = await findOpenPosOrderByTableId(tid);
   if (!posOrder) {
-    return { ok: false, error: `KhÃ´ng tÃ¬m tháº¥y order Ä‘ang má»Ÿ cá»§a BÃ n ${tid}.` };
+    return { ok: false, error: `Không tìm thấy order đang mở của Bàn ${tid}.` };
   }
 
   const currentTotal = Number(posOrder.total || 0) || Number(posOrder.subtotal || 0) || 0;
@@ -3647,7 +3647,7 @@ async function createOrReuseTelegramPaymentRequestByTable(tableNumber, userConte
       reused: true,
       requestId: String(activePaymentDoc.id),
       billNo: String(activePaymentDoc.billNo || posOrder.id || '').trim(),
-      tableLabel: String(posOrder.tableName || `BÃ n ${tid}`).trim(),
+      tableLabel: String(posOrder.tableName || `Bàn ${tid}`).trim(),
     };
   }
 
@@ -3678,7 +3678,7 @@ async function createOrReuseTelegramPaymentRequestByTable(tableNumber, userConte
     created: true,
     requestId: paymentRef.id,
     billNo: String(posOrder.id || '').trim(),
-    tableLabel: String(posOrder.tableName || `BÃ n ${tid}`).trim(),
+    tableLabel: String(posOrder.tableName || `Bàn ${tid}`).trim(),
   };
 }
 
@@ -3966,17 +3966,17 @@ async function confirmCustomerPaymentBillTelegram(requestId) {
     botToken,
     photo: asset.imageUrl,
     caption: [
-      '<b>âœ… BILL XÃC NHáº¬N</b>',
-      `<b>BÃ n:</b> ${escapeTelegramHtml(context.tableLabel)}`,
+      '<b>✅ BILL XÁC NHẬN</b>',
+      `<b>Bàn:</b> ${escapeTelegramHtml(context.tableLabel)}`,
       `<b>Bill:</b> ${escapeTelegramHtml(context.billNo)}`,
-      `<b>Tá»•ng cá»™ng:</b> ${escapeTelegramHtml(formatCurrencyVi(context.total || 0))}`,
+      `<b>Tổng cộng:</b> ${escapeTelegramHtml(formatCurrencyVi(context.total || 0))}`,
       '',
-      '<i>Chá»n hÃ¬nh thá»©c thanh toÃ¡n Ä‘á»ƒ chá»‘t bill.</i>',
+      '<i>Chọn hình thức thanh toán để chốt bill.</i>',
     ].join('\n'),
     buttons: [[
-      { text: 'Tiá»n máº·t', callback_data: `cw_payment_cash_${requestId}` },
-      { text: 'Chuyá»ƒn khoáº£n', callback_data: `cw_payment_bank_${requestId}` },
-      { text: 'Há»§y', callback_data: `cw_payment_cancel_${requestId}` },
+      { text: 'Tiền mặt', callback_data: `cw_payment_cash_${requestId}` },
+      { text: 'Chuyển khoản', callback_data: `cw_payment_bank_${requestId}` },
+      { text: 'Hủy', callback_data: `cw_payment_cancel_${requestId}` },
     ]],
   });
 
@@ -4104,7 +4104,7 @@ async function closePosOrderFromTelegram(requestId, payMethod = 'cash') {
     };
   }
   if (!context.posOrderId || !context.posOrder) {
-    throw new Error('KhÃ´ng tÃ¬m tháº¥y order POS Ä‘á»ƒ chá»‘t bill.');
+    throw new Error('Không tìm thấy order POS để chốt bill.');
   }
 
   const orderRef = db.collection('orders').doc(String(context.posOrderId));
@@ -4257,7 +4257,7 @@ function buildPosItemFromRequest(requestId, index, requestItem = {}, product = {
   const lineItemId = `WEB-${String(requestId)}-${index + 1}`;
   return {
     id: String(requestItem.menuItemId || requestItem.id || '').trim(),
-    name: String(requestItem.name || product.display_name || product.name || 'MÃ³n').trim(),
+    name: String(requestItem.name || product.display_name || product.name || 'Món').trim(),
     price: Number(requestItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
     qty,
     note: String(requestItem.notes || requestItem.note || '').trim(),
@@ -4295,7 +4295,7 @@ function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {
   const lineItemId = `ONL-${String(orderId)}-${index + 1}`;
   return {
     id: String(orderItem.productId || orderItem.menuItemId || orderItem.id || '').trim(),
-    name: String(orderItem.productName || orderItem.name || product.display_name || product.name || 'MÃ³n').trim(),
+    name: String(orderItem.productName || orderItem.name || product.display_name || product.name || 'Món').trim(),
     price: Number(orderItem.unitPrice ?? orderItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
     qty,
     note: String(orderItem.note || orderItem.notes || '').trim(),
@@ -4317,20 +4317,20 @@ function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {
 function buildOnlineOrderTelegramStatusLabel(status) {
   switch (String(status || '').trim().toLowerCase()) {
     case 'approved':
-      return 'ÄÃƒ XÃC NHáº¬N';
+      return 'ĐÃ XÁC NHẬN';
     case 'preparing':
-      return 'ÄANG LÃ€M';
+      return 'ĐANG LÀM';
     case 'ready_to_serve':
       return 'XONG';
     case 'delivering':
-      return 'ÄANG GIAO';
+      return 'ANG GIAO';
     case 'completed':
-      return 'ÄÃƒ GIAO';
+      return 'ĐÃ GIAO';
     case 'cancelled':
     case 'rejected':
-      return 'ÄÃƒ Há»¦Y';
+      return 'ĐÃ HỦY';
     default:
-      return 'CHá»œ XÃC NHáº¬N';
+      return 'CHỜ XÁC NHẬN';
   }
 }
 
@@ -4339,9 +4339,9 @@ function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
   const itemLines = items.length
     ? items.map((item) => {
       const noteText = item.note ? ` (${item.note})` : '';
-      return `- ${item.productName || item.name || 'MÃ³n'} x${Number(item.quantity || item.qty || 0)}${noteText}`;
+      return `- ${item.productName || item.name || 'Món'} x${Number(item.quantity || item.qty || 0)}${noteText}`;
     }).join('\n')
-    : '- KhÃ´ng cÃ³ chi tiáº¿t';
+    : '- Không có chi tiết';
 
   const address = [
     orderData.customer?.addressLine1,
@@ -4351,16 +4351,16 @@ function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
   ].filter(Boolean).join(', ');
 
   return [
-    'ÄÆ N ONLINE Má»šI',
-    `MÃ£ Ä‘Æ¡n: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
-    `KhÃ¡ch: ${String(orderData.customer?.fullName || '--').trim()}`,
+    'ĐƠN ONLINE MỚI',
+    `Mã đơn: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
+    `Khách: ${String(orderData.customer?.fullName || '--').trim()}`,
     `SDT: ${String(orderData.customer?.phone || '--').trim()}`,
-    `Äá»‹a chá»‰: ${address || '--'}`,
-    `Thanh toÃ¡n: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${String(orderData.paymentStatus || 'pending')}`,
-    `Tá»•ng tiá»n: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
-    `Tráº¡ng thÃ¡i: ${buildOnlineOrderTelegramStatusLabel(orderData.status)}`,
+    `Địa chỉ: ${address || '--'}`,
+    `Thanh toán: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${String(orderData.paymentStatus || 'pending')}`,
+    `Tổng tiền: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
+    `Trạng thái: ${buildOnlineOrderTelegramStatusLabel(orderData.status)}`,
     '',
-    'MÃ³n hÃ ng:',
+    'Món hàng:',
     itemLines,
   ].join('\n');
 }
@@ -5030,7 +5030,7 @@ exports.telegramWebhook = onRequest({
             : await rejectOnlineOrderInternal(targetId, actor);
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'Đã cập nhật.' : 'Không cập nhật được.',
             botToken,
           });
 
@@ -5044,8 +5044,8 @@ exports.telegramWebhook = onRequest({
             });
           } else {
             editText = onlineOrderApproveMatch
-              ? `âš ï¸  KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`
-              : `âš ï¸  KhÃ´ng há»§y Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `⚠️ Không xác nhận được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`
+              : `⚠️ Không hủy được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`;
           }
 
           await editTelegramMessage({
@@ -5148,25 +5148,25 @@ exports.telegramWebhook = onRequest({
             result = await closePosOrderFromTelegram(targetId, 'cash');
             notifyText = result.ok
               ? (result.alreadyFinalized
-                ? `âœ… Bill ${result.billNo} Ä‘Ã£ Ä‘Æ°á»£c chá»‘t trÆ°á»›c Ä‘Ã³ cho ${result.tableLabel}.`
-                : `âœ… Ä Ã£ nháº­n thanh toÃ¡n tiá» n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `âš ï¸  KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+                ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
+                : `✅ Ä Ã£ nhận thanh toÃ¡n tiá» n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerPaymentBankMatch) {
             result = await closePosOrderFromTelegram(targetId, 'bank');
             notifyText = result.ok
               ? (result.alreadyFinalized
-                ? `âœ… Bill ${result.billNo} Ä‘Ã£ Ä‘Æ°á»£c chá»‘t trÆ°á»›c Ä‘Ã³ cho ${result.tableLabel}.`
-                : `âœ… Ä Ã£ nháº­n thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `âš ï¸  KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+                ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
+                : `✅ Ä Ã£ nhận thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else {
             result = await cancelCustomerPaymentTelegram(targetId);
             notifyText = result.ok
-              ? `ðŸ›‘ Ä Ã£ há»§y yÃªu cáº§u tÃ­nh tiá» n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng há»§y Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `ðŸ›‘ Đã hủy yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
+              : `⚠️ Không hủy được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           }
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'Đã cập nhật.' : 'Không cập nhật được.',
             botToken,
           });
           await sendTelegramTextMessage({
@@ -5193,38 +5193,38 @@ exports.telegramWebhook = onRequest({
           if (customerOrderApproveMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'approved');
             editText = result.ok
-              ? `âœ… Ä Ã£ duyá»‡t yÃªu cáº§u gá» i mÃ³n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng duyá»‡t Ä‘Æ°á»£c yÃªu cáº§u gá» i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `✅ Đã duyệt yêu cầu gọi món.\nMÃ£: ${targetId}`
+              : `⚠️ Không duyệt được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerOrderRejectMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'rejected');
             editText = result.ok
-              ? `â Œ Ä Ã£ tá»« chá»‘i yÃªu cáº§u gá» i mÃ³n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng tá»« chá»‘i Ä‘Æ°á»£c yÃªu cáº§u gá» i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `❌ Đã từ chối yÃªu cáº§u gọi món.\nMÃ£: ${targetId}`
+              : `⚠️ Không từ chối được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerServiceAckMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `âœ… Ä Ã£ nháº­n yÃªu cáº§u há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `✅ Đã nhận yêu cầu hỗ trợ khÃ¡ch.\nMÃ£: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerServiceDoneMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'resolved');
             editText = result.ok
-              ? `âœ… Ä Ã£ hoÃ n táº¥t há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng Ä‘Ã³ng Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ hoàn tất há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
+              : `⚠️ Không đóng được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerPaymentConfirmMatch) {
             result = await confirmCustomerPaymentBillTelegram(targetId);
             editText = result.ok
-              ? `âœ… Ä Ã£ xÃ¡c nháº­n bill tÃ­nh tiá» n.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
-              : `âš ï¸  KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c bill.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `✅ Đã xác nhận bill tính tiền.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
+              : `⚠️ Không xác nhận được bill.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           } else if (customerPaymentAckMatch) {
             result = await resolveCustomerPaymentRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `âœ… Ä Ã£ nháº­n yÃªu cáº§u tÃ­nh tiá» n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ nhận yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
           }
 
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'Đã cập nhật.' : 'Không cập nhật được.',
             botToken,
           });
           await editTelegramMessage({
@@ -5237,7 +5237,7 @@ exports.telegramWebhook = onRequest({
         }
 
         if (!confirmMatch && !cancelMatch) {
-          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'Lá»‡nh khÃ´ng há»£p lá»‡.', botToken });
+          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'Lệnh không hợp lệ.', botToken });
           return json(res, 200, { ok: true, skipped: 'unknown-callback' });
         }
 
@@ -5245,26 +5245,26 @@ exports.telegramWebhook = onRequest({
         if (confirmMatch) {
           const { executePendingAction } = getAiDeps();
           const result = await executePendingAction(actionDocId, { db });
-          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'Ä Ã£ thá»±c thi.' : 'KhÃ´ng thá»±c thi Ä‘Æ°á»£c.', botToken });
+          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'Đã thực thi.' : 'Không thực thi được.', botToken });
           await editTelegramMessage({
             chatId: callbackChatId,
             messageId: callbackMessageId,
             botToken,
             text: result.ok
-              ? `âœ… Ä Ã£ thá»±c thi.\nMÃ£: ${actionDocId}`
-              : `âš ï¸  KhÃ´ng thá»±c thi Ä‘Æ°á»£c.\n${result.error || 'HÃ nh Ä‘á»™ng khÃ´ng cÃ²n há»£p lá»‡.'}`,
+              ? `✅ Đã thực thi.\nMÃ£: ${actionDocId}`
+              : `⚠️ Không thực thi được.\n${result.error || 'Hành động không còn hợp lệ.'}`,
           });
           return json(res, 200, { ok: true, callback: 'confirm', result });
         }
 
         const { cancelPendingAction } = getAiDeps();
         const result = await cancelPendingAction(actionDocId, { db });
-        await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'Ä Ã£ há»§y.', botToken });
+        await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'Đã hủy.', botToken });
         await editTelegramMessage({
           chatId: callbackChatId,
           messageId: callbackMessageId,
           botToken,
-          text: `â Œ Ä Ã£ há»§y.\nMÃ£: ${actionDocId}`,
+          text: `❌ Đã hủy.\nMÃ£: ${actionDocId}`,
         });
         return json(res, 200, { ok: true, callback: 'cancel', result });
       }
@@ -5310,9 +5310,9 @@ exports.telegramWebhook = onRequest({
           botToken,
           text: result.ok
             ? (result.reused
-              ? `âœ… Ä Ã£ gá»­i láº¡i bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
-              : `âœ… Ä Ã£ táº¡o yÃªu cáº§u tÃ­nh tiá» n cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
-            : `âš ï¸  KhÃ´ng táº¡o Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`,
+              ? `✅ Đã gửi lại bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
+              : `✅ Đã tạo yêu cầu tính tiền cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
+            : `⚠️ Không tạo được yêu cầu tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`,
         });
         return json(res, 200, { ok: result.ok, command: 'telegram-table-payment', result });
       }
@@ -5388,7 +5388,7 @@ exports.telegramWebhook = onRequest({
           ...userContext,
         });
       } else if (message?.voice || message?.audio) {
-        // Æ¯u tiÃªn voice, rá»“i má»›i audio (podcast, file Ã¢m thanh Ä‘Ã­nh kÃ¨m)
+        // Ưu tiên voice, rồi mới audio (podcast, file âm thanh đính kèm)
         const voiceObj = message.voice || message.audio;
         const voiceFileId = String(voiceObj?.file_id || '').trim();
 
@@ -5601,48 +5601,48 @@ exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_ME
       const items = detected.map(it => ({ ...it, qty: qty || 1 }));
 
       if (intent === 'pos_order') {
-        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n gá» i mÃ³n cho bÃ n nÃ o áº¡? VÃ­ dá»¥: "BÃ n 5 gá» i 3 tiger báº¡c"' });
-        if (!items.length) return json(res, 200, { reply: `Dáº¡ em chÆ°a nghe rÃµ tÃªn mÃ³n. Má» i anh chá»‹ nÃ³i láº¡i tÃªn mÃ³n cho bÃ n ${table} áº¡!` });
+        if (!table) return json(res, 200, { reply: 'Bạn muốn gọi món cho bàn nào ạ? Ví dá»¥: "Bàn 5 gọi 3 tiger bạc"' });
+        if (!items.length) return json(res, 200, { reply: `Dạ em chưa nghe rõ tên món. Má» i anh chị nói lại tên món cho bàn ${table} áº¡!` });
 
         const { orderId } = await ensureOpenOrder(table);
         await addItemsToOrder(orderId, items.map(it => ({ id: it.id, name: it.name, price: it.price, qty: it.qty, note: '' })));
         const names = items.map(x => `${x.qty} ${x.name}`).join(', ');
-        return json(res, 200, { reply: `Dáº¡ em Ä‘Ã£ lÃªn ${names} cho bÃ n ${table} rá»“i áº¡!`, intent, score });
+        return json(res, 200, { reply: `Dạ em đã lên ${names} cho bàn ${table} rồi ạ!`, intent, score });
       }
 
       if (intent === 'pos_checkout') {
-        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n tÃ­nh tiá» n bÃ n nÃ o áº¡? VÃ­ dá»¥: "TÃ­nh tiá» n bÃ n 5"' });
-        return json(res, 200, { reply: `Dáº¡ em Ä‘Ã£ nháº­n lá»‡nh tÃ­nh tiá» n bÃ n ${table}.`, intent, score });
+        if (!table) return json(res, 200, { reply: 'Bạn muốn tính tiền bàn nào ạ? Ví dá»¥: "TÃ­nh tiá» n bàn 5"' });
+        return json(res, 200, { reply: `Dạ em đã nhận lệnh tính tiền bàn ${table}.`, intent, score });
       }
 
       if (intent === 'query_inventory') {
-        if (!items.length) return json(res, 200, { reply: 'Báº¡n muá»‘n kiá»ƒm tra tá»“n kho mÃ³n/nguyÃªn liá»‡u nÃ o áº¡?' });
+        if (!items.length) return json(res, 200, { reply: 'Bạn muốn kiểm tra tồn kho món/nguyên liệu nào ạ?' });
         const invSnap = await db.collection('inventory').get();
         const inv = invSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const key = normalizeVi(items[0].name);
         const hit = inv.find(i => normalizeVi(i.name) === key) || inv.find(i => normalizeVi(i.name).includes(key) || key.includes(normalizeVi(i.name)));
-        if (!hit) return json(res, 200, { reply: `KhÃ´ng tÃ¬m tháº¥y "${items[0].name}" trong kho.`, intent, score });
-        return json(res, 200, { reply: `Tá»“n kho ${hit.name}: ${Number(hit.qty) || 0} ${hit.unit || ''}`.trim(), intent, score });
+        if (!hit) return json(res, 200, { reply: `Không tìm thấy "${items[0].name}" trong kho.`, intent, score });
+        return json(res, 200, { reply: `Tồn kho ${hit.name}: ${Number(hit.qty) || 0} ${hit.unit || ''}`.trim(), intent, score });
       }
 
       if (intent === 'query_sales') {
         const { revenue, orders } = await queryHistoryRevenue(timeRange);
-        const label = time?.label || 'hÃ´m nay';
-        return json(res, 200, { reply: `Doanh thu ${label}: ${revenue.toLocaleString('vi-VN')}Ä‘ (${orders} Ä‘Æ¡n).`, intent, score });
+        const label = time?.label || 'hôm nay';
+        return json(res, 200, { reply: `Doanh thu ${label}: ${revenue.toLocaleString('vi-VN')}đ (${orders} đơn).`, intent, score });
       }
 
       if (intent === 'query_import') {
-        const label = time?.label || 'hÃ´m nay';
+        const label = time?.label || 'hôm nay';
         const focus = items[0]?.name || null;
         const s = await queryPurchases(timeRange, focus);
         const itemLabel = focus ? ` ${focus}` : '';
-        return json(res, 200, { reply: `Nháº­p hÃ ng${itemLabel} ${label}: ${s.total.toLocaleString('vi-VN')}Ä‘ (${s.count} láº§n).`, intent, score });
+        return json(res, 200, { reply: `Nhập hàng${itemLabel} ${label}: ${s.total.toLocaleString('vi-VN')}đ (${s.count} lần).`, intent, score });
       }
 
-      return json(res, 200, { reply: 'Em chÆ°a hiá»ƒu lá»‡nh nÃ y. Anh chá»‹ nÃ³i rÃµ hÆ¡n giÃºp em nhÃ©.', intent, score });
+      return json(res, 200, { reply: 'Em chưa hiểu lệnh này. Anh chị nói rõ hơn giúp em nhé.', intent, score });
     } catch (err) {
       logger.error('apiVoice error', err);
-      return json(res, 200, { reply: 'CÃ³ lá»—i khi xá»­ lÃ½ lá»‡nh. Vui lÃ²ng thá»­ láº¡i.' });
+      return json(res, 200, { reply: 'Có lỗi khi xử lý lệnh. Vui lòng thử lại.' });
     }
   });
 });
@@ -5692,7 +5692,7 @@ exports.onOrderRequestCreated = onDocumentCreated(
       requestId,
       tableNumber: request.tableNumber,
       status: request.status || 'pending_approval',
-      message: `YÃªu cáº§u gá» i mÃ³n má»›i tá»« bÃ n ${request.tableNumber || '?'}`,
+      message: `Yêu cầu gọi món mới từ bàn ${request.tableNumber || '?'}`,
     }));
 
     try {
@@ -5746,7 +5746,7 @@ exports.onOrderRequestApproved = onDocumentUpdated(
       requestId,
       tableNumber: after.tableNumber,
       status: 'approved',
-      message: `Ä Ã£ duyá»‡t yÃªu cáº§u gá» i mÃ³n bÃ n ${after.tableNumber || '?'}`,
+      message: `Đã duyệt yêu cầu gọi món bàn ${after.tableNumber || '?'}`,
     }));
   }
 );
@@ -5843,7 +5843,7 @@ exports.onPaymentRequestCreated = onDocumentCreated(
       requestId: payload.orderRequestId || payload.orderId || null,
       tableNumber: payload.tableNumber,
       status: payload.status || 'requested',
-      message: `KhÃ¡ch gá» i tÃ­nh tiá» n táº¡i bÃ n ${payload.tableNumber || '?'}`,
+      message: `Khách gọi tính tiền tại bàn ${payload.tableNumber || '?'}`,
     }));
 
     const orderRequestId = String(payload.orderRequestId || payload.orderId || '').trim();
@@ -5881,7 +5881,7 @@ exports.onServiceRequestCreated = onDocumentCreated(
       serviceRequestId: requestId,
       tableNumber: payload.tableNumber,
       status: payload.status || 'pending',
-      message: payload.message || `KhÃ¡ch gá» i nhÃ¢n viÃªn táº¡i bÃ n ${payload.tableNumber || '?'}`,
+      message: payload.message || `Khách gọi nhÃ¢n viÃªn tại bàn ${payload.tableNumber || '?'}`,
     }));
 
     try {
@@ -6315,7 +6315,7 @@ exports.adminProbeVertex = onRequest({
       const authStrategy = ['adc_only', 'secret_only', 'secret_first', 'adc_first'].includes(rawAuthStrategy)
         ? rawAuthStrategy
         : 'adc_first';
-      const prompt = String(requestBody.prompt || query.prompt || 'Tráº£ vá»  Ä‘Ãºng 1 dÃ²ng xÃ¡c nháº­n ráº±ng Vertex Gemini Ä‘ang hoáº¡t Ä‘á»™ng.').trim();
+      const prompt = String(requestBody.prompt || query.prompt || 'Trả về đúng 1 dòng xÃ¡c nhận ráº±ng Vertex Gemini Ä‘ang hoáº¡t Ä‘á»™ng.').trim();
 
       const authContexts = await getVertexAuthContexts({
         secretJson: vertexConfig.secretJson,
@@ -6404,13 +6404,13 @@ async function loadStorePaymentSettings() {
   const snap = await db.collection('config').doc('settings').get().catch(() => null);
   const data = snap?.exists ? (snap.data() || {}) : {};
   return {
-    storeName: String(data.storeName || 'XE KHO CHá»®A LÃ€NH').trim(),
+    storeName: String(data.storeName || 'XE KHO CHỮA LÀNH').trim(),
     storeSlogan: String(data.storeSlogan || '').trim(),
     storePhone: String(data.storePhone || '').trim(),
     storeAddress: String(data.storeAddress || '').trim(),
     bankName: String(data.bankName || 'Vietinbank').trim(),
     bankAccount: String(data.bankAccount || '').trim(),
-    bankOwner: String(data.bankOwner || 'XE KHO CHá»®A LÃ€NH').trim(),
+    bankOwner: String(data.bankOwner || 'XE KHO CHỮA LÀNH').trim(),
   };
 }
 
@@ -6436,7 +6436,7 @@ async function buildPaymentBillImageAsset(context) {
   const settings = await loadStorePaymentSettings();
   const bank = settings.bankAccount || '0000000000';
   const bankBin = settings.bankName === 'Vietinbank' ? '970415' : '970415';
-  const desc = `Thanh toÃ¡n ${context.tableLabel} - ${context.billNo}`;
+  const desc = `Thanh toán ${context.tableLabel} - ${context.billNo}`;
   const qrUrl = `https://img.vietqr.io/image/${bankBin}-${encodeURIComponent(bank)}-compact2.png?amount=${encodeURIComponent(context.total)}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(settings.bankOwner || settings.storeName)}`;
 
   let qrBase64 = '';
@@ -6454,7 +6454,7 @@ async function buildPaymentBillImageAsset(context) {
   const fontFamily = `'DejaVu Sans','Noto Sans','Arial Unicode MS',Arial,sans-serif`;
   const itemRows = [];
   (context.billItems || []).forEach(item => {
-    const lines = wrapSvgText(item.name || 'MÃ³n', 26);
+    const lines = wrapSvgText(item.name || 'Món', 26);
     lines.forEach((line, index) => {
       itemRows.push({
         type: index === 0 ? 'item' : 'sub',
@@ -6464,7 +6464,7 @@ async function buildPaymentBillImageAsset(context) {
       });
     });
     if (item.note) {
-      wrapSvgText(`Ghi chÃº: ${item.note}`, 32).forEach(line => itemRows.push({
+      wrapSvgText(`Ghi chú: ${item.note}`, 32).forEach(line => itemRows.push({
         type: 'note',
         name: line,
         qty: '',
@@ -6480,9 +6480,9 @@ async function buildPaymentBillImageAsset(context) {
   const itemsHeight = Math.max(180, itemRowsHeight + 12);
   const summaryStartY = itemStartY + itemsHeight + 34;
   const summaryLines = [
-    { label: 'Tiá» n hÃ ng', value: formatCurrencyVi(context.subtotal || 0) },
-    ...(context.discount ? [{ label: 'Giáº£m giÃ¡', value: `-${formatCurrencyVi(context.discount || 0)}` }] : []),
-    ...(context.shipping ? [{ label: 'Phá»¥ thu', value: formatCurrencyVi(context.shipping || 0) }] : []),
+    { label: 'Tiền hàng', value: formatCurrencyVi(context.subtotal || 0) },
+    ...(context.discount ? [{ label: 'Giảm giá', value: `-${formatCurrencyVi(context.discount || 0)}` }] : []),
+    ...(context.shipping ? [{ label: 'Phụ thu', value: formatCurrencyVi(context.shipping || 0) }] : []),
     ...(context.vatAmount ? [{ label: 'VAT', value: formatCurrencyVi(context.vatAmount || 0) }] : []),
   ];
   const summaryHeight = (summaryLines.length * 34) + 86;
@@ -6511,7 +6511,7 @@ async function buildPaymentBillImageAsset(context) {
     `;
   }).join('\n');
 
-  const notePreview = context.note ? wrapSvgText(`Ghi chÃº: ${context.note}`, 60)[0] : '';
+  const notePreview = context.note ? wrapSvgText(`Ghi chú: ${context.note}`, 60)[0] : '';
   const qrImageMarkup = qrBase64
     ? `<image x="340" y="${qrBlockTop + 70}" width="220" height="220" href="data:image/png;base64,${qrBase64}" />`
     : '';
@@ -6530,10 +6530,10 @@ async function buildPaymentBillImageAsset(context) {
     <text x="56" y="266" font-size="24" font-weight="700" fill="#111111" font-family="${fontFamily}">${escapeXml(context.billNo)}</text>
     <text x="56" y="296" font-size="18" fill="#555555" font-family="${fontFamily}">Thá» i gian: ${escapeXml(formatTelegramDateTimeVi(new Date()))}</text>
     ${notePreview ? `<text x="56" y="320" font-size="17" fill="#666666" font-family="${fontFamily}">${escapeXml(notePreview)}</text>` : ''}
-    <text x="844" y="238" text-anchor="end" font-size="18" fill="#666666" font-family="${fontFamily}">BÃ n</text>
+    <text x="844" y="238" text-anchor="end" font-size="18" fill="#666666" font-family="${fontFamily}">Bàn</text>
     <text x="844" y="272" text-anchor="end" font-size="26" font-weight="700" fill="#111111" font-family="${fontFamily}">${escapeXml(context.tableLabel)}</text>
 
-    <text x="44" y="352" font-size="24" font-weight="700" fill="#111111" font-family="${fontFamily}">Chi tiáº¿t mÃ³n</text>
+    <text x="44" y="352" font-size="24" font-weight="700" fill="#111111" font-family="${fontFamily}">Chi tiáº¿t món</text>
     <line x1="36" x2="864" y1="366" y2="366" stroke="#efe2bc" stroke-width="1" />
     ${rowMarkup}
 
@@ -6793,12 +6793,12 @@ function buildAiRouterPendingResponse(toolResult = {}, originalText = '') {
       });
     }
     const count = Array.isArray(payload.items) ? payload.items.length : 0;
-    preview = `LÃªn order ${payload.ban ? `bÃ n ${payload.ban}` : ''}: ${count} mÃ³n`;
+    preview = `Lên order ${payload.ban ? `bàn ${payload.ban}` : ''}: ${count} món`;
   }
   return {
     ok: true,
     status: 'pending_confirmation',
-    message: String(preview ? `Cáº§n xÃ¡c nháº­n trÆ°á»›c khi thá»±c hiá»‡n: ${preview}` : (toolResult.message || 'Cáº§n xÃ¡c nháº­n trÆ°á»›c khi thá»±c hiá»‡n thao tÃ¡c nÃ y.')),
+    message: String(preview ? `Cần xác nhận trước khi thực hiện: ${preview}` : (toolResult.message || 'Cần xác nhận trước khi thực hiện thao tác này.')),
     action_type: mapToolActionType(actionType),
     tool: actionType,
     payload,
@@ -6818,7 +6818,7 @@ function pickProvider() {
 async function callGemini(userText) {
   const vertexConfig = getVertexRuntimeConfig();
   const system = [
-    'BÃ¡ÂºÂ¡n lÃƒÂ  NLU cho POS quÃƒÂ¡n Ã„Æ’n. HÃƒÂ£y trÃ¡ÂºÂ£ vÃ¡Â»Â  1 JSON duy nhÃ¡ÂºÂ¥t KHÃƒâ€ NG kÃƒÂ¨m giÃ¡ÂºÂ£i thÃƒÂ­ch.',
+    'Bạn là NLU cho POS quán ăn. Hãy trả về 1 JSON duy nhất KHÔNG kèm giải thích.',
     'Schema:',
     '{ "intent":"query_import|query_sales|query_inventory|pos_order|pos_checkout|unknown", "time_scope":"today|yesterday|this_week|this_month|this_year|null", "table_id":"<so ban>|null", "line_items":[{"name":"<ten mon>", "qty":1}], "reply":"<cau tra loi>" }',
   ].join('\n');
@@ -6830,7 +6830,7 @@ async function callGemini(userText) {
     modelNames: buildVertexTextModels(vertexConfig.textModel),
     contents: [{
       role: 'user',
-      parts: [{ text: `${system}\n\nCÃƒÂ¢u lÃ¡Â»â€¡nh: ${String(userText || '').trim()}` }],
+      parts: [{ text: `${system}\n\nCâu lệnh: ${String(userText || '').trim()}` }],
     }],
     generationConfig: {
       temperature: 0.2,
@@ -6862,7 +6862,7 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
     previewOnly: options.previewOnly === true,
   });
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Â i phÃƒÂ¹ hÃ¡Â»Â£p.',
+    text: String(result?.text || '').trim() || 'Dạ em chưa có câu trả lời phù hợp.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6870,9 +6870,9 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
 
 async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId, userId, username }) {
   const prompt = [
-    'Ã„Â ÃƒÂ¢y lÃƒÂ  hÃƒÂ³a Ã„â€˜Ã†Â¡n nhÃ¡ÂºÂ­p hÃƒÂ ng. HÃƒÂ£y trÃƒÂ­ch xuÃ¡ÂºÂ¥t tÃƒÂªn mÃƒÂ³n, sÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng, Ã„â€˜Ã†Â¡n giÃƒÂ¡, tÃ¡Â»Â•ng tiÃ¡Â»Â n vÃƒÂ  gÃ¡Â»Â i Tool nhap_hang_thu_cong.',
-    'NÃ¡ÂºÂ¿u thiÃ¡ÂºÂ¿u Ã„â€˜Ã†Â¡n giÃƒÂ¡ hoÃ¡ÂºÂ·c tÃ¡Â»Â•ng tiÃ¡Â»Â n thÃƒÂ¬ vÃ¡ÂºÂ«n gÃ¡Â»Â i tool vÃ¡Â»â€ºi dÃ¡Â»Â¯ liÃ¡Â»â€¡u Ã„â€˜Ã¡Â»Â c Ã„â€˜Ã†Â°Ã¡Â»Â c.',
-    caption ? `Ghi chÃƒÂº tÃ¡Â»Â« ngÃ†Â°Ã¡Â»Â i gÃ¡Â»Â­i: ${caption}` : '',
+    'Đây là hóa đơn nhập hàng. Hãy trích xuất tên món, số lượng, đơn giá, tổng tiền và gọi Tool nhap_hang_thu_cong.',
+    'Nếu thiếu đơn giá hoặc tổng tiền thì vẫn gọi tool với dữ liệu đọc được.',
+    caption ? `Ghi chú từ người gửi: ${caption}` : '',
   ].filter(Boolean).join('\n');
 
   const result = await runVertexToolLoop({
@@ -6880,7 +6880,7 @@ async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId
       { text: prompt },
       { inlineData: { data: String(imageBase64 || '').trim(), mimeType: mimeType || 'image/jpeg' } },
     ],
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p kho cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. ChÃ¡Â»â€° tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng, khÃƒÂ´ng tÃ¡Â»Â± xÃƒÂ¡c nhÃ¡ÂºÂ­n.',
+    systemInstruction: 'Bạn là trợ lý nhập kho của quán Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. ChÃ¡Â»â€° tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng, khÃƒÂ´ng tÃ¡Â»Â± xÃƒÂ¡c nhÃ¡ÂºÂ­n.',
     source: 'telegram_photo',
     chatId,
     userId,
@@ -6888,7 +6888,7 @@ async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId
   });
 
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em Ã„â€˜ÃƒÂ£ Ã„â€˜Ã¡Â»Â c hÃƒÂ³a Ã„â€˜Ã†Â¡n vÃƒÂ  tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng.',
+    text: String(result?.text || '').trim() || 'Dạ em đã đọc hƒÂ³a Ã„â€˜Ã†Â¡n vÃƒÂ  tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6914,9 +6914,9 @@ async function askGeminiWithVoice({ voiceFileId, mimeType, botToken, chatId, use
   const result = await runVertexToolLoop({
     userParts: [
       { inlineData: { data: base64Data, mimeType: 'audio/mp3' } },
-      { text: 'HÃƒÂ£y nghe Ã„â€˜oÃ¡ÂºÂ¡n ghi ÃƒÂ¢m nÃƒÂ y, phÃƒÂ¢n tÃƒÂ­ch ÃƒÂ½ Ã„â€˜Ã¡Â»â€¹nh cÃ¡Â»Â§a ngÃ†Â°Ã¡Â»Â i dÃƒÂ¹ng vÃƒÂ  gÃ¡Â»Â i cÃƒÂ¡c tools tÃ†Â°Ã†Â¡ng Ã¡Â»Â©ng nÃ¡ÂºÂ¿u cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t. TrÃ¡ÂºÂ£ lÃ¡Â»Â i bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.' },
+      { text: 'Hãy nghe đoạn ghi âm này, phân tích ý đ¡Â»â€¹nh cÃ¡Â»Â§a ngÃ†Â°Ã¡Â»Â i dÃƒÂ¹ng vÃƒÂ  gÃ¡Â»Â i cÃƒÂ¡c tools tÃ†Â°Ã†Â¡ng Ã¡Â»Â©ng nÃ¡ÂºÂ¿u cần thiÃ¡ÂºÂ¿t. TrÃ¡ÂºÂ£ lÃ¡Â»Â i bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.' },
     ],
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI thÃƒÂ´ng minh cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. NhiÃ¡Â»â€¡m vÃ¡Â»Â¥ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n lÃƒÂ  hÃ¡Â»â€” trÃ¡Â»Â£ quÃ¡ÂºÂ£n lÃƒÂ½ trÃ¡ÂºÂ£ lÃ¡Â»Â i cÃƒÂ¡c cÃƒÂ¢u hÃ¡Â»Â i vÃ¡Â»Â  doanh thu, tÃ¡Â»â€œn kho, lÃ¡Â»â€¹ch sÃ¡Â»Â­ nhÃ¡ÂºÂ­p hÃƒÂ ng. TrÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n, sÃƒÂºc tÃƒÂ­ch, thÃƒÂ¢n thiÃ¡Â»â€¡n. SÃ¡Â»Â­ dÃ¡Â»Â¥ng tools khi cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t.',
+    systemInstruction: 'Bạn là trợ lý AI thông minh của quán Xe Khô Chữa Lành. NhiệÂ»â€¡m vÃ¡Â»Â¥ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n lÃƒÂ  hÃ¡Â»â€” trÃ¡Â»Â£ quÃ¡ÂºÂ£n lÃƒÂ½ trÃ¡ÂºÂ£ lÃ¡Â»Â i cÃƒÂ¡c cÃƒÂ¢u hÃ¡Â»Â i vÃ¡Â»Â  doanh thu, tÃ¡Â»â€œn kho, lÃ¡Â»â€¹ch sÃ¡Â»Â­ nhÃ¡ÂºÂ­p hÃƒÂ ng. TrÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n, sÃƒÂºc tÃƒÂ­ch, thÃƒÂ¢n thiÃ¡Â»â€¡n. SÃ¡Â»Â­ dÃ¡Â»Â¥ng tools khi cần thiÃ¡ÂºÂ¿t.',
     source: 'telegram_voice',
     chatId,
     userId,
@@ -6924,7 +6924,7 @@ async function askGeminiWithVoice({ voiceFileId, mimeType, botToken, chatId, use
   });
 
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Â i phÃƒÂ¹ hÃ¡Â»Â£p.',
+    text: String(result?.text || '').trim() || 'Dạ em chưa có câu trả lời phù hợp.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6937,8 +6937,8 @@ function resolveIntentFromToolResults(toolResults = []) {
 
 async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } = {}) {
   const prompt = String(text || '').trim()
-    || (imageBase64 ? 'HÃƒÂ£y phÃƒÂ¢n tÃƒÂ­ch nÃ¡Â»â„¢i dung Ã¡ÂºÂ£nh nÃƒÂ y vÃƒÂ  dÃƒÂ¹ng tool phÃƒÂ¹ hÃ¡Â»Â£p nÃ¡ÂºÂ¿u cÃ¡ÂºÂ§n.' : '')
-    || (audioBase64 ? 'HÃƒÂ£y phÃƒÂ¢n tÃƒÂ­ch nÃ¡Â»â„¢i dung ÃƒÂ¢m thanh nÃƒÂ y vÃƒÂ  dÃƒÂ¹ng tool phÃƒÂ¹ hÃ¡Â»Â£p nÃ¡ÂºÂ¿u cÃ¡ÂºÂ§n.' : '');
+    || (imageBase64 ? 'Hãy phân tích nội dung ảnh này và dùng tool phù hợp nếu cần.' : '')
+    || (audioBase64 ? 'Hãy phân tích nội dung âm thanh này và dùng tool phù hợp nếu cần.' : '');
   if (!prompt && !imageBase64 && !audioBase64) throw new Error('No input provided');
 
   const userParts = [];
@@ -6948,7 +6948,7 @@ async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } =
 
   const result = await runVertexToolLoop({
     userParts,
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI cho POS quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. Khi cÃ¡ÂºÂ§n thao tÃƒÂ¡c, hÃƒÂ£y gÃ¡Â»Â i tool phÃƒÂ¹ hÃ¡Â»Â£p. Khi chÃ¡Â»â€° cÃ¡ÂºÂ§n trÃ¡ÂºÂ£ lÃ¡Â»Â i, hÃƒÂ£y trÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.',
+    systemInstruction: 'Bạn là trợ lý AI cho POS quán Xe Khô Chữa Lành. Khi cần thao tÃƒÂ¡c, hÃƒÂ£y gÃ¡Â»Â i tool phÃƒÂ¹ hÃ¡Â»Â£p. Khi chÃ¡Â»â€° cần trÃ¡ÂºÂ£ lÃ¡Â»Â i, hÃƒÂ£y trÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.',
     source: 'pos_app',
     noPersist: true,
     previewOnly: false,
@@ -6956,7 +6956,7 @@ async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } =
 
   const routedIntent = resolveIntentFromToolResults(result?.toolResults || []) || 'unknown';
   return {
-    reply: String(result?.text || '').trim() || 'AI chÃ†Â°a trÃ¡ÂºÂ£ vÃ¡Â»Â  nÃ¡Â»â„¢i dung.',
+    reply: String(result?.text || '').trim() || 'AI chưa trả về nộ¢i dung.',
     intent: routedIntent,
     engine: 'vertex-server',
     pending: Array.isArray(result?.toolResults) ? result.toolResults.find(item => item?.pending) || null : null,
@@ -6966,14 +6966,14 @@ async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } =
 
 async function runVertexPurchaseOcr({ dataUrl = '' } = {}) {
   const base64Data = stripDataUrlBase64(dataUrl);
-  if (!base64Data) throw new Error('Thiáº¿u áº£nh OCR.');
+  if (!base64Data) throw new Error('Thiếu ảnh OCR.');
   const vertexConfig = getVertexRuntimeConfig();
   const prompt = [
-    'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p hÃƒÂ ng cho quÃƒÂ¡n Ã„Æ’n XE KHÃƒâ€  CHÃ¡Â»Â®A LÃƒâ‚¬NH.',
-    'HÃƒÂ£y Ã„â€˜Ã¡Â»Â c Ã¡ÂºÂ£nh hÃƒÂ³a Ã„â€˜Ã†Â¡n / phiÃ¡ÂºÂ¿u nhÃ¡ÂºÂ­p nguyÃƒÂªn liÃ¡Â»â€¡u vÃƒÂ  trÃ¡ÂºÂ£ vÃ¡Â»Â  Ã„â€˜ÃƒÂºng 1 JSON.',
+    'Bạn là trợ lý nhập hàng cho quán ăn XE KHÔ CHỮA LÀNH.',
+    'Hãy đọc ảnh hóa đơn / phiếu nhập nguyên liÃ¡Â»â€¡u vÃƒÂ  trÃ¡ÂºÂ£ vÃ¡Â»Â  Ã„â€˜ÃƒÂºng 1 JSON.',
     'Schema:',
-    '{"name":"<tÃƒÂªn hoÃ¡ÂºÂ·c rÃ¡Â»â€”ng nÃƒÂªu chÃ†Â°a chÃ¡ÂºÂ¯c>","qty":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"price":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"rawText":"<toÃƒÂ n bÃ¡Â»â„¢ nÃ¡Â»â„¢i dung Ã„â€˜Ã¡Â»Â c Ã„â€˜Ã†Â°Ã¡Â»Â c>"}',
-    'NÃ¡ÂºÂ¿u khÃƒÂ´ng rÃƒÂµ trÃ¡Â»Â ng nÃƒÂ o thÃƒÂ¬ Ã„â€˜Ã¡Â»Æ’ null hoÃ¡ÂºÂ·c chuÃ¡Â»â€”i rÃ¡Â»â€”ng. KhÃƒÂ´ng dÃƒÂ¹ng markdown.',
+    '{"name":"<tên hoặc rỗng nếu chưa chắc>","qty":<số˜ hoÃ¡ÂºÂ·c null>,"price":<số˜ hoÃ¡ÂºÂ·c null>,"rawText":"<toÃƒÂ n bÃ¡Â»â„¢ nÃ¡Â»â„¢i dung Ã„â€˜Ã¡Â»Â c Ã„â€˜Ã†Â°Ã¡Â»Â c>"}',
+    'Nếu không rõ trường nào thì để null hoặc chuỗi rỗâ€”ng. KhÃƒÂ´ng dÃƒÂ¹ng markdown.',
   ].join('\n');
 
   const { payload } = await generateVertexText({
@@ -6997,7 +6997,7 @@ async function runVertexPurchaseOcr({ dataUrl = '' } = {}) {
 
   const text = collectTextFromPayload(payload);
   const parsed = extractFirstJson(text);
-  if (!parsed) throw new Error('Vertex OCR khÃ´ng tráº£ vá»  JSON há»£p lá»‡.');
+  if (!parsed) throw new Error('Vertex OCR không trả về JSON hợp lệ.');
   return parsed;
 }
 
