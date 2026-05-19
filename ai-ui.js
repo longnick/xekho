@@ -13,161 +13,21 @@ let aiChatHistoryLoaded = false;
 
 function repairVietnameseMojibake(input) {
   let str = String(input ?? '');
-  if (!str) return str;
-  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ', 'áº', 'á»'];
-  const hasControlChars = /[\u0080-\u009f]/.test(str);
-  const suspect = hasControlChars || badTokens.some(t => str.includes(t));
-  if (!suspect) return str;
-  try {
-    str = decodeURIComponent(escape(str));
-  } catch (_) {}
+  if (!str.includes('\uFFFD')) return str;
   try {
     const bytes = Uint8Array.from(str, ch => ch.charCodeAt(0) & 0xFF);
     const fixed = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    str = fixed || str;
+    if (fixed && !fixed.includes('\uFFFD')) return fixed;
   } catch (_) {}
-  str = str.replace(/[\u0080-\u009f]/g, '');
-
-  // Heuristic fixes for common broken fragments in chat replies.
-  const dictionary = [
-    [/hôm/gi, 'hôm'],
-    [/hôm nay/gi, 'hôm nay'],
-    [/hôm qua/gi, 'hôm qua'],
-    [/với/gi, 'với'],
-    [/giảm/gi, 'giảm'],
-    [/doanh thu/gi, 'doanh thu'],
-    [/đ\s*ồng/gi, 'đồng'],
-    [/\((\d+)\s*đơn\)/gi, '($1 đơn)'],
-    [/không/gi, 'không'],
-    [/dữ liệu/gi, 'dữ liệu'],
-  ];
-  dictionary.forEach(([re, val]) => { str = str.replace(re, val); });
   return str;
 }
 
 function repairVietnameseMojibakeV2(input) {
-  let str = repairVietnameseMojibake(input);
-  if (!str) return str;
-  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
-  if (!suspect) return str;
-
-  const decodeUtf8Bytes = (value) => {
-    try {
-      const bytes = Uint8Array.from(String(value || ''), ch => ch.charCodeAt(0) & 0xFF);
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch (_) {
-      return String(value || '');
-    }
-  };
-
-  const candidates = [str];
-  let iterative = str;
-  for (let i = 0; i < 3; i += 1) {
-    const next = decodeUtf8Bytes(iterative);
-    if (!next || next === iterative) break;
-    candidates.push(next);
-    iterative = next;
-  }
-
-  const score = (value) => {
-    const text = String(value || '');
-    const bad = (text.match(/[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/g) || []).length;
-    const good = (text.match(/[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/gi) || []).length;
-    return (bad * 3) - good;
-  };
-
-  str = candidates.sort((a, b) => score(a) - score(b))[0] || str;
-  str = str.replace(/[\u0080-\u009f]/g, '').replace(/�/g, '');
-
-  const dictionary = [
-    ['hÃ´m nay', 'hôm nay'],
-    ['hÃ´m qua', 'hôm qua'],
-    ['tuáº§n nÃ y', 'tuần này'],
-    ['thÃ¡ng nÃ y', 'tháng này'],
-    ['bÃ¡n Ä‘Æ°á»£c', 'bán được'],
-    ['Ä‘Æ¡n vá»‹', 'đơn vị'],
-    ['lÃ£i gÃ´p', 'lãi gộp'],
-    ['nháº­p', 'nhập'],
-    ['Táº¡m tÃ­nh', 'Tạm tính'],
-    ['hiá»‡n táº¡i', 'hiện tại'],
-    ['Ä‘Ã£', 'đã'],
-    ['chÆ°a', 'chưa'],
-    ['khÃ´ng', 'không'],
-    ['bÃ n', 'bàn'],
-    ['máº·t hÃ ng', 'mặt hàng'],
-  ];
-  dictionary.forEach(([bad, good]) => {
-    str = str.split(bad).join(good);
-  });
-
-  return str.trim();
+  return repairVietnameseMojibake(input).trim();
 }
 
 function repairVietnameseMojibakeV3(input) {
-  let str = String(input ?? '');
-  if (!str) return str;
-  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
-  if (!suspect) return str;
-
-  const hasGoodVietnamese = /[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/i.test(str);
-  if (!hasGoodVietnamese) {
-    try {
-      const bytes = Uint8Array.from(String(str || ''), ch => ch.charCodeAt(0) & 0xFF);
-      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      if (decoded && !/[\u0000-\u001f]/.test(decoded)) str = decoded;
-    } catch (_) {}
-  }
-
-  str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
-
-  const dictionary = [
-    ['bÃ¡n', 'bán'],
-    ['Ä‘Æ°á»£c', 'được'],
-    ['Ä‘Æ¡n', 'đơn'],
-    ['vá»‹', 'vị'],
-    ['lÃ£i', 'lãi'],
-    ['gÃ´p', 'gộp'],
-    ['nháº­p', 'nhập'],
-    ['tá»•ng', 'tổng'],
-    ['chá»‘t', 'chốt'],
-    ['hiá»‡n', 'hiện'],
-    ['máº·t hÃ ng', 'mặt hàng'],
-    ['mÃ³n', 'món'],
-    ['nhiá»u nháº¥t', 'nhiều nhất'],
-    ['hÃ´m nay', 'hôm nay'],
-    ['hÃ´m qua', 'hôm qua'],
-    ['tuáº§n nÃ y', 'tuần này'],
-    ['thÃ¡ng nÃ y', 'tháng này'],
-    ['Táº¡m tÃ­nh', 'Tạm tính'],
-    ['hiá»‡n táº¡i', 'hiện tại'],
-    ['chÆ°a', 'chưa'],
-    ['khÃ´ng', 'không'],
-    ['bÃ n', 'bàn'],
-    ['Ä‘Ã£', 'đã'],
-    ['Ä‘á»ƒ', 'để'],
-    ['Ä‘', 'đ'],
-    ['Ã¡', 'á'],
-    ['Ã ', 'à'],
-    ['Ã£', 'ã'],
-    ['Ã¢', 'â'],
-    ['Ãª', 'ê'],
-    ['Ã´', 'ô'],
-    ['Æ°', 'ư'],
-    ['Æ¡', 'ơ'],
-    ['Ã¹', 'ù'],
-    ['Ãº', 'ú'],
-    ['Ã²', 'ò'],
-    ['Ã³', 'ó'],
-    ['Ã¨', 'è'],
-    ['Ã©', 'é'],
-    ['Ã¬', 'ì'],
-    ['Ã­', 'í'],
-  ];
-  dictionary.forEach(([bad, good]) => {
-    str = str.split(bad).join(good);
-  });
-
-  return str.trim();
+  return repairVietnameseMojibake(input).trim();
 }
 
 function toggleAIEngineLegacy() {
