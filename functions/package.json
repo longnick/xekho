@@ -3,13 +3,16 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "dependencies": {
+    "@google-cloud/aiplatform": "^6.7.0",
     "axios": "^1.15.2",
     "cors": "^2.8.5",
-    "firebase-admin": "^12.1.0",
-    "firebase-functions": "^4.7.0",
-    "node-nlp": "^4.27.0"
+    "firebase-admin": "^11.11.0",
+    "firebase-functions": "^5.1.0",
+    "google-auth-library": "^9.15.1",
+    "node-nlp": "^3.10.2",
+    "sharp": "^0.34.5"
   }
 }

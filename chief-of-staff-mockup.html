@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chief of Staff - Mobile-First Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    
+    /* Circular gauge animation */
+    .gauge-circle {
+      transition: stroke-dasharray 1s ease-in-out;
+    }
+    
+    /* Smooth transitions */
+    .transition-all {
+      transition: all 150ms ease-in-out;
+    }
+    
+    /* Hide scrollbar but keep functionality */
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+  
+  <!-- Main Container -->
+  <div class="max-w-7xl mx-auto space-y-4 p-4 lg:space-y-6 lg:p-6">
+    
+    <!-- 1. Status Hero Card -->
+    <div class="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4 text-white lg:p-6">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        
+        <!-- Left: Score gauge -->
+        <div class="flex items-center gap-4">
+          <!-- Circular gauge -->
+          <div class="relative h-20 w-20 lg:h-28 lg:w-28">
+            <svg class="h-full w-full -rotate-90 transform">
+              <!-- Background circle -->
+              <circle
+                cx="50%"
+                cy="50%"
+                r="36"
+                stroke="currentColor"
+                stroke-width="8"
+                fill="none"
+                class="text-slate-700"
+              />
+              <!-- Progress circle (85% = 192 out of 226) -->
+              <circle
+                cx="50%"
+                cy="50%"
+                r="36"
+                stroke="currentColor"
+                stroke-width="8"
+                fill="none"
+                stroke-dasharray="192 226"
+                class="text-green-400 gauge-circle"
+                stroke-linecap="round"
+              />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span class="text-2xl font-bold lg:text-3xl">85</span>
+              <span class="text-xs opacity-75">Score</span>
+            </div>
+          </div>
+          
+          <!-- Status info -->
+          <div class="flex-1 min-w-0">
+            <h2 class="text-xl font-bold lg:text-2xl">Chief of Staff</h2>
+            <p class="mt-1 text-sm opacity-90 line-clamp-2 lg:text-base">
+              Hệ thống đang hoạt động tốt. Marketing ổn định, doanh thu đạt target.
+            </p>
+            <!-- Trend indicator -->
+            <div class="mt-2 flex items-center gap-2 text-xs lg:text-sm">
+              <svg class="h-4 w-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+              </svg>
+              <span class="text-green-400">+5 vs hôm qua</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Right: Quick stats -->
+        <div class="hidden sm:grid sm:grid-cols-3 sm:gap-3 lg:gap-4">
+          <div class="rounded-lg bg-white/10 p-3 text-center backdrop-blur">
+            <svg class="mx-auto h-5 w-5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div class="mt-1 text-lg font-bold lg:text-xl">0</div>
+            <div class="text-xs opacity-75">Alerts</div>
+          </div>
+          <div class="rounded-lg bg-white/10 p-3 text-center backdrop-blur">
+            <svg class="mx-auto h-5 w-5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="mt-1 text-lg font-bold lg:text-xl">3</div>
+            <div class="text-xs opacity-75">Pending</div>
+          </div>
+          <div class="rounded-lg bg-white/10 p-3 text-center backdrop-blur">
+            <svg class="mx-auto h-5 w-5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <div class="mt-1 text-lg font-bold lg:text-xl">98%</div>
+            <div class="text-xs opacity-75">Health</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 2. Quick Actions Bar (Sticky on mobile) -->
+    <div class="sticky top-0 z-10 -mx-4 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:static lg:mx-0 lg:rounded-xl lg:border lg:border-slate-200 lg:px-5 lg:py-4 lg:shadow-none">
+      <div class="flex gap-2 overflow-x-auto pb-2 hide-scrollbar lg:grid lg:grid-cols-3 lg:gap-3 lg:overflow-visible lg:pb-0">
+        <button class="flex-shrink-0 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 active:scale-95 transition lg:justify-center">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+          </svg>
+          <span class="whitespace-nowrap">Chạy lại Chief</span>
+        </button>
+        
+        <button class="flex-shrink-0 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition lg:justify-center">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          </svg>
+          <span class="whitespace-nowrap">Xem quyết định</span>
+        </button>
+        
+        <button class="flex-shrink-0 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition lg:justify-center">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span class="whitespace-nowrap">Sync Facebook</span>
+        </button>
+      </div>
+    </div>
+    
+    <!-- 3. Executive Brief Card (Collapsible) -->
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <!-- Header -->
+      <button onclick="toggleBrief()" class="flex w-full items-center justify-between p-4 text-left hover:bg-slate-50 active:bg-slate-100 transition">
+        <div class="flex-1 min-w-0">
+          <h3 class="font-semibold text-slate-900 lg:text-lg">Executive Brief</h3>
+          <p class="mt-0.5 text-xs text-slate-500 lg:text-sm">2 giờ trước</p>
+        </div>
+        <svg id="briefChevron" class="h-5 w-5 flex-shrink-0 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      
+      <!-- Content (Initially hidden) -->
+      <div id="briefContent" class="hidden space-y-3 border-t border-slate-100 p-4 lg:space-y-4">
+        <!-- Summary -->
+        <div class="rounded-lg bg-blue-50 p-3 lg:p-4">
+          <p class="text-sm leading-relaxed text-slate-700 lg:text-base">
+            Doanh thu hôm nay đạt 8.5 triệu, vượt target 15%. Marketing đang chạy ổn định với 3 bài đã publish thành công. Không có cảnh báo nổi bật.
+          </p>
+        </div>
+        
+        <!-- Risks -->
+        <div class="rounded-lg bg-red-50 p-3 lg:p-4">
+          <h4 class="flex items-center gap-2 font-semibold text-red-900 text-sm lg:text-base">
+            <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <span>Risks (1)</span>
+          </h4>
+          <ul class="mt-2 space-y-1.5">
+            <li class="flex gap-2 text-sm text-red-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Chi phí ads tăng 12% so với tuần trước, cần theo dõi ROAS</span>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- Wins -->
+        <div class="rounded-lg bg-green-50 p-3 lg:p-4">
+          <h4 class="flex items-center gap-2 font-semibold text-green-900 text-sm lg:text-base">
+            <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>Wins (3)</span>
+          </h4>
+          <ul class="mt-2 space-y-1.5">
+            <li class="flex gap-2 text-sm text-green-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Publish rate 100% trong 3 ngày liên tiếp</span>
+            </li>
+            <li class="flex gap-2 text-sm text-green-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Fanpage tăng 45 followers hôm nay</span>
+            </li>
+            <li class="flex gap-2 text-sm text-green-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Tương tác tăng 18% so với tuần trước</span>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- Recommendations -->
+        <div class="rounded-lg bg-purple-50 p-3 lg:p-4">
+          <h4 class="flex items-center gap-2 font-semibold text-purple-900 text-sm lg:text-base">
+            <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+            <span>Next Actions (2)</span>
+          </h4>
+          <ul class="mt-2 space-y-1.5">
+            <li class="flex gap-2 text-sm text-purple-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Tăng tần suất post vào khung 18-20h để tận dụng peak time</span>
+            </li>
+            <li class="flex gap-2 text-sm text-purple-800 lg:text-base">
+              <span class="flex-shrink-0">•</span>
+              <span class="flex-1 break-words">Test thêm video format vì engagement cao hơn 25% so với ảnh</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 4. Metrics Grid -->
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <!-- AI Audit -->
+      <div class="rounded-xl border border-slate-200 bg-white p-3 lg:p-4">
+        <div class="inline-flex rounded-lg bg-green-100 p-2 text-green-600">
+          <svg class="h-4 w-4 lg:h-5 lg:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+        </div>
+        <div class="mt-3 text-2xl font-bold text-slate-900 lg:text-3xl">98%</div>
+        <div class="mt-1 text-xs text-slate-500 lg:text-sm">AI Audit</div>
+      </div>
+      
+      <!-- Readiness -->
+      <div class="rounded-xl border border-slate-200 bg-white p-3 lg:p-4">
+        <div class="inline-flex rounded-lg bg-yellow-100 p-2 text-yellow-600">
+          <svg class="h-4 w-4 lg:h-5 lg:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+          </svg>
+        </div>
+        <div class="mt-3 text-2xl font-bold text-slate-900 lg:text-3xl">85%</div>
+        <div class="mt-1 text-xs text-slate-500 lg:text-sm">Readiness</div>
+      </div>
+      
+      <!-- Quyết định -->
+      <div class="rounded-xl border border-slate-200 bg-white p-3 lg:p-4">
+        <div class="inline-flex rounded-lg bg-blue-100 p-2 text-blue-600">
+          <svg class="h-4 w-4 lg:h-5 lg:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+        </div>
+        <div class="mt-3 text-2xl font-bold text-slate-900 lg:text-3xl">3</div>
+        <div class="mt-1 text-xs text-slate-500 lg:text-sm">Quyết định</div>
+      </div>
+      
+      <!-- Workflow -->
+      <div class="rounded-xl border border-slate-200 bg-white p-3 lg:p-4">
+        <div class="inline-flex rounded-lg bg-green-100 p-2 text-green-600">
+          <svg class="h-4 w-4 lg:h-5 lg:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <div class="mt-3 text-2xl font-bold text-slate-900 lg:text-3xl">OK</div>
+        <div class="mt-1 text-xs text-slate-500 lg:text-sm">Workflow</div>
+      </div>
+    </div>
+    
+    <!-- 5. Facebook Overview -->
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="flex items-center justify-between border-b border-slate-100 p-4">
+        <h3 class="font-semibold text-slate-900 lg:text-lg">Facebook Page Overview</h3>
+        <button class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 active:scale-95 transition">
+          Refresh
+        </button>
+      </div>
+      
+      <div class="grid grid-cols-3 gap-4 p-4">
+        <!-- Followers -->
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm text-slate-600">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+            </svg>
+            <span class="truncate">Người theo dõi</span>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-bold text-slate-900">1,250</span>
+            <span class="text-sm text-green-600">+45</span>
+          </div>
+          <div class="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500 transition-all" style="width: 83%"></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-500">
+            <span>Target: 1,500</span>
+            <span>83%</span>
+          </div>
+        </div>
+        
+        <!-- Engagement -->
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm text-slate-600">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+            </svg>
+            <span class="truncate">Tương tác ngày</span>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-bold text-slate-900">320</span>
+            <span class="text-sm text-red-600">-12</span>
+          </div>
+          <div class="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500 transition-all" style="width: 80%"></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-500">
+            <span>Target: 400</span>
+            <span>80%</span>
+          </div>
+        </div>
+        
+        <!-- Visits -->
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm text-slate-600">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+            <span class="truncate">Ghé thăm trang</span>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-bold text-slate-900">180</span>
+            <span class="text-sm text-green-600">+8</span>
+          </div>
+          <div class="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500 transition-all" style="width: 90%"></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-500">
+            <span>Target: 200</span>
+            <span>90%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 6. Timeline (Horizontal scroll on mobile) -->
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="border-b border-slate-100 p-4">
+        <h3 class="font-semibold text-slate-900 lg:text-lg">Timeline (7 ngày)</h3>
+      </div>
+      
+      <div class="overflow-x-auto lg:overflow-visible">
+        <div class="flex gap-3 p-4 hide-scrollbar lg:grid lg:grid-cols-7 lg:gap-4">
+          <!-- Day 1 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T2</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">09/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              88
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Healthy</div>
+          </div>
+          
+          <!-- Day 2 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T3</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">10/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              82
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Healthy</div>
+          </div>
+          
+          <!-- Day 3 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T4</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">11/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100 text-lg font-bold text-yellow-700">
+              75
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Warning</div>
+          </div>
+          
+          <!-- Day 4 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T5</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">12/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              80
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Healthy</div>
+          </div>
+          
+          <!-- Day 5 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T6</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">13/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              83
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Healthy</div>
+          </div>
+          
+          <!-- Day 6 -->
+          <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">T7</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">14/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              85
+            </div>
+            <div class="mt-2 text-center text-xs text-slate-500 truncate">Healthy</div>
+          </div>
+          
+          <!-- Day 7 (Today) -->
+          <div class="flex-shrink-0 w-32 rounded-lg border-2 border-blue-500 bg-blue-50 p-3 shadow-sm lg:w-auto">
+            <div class="text-center">
+              <div class="text-xs text-blue-600 font-semibold">CN</div>
+              <div class="mt-0.5 text-sm font-semibold text-blue-900">15/05</div>
+            </div>
+            <div class="mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-lg font-bold text-green-700">
+              85
+            </div>
+            <div class="mt-2 text-center text-xs text-blue-600 font-semibold truncate">Hôm nay</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 7. Owner Goals Section -->
+    <div class="rounded-xl border border-slate-200 bg-white p-4 lg:p-5">
+      <h3 class="font-semibold text-slate-900 lg:text-lg">Mục tiêu của chủ quán</h3>
+      <p class="mt-1 text-sm text-slate-500">Nhập mục tiêu để Chief tạo phương án chiến lược</p>
+      
+      <div class="mt-4 space-y-4">
+        <!-- Textarea -->
+        <div>
+          <textarea
+            rows="4"
+            maxlength="500"
+            class="w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            placeholder="VD: Tăng 500 like fanpage trong tháng này"
+          >Tăng 500 like fanpage trong tháng 5</textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500">
+            <span>Mô tả rõ ràng để Chief hiểu đúng ý bạn</span>
+            <span>38/500</span>
+          </div>
+        </div>
+        
+        <!-- Date inputs -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Từ ngày</label>
+            <input type="date" value="2026-05-01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Đến ngày</label>
+            <input type="date" value="2026-05-31" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+          </div>
+        </div>
+        
+        <!-- Generate button -->
+        <button class="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-3 text-sm font-semibold text-white hover:bg-purple-700 active:scale-95 transition">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+          </svg>
+          <span>Tạo phương án Chief</span>
+        </button>
+        
+        <!-- Generated plan (Sample) -->
+        <div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <h4 class="font-semibold text-purple-900 text-sm">Phương án từ Chief</h4>
+          <div class="mt-2 space-y-2 text-sm text-purple-800">
+            <p><strong>Summary:</strong> Tăng 500 like = 17 like/ngày. Cần tập trung viral content và chạy ads nhẹ.</p>
+            <p><strong>Prompt cho Marketing AI:</strong> Tập trung hook mạnh, CTA rõ ràng, đẩy engagement cao.</p>
+            <p><strong>Actions:</strong></p>
+            <ul class="ml-4 space-y-1">
+              <li>• Post 2 bài/ngày vào khung 12h và 18h</li>
+              <li>• Chạy ads 200k/ngày targeting local 5km</li>
+              <li>• Test video format vì engagement cao hơn</li>
+              <li>• Theo dõi ROAS hàng ngày</li>
+            </ul>
+          </div>
+          <button class="mt-3 w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 active:scale-95 transition">
+            Lưu target vào Marketing AI
+          </button>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+  
+  <script>
+    // Toggle brief content
+    function toggleBrief() {
+      const content = document.getElementById('briefContent');
+      const chevron = document.getElementById('briefChevron');
+      
+      if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+      } else {
+        content.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+      }
+    }
+  </script>
+  
+</body>
+</html>

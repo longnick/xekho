@@ -57,17 +57,20 @@ if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const firestore = admin.apps.length ? admin.firestore() : null;
-const AI_PROVIDER = String(process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
-const AI_API_KEY = AI_PROVIDER === 'gemini'
-  ? (process.env.GEMINI_API_KEY || '')
-  : (process.env.DEEPSEEK_API_KEY || '');
-const AI_MODEL = AI_PROVIDER === 'gemini'
-  ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
-  : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
-const AI_ENDPOINT = AI_PROVIDER === 'gemini'
-  ? (process.env.GEMINI_ENDPOINT || undefined)
-  : (process.env.DEEPSEEK_ENDPOINT || undefined);
-const deepSeekRouter = firestore
+const AI_PROVIDER = String(process.env.AI_PROVIDER || 'vertex').trim().toLowerCase();
+const AI_API_KEY = AI_PROVIDER === 'deepseek'
+  ? (process.env.DEEPSEEK_API_KEY || '')
+  : '';
+const AI_MODEL = AI_PROVIDER === 'deepseek'
+  ? (process.env.DEEPSEEK_MODEL || 'deepseek-chat')
+  : 'vertex';
+const AI_ENDPOINT = AI_PROVIDER === 'deepseek'
+  ? (process.env.DEEPSEEK_ENDPOINT || undefined)
+  : undefined;
+const CLOUD_FUNCTIONS_BASE_URL = String(
+  process.env.CLOUD_FUNCTIONS_BASE_URL || 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net'
+).replace(/\/+$/, '');
+const deepSeekRouter = (firestore && AI_PROVIDER === 'deepseek')
   ? new DeepSeekRouter({
       firestore,
       provider: AI_PROVIDER,
@@ -83,6 +86,19 @@ const nlp = new NLPEngine({
 });
 let nlpReady = false;
 nlp.trainModel().then(() => { nlpReady = true; }).catch(() => { nlpReady = false; });
+
+async function callVertexRouter(payload = {}) {
+  const response = await fetch(`${CLOUD_FUNCTIONS_BASE_URL}/aiRouter`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || 'Vertex AI router failed.');
+  }
+  return data;
+}
 
 function normalizeUnit(unit) {
   const raw = String(unit || '').trim();
@@ -391,6 +407,32 @@ app.post('/api/ai/router', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Missing text' });
   }
 
+  if (AI_PROVIDER === 'vertex') {
+    try {
+      const startedAt = Date.now();
+      const result = await callVertexRouter({
+        text: String(text).trim(),
+        previewOnly: !!previewOnly,
+      });
+      return res.json({
+        ok: !!result?.ok,
+        text: String(text).trim(),
+        latencyMs: Date.now() - startedAt,
+        intentJson: result?.intent ? { intent: result.intent } : null,
+        execution: result,
+        reply: result?.message || result?.reply || '',
+        aiEnabled: true,
+        provider: 'vertex',
+      });
+    } catch (error) {
+      console.error('[api/ai/router][vertex] error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: error?.message || 'Vertex router failed.',
+      });
+    }
+  }
+
   if (!firestore || !deepSeekRouter) {
     return res.status(503).json({
       ok: false,
@@ -430,7 +472,7 @@ app.post('/api/ai/router', async (req, res) => {
 app.get('/api/ai/status', (req, res) => {
   return res.json({
     ok: true,
-    aiEnabled: !!AI_API_KEY,
+    aiEnabled: AI_PROVIDER === 'vertex' ? true : !!AI_API_KEY,
     provider: AI_PROVIDER,
     model: AI_MODEL,
   });

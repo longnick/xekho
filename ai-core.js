@@ -2,12 +2,6 @@
 // AI ENGINE: AI Server (online) + Local NLP (offline)
 // ============================================================
 
-const GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.5-flash-preview-04-17',
-  'gemini-2.0-flash-lite',
-];
-
 const DEEPSEEK_MODELS = [
   'deepseek-chat',
   'deepseek-reasoner',
@@ -25,45 +19,6 @@ function _repairAIText(input) {
     return new TextDecoder('utf-8').decode(bytes);
   } catch (_) {}
   return str;
-}
-
-async function callGemini(apiKey, systemPrompt, options = {}) {
-  const forceJson = options.forceJson !== false;
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      const generationConfig = { temperature: 0.2, maxOutputTokens: forceJson ? 700 : 900 };
-      if (forceJson) generationConfig.response_mime_type = 'application/json';
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
-            generationConfig
-          }),
-          signal: AbortSignal.timeout(8000)
-        }
-      );
-      const data = await res.json();
-      if (data.error) {
-        if (data.error.code === 404 || data.error.code === 400 ||
-            (data.error.message || '').includes('no longer available') ||
-            (data.error.message || '').includes('deprecated')) {
-          lastError = new Error(data.error.message);
-          continue;
-        }
-        throw new Error(data.error.message);
-      }
-      if (!data.candidates?.length) throw new Error(_repairAIText('Gemini không trả về kết quả.'));
-      return data.candidates[0].content.parts[0].text;
-    } catch(e) {
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') throw e;
-      lastError = e;
-    }
-  }
-  throw lastError || new Error(_repairAIText('Tất cả Gemini models đều không khả dụng.'));
 }
 
 async function callLocalGemma(endpoint, apiKey, model, systemPrompt) {
@@ -379,11 +334,14 @@ function getAIRouterBaseUrl() {
   return `https://${region}-${projectId}.cloudfunctions.net`;
 }
 
-async function callServerAIRouter(text, previewOnly = true) {
+async function callServerAIRouter(input, previewOnly = true) {
+  const payload = (input && typeof input === 'object' && !Array.isArray(input))
+    ? { ...input, previewOnly }
+    : { text: String(input || ''), previewOnly };
   const res = await fetch(`${getAIRouterBaseUrl()}/aiRouter`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, previewOnly }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!res.ok || !data?.ok) throw new Error(data?.error || 'AI router failed');
@@ -434,6 +392,100 @@ function buildParsedActionFromRouter(routerResult) {
     };
   }
   return null;
+}
+
+function buildPendingAIActionFromRouter(routerResult) {
+  if (routerResult?.status !== 'pending_confirmation') return null;
+  return {
+    action_type: String(routerResult.action_type || '').trim(),
+    tool: String(routerResult.tool || '').trim(),
+    payload: routerResult.payload || {},
+    message: routerResult.message || 'Cần xác nhận trước khi thực hiện thao tác này.',
+    preview: routerResult.preview || '',
+  };
+}
+
+function normalizeAIKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildParsedOrderFromPendingPayload(payload = {}) {
+  const menu = Store.getMenu();
+  const tableId = String(payload.ban || payload.tableId || payload.table || '').trim();
+  const items = (Array.isArray(payload.items) ? payload.items : [])
+    .map((item) => {
+      const itemId = String(item.ma_mon || item.id || item.item_id || '').trim();
+      const itemName = String(item.ten_mon || item.name || '').trim();
+      const menuItem = menu.find(m => String(m.id) === itemId)
+        || menu.find(m => String(m.name || '').toLowerCase() === itemName.toLowerCase())
+        || menu.find(m => normalizeAIKey(String(m.name || '')).includes(normalizeAIKey(itemName)));
+      return menuItem ? { id: menuItem.id, qty: Number(item.so_luong || item.qty || item.quantity || 1) || 1 } : null;
+    })
+    .filter(Boolean);
+  if (!tableId || !items.length) return null;
+  return {
+    actions: [{ type: 'order', tableId, items }],
+    reply: `Đã lên ${items.reduce((sum, item) => sum + item.qty, 0)} món cho bàn ${tableId}.`,
+  };
+}
+
+async function executePendingAIAction(actionType, payload = {}) {
+  const normalized = String(actionType || '').trim();
+  const menu = Store.getMenu();
+
+  if (normalized === 'goi_mon') {
+    const parsed = buildParsedOrderFromPendingPayload(payload);
+    if (!parsed) return { ok: false, message: 'Chưa đủ dữ liệu để lên món. Vui lòng thử lại rõ hơn.' };
+    const reply = executeAIActions(parsed, menu, '', { skipAutoConfirm: true });
+    return { ok: true, message: _normalizeAITextV2(reply || parsed.reply || 'Đã lên món.') };
+  }
+
+  if (normalized === 'nhap_hang') {
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return { ok: false, message: 'Không có dòng hàng hợp lệ để nhập kho.' };
+    items.forEach((item) => {
+      const qty = Number(item.so_luong || item.qty || item.quantity || 0) || 0;
+      const total = Number(item.tong_tien || item.totalPrice || item.price || 0) || 0;
+      Store.addPurchase({
+        id: uid(),
+        name: String(item.ten_hang || item.name || item.ten_mon || '').trim(),
+        qty,
+        unit: String(item.don_vi || item.unit || 'đvt').trim(),
+        price: total,
+        costPerUnit: Number(item.don_gia || item.unitPrice || (qty > 0 ? total / qty : 0)) || 0,
+        date: new Date().toISOString(),
+        supplier: String(payload.nha_cung_cap || payload.supplier || '').trim(),
+        note: String(item.ghi_chu || payload.ghi_chu || payload.note || 'Nhập kho qua AI POS').trim(),
+      });
+    });
+    return { ok: true, message: `Đã tạo ${items.length} dòng nhập hàng.` };
+  }
+
+  if (normalized === 'sua_menu') {
+    const currentName = String(payload.ten_hang_hien_tai || payload.ten_hang || payload.name || '').trim();
+    const currentId = String(payload.ma_hang || payload.id || '').trim();
+    const menuItem = menu.find(m => String(m.id) === currentId)
+      || menu.find(m => String(m.name || '').toLowerCase() === currentName.toLowerCase())
+      || menu.find(m => normalizeAIKey(String(m.name || '')).includes(normalizeAIKey(currentName)));
+    if (!menuItem) return { ok: false, message: 'Không tìm thấy món cần sửa trong menu POS.' };
+    const updates = {};
+    if (payload.ten_moi) updates.name = String(payload.ten_moi).trim();
+    if (Number(payload.gia_moi) > 0) updates.price = Number(payload.gia_moi);
+    if (!Object.keys(updates).length) return { ok: false, message: 'Chưa có thông tin cần sửa.' };
+    const nextMenu = menu.map(m => String(m.id) === String(menuItem.id) ? { ...m, ...updates } : m);
+    Store.setMenu(nextMenu);
+    if (window.DB?.Menu?.update) await window.DB.Menu.update(menuItem.id, updates);
+    return { ok: true, message: `Đã cập nhật món ${updates.name || menuItem.name}.` };
+  }
+
+  return { ok: false, message: 'Loại thao tác AI này chưa được POS hỗ trợ xác nhận.' };
 }
 
 function _normalizeAIText(input) {
@@ -560,7 +612,7 @@ function _normalizeAITextV2(input) {
   return str.trim();
 }
 
-async function processAICommand(text) {
+async function processAICommand(text, media = {}) {
   const s = Store.getSettings();
   const menu       = Store.getMenu();
   const tablesInfo = Store.getTables().map(t => ({ id: t.id, name: t.name, status: t.status }));
@@ -570,30 +622,51 @@ async function processAICommand(text) {
 
   if (canUseDeepSeek) {
     try {
-      const routed = await callServerAIRouter(text, true);
+      const routed = await callServerAIRouter({
+        text,
+        imageBase64: media.imageBase64 || '',
+        audioBase64: media.audioBase64 || '',
+        mimeType: media.mimeType || '',
+      }, true);
+      if (routed?.status === 'success') {
+        return {
+          reply: _normalizeAITextV2(routed.message || routed.reply || ''),
+          intent: 'success',
+          engine: 'vertex-server',
+        };
+      }
+      const pendingAction = buildPendingAIActionFromRouter(routed);
+      if (pendingAction) {
+        return {
+          reply: _normalizeAITextV2(pendingAction.message),
+          intent: pendingAction.action_type || 'pending_confirmation',
+          engine: 'vertex-server',
+          pendingAction,
+        };
+      }
       const routedIntent = String(routed?.intentJson?.intent || routed?.execution?.intent || '').trim();
       if (['query_sales', 'query_import', 'query_inventory'].includes(routedIntent)) {
         if (isStaffAIRole()) {
           return {
             reply: 'Tài khoản Staff chỉ được dùng AI để order và thanh toán.',
             intent: routedIntent,
-            engine: 'gemini-server'
+            engine: 'vertex-server'
           };
         }
-        return { reply: _normalizeAITextV2(routed.reply || ''), intent: routedIntent, engine: 'gemini-server' };
+        return { reply: _normalizeAITextV2(routed.reply || ''), intent: routedIntent, engine: 'vertex-server' };
       }
       if (['pos_order', 'pos_checkout'].includes(routedIntent)) {
         const parsedAction = buildParsedActionFromRouter(routed);
         if (!parsedAction) {
-          return { reply: _normalizeAITextV2(routed.reply || 'AI chưa dựng được thao tác hợp lệ.'), intent: routedIntent, engine: 'gemini-server' };
+          return { reply: _normalizeAITextV2(routed.reply || 'AI chưa dựng được thao tác hợp lệ.'), intent: routedIntent, engine: 'vertex-server' };
         }
         const ok = await openAIConfirmModal(routed.reply || 'Xác nhận thực thi lệnh AI?');
-        if (!ok) return { reply: 'Đã huỷ thao tác AI.', intent: routedIntent, engine: 'gemini-server' };
+        if (!ok) return { reply: 'Đã huỷ thao tác AI.', intent: routedIntent, engine: 'vertex-server' };
         const finalReply = executeAIActions(parsedAction, menu, text, { skipAutoConfirm: true });
-        return { reply: _normalizeAITextV2(finalReply), intent: routedIntent, engine: 'gemini-server' };
+        return { reply: _normalizeAITextV2(finalReply), intent: routedIntent, engine: 'vertex-server' };
       }
       if (routed.reply) {
-        return { reply: _normalizeAITextV2(routed.reply), intent: routedIntent || 'unknown', engine: 'gemini-server' };
+        return { reply: _normalizeAITextV2(routed.reply), intent: routedIntent || 'unknown', engine: 'vertex-server' };
       }
       throw new Error('AI router returned empty response.');
     } catch (e) {
@@ -638,7 +711,7 @@ async function processAICommand(text) {
     if (!s.deepseekApiKey) {
       parsed = localNLPEngine(text, menu, tablesInfo);
       if (!parsed) {
-        return '⚠️ AI server chưa có Gemini API key hợp lệ. Hệ thống đang dùng NLP Offline cho các lệnh cơ bản.';
+        return '⚠️ AI server Vertex hiện chưa sẵn sàng. Hệ thống đang dùng NLP Offline cho các lệnh cơ bản.';
       }
       modeColor = 'var(--warning)';
     } else {
@@ -922,13 +995,13 @@ function localNLPEngine(text, menu, tables) {
   return null;
 }
 
-// Äá»‹nh dáº¡ng sá»‘ tiá»n Ä‘áº§y Ä‘á»§, dÃ¹ng "Ä‘á»“ng" thay "Ä‘" cho chatbot
+// Định dạng số tiền đầy đủ, dùng "đồng" thay "đ" cho chatbot
 function fmtDong(n) {
   return n.toLocaleString('vi-VN') + ' đồng';
 }
 
-// PhÃ¢n tÃ­ch ngÃ y thÃ¡ng tiáº¿ng Viá»‡t tá»« vÄƒn báº£n
-// Tráº£ vá» { period, dateStr, label } hoáº·c null
+// Phân tích ngày tháng tiếng Việt từ văn bản
+// Trả về { period, dateStr, label } hoặc null
 function parseViDateFromText(text) {
   const t = _normalizeQueryKey(text);
   const now = new Date();
@@ -1121,7 +1194,7 @@ function buildReportReply() {
   };
 }
 
-// Fuzzy menu matcher: tÃ¬m mÃ³n trong text + sá»‘ lÆ°á»£ng
+// Fuzzy menu matcher: tìm món trong text + số lượng
 function extractMenuItems(text, menu) {
   const results = [];
 
@@ -1220,9 +1293,14 @@ if (typeof module !== 'undefined' && module.exports) {
     localNLPEngine,
     extractMenuItems,
     processAICommand,
+    executePendingAIAction,
     _normalizeAIActionType,
     _normalizeAIText
   };
+}
+
+if (typeof window !== 'undefined') {
+  window.executePendingAIAction = executePendingAIAction;
 }
 
 function _normalizeAIActionType(type) {

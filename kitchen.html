@@ -814,6 +814,46 @@
     .toast.warning { border-color: rgba(255, 159, 67, 0.42); }
     .toast.danger { border-color: rgba(255, 91, 91, 0.42); }
 
+    .new-order-alert {
+      position: fixed;
+      inset: 18px;
+      z-index: 120;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      border-radius: 32px;
+      background: rgba(255, 36, 36, 0.94);
+      color: #fff;
+      border: 6px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 24px 90px rgba(255, 36, 36, 0.58);
+      text-align: center;
+      animation: sirenFlash 0.62s linear infinite;
+    }
+
+    .new-order-alert.show {
+      display: flex;
+    }
+
+    .new-order-alert-title {
+      font-size: clamp(42px, 8vw, 96px);
+      line-height: 1;
+      font-weight: 1000;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .new-order-alert-sub {
+      margin-top: 18px;
+      font-size: clamp(24px, 4vw, 52px);
+      font-weight: 900;
+    }
+
+    @keyframes sirenFlash {
+      0%, 100% { background: rgba(255, 36, 36, 0.96); transform: scale(1); }
+      50% { background: rgba(255, 190, 20, 0.96); transform: scale(1.01); }
+    }
+
     @media (max-width: 1100px) {
       .dashboard-grid {
         grid-template-columns: 1fr;
@@ -1040,6 +1080,12 @@
   </div>
 
   <div id="toast" class="toast"></div>
+  <div id="new-order-alert" class="new-order-alert" role="alert" aria-live="assertive">
+    <div>
+      <div class="new-order-alert-title">MON MOI</div>
+      <div class="new-order-alert-sub" id="new-order-alert-sub">Co mon moi vao bep</div>
+    </div>
+  </div>
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -1086,6 +1132,9 @@
       settings: {
         kitchenNotifyAccepted: true,
         kitchenNotifyReady: true,
+        kitchenVoiceNewOrderEnabled: true,
+        kitchenVoiceLateReminderEnabled: true,
+        kitchenLateReminderMinutes: 10,
       },
       tables: new Map(),
       orders: new Map(),
@@ -1096,6 +1145,10 @@
       audioUnlocked: false,
       audioContext: null,
       audioEnabled: localStorage.getItem('kds:audioEnabled') !== 'off',
+      speechQueue: [],
+      speechRunning: false,
+      reminderState: new Map(),
+      lastReminderSweepAt: 0,
     };
 
     const loginScreen = document.getElementById('login-screen');
@@ -1109,6 +1162,8 @@
     const cardsGrid = document.getElementById('cards-grid');
     const flatList = document.getElementById('flat-list');
     const toastEl = document.getElementById('toast');
+    const newOrderAlert = document.getElementById('new-order-alert');
+    const newOrderAlertSub = document.getElementById('new-order-alert-sub');
     const userRoleLabel = document.getElementById('user-role-label');
     const clockLabel = document.getElementById('clock-label');
     const filterRow = document.getElementById('filter-row');
@@ -1142,8 +1197,103 @@
       clockLabel.textContent = now.toLocaleTimeString('vi-VN', { hour12: false });
     }
 
+    function canPlayAudio() {
+      return state.audioEnabled && state.audioUnlocked;
+    }
+
     function normalizeTableName(tableId, tableData) {
       return tableData?.name || tableData?.tableName || `Bàn ${tableId}`;
+    }
+
+    function normalizeSpeechText(value) {
+      return String(value || '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/[^\p{L}\p{N}\s,./:]/gu, ' ')
+        .trim();
+    }
+
+    function normalizeTableNameForSpeech(value, fallback = 'Bàn') {
+      const raw = normalizeSpeechText(value || fallback);
+      if (!raw) return fallback;
+
+      const compact = raw.replace(/\s+/g, ' ').trim();
+      const upper = compact.toUpperCase();
+
+      let normalized = compact;
+      if (/^BAN\b/.test(upper)) {
+        normalized = `Bàn ${compact.slice(3).trim()}`.trim();
+      } else if (/^BÀN\b/i.test(compact)) {
+        normalized = `Bàn ${compact.slice(3).trim()}`.trim();
+      } else if (/^B(?=\d)/i.test(compact)) {
+        normalized = `Bàn ${compact.slice(1).trim()}`.trim();
+      } else if (/^B\s+\d+/i.test(compact)) {
+        normalized = `Bàn ${compact.slice(1).trim()}`.trim();
+      }
+
+      normalized = normalized
+        .replace(/^Bàn\s*/i, 'Bàn ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      return normalized || fallback;
+    }
+
+    function speakNumberVi(value) {
+      const num = Number(value || 0);
+      if (!Number.isFinite(num)) return String(value || '');
+      const rounded = Math.round(num);
+      const words = {
+        0: 'không',
+        1: 'một',
+        2: 'hai',
+        3: 'ba',
+        4: 'bốn',
+        5: 'năm',
+        6: 'sáu',
+        7: 'bảy',
+        8: 'tám',
+        9: 'chín',
+        10: 'mười',
+      };
+      if (Object.prototype.hasOwnProperty.call(words, rounded)) return words[rounded];
+      return String(rounded);
+    }
+
+    function summarizeItemForSpeech(item = {}) {
+      const name = normalizeSpeechText(item?.name || 'Món');
+      const qty = Number(item?.qty || 0);
+      if (qty > 1) return `${name}, ${speakNumberVi(qty)} phần.`;
+      if (qty === 1) return `${name}, một phần.`;
+      return `${name}.`;
+    }
+
+    function buildNewOrderSpeechLines(card, items = []) {
+      const tableName = normalizeTableNameForSpeech(card?.tableName || 'Bàn');
+      const lines = [`Có món mới, ${tableName}.`];
+      const speakable = items.filter(Boolean);
+      const limit = 4;
+      speakable.slice(0, limit).forEach(item => {
+        lines.push(summarizeItemForSpeech(item));
+      });
+      if (speakable.length > limit) {
+        lines.push(`Và ${speakable.length - limit} món khác.`);
+      }
+      return lines;
+    }
+
+    function buildReminderSpeechLines(card, items = [], minutes = 10) {
+      const tableName = normalizeTableNameForSpeech(card?.tableName || 'Bàn');
+      const lines = [`Nhắc bếp. ${tableName}. Món đang chờ hơn ${minutes} phút.`];
+      const speakable = items.filter(Boolean);
+      const limit = 3;
+      speakable.slice(0, limit).forEach(item => {
+        lines.push(summarizeItemForSpeech(item));
+      });
+      if (speakable.length > limit) {
+        lines.push(`Và ${speakable.length - limit} món cần ưu tiên.`);
+      }
+      return lines;
     }
 
     function isKitchenItem(item) {
@@ -1151,9 +1301,10 @@
       const itemType = String(item?.itemType || '').toLowerCase();
       const kitchenRouting = String(item?.kitchenRouting || '').toLowerCase();
       const saleMode = String(item?.saleMode || '').toLowerCase();
+      const forceKitchen = item?.forceKitchen === true;
       if (status === 'skip' || status === 'served') return false;
-      if (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true) return false;
-      if (kitchenRouting === 'skip') return false;
+      if (!forceKitchen && (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true)) return false;
+      if (!forceKitchen && kitchenRouting === 'skip') return false;
       if (state.station !== 'all' && kitchenRouting && kitchenRouting !== 'all' && kitchenRouting !== state.station) return false;
       return true;
     }
@@ -1206,7 +1357,8 @@
       return '';
     }
 
-    function buildCards() {
+    function buildCards(options = {}) {
+      const ignoreFilter = options.ignoreFilter === true;
       const rows = [];
       state.orders.forEach(order => {
         if (!order || String(order.status || '').toLowerCase() !== 'open') return;
@@ -1238,6 +1390,7 @@
       });
 
       rows.sort((a, b) => b.elapsedMs - a.elapsedMs);
+      if (ignoreFilter) return rows;
       return rows.filter(card => {
         if (state.filter === 'pending') return card.hasPending;
         if (state.filter === 'cooking') return card.hasCooking;
@@ -1439,8 +1592,8 @@
     }
 
     function maybePlayNewPendingSound(cards) {
-      if (!state.audioEnabled) return;
       const newPendingKeys = [];
+      const groupedAnnouncements = new Map();
       cards.forEach(card => {
         card.items.forEach(item => {
           if (String(item.kitchenStatus || '').toLowerCase() !== 'pending') return;
@@ -1449,38 +1602,314 @@
           if (!state.seenPendingKeys.has(key)) {
             state.seenPendingKeys.add(key);
             newPendingKeys.push(key);
+            if (!groupedAnnouncements.has(card.orderId)) {
+              groupedAnnouncements.set(card.orderId, { card, items: [] });
+            }
+            groupedAnnouncements.get(card.orderId).items.push(item);
           }
         });
       });
 
-      if (newPendingKeys.length) beep();
+      if (newPendingKeys.length) {
+        const newestCard = cards.find(card => card.items.some(item => String(item.kitchenStatus || '').toLowerCase() === 'pending'));
+        showNewOrderAlert(newestCard, newPendingKeys.length);
+        groupedAnnouncements.forEach(({ card, items }) => {
+          enqueueSpeechJob({
+            key: `new:${card.orderId}:${items.map(item => item._lineKey).join('|')}`,
+            type: 'new-order',
+            lines: buildNewOrderSpeechLines(card, items),
+          });
+        });
+      }
+
+      maybeQueueLateReminders(cards);
     }
 
     function ensureAudioUnlocked() {
-      if (state.audioUnlocked) return;
       try {
         const AudioCtor = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtor) return;
-        state.audioContext = state.audioContext || new AudioCtor();
+        if (AudioCtor) {
+          state.audioContext = state.audioContext || new AudioCtor();
+          if (state.audioContext.state === 'suspended') state.audioContext.resume().catch(() => {});
+        }
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.getVoices(); } catch (_) {}
+        }
         state.audioUnlocked = true;
+        drainSpeechQueue();
       } catch (_) {}
     }
 
-    function beep() {
-      if (!state.audioEnabled || !state.audioUnlocked || !state.audioContext) return;
-      const ctx = state.audioContext;
+    function showNewOrderAlert(card, count = 1) {
+      if (!newOrderAlert) return;
+      if (newOrderAlertSub) {
+        const tableName = card?.tableName ? String(card.tableName) : 'Bep';
+        newOrderAlertSub.textContent = `${tableName} - ${count} mon moi`;
+      }
+      newOrderAlert.classList.add('show');
+      clearTimeout(showNewOrderAlert._timer);
+      showNewOrderAlert._timer = setTimeout(() => {
+        newOrderAlert.classList.remove('show');
+      }, 4200);
+    }
+
+    function playTone(ctx, start, duration, fromFreq, toFreq, gainValue = 0.42) {
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 920;
-      gain.gain.value = 0.0001;
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.setValueAtTime(fromFreq, start);
+      oscillator.frequency.linearRampToValueAtTime(toFreq, start + duration);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
       oscillator.connect(gain);
       gain.connect(ctx.destination);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.03);
+    }
+
+    function playSiren() {
+      if (!canPlayAudio() || !state.audioContext) return;
+      const ctx = state.audioContext;
       const now = ctx.currentTime;
-      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-      oscillator.start(now);
-      oscillator.stop(now + 0.2);
+      for (let i = 0; i < 6; i++) {
+        const start = now + i * 0.42;
+        playTone(ctx, start, 0.34, i % 2 ? 560 : 1250, i % 2 ? 1250 : 560, 0.68);
+      }
+    }
+
+    function playReminderTone() {
+      if (!canPlayAudio() || !state.audioContext) return;
+      const ctx = state.audioContext;
+      const now = ctx.currentTime;
+      for (let i = 0; i < 3; i++) {
+        const start = now + i * 0.34;
+        playTone(ctx, start, 0.24, 420, 760, 0.34);
+      }
+    }
+
+    function pickVietnameseVoice() {
+      if (!('speechSynthesis' in window)) return null;
+      const voices = window.speechSynthesis.getVoices() || [];
+      const scored = voices
+        .map(voice => {
+          const name = String(voice?.name || '');
+          const lang = String(voice?.lang || '').toLowerCase();
+          let score = 0;
+          if (lang === 'vi-vn') score += 120;
+          else if (lang.startsWith('vi')) score += 100;
+          if (/microsoft/i.test(name)) score += 38;
+          if (/google/i.test(name)) score += 24;
+          if (/natural|neural/i.test(name)) score += 42;
+          if (/online/i.test(name)) score += 16;
+          if (/hoaimy|hoai my|linh|mai|female|việt|vietnam/i.test(name)) score += 10;
+          if (voice?.localService) score += 8;
+          if (/desktop/i.test(name)) score += 4;
+          if (/espeak|festival|sapi/i.test(name)) score -= 45;
+          if (/english|united states|uk/i.test(`${name} ${lang}`)) score -= 80;
+          return { voice, score };
+        })
+        .sort((a, b) => b.score - a.score);
+      return scored.find(row => row.score > 0)?.voice || null;
+    }
+
+    function speakTextSequence(lines = [], options = {}) {
+      if (!canPlayAudio()) return Promise.resolve(false);
+      const speech = window.speechSynthesis;
+      if (!speech || typeof window.SpeechSynthesisUtterance !== 'function') return Promise.resolve(false);
+      const queue = (Array.isArray(lines) ? lines : [])
+        .map(normalizeSpeechText)
+        .filter(Boolean);
+      if (!queue.length) return Promise.resolve(false);
+
+      const voice = pickVietnameseVoice();
+      const rate = Number(options.rate || 0.8);
+      const pitch = Number(options.pitch || 1.0);
+      const volume = Number(options.volume || 1);
+      const interrupt = options.interrupt !== false;
+
+      return new Promise(resolve => {
+        let index = 0;
+        let resolved = false;
+
+        const finish = (spoken) => {
+          if (resolved) return;
+          resolved = true;
+          resolve(spoken);
+        };
+
+        const speakNext = () => {
+          if (index >= queue.length) {
+            finish(true);
+            return;
+          }
+
+          const utterance = new SpeechSynthesisUtterance(queue[index]);
+          utterance.lang = voice?.lang || 'vi-VN';
+          if (voice) utterance.voice = voice;
+          utterance.volume = volume;
+          utterance.rate = rate;
+          utterance.pitch = pitch;
+          if (index === 0 && typeof options.onFirstStart === 'function') {
+            utterance.onstart = () => {
+              try { options.onFirstStart(); } catch (_) {}
+            };
+          }
+          utterance.onend = () => {
+            index += 1;
+            const delay = Number(options.gapMs || 180);
+            if (delay > 0) setTimeout(speakNext, delay);
+            else speakNext();
+          };
+          utterance.onerror = () => {
+            index += 1;
+            if (index >= queue.length) finish(false);
+            else speakNext();
+          };
+
+          try {
+            speech.speak(utterance);
+          } catch (_) {
+            finish(false);
+          }
+        };
+
+        try {
+          if (interrupt) speech.cancel();
+          speakNext();
+        } catch (_) {
+          finish(false);
+        }
+      });
+    }
+
+    function speakNewOrderPhrase() {
+      return speakTextSequence(['Có món mới.'], {
+        interrupt: true,
+        rate: 0.8,
+        pitch: 1.0,
+        gapMs: 80,
+        onFirstStart: playSiren,
+      });
+    }
+
+    function enqueueSpeechJob(job) {
+      if (!job || !job.key) return;
+      if (!state.audioEnabled) return;
+      if (state.speechQueue.some(item => item.key === job.key)) return;
+      state.speechQueue.push(job);
+      drainSpeechQueue();
+    }
+
+    async function drainSpeechQueue() {
+      if (state.speechRunning) return;
+      state.speechRunning = true;
+      try {
+        while (state.speechQueue.length) {
+          const job = state.speechQueue.shift();
+          if (!job) continue;
+          if (!canPlayAudio()) {
+            state.speechQueue.unshift(job);
+            break;
+          }
+
+          if (job.type === 'new-order') {
+            if (state.settings.kitchenVoiceNewOrderEnabled !== false) {
+              const spoken = await speakTextSequence(job.lines, {
+                interrupt: true,
+                rate: 0.8,
+                pitch: 1.0,
+                gapMs: 80,
+                onFirstStart: playSiren,
+              });
+              if (!spoken) playSiren();
+            } else {
+              playSiren();
+            }
+          } else if (job.type === 'late-reminder') {
+            if (state.settings.kitchenVoiceLateReminderEnabled === false) continue;
+            const reminded = await speakTextSequence(job.lines, {
+              interrupt: false,
+              rate: 0.78,
+              pitch: 1.0,
+              gapMs: 120,
+              onFirstStart: playReminderTone,
+            });
+            if (!reminded) playReminderTone();
+          }
+        }
+      } finally {
+        state.speechRunning = false;
+      }
+    }
+
+    function playNewOrderVoiceAlert() {
+      speakNewOrderPhrase().then(spoke => {
+        if (!spoke) playSiren();
+      }).catch(() => {
+        playSiren();
+      });
+    }
+
+    function beep() {
+      playNewOrderVoiceAlert();
+    }
+
+    function getReminderLevel(elapsedMs) {
+      const baseMinutes = Math.max(1, Number(state.settings.kitchenLateReminderMinutes || 10));
+      const elapsedMinutes = Math.floor(Math.max(0, elapsedMs) / 60000);
+      if (elapsedMinutes < baseMinutes) return 0;
+      return 1 + Math.floor((elapsedMinutes - baseMinutes) / 5);
+    }
+
+    function maybeQueueLateReminders(cards, force = false) {
+      const now = Date.now();
+      if (!force && now - state.lastReminderSweepAt < 15000) return;
+      state.lastReminderSweepAt = now;
+      if (!state.audioEnabled) {
+        state.reminderState.clear();
+        return;
+      }
+
+      const activeKeys = new Set();
+      const grouped = new Map();
+
+      cards.forEach(card => {
+        card.items.forEach(item => {
+          const status = String(item?.kitchenStatus || '').toLowerCase();
+          if (!['pending', 'cooking'].includes(status)) return;
+          const lineKey = String(item?._lineKey || '');
+          if (!lineKey) return;
+
+          const trackerKey = `${card.orderId}:${lineKey}`;
+          activeKeys.add(trackerKey);
+
+          const level = getReminderLevel(getItemElapsedMs(item));
+          if (level <= 0) return;
+
+          const previousLevel = Number(state.reminderState.get(trackerKey) || 0);
+          if (level <= previousLevel) return;
+
+          state.reminderState.set(trackerKey, level);
+          if (!grouped.has(card.orderId)) grouped.set(card.orderId, { card, items: [], level });
+          const bucket = grouped.get(card.orderId);
+          bucket.items.push(item);
+          bucket.level = Math.max(bucket.level, level);
+        });
+      });
+
+      [...state.reminderState.keys()].forEach(key => {
+        if (!activeKeys.has(key)) state.reminderState.delete(key);
+      });
+
+      grouped.forEach(({ card, items, level }) => {
+        const reminderMinutes = Math.max(1, Number(state.settings.kitchenLateReminderMinutes || 10)) + ((level - 1) * 5);
+        enqueueSpeechJob({
+          key: `late:${card.orderId}:${level}:${items.map(item => item._lineKey).join('|')}`,
+          type: 'late-reminder',
+          lines: buildReminderSpeechLines(card, items, reminderMinutes),
+        });
+      });
     }
 
     async function updateOrderItems(orderId, updater) {
@@ -1674,6 +2103,11 @@
         state.settings = {
           kitchenNotifyAccepted: settings.kitchenNotifyAccepted !== false,
           kitchenNotifyReady: settings.kitchenNotifyReady !== false,
+          kitchenVoiceNewOrderEnabled: settings.kitchenVoiceNewOrderEnabled !== false,
+          kitchenVoiceLateReminderEnabled: settings.kitchenVoiceLateReminderEnabled !== false,
+          kitchenLateReminderMinutes: Number(settings.kitchenLateReminderMinutes || 10) > 0
+            ? Number(settings.kitchenLateReminderMinutes || 10)
+            : 10,
         };
       });
 
@@ -1684,7 +2118,7 @@
         });
         state.tables = nextMap;
         const cards = buildCards();
-        maybePlayNewPendingSound(cards);
+        maybePlayNewPendingSound(buildCards({ ignoreFilter: true }));
         renderLayout(cards);
       });
 
@@ -1695,7 +2129,7 @@
         });
         state.orders = nextMap;
         const cards = buildCards();
-        maybePlayNewPendingSound(cards);
+        maybePlayNewPendingSound(buildCards({ ignoreFilter: true }));
         renderLayout(cards);
       });
     }
@@ -1764,10 +2198,50 @@
     });
 
     audioToggle.addEventListener('click', () => {
+      ensureAudioUnlocked();
       state.audioEnabled = !state.audioEnabled;
       localStorage.setItem('kds:audioEnabled', state.audioEnabled ? 'on' : 'off');
+      if (!state.audioEnabled) {
+        state.speechQueue = [];
+        state.reminderState.clear();
+        try { window.speechSynthesis?.cancel(); } catch (_) {}
+      } else {
+        drainSpeechQueue();
+      }
       audioToggle.textContent = `Chuông: ${state.audioEnabled ? 'Bật' : 'Tắt'}`;
-      showToast(state.audioEnabled ? 'Đã bật chuông báo món mới.' : 'Đã tắt chuông báo món mới.', state.audioEnabled ? 'success' : 'warning');
+      showToast(state.audioEnabled ? 'Da bat am thanh canh bao bep.' : 'Da tat am thanh canh bao bep.', state.audioEnabled ? 'success' : 'warning');
+    });
+
+    audioToggle.addEventListener('click', () => {
+      if (state.audioEnabled) {
+        setTimeout(() => {
+          speakTextSequence(['Có món mới, Bàn một.', 'Cơm gà, một phần.'], {
+            rate: 0.8,
+            pitch: 1.0,
+            gapMs: 80,
+            onFirstStart: playSiren,
+          }).catch(() => {
+            playSiren();
+          });
+        }, 120);
+      }
+    });
+
+    audioToggle.addEventListener('dblclick', () => {
+      if (state.audioEnabled) {
+        speakTextSequence(['Nhắc bếp.', 'Bàn hai.', 'Phở bò đã chờ hơn mười phút.'], {
+          rate: 0.78,
+          pitch: 1.0,
+          gapMs: 120,
+          onFirstStart: playReminderTone,
+        }).catch(() => {
+          playReminderTone();
+        });
+      }
+    });
+
+    newOrderAlert?.addEventListener('click', () => {
+      newOrderAlert.classList.remove('show');
     });
 
     appScreen.addEventListener('click', async event => {
@@ -1795,8 +2269,11 @@
 
     window.addEventListener('pointerdown', ensureAudioUnlocked, { once: true });
     setInterval(() => {
+      const cards = buildCards();
+      const audioCards = buildCards({ ignoreFilter: true });
       updateClock();
-      renderLayout(buildCards());
+      maybeQueueLateReminders(audioCards);
+      renderLayout(cards);
     }, 1000);
     updateClock();
     audioToggle.textContent = `Chuông: ${state.audioEnabled ? 'Bật' : 'Tắt'}`;
@@ -1841,5 +2318,3 @@
   </script>
 </body>
 </html>
-
-

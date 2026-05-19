@@ -2,39 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 
-const DEFAULT_PROVIDER = 'gemini';
+const DEFAULT_PROVIDER = 'deepseek';
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com/v1/chat/completions';
 const DEFAULT_MODEL = 'deepseek-chat';
-const DEFAULT_GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_INTENT_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    intent: { type: 'STRING' },
-    confidence: { type: 'NUMBER' },
-    time_scope: { type: 'STRING' },
-    from_date: { type: 'STRING' },
-    to_date: { type: 'STRING' },
-    table_id: { type: 'STRING' },
-    product_item_id: { type: 'STRING' },
-    inventory_item_id: { type: 'STRING' },
-    line_items: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          item_id: { type: 'STRING' },
-          qty: { type: 'NUMBER' },
-        },
-      },
-    },
-    payment_method: { type: 'STRING' },
-    metric: { type: 'STRING' },
-    group_by: { type: 'STRING' },
-    focus_term: { type: 'STRING' },
-    note: { type: 'STRING' },
-  },
-};
 const CATALOG_CACHE_TTL_MS = 60 * 1000;
 
 let catalogCache = {
@@ -143,47 +113,47 @@ function repairVietnameseTextV2(input) {
   str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
 
   const dictionary = [
-    ['bÃ¡n', 'b\u00e1n'],
-    ['Ä‘Æ°á»£c', '\u0111\u01b0\u1ee3c'],
-    ['Ä‘Æ¡n', '\u0111\u01a1n'],
-    ['vá»‹', 'v\u1ecb'],
-    ['lÃ£i', 'l\u00e3i'],
-    ['gÃ´p', 'g\u1ed9p'],
-    ['nháº­p', 'nh\u1eadp'],
-    ['tá»•ng', 't\u1ed5ng'],
-    ['chá»‘t', 'ch\u1ed1t'],
-    ['hiá»‡n', 'hi\u1ec7n'],
-    ['máº·t hÃ ng', 'm\u1eb7t h\u00e0ng'],
-    ['mÃ³n', 'm\u00f3n'],
-    ['nhiá»u nháº¥t', 'nhi\u1ec1u nh\u1ea5t'],
-    ['hÃ´m nay', 'h\u00f4m nay'],
-    ['hÃ´m qua', 'h\u00f4m qua'],
-    ['tuáº§n nÃ y', 'tu\u1ea7n n\u00e0y'],
-    ['thÃ¡ng nÃ y', 'th\u00e1ng n\u00e0y'],
-    ['Táº¡m tÃ­nh', 'T\u1ea1m t\u00ednh'],
-    ['hiá»‡n táº¡i', 'hi\u1ec7n t\u1ea1i'],
-    ['chÆ°a', 'ch\u01b0a'],
-    ['khÃ´ng', 'kh\u00f4ng'],
-    ['bÃ n', 'b\u00e0n'],
-    ['Ä‘Ã£', '\u0111\u00e3'],
-    ['Ä‘á»ƒ', '\u0111\u1ec3'],
-    ['Ä‘', '\u0111'],
-    ['Ã¡', '\u00e1'],
-    ['Ã ', '\u00e0'],
-    ['Ã£', '\u00e3'],
-    ['Ã¢', '\u00e2'],
-    ['Ãª', '\u00ea'],
-    ['Ã´', '\u00f4'],
-    ['Æ°', '\u01b0'],
-    ['Æ¡', '\u01a1'],
-    ['Ã¹', '\u00f9'],
-    ['Ãº', '\u00fa'],
-    ['Ã²', '\u00f2'],
-    ['Ã³', '\u00f3'],
-    ['Ã¨', '\u00e8'],
-    ['Ã©', '\u00e9'],
-    ['Ã¬', '\u00ec'],
-    ['Ã­', '\u00ed'],
+    ['bÃ¡n', 'bán'],
+    ['Ä‘Æ°á»£c', 'được'],
+    ['Ä‘Æ¡n', 'đơn'],
+    ['vá»‹', 'vị'],
+    ['lÃ£i', 'lãi'],
+    ['gÃ´p', 'gộp'],
+    ['nháº­p', 'nhập'],
+    ['tá»•ng', 'tổng'],
+    ['chá»‘t', 'chốt'],
+    ['hiá»‡n', 'hiện'],
+    ['máº·t hÃ ng', 'mặt hàng'],
+    ['mÃ³n', 'món'],
+    ['nhiá»u nháº¥t', 'nhiều nhất'],
+    ['hÃ´m nay', 'hôm nay'],
+    ['hÃ´m qua', 'hôm qua'],
+    ['tuáº§n nÃ y', 'tuần này'],
+    ['thÃ¡ng nÃ y', 'tháng này'],
+    ['Táº¡m tÃ­nh', 'Tạm tính'],
+    ['hiá»‡n táº¡i', 'hiện tại'],
+    ['chÆ°a', 'chưa'],
+    ['khÃ´ng', 'không'],
+    ['bÃ n', 'bàn'],
+    ['Ä‘Ã£', 'đã'],
+    ['Ä‘á»ƒ', 'để'],
+    ['Ä‘', 'đ'],
+    ['Ã¡', 'á'],
+    ['Ã ', 'à'],
+    ['Ã£', 'ã'],
+    ['Ã¢', 'â'],
+    ['Ãª', 'ê'],
+    ['Ã´', 'ô'],
+    ['Æ°', 'ư'],
+    ['Æ¡', 'ơ'],
+    ['Ã¹', 'ù'],
+    ['Ãº', 'ú'],
+    ['Ã²', 'ò'],
+    ['Ã³', 'ó'],
+    ['Ã¨', 'è'],
+    ['Ã©', 'é'],
+    ['Ã¬', 'ì'],
+    ['Ã­', 'í'],
   ];
   dictionary.forEach(([bad, good]) => {
     str = str.split(bad).join(good);
@@ -532,115 +502,6 @@ async function callDeepSeekIntent({
   return parseJsonLoose(content);
 }
 
-async function callGeminiIntent({
-  apiKey,
-  model = DEFAULT_GEMINI_MODEL,
-  systemPrompt,
-  userText,
-  timeoutMs = 6500,
-}) {
-  if (!apiKey) throw new Error('Thiếu Gemini API key.');
-
-  const url = `${DEFAULT_GEMINI_ENDPOINT}/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemPrompt}\n\nUSER_REQUEST: ${String(userText || '').trim()}` }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        topP: 0.1,
-        maxOutputTokens: 220,
-        responseMimeType: 'application/json',
-      },
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-
-  const data = await res.json();
-  if (!res.ok || data?.error) {
-    throw new Error(data?.error?.message || 'Gemini API error');
-  }
-  const content = data?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('').trim();
-  if (!content) throw new Error('Gemini không trả về nội dung.');
-  return parseJsonLoose(content);
-}
-
-async function callGeminiIntentStable({
-  apiKey,
-  model = DEFAULT_GEMINI_MODEL,
-  endpoint = DEFAULT_GEMINI_ENDPOINT,
-  systemPrompt,
-  userText,
-  timeoutMs = 6500,
-}) {
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const res = await fetch(`${endpoint}/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: systemPrompt }],
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: String(userText || '').trim() }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0,
-          topP: 0.1,
-          maxOutputTokens: 220,
-          responseMimeType: 'application/json',
-          responseSchema: GEMINI_INTENT_SCHEMA,
-        },
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-
-    const data = await res.json();
-    if (!res.ok || data?.error) {
-      const message = data?.error?.message || 'Gemini API error';
-      lastError = new Error(message);
-      if (/high demand|overloaded|unavailable|try again later/i.test(message) && attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 600 * (attempt + 1)));
-        continue;
-      }
-      throw lastError;
-    }
-
-    const content = data?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('').trim();
-    if (!content) {
-      lastError = new Error('Gemini không trả về nội dung.');
-      if (attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
-        continue;
-      }
-      throw lastError;
-    }
-
-    try {
-      return parseJsonLoose(content);
-    } catch (error) {
-      lastError = error;
-      if (attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
-        continue;
-      }
-      throw lastError;
-    }
-  }
-
-  throw lastError || new Error('Gemini API error');
-}
-
 async function findProductById(db, itemId) {
   if (!itemId) return null;
   const snap = await db.collection('Product_Catalog').where('item_id', '==', String(itemId)).limit(1).get();
@@ -793,21 +654,9 @@ function buildOrderSummary(order) {
 class DeepSeekRouter {
   constructor(options = {}) {
     this.provider = String(options.provider || process.env.AI_PROVIDER || DEFAULT_PROVIDER).trim().toLowerCase();
-    this.apiKey = options.apiKey || (
-      this.provider === 'gemini'
-        ? (process.env.GEMINI_API_KEY || '')
-        : (process.env.DEEPSEEK_API_KEY || '')
-    );
-    this.endpoint = options.endpoint || (
-      this.provider === 'gemini'
-        ? (process.env.GEMINI_ENDPOINT || DEFAULT_GEMINI_ENDPOINT)
-        : (process.env.DEEPSEEK_ENDPOINT || DEFAULT_ENDPOINT)
-    );
-    this.model = options.model || (
-      this.provider === 'gemini'
-        ? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL)
-        : (process.env.DEEPSEEK_MODEL || DEFAULT_MODEL)
-    );
+    this.apiKey = options.apiKey || (process.env.DEEPSEEK_API_KEY || '');
+    this.endpoint = options.endpoint || (process.env.DEEPSEEK_ENDPOINT || DEFAULT_ENDPOINT);
+    this.model = options.model || (process.env.DEEPSEEK_MODEL || DEFAULT_MODEL);
     this.timeoutMs = asNumber(options.timeoutMs, 6500);
     this.firestore = options.firestore || ensureFirestore();
   }
@@ -910,23 +759,14 @@ class DeepSeekRouter {
 
   async classifyIntent(userText) {
     const systemPrompt = await this.buildDynamicSystemPrompt();
-    const parsed = this.provider === 'gemini'
-      ? await callGeminiIntentStable({
-          apiKey: this.apiKey,
-          model: this.model,
-          endpoint: this.endpoint || DEFAULT_GEMINI_ENDPOINT,
-          systemPrompt,
-          userText,
-          timeoutMs: this.timeoutMs,
-        })
-      : await callDeepSeekIntent({
-          apiKey: this.apiKey,
-          endpoint: this.endpoint,
-          model: this.model,
-          systemPrompt,
-          userText,
-          timeoutMs: this.timeoutMs,
-        });
+    const parsed = await callDeepSeekIntent({
+      apiKey: this.apiKey,
+      endpoint: this.endpoint,
+      model: this.model,
+      systemPrompt,
+      userText,
+      timeoutMs: this.timeoutMs,
+    });
 
     return {
       intent: String(parsed.intent || '').trim(),
@@ -1050,8 +890,8 @@ class DeepSeekRouter {
         intent: 'query_import',
         needs_clarification: false,
         text: productName
-          ? `${range.label}, nháº­p ${productName} ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹.`
-          : `${range.label}, tá»•ng sá»‘ lÆ°á»£ng nháº­p lÃ  ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹.`,
+          ? `${range.label}, nhập ${productName} ${qty.toLocaleString('vi-VN')} đơn vị.`
+          : `${range.label}, tổng số lượng nhập là ${qty.toLocaleString('vi-VN')} đơn vị.`,
         data: {
           range,
           product: product ? { item_id: product.item_id || product.docId, display_name: productName } : null,
@@ -1332,8 +1172,8 @@ class DeepSeekRouter {
         intent: 'query_import',
         needs_clarification: false,
         text: focusLabel
-          ? `${range.label}, nháº­p ${focusLabel} ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹.`
-          : `${range.label}, tá»•ng sá»‘ lÆ°á»£ng nháº­p lÃ  ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹.`,
+          ? `${range.label}, nhập ${focusLabel} ${qty.toLocaleString('vi-VN')} đơn vị.`
+          : `${range.label}, tổng số lượng nhập là ${qty.toLocaleString('vi-VN')} đơn vị.`,
         data: { range, total, qty, count: filtered.length, focus_term: focusLabel },
       };
     }
@@ -1343,8 +1183,8 @@ class DeepSeekRouter {
       intent: 'query_import',
       needs_clarification: false,
       text: focusLabel
-        ? `${range.label}, nháº­p ${focusLabel}: ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹, tá»•ng ${total.toLocaleString('vi-VN')}Ä‘ (${filtered.length} phiáº¿u).`
-        : `${range.label}, tá»•ng nháº­p hÃ ng lÃ  ${total.toLocaleString('vi-VN')}Ä‘ vá»›i ${filtered.length} phiáº¿u.`,
+        ? `${range.label}, nhập ${focusLabel}: ${qty.toLocaleString('vi-VN')} đơn vị, tổng ${total.toLocaleString('vi-VN')}đ (${filtered.length} phiếu).`
+        : `${range.label}, tổng nhập hàng là ${total.toLocaleString('vi-VN')}đ với ${filtered.length} phiếu.`,
       data: { range, total, qty, count: filtered.length, focus_term: focusLabel },
     };
   }
@@ -1394,8 +1234,8 @@ class DeepSeekRouter {
         intent: 'query_sales',
         needs_clarification: false,
         text: topItem
-          ? `${range.label}, mÃ³n bÃ¡n nhiá»u nháº¥t lÃ  ${topItem.name} vá»›i ${topItem.qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹, doanh thu ${topItem.revenue.toLocaleString('vi-VN')}Ä‘.`
-          : `${range.label}, chÆ°a cÃ³ dá»¯ liá»‡u bÃ¡n hÃ ng Ä‘á»ƒ xáº¿p háº¡ng mÃ³n.`,
+          ? `${range.label}, món bán nhiều nhất là ${topItem.name} với ${topItem.qty.toLocaleString('vi-VN')} đơn vị, doanh thu ${topItem.revenue.toLocaleString('vi-VN')}đ.`
+          : `${range.label}, chưa có dữ liệu bán hàng để xếp hạng món.`,
         data: { range, top_item: topItem || null, focus_term: focusLabel },
       };
     }
@@ -1405,7 +1245,7 @@ class DeepSeekRouter {
         ok: true,
         intent: 'query_sales',
         needs_clarification: false,
-        text: `${range.label}, cÃ³ ${rows.length} Ä‘Æ¡n Ä‘Ã£ chá»‘t.`,
+        text: `${range.label}, có ${rows.length} đơn đã chốt.`,
         data: { range, orders: rows.length, focus_term: focusLabel },
       };
     }
@@ -1416,8 +1256,8 @@ class DeepSeekRouter {
         intent: 'query_sales',
         needs_clarification: false,
         text: focusLabel
-          ? `${range.label}, ${focusLabel} lÃ£i gÃ´p ${profit.toLocaleString('vi-VN')}Ä‘ trÃªn doanh thu ${revenue.toLocaleString('vi-VN')}Ä‘.`
-          : `${range.label}, lÃ£i gÃ´p á»›c tÃ­nh ${profit.toLocaleString('vi-VN')}Ä‘ trÃªn doanh thu ${revenue.toLocaleString('vi-VN')}Ä‘.`,
+          ? `${range.label}, ${focusLabel} lãi gộp ${profit.toLocaleString('vi-VN')}đ trên doanh thu ${revenue.toLocaleString('vi-VN')}đ.`
+          : `${range.label}, lãi gộp ước tính ${profit.toLocaleString('vi-VN')}đ trên doanh thu ${revenue.toLocaleString('vi-VN')}đ.`,
         data: { range, revenue, cost, profit, qty, orders: rows.length, focus_term: focusLabel },
       };
     }
@@ -1427,7 +1267,7 @@ class DeepSeekRouter {
         ok: true,
         intent: 'query_sales',
         needs_clarification: false,
-        text: `${range.label}, ${focusLabel} bÃ¡n Ä‘Æ°á»£c ${qty.toLocaleString('vi-VN')} Ä‘Æ¡n vá»‹, doanh thu ${revenue.toLocaleString('vi-VN')}Ä‘, lÃ£i gÃ´p ${profit.toLocaleString('vi-VN')}Ä‘.`,
+        text: `${range.label}, ${focusLabel} bÃ¡n ÄÆ°á»£c ${qty.toLocaleString('vi-VN')} ÄÆ¡n vá», doanh thu ${revenue.toLocaleString('vi-VN')}Ä, lÃ£i gá»p ${profit.toLocaleString('vi-VN')}Ä.`,
         data: { range, revenue, cost, profit, qty, orders: rows.length, focus_term: focusLabel, items: statsList.slice(0, 10) },
       };
     }
@@ -1509,7 +1349,7 @@ class DeepSeekRouter {
         intent: 'pos_order',
         needs_clarification: false,
         preview_only: true,
-        text: `AI nháº­n lá»‡nh thÃªm ${normalizedItems.map(item => `${item.qty} ${item.name}`).join(', ')} cho bÃ n ${tableId}. Táº¡m tÃ­nh thÃªm ${previewAddedTotal.toLocaleString('vi-VN')}Ä‘.`,
+        text: `AI nháº­n lá»nh thÃªm ${normalizedItems.map(item => `${item.qty} ${item.name}`).join(', ')} cho bÃ n ${tableId}. Táº¡m tÃ­nh thÃªm ${previewAddedTotal.toLocaleString('vi-VN')}Ä.`,
         data: { table_id: tableId, added_items: normalizedItems, preview_added_total: previewAddedTotal, client_action: clientAction },
       };
     }
@@ -1522,7 +1362,7 @@ class DeepSeekRouter {
       ok: true,
       intent: 'pos_order',
       needs_clarification: false,
-      text: `ÄÃ£ thÃªm ${normalizedItems.length} dÃ²ng mÃ³n vÃ o bÃ n ${tableId}. Táº¡m tÃ­nh hiá»‡n táº¡i ${summary.total.toLocaleString('vi-VN')}Ä‘.`,
+      text: `ÄÃ£ thÃªm ${normalizedItems.length} dÃ²ng mÃ³n vÃ o bÃ n ${tableId}. Táº¡m tÃ­nh hiá»n táº¡i ${summary.total.toLocaleString('vi-VN')}Ä.`,
       data: { table_id: tableId, order_id: updated.id || updated.docId, added_items: normalizedItems, order_summary: summary, client_action: clientAction },
     };
   }
