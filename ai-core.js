@@ -9,14 +9,11 @@ const DEEPSEEK_MODELS = [
 
 function _repairAIText(input) {
   const str = String(input ?? '');
-  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ', 'á»', 'áº'];
-  if (!badTokens.some(t => str.includes(t))) return str;
-  try {
-    return decodeURIComponent(escape(str));
-  } catch (_) {}
+  if (!str.includes('\uFFFD')) return str;
   try {
     const bytes = Uint8Array.from(str, ch => ch.charCodeAt(0) & 0xFF);
-    return new TextDecoder('utf-8').decode(bytes);
+    const fixed = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (fixed && !fixed.includes('\uFFFD')) return fixed;
   } catch (_) {}
   return str;
 }
@@ -489,127 +486,11 @@ async function executePendingAIAction(actionType, payload = {}) {
 }
 
 function _normalizeAIText(input) {
-  let str = _repairAIText(input);
-  if (!str) return str;
-  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
-  if (!suspect) return str;
-
-  const decodeUtf8Bytes = (value) => {
-    try {
-      const bytes = Uint8Array.from(String(value || ''), ch => ch.charCodeAt(0) & 0xFF);
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch (_) {
-      return String(value || '');
-    }
-  };
-
-  const candidates = [str];
-  let iterative = str;
-  for (let i = 0; i < 3; i += 1) {
-    const next = decodeUtf8Bytes(iterative);
-    if (!next || next === iterative) break;
-    candidates.push(next);
-    iterative = next;
-  }
-
-  const score = (value) => {
-    const text = String(value || '');
-    const bad = (text.match(/[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/g) || []).length;
-    const good = (text.match(/[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/gi) || []).length;
-    return (bad * 3) - good;
-  };
-
-  str = candidates.sort((a, b) => score(a) - score(b))[0] || str;
-  str = str.replace(/[\u0080-\u009f]/g, '').replace(/�/g, '');
-
-  const dictionary = [
-    ['hÃ´m nay', 'hôm nay'],
-    ['hÃ´m qua', 'hôm qua'],
-    ['tuáº§n nÃ y', 'tuần này'],
-    ['thÃ¡ng nÃ y', 'tháng này'],
-    ['bÃ¡n Ä‘Æ°á»£c', 'bán được'],
-    ['Ä‘Æ¡n vá»‹', 'đơn vị'],
-    ['lÃ£i gÃ´p', 'lãi gộp'],
-    ['nháº­p', 'nhập'],
-    ['Táº¡m tÃ­nh', 'Tạm tính'],
-    ['hiá»‡n táº¡i', 'hiện tại'],
-    ['Ä‘Ã£', 'đã'],
-    ['chÆ°a', 'chưa'],
-    ['khÃ´ng', 'không'],
-    ['bÃ n', 'bàn'],
-  ];
-  dictionary.forEach(([bad, good]) => {
-    str = str.split(bad).join(good);
-  });
-
-  return str.trim();
+  return _repairAIText(input).trim();
 }
 
 function _normalizeAITextV2(input) {
-  let str = String(input ?? '');
-  if (!str) return str;
-  const suspect = /[\uFFFD\u0080-\u009f]|Ã|Â|Ä|Æ|áº|á»|â€|ðŸ|�/.test(str);
-  if (!suspect) return str;
-
-  const hasGoodVietnamese = /[àáạảãăắằẳẵặâấầẩẫậèéẹẻẽêếềểễệìíịỉĩòóọỏõôốồổỗộơớờởỡợùúụủũưứừửữựỳýỵỷỹđ]/i.test(str);
-  if (!hasGoodVietnamese) {
-    try {
-      const bytes = Uint8Array.from(String(str || ''), ch => ch.charCodeAt(0) & 0xFF);
-      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      if (decoded && !/[\u0000-\u001f]/.test(decoded)) str = decoded;
-    } catch (_) {}
-  }
-
-  str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
-
-  const dictionary = [
-    ['bÃ¡n', 'b\u00e1n'],
-    ['Ä‘Æ°á»£c', '\u0111\u01b0\u1ee3c'],
-    ['Ä‘Æ¡n', '\u0111\u01a1n'],
-    ['vá»‹', 'v\u1ecb'],
-    ['lÃ£i', 'l\u00e3i'],
-    ['gÃ´p', 'g\u1ed9p'],
-    ['nháº­p', 'nh\u1eadp'],
-    ['tá»•ng', 't\u1ed5ng'],
-    ['chá»‘t', 'ch\u1ed1t'],
-    ['hiá»‡n', 'hi\u1ec7n'],
-    ['máº·t hÃ ng', 'm\u1eb7t h\u00e0ng'],
-    ['mÃ³n', 'm\u00f3n'],
-    ['nhiá»u nháº¥t', 'nhi\u1ec1u nh\u1ea5t'],
-    ['hÃ´m nay', 'h\u00f4m nay'],
-    ['hÃ´m qua', 'h\u00f4m qua'],
-    ['tuáº§n nÃ y', 'tu\u1ea7n n\u00e0y'],
-    ['thÃ¡ng nÃ y', 'th\u00e1ng n\u00e0y'],
-    ['Táº¡m tÃ­nh', 'T\u1ea1m t\u00ednh'],
-    ['hiá»‡n táº¡i', 'hi\u1ec7n t\u1ea1i'],
-    ['chÆ°a', 'ch\u01b0a'],
-    ['khÃ´ng', 'kh\u00f4ng'],
-    ['bÃ n', 'b\u00e0n'],
-    ['Ä‘Ã£', '\u0111\u00e3'],
-    ['Ä‘á»ƒ', '\u0111\u1ec3'],
-    ['Ä‘', '\u0111'],
-    ['Ã¡', '\u00e1'],
-    ['Ã ', '\u00e0'],
-    ['Ã£', '\u00e3'],
-    ['Ã¢', '\u00e2'],
-    ['Ãª', '\u00ea'],
-    ['Ã´', '\u00f4'],
-    ['Æ°', '\u01b0'],
-    ['Æ¡', '\u01a1'],
-    ['Ã¹', '\u00f9'],
-    ['Ãº', '\u00fa'],
-    ['Ã²', '\u00f2'],
-    ['Ã³', '\u00f3'],
-    ['Ã¨', '\u00e8'],
-    ['Ã©', '\u00e9'],
-    ['Ã¬', '\u00ec'],
-    ['Ã­', '\u00ed'],
-  ];
-  dictionary.forEach(([bad, good]) => {
-    str = str.split(bad).join(good);
-  });
-
-  return str.trim();
+  return _repairAIText(input).trim();
 }
 
 async function processAICommand(text, media = {}) {
