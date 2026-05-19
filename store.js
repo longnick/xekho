@@ -254,7 +254,6 @@ const Store = {
       photoRetentionDays: 0,
       activeAIEngine: 'deepseek',
       forceOffline: false,
-      geminiApiKey: '',
       deepseekApiKey: '',
       deepseekEndpoint: 'https://api.deepseek.com/v1/chat/completions',
       deepseekModel: 'deepseek-chat',
@@ -637,6 +636,18 @@ function isCompletedHistoryOrder(order) {
   return status === 'completed' || status === 'closed';
 }
 
+function isVisibleHistoryOrder(order) {
+  if (!order || typeof order !== 'object') return false;
+  if (!isCompletedHistoryOrder(order)) return false;
+  if (order.hidden === true) return false;
+  if (order.hiddenFromReports === true) return false;
+  if (order.hiddenFromHistory === true) return false;
+  if (order.deletedAt || order.deletedFromAppAt) return false;
+  if (order.archivedAt || order.archivedFromHistoryId) return false;
+  if (order.supersededAt || order.supersededByHistoryId) return false;
+  return true;
+}
+
 // Filter history by period
 // period: 'today'|'day'|'week'|'month'|'all'|'range'
 // opts: { date: 'YYYY-MM-DD', fromDate: 'YYYY-MM-DD', toDate: 'YYYY-MM-DD' }
@@ -646,7 +657,7 @@ function filterHistory(period, opts) {
     ? window.appState.history
     : Store.getHistory();
 
-  return h.filter(o => isCompletedHistoryOrder(o) && isDateInPeriod(o.paidAt, period, opts));
+  return h.filter(o => isVisibleHistoryOrder(o) && isDateInPeriod(o.paidAt, period, opts));
 }
 
 
@@ -817,7 +828,7 @@ function getRevenueByDay(days) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const ds = d.toDateString();
-    const dayOrders = h.filter(o => isCompletedHistoryOrder(o) && new Date(o.paidAt).toDateString() === ds);
+    const dayOrders = h.filter(o => isVisibleHistoryOrder(o) && new Date(o.paidAt).toDateString() === ds);
     result.push({
       date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
       revenue: dayOrders.reduce((s,o) => s + o.total, 0),

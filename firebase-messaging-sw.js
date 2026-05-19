@@ -2,7 +2,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'AIzaSyDOxVZDZ1JkpermI-J2L7AEioP0CWERqOY',
+  apiKey: 'AIzaSyC_Pr-jtKQQZM-zH0Uf9yDpO8CeC5-Zd98',
   authDomain: 'pos-v2-909ff.firebaseapp.com',
   databaseURL: 'https://pos-v2-909ff-default-rtdb.asia-southeast1.firebasedatabase.app',
   projectId: 'pos-v2-909ff',

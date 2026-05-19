@@ -121,47 +121,47 @@ function repairVietnameseMojibakeV3(input) {
   str = str.replace(/[\u0080-\u009f]/g, '').replace(/ï¿½|�/g, '');
 
   const dictionary = [
-    ['bÃ¡n', 'b\u00e1n'],
-    ['Ä‘Æ°á»£c', '\u0111\u01b0\u1ee3c'],
-    ['Ä‘Æ¡n', '\u0111\u01a1n'],
-    ['vá»‹', 'v\u1ecb'],
-    ['lÃ£i', 'l\u00e3i'],
-    ['gÃ´p', 'g\u1ed9p'],
-    ['nháº­p', 'nh\u1eadp'],
-    ['tá»•ng', 't\u1ed5ng'],
-    ['chá»‘t', 'ch\u1ed1t'],
-    ['hiá»‡n', 'hi\u1ec7n'],
-    ['máº·t hÃ ng', 'm\u1eb7t h\u00e0ng'],
-    ['mÃ³n', 'm\u00f3n'],
-    ['nhiá»u nháº¥t', 'nhi\u1ec1u nh\u1ea5t'],
-    ['hÃ´m nay', 'h\u00f4m nay'],
-    ['hÃ´m qua', 'h\u00f4m qua'],
-    ['tuáº§n nÃ y', 'tu\u1ea7n n\u00e0y'],
-    ['thÃ¡ng nÃ y', 'th\u00e1ng n\u00e0y'],
-    ['Táº¡m tÃ­nh', 'T\u1ea1m t\u00ednh'],
-    ['hiá»‡n táº¡i', 'hi\u1ec7n t\u1ea1i'],
-    ['chÆ°a', 'ch\u01b0a'],
-    ['khÃ´ng', 'kh\u00f4ng'],
-    ['bÃ n', 'b\u00e0n'],
-    ['Ä‘Ã£', '\u0111\u00e3'],
-    ['Ä‘á»ƒ', '\u0111\u1ec3'],
-    ['Ä‘', '\u0111'],
-    ['Ã¡', '\u00e1'],
-    ['Ã ', '\u00e0'],
-    ['Ã£', '\u00e3'],
-    ['Ã¢', '\u00e2'],
-    ['Ãª', '\u00ea'],
-    ['Ã´', '\u00f4'],
-    ['Æ°', '\u01b0'],
-    ['Æ¡', '\u01a1'],
-    ['Ã¹', '\u00f9'],
-    ['Ãº', '\u00fa'],
-    ['Ã²', '\u00f2'],
-    ['Ã³', '\u00f3'],
-    ['Ã¨', '\u00e8'],
-    ['Ã©', '\u00e9'],
-    ['Ã¬', '\u00ec'],
-    ['Ã­', '\u00ed'],
+    ['bÃ¡n', 'bán'],
+    ['Ä‘Æ°á»£c', 'được'],
+    ['Ä‘Æ¡n', 'đơn'],
+    ['vá»‹', 'vị'],
+    ['lÃ£i', 'lãi'],
+    ['gÃ´p', 'gộp'],
+    ['nháº­p', 'nhập'],
+    ['tá»•ng', 'tổng'],
+    ['chá»‘t', 'chốt'],
+    ['hiá»‡n', 'hiện'],
+    ['máº·t hÃ ng', 'mặt hàng'],
+    ['mÃ³n', 'món'],
+    ['nhiá»u nháº¥t', 'nhiều nhất'],
+    ['hÃ´m nay', 'hôm nay'],
+    ['hÃ´m qua', 'hôm qua'],
+    ['tuáº§n nÃ y', 'tuần này'],
+    ['thÃ¡ng nÃ y', 'tháng này'],
+    ['Táº¡m tÃ­nh', 'Tạm tính'],
+    ['hiá»‡n táº¡i', 'hiện tại'],
+    ['chÆ°a', 'chưa'],
+    ['khÃ´ng', 'không'],
+    ['bÃ n', 'bàn'],
+    ['Ä‘Ã£', 'đã'],
+    ['Ä‘á»ƒ', 'để'],
+    ['Ä‘', 'đ'],
+    ['Ã¡', 'á'],
+    ['Ã ', 'à'],
+    ['Ã£', 'ã'],
+    ['Ã¢', 'â'],
+    ['Ãª', 'ê'],
+    ['Ã´', 'ô'],
+    ['Æ°', 'ư'],
+    ['Æ¡', 'ơ'],
+    ['Ã¹', 'ù'],
+    ['Ãº', 'ú'],
+    ['Ã²', 'ò'],
+    ['Ã³', 'ó'],
+    ['Ã¨', 'è'],
+    ['Ã©', 'é'],
+    ['Ã¬', 'ì'],
+    ['Ã­', 'í'],
   ];
   dictionary.forEach(([bad, good]) => {
     str = str.split(bad).join(good);
@@ -506,6 +506,51 @@ function addAIBubble(text, role = 'bot') {
   return div;
 }
 
+function addAIPendingActionBubble(pendingAction) {
+  const container = document.getElementById('ai-chat-messages');
+  if (!container || !pendingAction) return null;
+  const div = document.createElement('div');
+  div.className = 'ai-bubble ai-bubble-bot ai-pending-action';
+  const message = repairVietnameseMojibakeV3(pendingAction.message || 'Cần xác nhận trước khi thực hiện thao tác này.');
+  div.innerHTML = `
+    <div>${sanitizeAIHtml(message)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button type="button" class="btn btn-success btn-sm ai-pending-confirm">✅ Xác nhận</button>
+      <button type="button" class="btn btn-outline btn-sm ai-pending-cancel">❌ Hủy</button>
+    </div>
+  `;
+  const confirmBtn = div.querySelector('.ai-pending-confirm');
+  const cancelBtn = div.querySelector('.ai-pending-cancel');
+  const setDisabled = (disabled) => {
+    if (confirmBtn) confirmBtn.disabled = disabled;
+    if (cancelBtn) cancelBtn.disabled = disabled;
+  };
+  if (confirmBtn) {
+    confirmBtn.onclick = async () => {
+      setDisabled(true);
+      confirmBtn.textContent = 'Đang thực hiện...';
+      try {
+        if (typeof window.executePendingAIAction !== 'function') throw new Error('POS chưa nạp hàm xác nhận AI.');
+        const result = await window.executePendingAIAction(pendingAction.action_type, pendingAction.payload || {});
+        addAIBubble(result?.message || (result?.ok ? 'Đã thực hiện xong.' : 'Không thực hiện được.'), result?.ok ? 'bot' : 'error');
+      } catch (err) {
+        addAIBubble(`❌ Lỗi xác nhận: ${err.message || 'Không xác định'}`, 'error');
+        setDisabled(false);
+        confirmBtn.textContent = '✅ Xác nhận';
+      }
+    };
+  }
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      setDisabled(true);
+      addAIBubble('Đã hủy thao tác AI.', 'bot');
+    };
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
 function removeThinkingBubble() {
   const t = document.getElementById('ai-thinking-bubble');
   if (t) t.remove();
@@ -573,33 +618,26 @@ function stopAIListening() {
   if (ind) ind.style.display = 'none';
 }
 
-// ------ Camera Capture â†’ Gemini Vision ------
+// ------ Camera Capture legacy -> Vertex AI Server ------
 async function handleAICameraCaptureLegacy(event) {
   const file = event.target.files[0];
   if(!file) return;
-  
-  const s = Store.getSettings();
-  if(!s.geminiApiKey) {
-    addAIBubble('⚠️ Cần có Gemini API Key để sử dụng chức năng nhận diện ảnh. Vào <strong>Cài đặt</strong> để cấu hình.', 'error');
-    event.target.value = '';
-    return;
-  }
 
   // Show preview
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const base64 = e.target.result.split(',')[1];
+    const dataUrl = String(e.target.result || '');
     const mimeType = file.type || 'image/jpeg';
-    
+
     addAIBubble(`📷 <img src="${e.target.result}" style="max-width:200px;max-height:150px;border-radius:8px;margin-top:6px;display:block">`, 'user');
-    
-    const thinking = addAIBubble('⏳ Đang nhận diện ảnh...', 'thinking');
+
+    const thinking = addAIBubble('⏳ Đang gửi ảnh lên Vertex AI Server...', 'thinking');
     if(thinking) thinking.id = 'ai-thinking-bubble';
 
     try {
       const menu = Store.getMenu();
-      const menuNames = menu.map(m => `${m.name} (${m.price}Ä‘)`).join(', ');
-      
+      const menuNames = menu.map(m => `${m.name} (${m.price}đ)`).join(', ');
+
       const prompt = `Bạn là trợ lý AI của quán ăn "Gánh Khô Chữa Lành". Hãy phân tích ảnh này:
 - Nếu là hình ảnh thực đơn/menu: liệt kê các món nhìn thấy
 - Nếu là hình ảnh hóa đơn/bill: đọc các món + số lượng + giá
@@ -611,54 +649,21 @@ Trả về JSON: { "actions": [{ "type": "order", "tableId": "1", "items": [{"id
 Nếu không liên quan đến đặt hàng, trả: { "actions": [], "reply": "Mô tả ảnh..." }
 CHỈ trả JSON, không markdown.`;
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContentkey=${s.geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: base64 } }
-              ]
-            }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 512, response_mime_type: "application/json" }
-          }),
-          signal: AbortSignal.timeout(15000)
-        }
-      );
-      
-      const data = await res.json();
+      const routed = await processAICommand(prompt, {
+        imageBase64: dataUrl,
+        mimeType,
+      });
       removeThinkingBubble();
-      
-      if(data.error) {
-        addAIBubble(`❌ Lỗi Gemini: ${data.error.message}`, 'error');
-        return;
-      }
-      
-      const _gc = data.candidates && data.candidates[0];
-      const _gp = _gc && _gc.content && _gc.content.parts;
-      const _g0 = _gp && _gp[0];
-      let raw = (_g0 && _g0.text) || '';
-      raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      
-      try {
-        const parsed = JSON.parse(raw);
-        const reply = executeAIActions(parsed, menu, '');
-        const intent = parsed.actions?.[0]?.type || 'unknown';
-        addAIBubble(reply, 'bot');
-        recordAIMetric({ ok: true, engine: 'gemini', intent: intent, latencyMs: 0 }); // Hard to get exact latency here without refactoring startTs
-        if(aiOutputMode === 'voice') speakText(reply);
-      } catch(_) {
-        addAIBubble(raw || 'Không nhận diện được ảnh.', 'bot');
-        recordAIMetric({ ok: false, engine: 'gemini', intent: 'error', latencyMs: 0 });
-      }
+
+      const reply = typeof routed === 'string' ? routed : routed.reply;
+      const intent = typeof routed === 'string' ? 'unknown' : (routed.intent || 'unknown');
+      addAIBubble(reply || 'Không nhận diện được ảnh.', 'bot');
+      recordAIMetric({ ok: true, engine: 'vertex-server', intent, latencyMs: 0 });
+      if(aiOutputMode === 'voice') speakText(reply);
     } catch(err) {
       removeThinkingBubble();
       addAIBubble(`❌ Lỗi xử lý ảnh: ${err.message}`, 'error');
-      recordAIMetric({ ok: false, engine: 'gemini', intent: 'error', latencyMs: 0 });
+      recordAIMetric({ ok: false, engine: 'vertex-server', intent: 'error', latencyMs: 0 });
     }
   };
   reader.readAsDataURL(file);
@@ -744,18 +749,18 @@ function sendAITextGeminiLegacy(isVoice = false) {
 
   const isOnline = navigator.onLine;
   const s = Store.getSettings();
-  const hasGemini = !!s.geminiApiKey;
   const hasDeepSeek = !!s.deepseekApiKey;
-  const hasAnyCloud = hasGemini || hasDeepSeek;
+  const hasVertexServer = isOnline;
+  const hasAnyCloud = hasVertexServer || hasDeepSeek;
   const startTs = Date.now();
   const activeEngine = s.forceOffline
     ? 'offline'
     : (s.activeAIEngine === 'gemma'
       ? 'gemma'
-      : ((isOnline && hasAnyCloud) ? (hasGemini ? 'gemini' : 'deepseek') : 'offline'));
+      : ((isOnline && hasAnyCloud) ? (hasVertexServer ? 'vertex-server' : 'deepseek') : 'offline'));
 
   const modeLabel = (!s.forceOffline && isOnline && hasAnyCloud)
-    ? `🌐 ${hasGemini ? 'Gemini' : 'DeepSeek'} AI`
+    ? `🌐 ${hasVertexServer ? 'Vertex' : 'DeepSeek'} AI`
     : '📱 Offline Engine';
   const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
   if (thinking) thinking.id = 'ai-thinking-bubble';
@@ -766,6 +771,7 @@ function sendAITextGeminiLegacy(isVoice = false) {
     const intent = typeof result === 'string' ? 'unknown' : result.intent;
     removeThinkingBubble();
     addAIBubble(reply, 'bot');
+    if (result && result.pendingAction) addAIPendingActionBubble(result.pendingAction);
     const latencyMs = Date.now() - startTs;
     recordAIMetric({ ok: true, engine: activeEngine, intent: intent, latencyMs: latencyMs });
     recordAILearningEvent({
@@ -865,14 +871,14 @@ async function speakText(text) {
 
 if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.getVoices();
 
-// Chatbot policy override: only Offline NLP + Gemini Server.
+// Chatbot policy override: only Offline NLP + Vertex AI Server.
 function toggleAIEngine() {
   const s = Store.getSettings();
-  s.activeAIEngine = 'gemini';
+  s.activeAIEngine = 'vertex';
   Store.setSettings(s);
   const engineBtn = document.getElementById('ai-engine-toggle');
   if (engineBtn) {
-    engineBtn.textContent = 'Offline NLP + Gemini Server';
+    engineBtn.textContent = 'Offline NLP + Vertex AI Server';
     engineBtn.className = 'badge badge-info';
   }
   updateAIModeUI();
@@ -898,9 +904,55 @@ function updateAIModeUI() {
   el.style.border = onlineReady ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
 }
 
+function readAIFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Không đọc được file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function handleAICameraCapture(event) {
-  if (event && event.target) event.target.value = '';
-  addAIBubble('⚠️ Scan ảnh AI đã được tắt. Chatbot hiện chỉ dùng Offline NLP và Gemini Server.', 'error');
+  const input = event && event.target;
+  const file = input?.files?.[0] || null;
+  if (!file) {
+    const picker = document.getElementById('ai-camera-input');
+    if (picker) picker.click();
+    return;
+  }
+
+  const startTs = Date.now();
+  try {
+    const dataUrl = await readAIFileAsDataUrl(file);
+    const isAudio = /^audio\//i.test(file.type || '');
+    const isImage = /^image\//i.test(file.type || '');
+    addAIBubble(isImage
+      ? `📎 Ảnh đính kèm <img src="${dataUrl}" style="max-width:200px;max-height:150px;border-radius:8px;margin-top:6px;display:block">`
+      : `📎 File âm thanh: ${sanitizeAIHtml(file.name || 'audio')}`, 'user');
+
+    const thinking = addAIBubble('⏳ Đang gửi file lên Vertex AI Server...', 'thinking');
+    if (thinking) thinking.id = 'ai-thinking-bubble';
+    updateAIActiveDot('processing');
+
+    const result = await processAICommand('Hãy phân tích file đính kèm này và dùng tool phù hợp nếu cần.', {
+      imageBase64: isImage ? dataUrl : '',
+      audioBase64: isAudio ? dataUrl : '',
+      mimeType: file.type || (isAudio ? 'audio/webm' : 'image/jpeg'),
+    });
+    removeThinkingBubble();
+    const reply = typeof result === 'string' ? result : result.reply;
+    addAIBubble(reply, 'bot');
+    if (result?.pendingAction) addAIPendingActionBubble(result.pendingAction);
+    recordAIMetric({ ok: true, engine: result?.engine || 'vertex-server', intent: result?.intent || 'media', latencyMs: Date.now() - startTs });
+    updateAIActiveDot('idle');
+  } catch (err) {
+    removeThinkingBubble();
+    addAIBubble(`❌ Lỗi xử lý file: ${err.message || 'Không xác định'}`, 'error');
+    updateAIActiveDot('error');
+  } finally {
+    if (input) input.value = '';
+  }
 }
 
 function openAIAssistant() {
@@ -910,7 +962,7 @@ function openAIAssistant() {
 
   const engineBtn = document.getElementById('ai-engine-toggle');
   if (engineBtn) {
-    engineBtn.textContent = 'Offline NLP + Gemini Server';
+    engineBtn.textContent = 'Offline NLP + Vertex AI Server';
     engineBtn.className = 'badge badge-info';
   }
 
@@ -951,8 +1003,8 @@ function sendAIText(isVoice = false) {
   const isOnline = navigator.onLine;
   const s = Store.getSettings();
   const startTs = Date.now();
-  const activeEngine = s.forceOffline ? 'offline' : (isOnline ? 'gemini-server' : 'offline');
-  const modeLabel = (!s.forceOffline && isOnline) ? '🌐 Gemini AI Server' : '📱 Offline NLP';
+  const activeEngine = s.forceOffline ? 'offline' : (isOnline ? 'vertex-server' : 'offline');
+  const modeLabel = (!s.forceOffline && isOnline) ? '🌐 Vertex AI Server' : '📱 Offline NLP';
 
   const thinking = addAIBubble(`⏳ Đang xử lý... <span style="font-size:11px;opacity:0.7">${modeLabel}</span>`, 'thinking');
   if (thinking) thinking.id = 'ai-thinking-bubble';
@@ -964,6 +1016,7 @@ function sendAIText(isVoice = false) {
     const resultEngine = typeof result === 'string' ? activeEngine : (result.engine || activeEngine);
     removeThinkingBubble();
     addAIBubble(reply, 'bot');
+    if (result && result.pendingAction) addAIPendingActionBubble(result.pendingAction);
     const latencyMs = Date.now() - startTs;
     recordAIMetric({ ok: true, engine: resultEngine, intent, latencyMs });
     updateAIActiveDot(resultEngine === 'offline' ? 'offline' : 'idle');
