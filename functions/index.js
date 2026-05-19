@@ -125,6 +125,7 @@ const FUNCTIONS_RUNTIME_SERVICE_ACCOUNT = 'functions-runtime@pos-v2-909ff.iam.gs
 // Many functions share a large dependency graph (sharp, admin SDK, etc.).
 // Using 512MiB prevents Gen2 container startup OOM for low-traffic triggers.
 // serviceAccount: replaces deleted default compute SA (774115283908-compute@developer.gserviceaccount.com)
+// Configured runtime service account explicitly to bypass compute SA if possible
 setGlobalOptions({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT });
 
 function getVertexRuntimeConfig() {
