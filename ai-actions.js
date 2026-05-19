@@ -119,21 +119,21 @@ function validateAIActions(parsed, menuFull) {
   const safeActions = [];
   const rawActions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 20) : [];
   if ((parsed.actions || []).length > 20) {
-    warnings.push('ÄÃ£ bá» bá»›t action vÆ°á»£t giá»›i háº¡n an toÃ n.');
+    warnings.push('ÄÃ£ bá» bá»t action vÆ°á»£t giá»i háº¡n an toÃ n.');
   }
 
   for (const a of rawActions) {
     if (!a || typeof a !== 'object' || !allowed.has(a.type)) continue;
 
     if ((a.type === 'restock' || a.type === 'report') && isStaff) {
-      warnings.push('TÃ i khoáº£n Staff khÃ´ng cÃ³ quyá»n cháº¡y lá»‡nh kho/bÃ¡o cÃ¡o qua AI.');
+      warnings.push('TÃ i khoáº£n Staff khÃ´ng cÃ³ quyá»n cháº¡y lá»nh kho/bÃ¡o cÃ¡o qua AI.');
       continue;
     }
 
     if (['order', 'remove', 'pay', 'view', 'unknown'].includes(a.type)) {
       const tid = String(a.tableId || '');
       if (!validTableIds.has(tid)) {
-        warnings.push(`Bá» action ${a.type}: bÃ n ${tid || '?'} khÃ´ng há»£p lá»‡.`);
+        warnings.push(`Bá» action ${a.type}: bÃ n ${tid || '?'} khÃ´ng há»£p lá».`);
         continue;
       }
     }
@@ -144,7 +144,7 @@ function validateAIActions(parsed, menuFull) {
         qty: Math.max(1, Math.min(50, Number(it.qty) || 1))
       })).filter(it => menuIds.has(it.id));
       if (items.length === 0) {
-        warnings.push('Bá» action order: khÃ´ng cÃ³ mÃ³n há»£p lá»‡.');
+        warnings.push('Bá» action order: khÃ´ng cÃ³ mÃ³n há»£p lá».');
         continue;
       }
       safeActions.push({ type: 'order', tableId: String(a.tableId), items });
@@ -154,7 +154,7 @@ function validateAIActions(parsed, menuFull) {
     if (a.type === 'remove') {
       const itemId = String(a.itemId || '');
       if (!menuIds.has(itemId)) {
-        warnings.push('Bá» action remove: mÃ³n khÃ´ng há»£p lá»‡.');
+        warnings.push('Bá» action remove: mÃ³n khÃ´ng há»£p lá».');
         continue;
       }
       safeActions.push({
@@ -173,7 +173,7 @@ function validateAIActions(parsed, menuFull) {
         qty: Math.max(1, Math.min(500, Number(it.qty) || 1))
       })).filter(it => it.id || it.name);
       if (items.length === 0) {
-        warnings.push('Bá» action restock: khÃ´ng cÃ³ nguyÃªn liá»‡u há»£p lá»‡.');
+        warnings.push('Bá» action restock: khÃ´ng cÃ³ nguyÃªn liá»u há»£p lá».');
         continue;
       }
       safeActions.push({ type: 'restock', items });
@@ -211,9 +211,9 @@ function _needsAIActionConfirm(action) {
 }
 
 function _buildAIActionConfirmText(action, menuFull) {
-  if (!action || !action.type) return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»‡nh AI nÃ y?');
+  if (!action || !action.type) return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»nh AI nÃ y?');
   if (action.type === 'pay') {
-    return _repairAIActionText(`AI yÃªu cáº§u tÃ­nh tiá»n bÃ n ${action.tableId}. XÃ¡c nháº­n thá»±c hiá»‡n?`);
+    return _repairAIActionText(`AI yÃªu cáº§u tÃ­nh tiá»n bÃ n ${action.tableId}. XÃ¡c nháº­n thá»±c hiá»n?`);
   }
   if (action.type === 'restock') {
     const preview = (action.items || [])
@@ -224,18 +224,18 @@ function _buildAIActionConfirmText(action, menuFull) {
   }
   if (action.type === 'order') {
     const totalQty = (action.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
-    return _repairAIActionText(`AI yÃªu cáº§u lÃªn tá»•ng ${totalQty} mÃ³n cho bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
+    return _repairAIActionText(`AI yÃªu cáº§u lÃªn tá»ng ${totalQty} mÃ³n cho bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
   }
   if (action.type === 'remove') {
     const item = (menuFull || []).find(m => String(m.id) === String(action.itemId));
-    return _repairAIActionText(`AI yÃªu cáº§u bá»›t ${action.qty} ${item ? item.name : 'mÃ³n'} á»Ÿ bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
+    return _repairAIActionText(`AI yÃªu cáº§u bá»t ${action.qty} ${item ? item.name : 'mÃ³n'} á» bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
   }
-  return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»‡nh AI nÃ y?');
+  return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»nh AI nÃ y?');
 }
 
 // --- Execute parsed actions (shared between Gemini and Local NLP) ---
 function executeAIActions(parsed, menuFull, userText = '', options = {}) {
-  if (!parsed) return _repairAIActionText('KhÃ´ng nháº­n ra lá»‡nh nÃ y áº¡.');
+  if (!parsed) return _repairAIActionText('KhÃ´ng nháº­n ra lá»nh nÃ y áº¡.');
   parsed = normalizeAIResponse(parsed, menuFull);
   const validated = validateAIActions(parsed, menuFull);
   parsed.actions = validated.actions;
@@ -370,7 +370,7 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
           updateAlertBadge();
           if (currentPage === 'inventory') renderInventory();
           if (!parsed.reply || parsed.reply.length < 10) {
-            parsed.reply = _repairAIActionText(`Dáº¡ em Ä‘Ã£ nháº­p thÃªm ${addedNames.join(', ')} vÃ o kho rá»“i áº¡!`);
+            parsed.reply = _repairAIActionText(`Dáº¡ em ÄÃ£ nháº­p thÃªm ${addedNames.join(', ')} vÃ o kho rá»i áº¡!`);
           }
           
           setTimeout(() => {
