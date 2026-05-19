@@ -508,29 +508,13 @@ function escapeTelegramHtml(text) {
 function scoreTelegramTextQuality(text = '') {
   const value = String(text || '');
   let score = 0;
-  score += (value.match(/Ã|Â|â€|â€¢|ðŸ|ï¸/g) || []).length * 4;
-  score += (value.match(/�/g) || []).length * 6;
+  score += (value.match(/\uFFFD/g) || []).length * 4;
   score -= (value.match(/[À-ỹĐđ]/g) || []).length * 2;
   return score;
 }
 
 function fixTelegramMojibake(text = '') {
-  let current = String(text || '');
-  let best = current;
-  let bestScore = scoreTelegramTextQuality(current);
-
-  for (let i = 0; i < 3; i += 1) {
-    const decoded = Buffer.from(current, 'latin1').toString('utf8');
-    const decodedScore = scoreTelegramTextQuality(decoded);
-    if (decodedScore < bestScore) {
-      best = decoded;
-      bestScore = decodedScore;
-    }
-    if (decoded === current) break;
-    current = decoded;
-  }
-
-  return best;
+  return String(text || '');
 }
 
 function normalizeTelegramText(value = '') {
@@ -555,7 +539,7 @@ function shouldPreferTelegramCatalogName(currentName = '', product = {}) {
   const catalogName = String(product.display_name || product.name || '').trim();
   if (!catalogName) return false;
   if (!candidate) return true;
-  if (scoreTelegramTextQuality(candidate) > 0) return true;
+  if (candidate.includes('\uFFFD')) return true;
   if (!/[À-ỹĐđ]/.test(candidate) && /[À-ỹĐđ]/.test(catalogName)) return true;
   return false;
 }
