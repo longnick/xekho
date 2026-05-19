@@ -267,31 +267,31 @@ function buildKitchenNotifMessage(notif = {}, options = {}) {
   const prefix = String(options.prefix || '').trim();
   const prefixText = prefix ? `${prefix}\n` : '';
   const groupLabel = String(options.groupLabel || '').trim();
-  const groupLine = groupLabel ? `\nNhom: ${groupLabel}` : '';
+  const groupLine = groupLabel ? `\nNhóm: ${groupLabel}` : '';
   if (type === 'ready') {
     return {
-      title: `ðŸ½ï¸ ${tableName} - Xong roi!`,
+      title: `🍽️ ${tableName} - Xong rồi!`,
       body: body || 'Mang ra ngay.',
-      zaloText: `âœ… [XE KHO POS]\n${tableName} xong roi! Mang ra ngay!\n\nMon:\nâ€¢ ${items.join('\nâ€¢ ') || 'Khong co chi tiet'}`,
+      zaloText: `✅ [XE KHÔ POS]\n${tableName} xong rồi! Mang ra ngay!\n\nMón:\n• ${items.join('\n• ') || 'Không có chi tiết'}`,
     };
   }
   if (type === 'accepted') {
     return {
-      title: `BEP DA NHAN - ${tableName}`,
-      body: body || 'Nhan vien theo doi de lay mon khi can.',
+      title: `BẾP ĐÃ NHẬN - ${tableName}`,
+      body: body || 'Nhân viên theo dõi để lấy món khi cần.',
       zaloText: '',
     };
   }
   if (type === 'delay') {
     return {
-      title: `âš ï¸ ${tableName} - Dang cham`,
-      body: body || 'Bao khach cho them.',
-      zaloText: `âš ï¸ [XE KHO POS]\n${tableName} dang cham - Bao khach cho them${items.length ? `\n\nMon:\nâ€¢ ${items.join('\nâ€¢ ')}` : ''}`,
+      title: `⚠️ ${tableName} - Đang chậm`,
+      body: body || 'Báo khách chờ thêm.',
+      zaloText: `⚠️ [XE KHÔ POS]\n${tableName} đang chậm - Báo khách chờ thêm${items.length ? `\n\nMón:\n• ${items.join('\n• ')}` : ''}`,
     };
   }
   return {
-    title: `ðŸ“£ ${tableName}`,
-    body: body || String(notif.message || 'Co cap nhat tu bep'),
+    title: `📣 ${tableName}`,
+    body: body || String(notif.message || 'Có cập nhật từ bếp'),
     zaloText: '',
   };
 }
