@@ -653,9 +653,9 @@ const _masterInventoryDoc = id => _doc(MASTER_COLLECTIONS.inventory, id);
 const _masterRecipeDoc = id => _doc(MASTER_COLLECTIONS.recipes, id);
 
 function _normalizeUnitLabelSafe(unit) {
-  const raw = _repairVietnameseString(String(unit || '').trim());
-  if (!raw) return 'pháº§n';
-  const key = _slugRepairKey(raw);
+  const raw = typeof _repairVietnameseString === 'function' ? _repairVietnameseString(String(unit || '').trim()) : String(unit || '').trim();
+  if (!raw) return 'Phần';
+  const key = typeof _slugRepairKey === 'function' ? _slugRepairKey(raw) : (typeof _slugVi === 'function' ? _slugVi(raw) : raw.toLowerCase());
   const map = {
     gram: 'Gram',
     gam: 'Gram',
@@ -665,10 +665,11 @@ function _normalizeUnitLabelSafe(unit) {
     con: 'Con',
     lon: 'Lon',
     chai: 'Chai',
-    phan: 'pháº§n',
-    portion: 'pháº§n',
-    mieng: 'Miáº¿ng',
-    piece: 'Miáº¿ng',
+    ly: 'ly',
+    phan: 'Phần',
+    portion: 'Phần',
+    mieng: 'Miếng',
+    piece: 'Miếng',
   };
   return map[key] || raw;
 }
@@ -680,11 +681,11 @@ function _masterInventoryTypeToApp(invType) {
 }
 
 function _normalizeUnitLabel(unit) {
-  const raw = _repairVietnameseString(String(unit || '').trim());
-  if (!raw) return 'phần';
-  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
-  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
-  const key = _slugRepairKey(raw);
+  const raw = typeof _repairVietnameseString === 'function' ? _repairVietnameseString(String(unit || '').trim()) : String(unit || '').trim();
+  if (!raw) return 'Phần';
+  const key = typeof _slugRepairKey === 'function' ? _slugRepairKey(raw) : (typeof _slugVi === 'function' ? _slugVi(raw) : raw.toLowerCase());
+  if (key.includes('ph') && key.includes('n')) return 'Phần';
+  if (key.includes('mi') && key.includes('ng')) return 'Miếng';
   const map = {
     gram: 'Gram',
     gam: 'Gram',
@@ -694,8 +695,9 @@ function _normalizeUnitLabel(unit) {
     con: 'Con',
     lon: 'Lon',
     chai: 'Chai',
-    phan: 'phần',
-    portion: 'phần',
+    ly: 'ly',
+    phan: 'Phần',
+    portion: 'Phần',
     mieng: 'Miếng',
     piece: 'Miếng',
   };

@@ -72,13 +72,13 @@ function _resolveLinkedInventoryId(item = {}, inventory = []) {
 
 function _normalizeUnitText(unit) {
   const raw = String(unit || '').trim();
-  if (!raw) return 'phần';
-  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
-  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
+  if (!raw) return 'Phần';
   const key = _slugVi(raw);
+  if (key.includes('ph') && key.includes('n')) return 'Phần';
+  if (key.includes('mi') && key.includes('ng')) return 'Miếng';
   const map = {
-    phan: 'phần',
-    portion: 'phần',
+    phan: 'Phần',
+    portion: 'Phần',
     lon: 'Lon',
     chai: 'Chai',
     ly: 'ly',
