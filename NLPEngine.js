@@ -17,22 +17,12 @@ function normalizeVi(text) {
 function repairVietnameseMojibake(input) {
   let str = String(input ?? '');
   if (!str) return str;
-  const suspect = /[ÃÂÄÆâð�├┤╗▒]/.test(str) || /\uFFFD/.test(str);
+  const suspect = /\uFFFD/.test(str);
   if (!suspect) return str;
-  try {
-    const b = Buffer.from(str, 'latin1');
-    const fixed = b.toString('utf8');
-    if (fixed && !/\uFFFD/.test(fixed)) str = fixed;
-  } catch (_) {}
   try {
     const bytes = Uint8Array.from(str, ch => (ch.charCodeAt(0) & 0xFF));
     const fixed2 = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     if (fixed2 && !/\uFFFD/.test(fixed2)) str = fixed2;
-  } catch (_) {}
-  try {
-    const b3 = Buffer.from(str, 'binary');
-    const fixed3 = iconv.decode(b3, 'utf8');
-    if (fixed3 && !/\uFFFD/.test(fixed3)) str = fixed3;
   } catch (_) {}
   return str;
 }
