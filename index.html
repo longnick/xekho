@@ -479,14 +479,14 @@
       <div id="page-finance" class="page">
         <!-- Period Filter -->
         <div class="date-filter">
-          <button class="date-btn finance-period-btn" data-period="today" onclick="setFinancePeriod('today')">Hôm
+          <button class="date-btn finance-period-btn" data-period="today" data-esm-finance-period="today">Hôm
             nay</button>
-          <button class="date-btn finance-period-btn" data-period="day" onclick="setFinancePeriod('day')">Ngày</button>
+          <button class="date-btn finance-period-btn" data-period="day" data-esm-finance-period="day">Ngày</button>
           <button class="date-btn finance-period-btn" data-period="week"
-            onclick="setFinancePeriod('week')">Tuần</button>
+            data-esm-finance-period="week">Tuần</button>
           <button class="date-btn finance-period-btn active" data-period="month"
-            onclick="setFinancePeriod('month')">Tháng</button>
-          <button class="date-btn finance-period-btn" data-period="all" onclick="setFinancePeriod('all')">Tất
+            data-esm-finance-period="month">Tháng</button>
+          <button class="date-btn finance-period-btn" data-period="all" data-esm-finance-period="all">Tất
             cả</button>
         </div>
         <!-- Date Picker Row -->
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-inventory-tabs"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-finance-period"></script>
   <script>
     // Extra helpers that reference DOM
 

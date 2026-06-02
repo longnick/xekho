@@ -7,6 +7,7 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
 import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom.js';
 import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
+import { callFinancePeriod, installFinancePeriodControls } from './ui/finance-period.js';
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
@@ -38,6 +39,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var domAdapter = installDomAdapter(anyRoot);
   var storeAdapter = installStoreAdapter(anyRoot);
   var dbAdapter = installDbAdapter(anyRoot);
+  var financePeriod = installFinancePeriodControls(anyRoot);
   var headerActions = installHeaderActions(anyRoot);
   var inventoryTabs = installInventoryTabs(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
@@ -89,7 +91,9 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     db: dbAdapter,
   });
   XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
+    financePeriod: financePeriod,
     headerActions: headerActions,
+    inventoryTabs: inventoryTabs,
     imageZoom: imageZoom,
     reportDateControls: reportDateControls,
     reportTabs: reportTabs,
@@ -127,6 +131,11 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
   XekhoApp.esm.facades.uiIslands = {
     loaded: true,
+    financePeriod: {
+      callFinancePeriodPresent: financePeriod.callFinancePeriod === callFinancePeriod,
+      installed: financePeriod.installed === true,
+      selectorPresent: financePeriod.selector === '[data-esm-finance-period]',
+    },
     headerActions: {
       callHeaderActionPresent: headerActions.callHeaderAction === callHeaderAction,
       installed: headerActions.installed === true,
@@ -162,7 +171,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-inventory-tabs',
+    version: '20260602-e5-finance-period',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),

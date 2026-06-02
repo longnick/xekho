@@ -337,3 +337,12 @@ Related files:
   - depends on: browser `document` and existing global `switchInvTab(tab, trigger)`.
   - used by: `app/esm/main.js`, `index.html` inventory tab buttons with `data-esm-inventory-tab`, `scripts/verify-esm-inventory-tabs.js`.
   - notes: removes inline handlers only from the five primary inventory tabs; the inventory more modal button remains inline for a later modal/action island.
+
+
+## ESM Phase E5.6 relations
+
+- `app/esm/ui/finance-period.js`
+  - role: delegated click handler island for finance period buttons.
+  - depends on: browser `document` and existing global `setFinancePeriod(period)`.
+  - used by: `app/esm/main.js`, `index.html` finance period buttons with `data-esm-finance-period`, `scripts/verify-esm-finance-period.js`.
+  - notes: removes inline handlers only from the five finance period buttons; finance rendering logic remains in the legacy global function.
