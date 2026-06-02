@@ -4,6 +4,9 @@ import { compactNumber, currency, date, dateTime, installGlobalFormatUtils, time
 import { formatLocalDateKey, getWeekStartKey, installGlobalDateUtils, resolvePeriodDateRangePure } from './utils/date.js';
 import { applyReportTitleBlock, excelColLetter, excelFmtVnInt, excelThinBorder, installGlobalExcelUtils, paintExcelHeaderRow, paintExcelTotalRow, setRowBorders } from './utils/excel.js';
 import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, normalizeStaffRole, normalizeStaffStatus, validatePinFormat } from './auth/staff.js';
+import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom.js';
+import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
+import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
 
 /**
  * XE KHO ESM compatibility harness.
@@ -26,6 +29,9 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
   var dateGlobals = installGlobalDateUtils(anyRoot);
   var excelGlobals = installGlobalExcelUtils(anyRoot);
   var authGlobals = installGlobalStaffAuth(anyRoot);
+  var domAdapter = installDomAdapter(anyRoot);
+  var storeAdapter = installStoreAdapter(anyRoot);
+  var dbAdapter = installDbAdapter(anyRoot);
 
   XekhoApp.esm.facades.dom = {
     loaded: true,
@@ -65,8 +71,43 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
     validatePinFormatPresent: authGlobals.validatePinFormat === validatePinFormat,
   };
 
+  XekhoApp.esm.adapters = Object.assign({}, XekhoApp.esm.adapters, {
+    dom: domAdapter,
+    store: storeAdapter,
+    db: dbAdapter,
+  });
+
+  XekhoApp.esm.facades.runtimeAdapters = {
+    loaded: true,
+    dom: {
+      getDocumentPresent: domAdapter.getDocument === getDocument,
+      qsPresent: domAdapter.qs === qs,
+      qsaPresent: domAdapter.qsa === qsa,
+      onPresent: domAdapter.on === on,
+      offPresent: domAdapter.off === off,
+    },
+    store: {
+      getStorePresent: storeAdapter.getStore === getStore,
+      getAppStatePresent: storeAdapter.getAppState === getAppState,
+      isAppStateReadyPresent: storeAdapter.isAppStateReady === isAppStateReady,
+      readAppStateKeyPresent: storeAdapter.readAppStateKey === readAppStateKey,
+      getMenuPresent: storeAdapter.getMenu === getMenu,
+      getInventoryPresent: storeAdapter.getInventory === getInventory,
+      getSettingsPresent: storeAdapter.getSettings === getSettings,
+      getCurrentUserPresent: storeAdapter.getCurrentUser === getCurrentUser,
+      createStateSnapshotPresent: storeAdapter.createStateSnapshot === createStateSnapshot,
+    },
+    db: {
+      getDBPresent: dbAdapter.getDB === getDB,
+      isDBReadyPresent: dbAdapter.isDBReady === isDBReady,
+      waitForDBPresent: dbAdapter.waitForDB === waitForDB,
+      getDBSectionPresent: dbAdapter.getDBSection === getDBSection,
+      callDBMethodPresent: dbAdapter.callDBMethod === callDBMethod,
+    },
+  };
+
   XekhoApp.esm.harness = {
-    version: '20260602-e2-leaf-facades',
+    version: '20260602-e3-runtime-adapters',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
