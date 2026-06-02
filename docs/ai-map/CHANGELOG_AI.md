@@ -1,5 +1,24 @@
 # AI Changelog
 
+## 2026-06-02 14:05 - ESM Phase E5.8 report filter control delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the eighth safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/report-filter-controls.js` with delegated change/click handling for report menu filter selects and reset buttons.
+- Converted two report menu filter selects from inline `onchange="setReportMenuFilter(this.value)"` to `data-esm-report-menu-filter`.
+- Converted two report reset buttons from inline `onclick="resetReportFilters()"` to `data-esm-report-filter-reset`.
+- Updated `app/esm/main.js` to import/install `reportFilterControls` under `window.XekhoApp.esm.ui.reportFilterControls`.
+- Bumped ESM entry cache/version to `20260602-e5-report-filter-controls`.
+- Added `scripts/verify-esm-report-filter-controls.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `setReportMenuFilter` and `resetReportFilters` untouched; the ESM island delegates to them at change/click time.
+
+Current E5 evidence: inline handler count reduced from 204 to 200; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, report-filter-controls/report-transaction-filters/finance-period/inventory-tabs/report-date-controls/settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 14:00 - ESM Phase E5.7 report transaction filter delegated handlers
 
 Repo: `/home/longnick/projects/xekho`
