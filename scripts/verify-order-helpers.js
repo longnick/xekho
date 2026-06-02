@@ -29,6 +29,8 @@ const expectedFunctions = [
   '_getOnlineOrderItemUnitPrice',
   '_calculateOnlineOrderTotal',
   '_resolveOnlineOrderDocId',
+  '_resolveDishCostPerUnit',
+  'normalizeMenuItemModel',
 ];
 
 const ITEM_TYPES = { RETAIL: 'retail_item', RAW: 'raw_material', FINISHED: 'finished_product' };
