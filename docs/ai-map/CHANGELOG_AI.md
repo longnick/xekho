@@ -1,5 +1,21 @@
 # AI Changelog
 
+## 2026-06-02 14:58 - ESM Phase E5.11 admin render delegated controls
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed another bounded safe Phase E5 island after user said `ok làm đi`:
+
+- Added `app/esm/ui/admin-render-controls.js` with allowlisted delegated handlers for low-risk admin render/search calls.
+- Converted 6 inline handlers: `renderTables` x1, `renderStockList` x2, `renderMenuAdmin` x2, and the menu item search assignment/render pair x1.
+- Updated `app/esm/main.js` to install/publish `adminRenderControls` and bumped the ESM cache/version to `20260602-e5-admin-render-controls`.
+- Added `scripts/verify-esm-admin-render-controls.js` and expanded `scripts/verify-esm-entry.js`.
+
+Current E5 evidence: inline handler count reduced from 147 to 141. Remaining handlers are mostly submit/save/reset/POS/payment/customer/media/upload/import/export/cleanup flows and stay BLOCKED for safe autonomous one-shot migration pending browser/mobile QA or explicit higher-risk approval.
+
+Verification passed: ESM syntax checks, all ESM verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build, and `git diff --check`.
+
 ## 2026-06-02 14:50 - ESM Phase E5.10 render/filter refresh delegated controls
 
 Repo: `/home/longnick/projects/xekho`

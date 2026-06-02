@@ -3,7 +3,7 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7/E5.8/E5.9/E5.10 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, first image zoom UI island, and first delegated header action handler island, report tab delegated handler island, settings tab delegated handler island, and report date controls delegated handler island, and inventory tab delegated handler island, and finance period delegated handler island, and report transaction filter delegated handler island, and report filter control delegated handler island.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7/E5.8/E5.9/E5.10/E5.11 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, first image zoom UI island, and first delegated header action handler island, report tab delegated handler island, settings tab delegated handler island, and report date controls delegated handler island, and inventory tab delegated handler island, and finance period delegated handler island, and report transaction filter delegated handler island, and report filter control delegated handler island.
 - Current conservative progress estimate:
  - Total long-term plan including optional TypeScript/CI/build tooling: ~83% complete.
  - Core non-optional refactor/security/testing plan: ~88% complete.
@@ -13,7 +13,7 @@
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
 - ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
-- E5/E6 status: not safe to complete as one-shot work. Current scan shows 147 inline handlers and 31 local classic scripts after E5.8. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
+- E5/E6 status: not safe to complete as one-shot work. Current scan shows 141 inline handlers and 31 local classic scripts after E5.8. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 14:58: ESM Phase E5.11 admin render controls completed. Added `app/esm/ui/admin-render-controls.js`, converted 6 low-risk admin render/search inline handlers to delegated data attributes, wired `app/esm/main.js`, added `scripts/verify-esm-admin-render-controls.js`, and reduced inline handlers to 141. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1458-esm-e5-admin-render-controls.md`
 - 2026-06-02 14:50: ESM Phase E5.10 render/filter refresh controls completed. Added `app/esm/ui/render-refresh-controls.js`, converted 12 low-risk render/filter refresh inline handlers to delegated `data-esm-render-refresh`, wired `app/esm/main.js`, added `scripts/verify-esm-render-refresh-controls.js`, and reduced inline handlers to 147. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1450-esm-e5-render-refresh-controls.md`
 - 2026-06-02 14:20: ESM Phase E5.9 modal overlay/close controls completed. Added `app/esm/ui/modal-overlay-controls.js`, converted 41 low-risk modal/image-zoom inline handlers to delegated data attributes, wired `app/esm/main.js`, added `scripts/verify-esm-modal-overlay-controls.js`, and reduced inline handlers to 159. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1420-esm-e5-modal-overlay-controls.md`
 - 2026-06-02 14:05: ESM Phase E5.8 report filter controls completed. Added `app/esm/ui/report-filter-controls.js`, converted 2 report menu filter `onchange` handlers and 2 report reset `onclick` handlers to delegated data attributes, wired `app/esm/main.js`, updated cache key, added `scripts/verify-esm-report-filter-controls.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1405-esm-e5-report-filter-controls.md`
