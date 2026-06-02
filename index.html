@@ -942,6 +942,54 @@
         </div>
       </div>
 
+      <!-- ========== PAGE: MEDIA REFINERY ========== -->
+      <div id="page-media" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Media Refinery</div>
+            <div class="section-sub">Kho ảnh/video đã lọc cho automation nội dung</div>
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="renderMediaRefinery()">Làm mới</button>
+        </div>
+
+        <div class="media-refinery-toolbar">
+          <div class="media-refinery-upload">
+            <input type="file" id="media-refinery-file" accept="image/*" style="display:none" onchange="handleMediaRefineryUpload(event)">
+            <button class="btn btn-primary" onclick="triggerMediaRefineryUpload()">Upload raw</button>
+            <select class="input input-sm" id="media-refinery-product">
+              <option value="">Gắn món sau</option>
+            </select>
+          </div>
+          <div class="media-refinery-search">
+            <input class="input input-sm" id="media-refinery-query" placeholder="Tìm món/mood/format..." oninput="renderMediaRefinery()">
+            <select class="input input-sm" id="media-refinery-status" onchange="renderMediaRefinery()">
+              <option value="">Tất cả trạng thái</option>
+              <option value="REFINE_READY">REFINE_READY</option>
+              <option value="PUBLISH_READY">PUBLISH_READY</option>
+              <option value="HERO_ASSET">HERO_ASSET</option>
+              <option value="NEEDS_MANUAL_REVIEW">NEEDS_MANUAL_REVIEW</option>
+              <option value="REJECTED">REJECTED</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="media-refinery-gate">
+          <select class="input input-sm" id="media-refinery-brief-product">
+            <option value="">Chọn món để kiểm tra publish-ready</option>
+          </select>
+          <select class="input input-sm" id="media-refinery-brief-format">
+            <option value="4:5">4:5 Facebook</option>
+            <option value="1:1">1:1 Square</option>
+            <option value="9:16">9:16 Story/Reel</option>
+          </select>
+          <button class="btn btn-secondary" onclick="createMediaRefineryBrief()">Tạo brief</button>
+        </div>
+        <div id="media-refinery-brief-result"></div>
+
+        <div id="media-refinery-kpis" class="media-refinery-kpis"></div>
+        <div id="media-refinery-list" class="media-refinery-list"></div>
+      </div>
+
       <!-- ========== PAGE: MENU ADMIN ========== -->
       <div id="page-menu" class="page">
         <div class="section-header">
@@ -964,6 +1012,7 @@
           <button class="tab-btn active" onclick="switchSettingsTab('store',this)">🏪 Cửa hàng</button>
           <button class="tab-btn" onclick="switchSettingsTab('theme',this)">🎨 Giao diện</button>
           <button class="tab-btn" onclick="switchSettingsTab('users',this)">👥 Nhân sự</button>
+          <button class="tab-btn" onclick="switchSettingsTab('attendance',this)">⏱️ Chấm công</button>
           <button class="tab-btn" onclick="switchSettingsTab('payment',this)">💳 Thanh toán</button>
           <button class="tab-btn" onclick="switchSettingsTab('ai',this)">🤖 Hệ thống AI</button>
           <button class="tab-btn" onclick="switchSettingsTab('data',this)">💾 Dữ liệu</button>
@@ -1036,6 +1085,61 @@
               <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
             </div>
             <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+          </div>
+        </div>
+
+        <div id="set-tab-attendance" class="settings-tab-content" style="display:none;">
+          <div id="settings-payroll-profile" class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">💵 Cấu hình lương & chi phí cố định</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Lương quản lý tính theo tháng; lương nhân viên lấy từ chấm công</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" onclick="savePayrollProfile()">Lưu</button>
+            </div>
+            <div class="form-row">
+              <div class="input-group">
+                <label class="input-label">Lương quản lý / tháng</label>
+                <input class="input" id="payroll-management-salary" type="number" min="0" step="1000" placeholder="Ví dụ: 12000000">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Tiền thuê / tháng</label>
+                <input class="input" id="payroll-fixed-rent" type="number" min="0" step="1000">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="input-group">
+                <label class="input-label">Điện nước / tháng</label>
+                <input class="input" id="payroll-fixed-utilities" type="number" min="0" step="1000">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Chi phí cố định khác / tháng</label>
+                <input class="input" id="payroll-fixed-other" type="number" min="0" step="1000">
+              </div>
+            </div>
+            <div id="payroll-profile-summary" style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:8px"></div>
+          </div>
+
+          <div id="settings-attendance-management" class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">⏱️ Bảng chấm công</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Check in/out qua Telegram, tự ghi lương vào chi phí</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="renderAttendanceManagement()">Làm mới</button>
+            </div>
+            <div class="form-row" style="margin-bottom:12px">
+              <div class="input-group">
+                <label class="input-label">Từ ngày</label>
+                <input class="input" id="attendance-from-date" type="date" onchange="renderAttendanceManagement()">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Đến ngày</label>
+                <input class="input" id="attendance-to-date" type="date" onchange="renderAttendanceManagement()">
+              </div>
+            </div>
+            <div id="attendance-summary" class="stats-grid" style="margin-bottom:12px"></div>
+            <div id="attendance-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
         </div>
 
@@ -1256,16 +1360,17 @@
               </div>
             </div>
 
+            <!-- Legacy hidden AI credentials card: giữ lại để tránh lệch JS, không phải luồng production active -->
             <div class="card" style="display:none">
               <div class="card-header">
-                <div class="card-title">🤖 Thông minh (Gemini API)</div>
+                <div class="card-title">🤖 Thông minh (Vertex AI cũ / ẩn)</div>
               </div>
               <div class="input-group">
-                <label class="input-label">Gemini API Key</label>
-                <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán API Key vào đây...">
+                <label class="input-label">Vertex AI / Google AI Key (legacy hidden)</label>
+                <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán key cũ vào đây nếu cần kiểm tra legacy UI...">
                 <div style="font-size:11px;color:var(--text3);margin-top:6px">Lấy Key tại <a
                     href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--primary)">Google AI
-                    Studio</a> (miễn phí).</div>
+                    Studio</a> hoặc cấu hình Vertex AI ở backend.</div>
                 <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Sau khi dán key, bấm nút 🎤 trên thanh
                   tiêu đề để mở trợ lý AI.</div>
               </div>
@@ -1310,10 +1415,10 @@
                 <select id="set-ocrMode" class="select">
                   <option value="auto">Tự động (ưu tiên Offline, fallback Online)</option>
                   <option value="offline">Chỉ Offline (on-device)</option>
-                  <option value="online">Chỉ Online (Gemini API)</option>
+                  <option value="online">Chỉ Online (Vertex AI)</option>
                 </select>
                 <div style="font-size:11px;color:var(--text2);margin-top:4px">
-                  Offline dùng OCR chạy ngay trên thiết bị, Online dùng Gemini API (nếu có mạng và có key).
+                  Offline dùng OCR chạy ngay trên thiết bị, Online dùng Vertex AI qua backend (nếu có mạng và cấu hình hợp lệ).
                 </div>
               </div>
               <div class="input-group">
@@ -2239,15 +2344,30 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <!-- data.js đã bị loại bỏ – app đọc 100% từ Firestore qua window.appState -->
   <script src="data.js?v=20260501-2"></script>
+  <script src="app/utils/format.js?v=20260602-refactor-format-utils"></script>
   <script src="store.js?v=20260501-2"></script>
   <!-- ✅ Bước 1: db.js (Firebase Data Layer) phải load TRƯỚC app.js -->
   <script type="module" src="db.js?v=20260509-online-complete"></script>
+  <script src="app/utils/dom.js?v=20260601-refactor-dom-utils"></script>
+  <script src="app/ui/toast.js?v=20260602-refactor-toast-ui"></script>
+  <script src="app/ui/theme.js?v=20260602-refactor-theme-ui"></script>
+  <script src="app/ui/modal.js?v=20260602-refactor-modal-ui"></script>
+  <script src="app/auth/staff.js?v=20260602-refactor-auth-staff"></script>
+  <script src="app/order/helpers.js?v=20260602-refactor-order-helpers"></script>
   <!-- ✅ Bước 2: Load AI modules -->
   <script src="ai-core.js?v=20260509-utf8fix"></script>
   <script src="ai-actions.js?v=20260509-utf8fix"></script>
   <script src="ai-ui.js?v=20260509-utf8fix"></script>
   <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
   <script src="app.js?v=20260509-online-complete"></script>
+  <!-- POS Offline Backup: Sprint 19 production with auto sync -->
+  <script src="offlineBackup.js?v=20260601-sprint19"></script>
+  <script src="offlineSync.js?v=20260601-sprint19"></script>
+  <script src="offlineFirestoreAdapter.js?v=20260601-sprint19"></script>
+  <script src="offlineRuntime.js?v=20260601-sprint19"></script>
+  <script src="offlineStatusUI.js?v=20260601-sprint19"></script>
+  <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
+  <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <script>
     // Extra helpers that reference DOM
 
@@ -2572,6 +2692,21 @@
               autocomplete="off">
           </div>
           <div class="input-group">
+            <label class="input-label">Lương theo giờ</label>
+            <input class="input" id="user-edit-hourly-rate" placeholder="25000" inputmode="numeric" type="number" min="0" step="1000">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Telegram User ID</label>
+            <input class="input" id="user-edit-telegram-id" placeholder="Tự điền sau khi /link 1234" autocomplete="off">
+          </div>
+          <label class="card card-sm" style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <input type="checkbox" id="user-edit-require-location" style="width:18px;height:18px">
+            <div>
+              <div style="font-weight:700">Bắt buộc gửi vị trí khi check in/out</div>
+              <div style="font-size:11px;color:var(--text2)">Nếu chưa cấu hình tọa độ quán, hệ thống chỉ lưu vị trí gửi lên.</div>
+            </div>
+          </label>
+          <div class="input-group">
             <label class="input-label">Quyền hạn</label>
             <select class="select" id="user-edit-role">
               <option value="staff">Nhân viên (Chỉ Bàn, Order)</option>
@@ -2661,6 +2796,13 @@
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="20" y1="9" x2="23" y2="9"></line></svg>
             </div>
             <div style="font-size:12px; font-weight:500; color:var(--text2)">AI Insights</div>
+          </div>
+
+          <div onclick="navigateMore('media')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
+            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="8.5" cy="10.5" r="1.5"></circle><path d="M21 15l-5-5L5 19"></path></svg>
+            </div>
+            <div style="font-size:12px; font-weight:500; color:var(--text2)">Media</div>
           </div>
         </div>
       </div>
