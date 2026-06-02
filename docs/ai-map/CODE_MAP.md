@@ -531,3 +531,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.8 Report Filter Controls
 
 - `app/esm/ui/report-filter-controls.js`: importable delegated report menu filter/reset island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportFilterControls`; replaces two report menu filter selects and two report reset buttons with delegated data attributes. Verified by `scripts/verify-esm-report-filter-controls.js`.
+
+
+## ESM Phase E5.9 Modal Overlay Controls
+
+- `app/esm/ui/modal-overlay-controls.js`: importable delegated modal overlay/close/image-zoom control island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.modalOverlayControls`; replaces 41 low-risk inline modal/image-zoom handlers with delegated data attributes. Verified by `scripts/verify-esm-modal-overlay-controls.js`.

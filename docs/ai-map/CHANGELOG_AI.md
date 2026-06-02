@@ -1,5 +1,24 @@
 # AI Changelog
 
+## 2026-06-02 14:20 - ESM Phase E5.9 modal overlay and close delegated controls
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed another safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/modal-overlay-controls.js` with delegated click handling for modal overlay self-dismiss, modal close buttons, purchase photo batch self-close, and image zoom reset/close/detach controls.
+- Converted 15 simple modal overlay self-dismiss handlers to `data-esm-modal-self-dismiss`.
+- Converted 19 modal close buttons to `data-esm-modal-close`.
+- Converted 1 modal self-close-by-id overlay to `data-esm-modal-close-self`.
+- Converted 2 image zoom overlay self-dismiss handlers, 2 image zoom reset buttons, and 2 image zoom close buttons to `data-esm-image-zoom-*` attributes.
+- Updated `app/esm/main.js` to install/publish `modalOverlayControls` and bumped the ESM cache/version to `20260602-e5-modal-close-controls`.
+- Added `scripts/verify-esm-modal-overlay-controls.js` and expanded `scripts/verify-esm-entry.js`.
+
+Current E5 evidence: inline handler count reduced from 200 to 159; 31 local classic scripts remain. Remaining inline handlers include higher-risk submit/save/reset/data/POS/media flows and should not be one-shot migrated without QA.
+
+Verification passed: ESM syntax checks, modal-overlay-controls and entry verification, frontend/backend `tsc`, Jest, lint with 5 existing warnings, and `git diff --check`.
+
 ## 2026-06-02 14:05 - ESM Phase E5.8 report filter control delegated handlers
 
 Repo: `/home/longnick/projects/xekho`

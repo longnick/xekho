@@ -20,6 +20,7 @@ const financePeriodPath = path.join(root, 'app', 'esm', 'ui', 'finance-period.js
 const headerActionsPath = path.join(root, 'app', 'esm', 'ui', 'header-actions.js');
 const inventoryTabsPath = path.join(root, 'app', 'esm', 'ui', 'inventory-tabs.js');
 const imageZoomPath = path.join(root, 'app', 'esm', 'ui', 'image-zoom.js');
+const modalOverlayControlsPath = path.join(root, 'app', 'esm', 'ui', 'modal-overlay-controls.js');
 const reportDateControlsPath = path.join(root, 'app', 'esm', 'ui', 'report-date-controls.js');
 const reportFilterControlsPath = path.join(root, 'app', 'esm', 'ui', 'report-filter-controls.js');
 const reportTransactionFiltersPath = path.join(root, 'app', 'esm', 'ui', 'report-transaction-filters.js');
@@ -406,13 +407,33 @@ const sandbox = {
     rootScope.ImgZoom = controller;
     return controller;
   },
+  dismissModal: function dismissModal() {},
+  closeModalById: function closeModalById() {},
+  dismissImageZoomModal: function dismissImageZoomModal() {},
+  closeImageZoomModal: function closeImageZoomModal() {},
+  resetImageZoom: function resetImageZoom() {},
+  installModalOverlayControls: function installModalOverlayControls(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.modalOverlayControls = {
+      selector: '[data-esm-modal-self-dismiss], [data-esm-modal-close], [data-esm-modal-close-self], [data-esm-image-zoom-self-dismiss], [data-esm-image-zoom-close], [data-esm-image-zoom-reset]',
+      installed: true,
+      detach: function detach() {},
+      dismissModal: sandbox.dismissModal,
+      closeModalById: sandbox.closeModalById,
+      dismissImageZoomModal: sandbox.dismissImageZoomModal,
+      closeImageZoomModal: sandbox.closeImageZoomModal,
+      resetImageZoom: sandbox.resetImageZoom,
+    };
+    return rootScope.XekhoApp.esm.ui.modalOverlayControls;
+  },
 };
 vm.createContext(sandbox);
 vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e5-report-filter-controls', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-modal-close-controls', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
