@@ -16,7 +16,7 @@
 - `app/esm/adapters/store.js`: ESM Phase E3 Store/appState runtime adapter. Exports read-only accessors and state snapshot helpers; installs `window.XekhoApp.esm.adapters.store`.
 - `app/esm/adapters/db.js`: ESM Phase E3 DB readiness adapter. Exports `waitForDB()`, `isDBReady()`, `getDBSection()`, and `callDBMethod()` without importing Firebase directly; installs `window.XekhoApp.esm.adapters.db`.
 - `app/esm/README.md`: ESM migration guardrails, completed facade/adapter list, and next UI-island candidates.
-- `scripts/verify-esm-entry.js`: Node VM verification for ESM harness load order, readiness marker, all E2/E3 markers, and event dispatch behavior.
+- `scripts/verify-esm-entry.js`: Node VM verification for ESM harness load order, readiness marker, all E2/E3/E4 markers, and event dispatch behavior.
 - `scripts/verify-esm-dom-utils.js`: Native dynamic-import smoke test for the DOM ESM facade and global installer.
 - `scripts/verify-esm-leaf-facades.js`: Native dynamic-import smoke test for format/date/Excel/staff ESM facades and installers.
 - `scripts/verify-esm-runtime-adapters.js`: Native dynamic-import smoke test for DOM/Store/DB ESM runtime adapters.
@@ -486,3 +486,8 @@ firebase emulators:start
 node import_master.js
 node import_migrated_history_purchases.js
 ```
+
+
+## ESM Phase E4 UI Island
+
+- `app/esm/ui/image-zoom.js`: importable image zoom/pan controller. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.imageZoom`; classic `ImgZoom` in `app.js` delegates at call time and keeps fallback logic. Verified by `scripts/verify-esm-ui-image-zoom.js`.

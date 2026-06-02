@@ -3,17 +3,17 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1/E2/E3 are complete: harness, DOM/format/date/Excel/staff leaf facades, and runtime adapters for DOM/Store/appState/DB readiness.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, and the first image zoom UI island.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~71% complete.
- - Core non-optional refactor/security/testing plan: ~77% complete.
- - Near-term safe-execution track: ~99.8% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~73% complete.
+ - Core non-optional refactor/security/testing plan: ~79% complete.
+ - Near-term safe-execution track: ~99.9% complete.
 
 ## Next
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
-- ESM Phase E3 runtime adapters complete: `app/esm/adapters/dom.js`, `store.js`, and `db.js` are importable and installed by `app/esm/main.js`. Current ESM readiness is now ~50%; do not do one-shot ESM conversion.
-- Next safe coding sprint candidate: ESM Phase E4 first isolated UI island (`app/ui/image-zoom.js` or an equivalent low-risk component) after reviewing inline/global handlers, or `Deep Extraction D1`.
+- ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
+- E5/E6 status: not safe to complete as one-shot work. Current scan shows 243 inline handlers and 31 local classic scripts. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 11:56: ESM Phase E4 image zoom UI island completed. Added `app/esm/ui/image-zoom.js`, wired `app/esm/main.js`, delegated classic `ImgZoom` methods in `app.js`, updated module cache key, added `scripts/verify-esm-ui-image-zoom.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1156-esm-e4-image-zoom-ui-island.md`
 - 2026-06-02 11:39: ESM Phase E3 runtime adapters completed. Added DOM/Store/DB adapters under `app/esm/adapters/`, wired them into `app/esm/main.js`, updated module cache key, added `scripts/verify-esm-runtime-adapters.js`, expanded `scripts/verify-esm-entry.js`, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1139-esm-e3-runtime-adapters.md`
 - 2026-06-02 11:26: ESM Phase E2 leaf facades completed. Added importable facades for format/date/excel/staff, wired them into `app/esm/main.js`, preserved all classic globals, updated `scripts/verify-esm-entry.js`, added `scripts/verify-esm-leaf-facades.js`, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1126-esm-e2-leaf-facades.md`
 - 2026-06-02 10:08: ESM Phase E1 compatibility harness completed. Added `app/esm/main.js`, `app/esm/README.md`, module script tag in `index.html`, and `scripts/verify-esm-entry.js`. Verified ESM readiness marker/event, syntax checks, frontend/backend tsc, Vite build, and lint with existing warnings only. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1008-esm-e1-compat-harness.md`
