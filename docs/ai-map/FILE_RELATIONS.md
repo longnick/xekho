@@ -283,3 +283,12 @@ Related files:
 - `xekho` owns POS/business/KDS/backend logic and may provide business/menu/order data.
 - `webapp-menu` owns menu web app and online menu/admin UI; README warns feature overlap with `xekho`.
 - `VIDEO AI TOOL` may generate media assets used by marketing workflows or `webapp-menu`/Facebook content.
+
+
+## ESM Phase E4 relations
+
+- `app/esm/ui/image-zoom.js`
+  - role: Phase E4 importable image zoom/pan UI island.
+  - depends on: DOM-like wrapper/image elements passed to `attach()`; no Store/DB/Firebase dependency.
+  - used by: `app/esm/main.js`, classic `ImgZoom` wrappers in `app.js`, `scripts/verify-esm-ui-image-zoom.js`.
+  - notes: preserves classic fallback logic in `app.js`; only delegates at call time when `window.XekhoApp.esm.ui.imageZoom` is ready.

@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-02 11:56 - ESM Phase E4 image zoom UI island complete
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the next safe ESM phase after E3 runtime adapters:
+
+- Added `app/esm/ui/image-zoom.js`, an importable image zoom/pan controller with `installGlobalImageZoom()`.
+- Updated classic `ImgZoom` in `app.js` to delegate `attach()`, `detach()`, and `reset()` to `window.XekhoApp.esm.ui.imageZoom` when the ESM module is ready, while retaining fallback logic.
+- Updated `app/esm/main.js` to import/install the UI island and mark `window.XekhoApp.esm.facades.uiIslands.imageZoom`.
+- Updated `index.html` cache key to `20260602-e4-ui-image-zoom`.
+- Added `scripts/verify-esm-ui-image-zoom.js` and expanded `scripts/verify-esm-entry.js`.
+
+Phase status after this sprint: E0/E1/E2/E3/E4 complete. E5/E6 remain intentionally blocked/deferred for safety: current audit shows 243 inline handlers and 31 local classic scripts, so inline handler cleanup and package-type strategy require separate island-by-island/mobile QA sprints. No E7/E8 exists in the current ESM plan.
+
+Verification passed: ESM syntax checks, image-zoom/runtime/leaf/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 11:39 - ESM Phase E3 runtime adapters complete
 
 Repo: `/home/longnick/projects/xekho`

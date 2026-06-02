@@ -7,6 +7,7 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
 import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom.js';
 import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
+import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 
 /**
  * XE KHO ESM compatibility harness.
@@ -32,6 +33,7 @@ import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitFor
   var domAdapter = installDomAdapter(anyRoot);
   var storeAdapter = installStoreAdapter(anyRoot);
   var dbAdapter = installDbAdapter(anyRoot);
+  var imageZoom = installGlobalImageZoom(anyRoot);
 
   XekhoApp.esm.facades.dom = {
     loaded: true,
@@ -76,6 +78,9 @@ import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitFor
     store: storeAdapter,
     db: dbAdapter,
   });
+  XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
+    imageZoom: imageZoom,
+  });
 
   XekhoApp.esm.facades.runtimeAdapters = {
     loaded: true,
@@ -106,8 +111,18 @@ import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitFor
     },
   };
 
+  XekhoApp.esm.facades.uiIslands = {
+    loaded: true,
+    imageZoom: {
+      createImageZoomControllerPresent: typeof createImageZoomController === 'function',
+      attachPresent: typeof imageZoom.attach === 'function',
+      detachPresent: typeof imageZoom.detach === 'function',
+      resetPresent: typeof imageZoom.reset === 'function',
+    },
+  };
+
   XekhoApp.esm.harness = {
-    version: '20260602-e3-runtime-adapters',
+    version: '20260602-e4-ui-image-zoom',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
