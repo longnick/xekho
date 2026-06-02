@@ -35,5 +35,11 @@ jobs:
       - name: Run tests
         run: npm test -- --runInBand
 
+      - name: TypeScript type-check (frontend)
+        run: npx tsc --noEmit -p jsconfig.json
+
+      - name: TypeScript type-check (backend)
+        run: npx tsc --noEmit -p functions/tsconfig.json
+
       - name: Run ESLint
         run: npx eslint app.js app/utils/ app/ui/ app/auth/ app/order/ app/report/ --no-error-on-unmatched-pattern
