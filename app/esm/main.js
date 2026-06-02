@@ -11,6 +11,7 @@ import { callFinancePeriod, installFinancePeriodControls } from './ui/finance-pe
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
+import { dismissImageZoomModal, dismissModal, closeModalById, closeImageZoomModal, resetImageZoom, installModalOverlayControls } from './ui/modal-overlay-controls.js';
 import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
 import { callReportMenuFilter, callReportFilterReset, installReportFilterControls } from './ui/report-filter-controls.js';
 import { callReportTransactionFilter, installReportTransactionFilters } from './ui/report-transaction-filters.js';
@@ -45,6 +46,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var headerActions = installHeaderActions(anyRoot);
   var inventoryTabs = installInventoryTabs(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
+  var modalOverlayControls = installModalOverlayControls(anyRoot);
   var reportDateControls = installReportDateControls(anyRoot);
   var reportFilterControls = installReportFilterControls(anyRoot);
   var reportTransactionFilters = installReportTransactionFilters(anyRoot);
@@ -99,6 +101,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     headerActions: headerActions,
     inventoryTabs: inventoryTabs,
     imageZoom: imageZoom,
+    modalOverlayControls: modalOverlayControls,
     reportDateControls: reportDateControls,
     reportFilterControls: reportFilterControls,
     reportTransactionFilters: reportTransactionFilters,
@@ -185,10 +188,19 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       detachPresent: typeof imageZoom.detach === 'function',
       resetPresent: typeof imageZoom.reset === 'function',
     },
+    modalOverlayControls: {
+      dismissModalPresent: modalOverlayControls.dismissModal === dismissModal,
+      closeModalByIdPresent: modalOverlayControls.closeModalById === closeModalById,
+      dismissImageZoomModalPresent: modalOverlayControls.dismissImageZoomModal === dismissImageZoomModal,
+      closeImageZoomModalPresent: modalOverlayControls.closeImageZoomModal === closeImageZoomModal,
+      resetImageZoomPresent: modalOverlayControls.resetImageZoom === resetImageZoom,
+      installed: modalOverlayControls.installed === true,
+      selectorPresent: modalOverlayControls.selector === '[data-esm-modal-self-dismiss], [data-esm-modal-close], [data-esm-modal-close-self], [data-esm-image-zoom-self-dismiss], [data-esm-image-zoom-close], [data-esm-image-zoom-reset]',
+    },
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-report-filter-controls',
+    version: '20260602-e5-modal-close-controls',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
