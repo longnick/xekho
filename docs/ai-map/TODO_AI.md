@@ -3,17 +3,17 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1/E5.2/E5.3 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, first image zoom UI island, and first delegated header action handler island, report tab delegated handler island, and settings tab delegated handler island.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, first image zoom UI island, and first delegated header action handler island, report tab delegated handler island, settings tab delegated handler island, and report date controls delegated handler island.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~76% complete.
- - Core non-optional refactor/security/testing plan: ~82% complete.
- - Near-term safe-execution track: ~99.97% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~77% complete.
+ - Core non-optional refactor/security/testing plan: ~83% complete.
+ - Near-term safe-execution track: ~99.98% complete.
 
 ## Next
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
 - ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
-- E5/E6 status: not safe to complete as one-shot work. Current scan shows 227 inline handlers and 31 local classic scripts after E5.3. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
+- E5/E6 status: not safe to complete as one-shot work. Current scan shows 220 inline handlers and 31 local classic scripts after E5.4. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 13:35: ESM Phase E5.4 report date controls completed. Added `app/esm/ui/report-date-controls.js`, converted 5 report period + 2 report date mode inline handlers to `data-esm-*`, wired `app/esm/main.js`, updated cache key, added `scripts/verify-esm-report-date-controls.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1335-esm-e5-report-date-controls.md`
 - 2026-06-02 13:25: ESM Phase E5.3 settings tabs completed. Added `app/esm/ui/settings-tabs.js`, converted 7 static settings tab inline `onclick` handlers to `data-esm-settings-tab`, wired `app/esm/main.js`, updated cache key, added `scripts/verify-esm-settings-tabs.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1325-esm-e5-settings-tabs.md`
 - 2026-06-02 12:55: ESM Phase E5.2 report tabs completed. Added `app/esm/ui/report-tabs.js`, converted 4 static report tab inline `onclick` handlers to `data-esm-report-tab`, wired `app/esm/main.js`, updated cache key, added `scripts/verify-esm-report-tabs.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1255-esm-e5-report-tabs.md`
 - 2026-06-02 12:42: ESM Phase E5.1 header actions completed. Added `app/esm/ui/header-actions.js`, converted 4 static header inline `onclick` handlers to `data-esm-header-action`, wired `app/esm/main.js`, updated cache key, added `scripts/verify-esm-header-actions.js`, expanded entry verification, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1242-esm-e5-header-actions.md`

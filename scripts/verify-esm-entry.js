@@ -18,6 +18,7 @@ const storeAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'store.js');
 const dbAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'db.js');
 const headerActionsPath = path.join(root, 'app', 'esm', 'ui', 'header-actions.js');
 const imageZoomPath = path.join(root, 'app', 'esm', 'ui', 'image-zoom.js');
+const reportDateControlsPath = path.join(root, 'app', 'esm', 'ui', 'report-date-controls.js');
 const reportTabsPath = path.join(root, 'app', 'esm', 'ui', 'report-tabs.js');
 const settingsTabsPath = path.join(root, 'app', 'esm', 'ui', 'settings-tabs.js');
 
@@ -39,9 +40,10 @@ const storeAdapterSource = fs.readFileSync(storeAdapterPath, 'utf8');
 const dbAdapterSource = fs.readFileSync(dbAdapterPath, 'utf8');
 const headerActionsSource = fs.readFileSync(headerActionsPath, 'utf8');
 const imageZoomSource = fs.readFileSync(imageZoomPath, 'utf8');
+const reportDateControlsSource = fs.readFileSync(reportDateControlsPath, 'utf8');
 const reportTabsSource = fs.readFileSync(reportTabsPath, 'utf8');
 const settingsTabsSource = fs.readFileSync(settingsTabsPath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-settings-tabs"></script>';
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-report-date-controls"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -57,6 +59,7 @@ assert(entrySource.includes("from './adapters/store.js';"), 'ESM entry must impo
 assert(entrySource.includes("from './adapters/db.js';"), 'ESM entry must import db adapter');
 assert(entrySource.includes("from './ui/header-actions.js';"), 'ESM entry must import header actions UI island');
 assert(entrySource.includes("from './ui/image-zoom.js';"), 'ESM entry must import image zoom UI island');
+assert(entrySource.includes("from './ui/report-date-controls.js';"), 'ESM entry must import report date controls UI island');
 assert(entrySource.includes("from './ui/report-tabs.js';"), 'ESM entry must import report tabs UI island');
 assert(entrySource.includes("from './ui/settings-tabs.js';"), 'ESM entry must import settings tabs UI island');
 assert(entrySource.includes('XekhoApp.esm.harness'), 'ESM entry must set XekhoApp.esm.harness');
@@ -79,6 +82,7 @@ assert(storeAdapterSource.includes('export function installStoreAdapter'), 'stor
 assert(dbAdapterSource.includes('export function installDbAdapter'), 'db adapter must export installer');
 assert(headerActionsSource.includes('export function installHeaderActions'), 'header actions island must export installer');
 assert(imageZoomSource.includes('export function installGlobalImageZoom'), 'image zoom island must export installer');
+assert(reportDateControlsSource.includes('export function installReportDateControls'), 'report date controls island must export installer');
 assert(reportTabsSource.includes('export function installReportTabs'), 'report tabs island must export installer');
 assert(settingsTabsSource.includes('export function installSettingsTabs'), 'settings tabs island must export installer');
 
@@ -283,6 +287,21 @@ const sandbox = {
     return rootScope.XekhoApp.esm.ui.headerActions;
   },
 
+  callReportPeriod: function callReportPeriod() {},
+  callReportDateMode: function callReportDateMode() {},
+  installReportDateControls: function installReportDateControls(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.reportDateControls = {
+      selector: '[data-esm-report-period], [data-esm-report-date-mode]',
+      installed: true,
+      uninstall: function uninstall() {},
+      callReportPeriod: sandbox.callReportPeriod,
+      callReportDateMode: sandbox.callReportDateMode,
+    };
+    return rootScope.XekhoApp.esm.ui.reportDateControls;
+  },
+
   callReportTab: function callReportTab() {},
   installReportTabs: function installReportTabs(globalScope) {
     var rootScope = globalScope || win;
@@ -331,7 +350,7 @@ vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e5-settings-tabs', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-report-date-controls', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -346,12 +365,15 @@ assert(win.XekhoApp.esm.facades.runtimeAdapters.db.waitForDBPresent === true, 'd
 assert(win.XekhoApp.esm.facades.uiIslands.loaded === true, 'ui island marker should be loaded');
 assert(win.XekhoApp.esm.facades.uiIslands.headerActions.installed === true, 'header actions marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.headerActions.selectorPresent === true, 'header actions selector marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.reportDateControls.installed === true, 'report date controls marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.reportDateControls.selectorPresent === true, 'report date controls selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.installed === true, 'report tabs marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.selectorPresent === true, 'report tabs selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.installed === true, 'settings tabs marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.selectorPresent === true, 'settings tabs selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.imageZoom.attachPresent === true, 'image zoom marker mismatch');
 assert(typeof win.XekhoApp.esm.ui.headerActions.callHeaderAction === 'function', 'header actions island should install under XekhoApp.esm.ui');
+assert(typeof win.XekhoApp.esm.ui.reportDateControls.callReportPeriod === 'function', 'report date controls island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.reportTabs.callReportTab === 'function', 'report tabs island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.settingsTabs.callSettingsTab === 'function', 'settings tabs island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.imageZoom.attach === 'function', 'image zoom island should install under XekhoApp.esm.ui');

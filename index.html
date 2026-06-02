@@ -622,18 +622,18 @@
       <!-- ========== PAGE: REPORTS ========== -->
       <div id="page-reports" class="page">
         <div class="date-filter" style="flex-wrap:wrap; gap:6px;">
-          <button class="date-btn report-period-btn" data-period="today" onclick="setReportPeriod('today')">Hôm
+          <button class="date-btn report-period-btn" data-period="today" data-esm-report-period="today">Hôm
             nay</button>
-          <button class="date-btn report-period-btn" data-period="day" onclick="setReportPeriod('day')">Ngày</button>
-          <button class="date-btn report-period-btn" data-period="week" onclick="setReportPeriod('week')">Tuần</button>
+          <button class="date-btn report-period-btn" data-period="day" data-esm-report-period="day">Ngày</button>
+          <button class="date-btn report-period-btn" data-period="week" data-esm-report-period="week">Tuần</button>
           <button class="date-btn report-period-btn active" data-period="month"
-            onclick="setReportPeriod('month')">Tháng</button>
-          <button class="date-btn report-period-btn" data-period="all" onclick="setReportPeriod('all')">Tất cả</button>
+            data-esm-report-period="month">Tháng</button>
+          <button class="date-btn report-period-btn" data-period="all" data-esm-report-period="all">Tất cả</button>
         </div>
         <!-- Date Picker Row -->
         <div class="date-picker-row" id="report-date-picker" style="display:none">
           <div class="date-picker-mode">
-            <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('report','single',this)">
+            <button class="date-mode-btn active" data-mode="single" data-esm-report-date-mode="single">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -643,7 +643,7 @@
               </svg>
               Chọn ngày
             </button>
-            <button class="date-mode-btn" data-mode="range" onclick="setDateMode('report','range',this)">
+            <button class="date-mode-btn" data-mode="range" data-esm-report-date-mode="range">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-settings-tabs"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-report-date-controls"></script>
   <script>
     // Extra helpers that reference DOM
 

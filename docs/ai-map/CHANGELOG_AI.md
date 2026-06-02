@@ -1,5 +1,24 @@
 # AI Changelog
 
+## 2026-06-02 13:35 - ESM Phase E5.4 report date controls delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the fourth safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/report-date-controls.js` with delegated click handling for report period/date mode controls.
+- Converted five report period buttons from inline `onclick="setReportPeriod(...)"` to `data-esm-report-period`: today, day, week, month, all.
+- Converted two report date mode buttons from inline `onclick="setDateMode('report', ..., this)"` to `data-esm-report-date-mode`: single, range.
+- Updated `app/esm/main.js` to import/install `reportDateControls` under `window.XekhoApp.esm.ui.reportDateControls`.
+- Bumped ESM entry cache/version to `20260602-e5-report-date-controls`.
+- Added `scripts/verify-esm-report-date-controls.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `setReportPeriod` and `setDateMode` untouched; the ESM island delegates to them at click time.
+
+Current E5 evidence: inline handler count reduced from 227 to 220; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, report-date-controls/settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 13:25 - ESM Phase E5.3 settings tab delegated handlers
 
 Repo: `/home/longnick/projects/xekho`
