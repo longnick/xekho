@@ -4,22 +4,29 @@
  * Provides generic openModal/closeModal via IIFE/global namespace.
  * Domain-specific open/close functions in app.js delegate to these.
  */
+// @ts-check
 (function (global) {
   'use strict';
 
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.ui = XekhoApp.ui || {};
 
+  /** @param {string|HTMLElement} id @returns {void} */
   function openModal(id) {
     var el = typeof id === 'string' ? document.getElementById(id) : id;
     if (el) el.classList.add('active');
   }
 
+  /** @param {string|HTMLElement} id @returns {void} */
   function closeModal(id) {
     var el = typeof id === 'string' ? document.getElementById(id) : id;
     if (el) el.classList.remove('active');
   }
 
+  /** @param {string|HTMLElement} id @returns {boolean} */
   function isModalOpen(id) {
     var el = typeof id === 'string' ? document.getElementById(id) : id;
     return !!(el && el.classList.contains('active'));

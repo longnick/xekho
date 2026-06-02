@@ -1,8 +1,13 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @param {Date|string|number} date @returns {string} */
   function formatLocalDateKey(date) {
     var value = new Date(date);
     var year = value.getFullYear();
@@ -11,6 +16,7 @@
     return year + '-' + month + '-' + day;
   }
 
+  /** @param {Date|string|number} d @returns {string} */
   function getWeekStartKey(d) {
     var x = new Date(d);
     x.setHours(0, 0, 0, 0);
@@ -19,6 +25,7 @@
     return x.toISOString().slice(0, 10);
   }
 
+  /** @param {'today'|'day'|'week'|'month'|'year'|'range'} period @param {{ date?: string, singleDate?: string, fromDate?: string, toDate?: string }} [opts] @returns {{ fromDate: string, toDate: string }|null} */
   function resolvePeriodDateRangePure(period, opts) {
     opts = opts || {};
     var now = new Date();
