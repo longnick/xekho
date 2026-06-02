@@ -1,9 +1,18 @@
+// @ts-check
 'use strict';
 
+/**
+ * @param {Object} order
+ * @returns {string}
+ */
 function getHistoryBusinessId(order) {
   return String(order?.id || order?.historyId || order?.docId || '').trim() || String(order?.docId || '').trim();
 }
 
+/**
+ * @param {Object} order
+ * @returns {Date}
+ */
 function getHistoryVersionDate(order) {
   const rawDate = order?.updatedAt || order?.paidAt || order?.timestamp || null;
   if (rawDate instanceof Date) return rawDate;
@@ -11,17 +20,29 @@ function getHistoryVersionDate(order) {
   return new Date(rawDate || 0);
 }
 
+/**
+ * @param {Object} order
+ * @returns {number}
+ */
 function getHistoryVersionTime(order) {
   const date = getHistoryVersionDate(order);
   return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
 }
 
+/**
+ * @param {Object} order
+ * @returns {boolean}
+ */
 function isCompletedHistoryOrderForReports(order) {
   const status = String(order?.status || '').trim().toLowerCase();
   if (!status) return !order?.cancelledAt && !order?.cancelReason;
   return status === 'completed' || status === 'closed';
 }
 
+/**
+ * @param {Object} order
+ * @returns {boolean}
+ */
 function isVisibleHistoryOrderForReports(order) {
   if (!order || typeof order !== 'object') return false;
   if (!isCompletedHistoryOrderForReports(order)) return false;
@@ -34,6 +55,10 @@ function isVisibleHistoryOrderForReports(order) {
   return true;
 }
 
+/**
+ * @param {any} value
+ * @returns {string}
+ */
 function extractTelegramCashierName(value) {
 // Override table normalization so customer-request flows do not render labels like duplicated "BAN".
 function normalizeTelegramTableLabel(value) {
@@ -72,6 +97,10 @@ function normalizeTelegramTableLabel(value) {
   return '';
 }
 
+/**
+ * @param {...any} values
+ * @returns {any}
+ */
 function pickFirstPresentValue(...values) {
   for (const value of values) {
     if (value === undefined || value === null) continue;
@@ -81,6 +110,10 @@ function pickFirstPresentValue(...values) {
   return null;
 }
 
+/**
+ * @param {...any} values
+ * @returns {number}
+ */
 function toTelegramMoneyNumber(...values) {
   for (const value of values) {
     const num = Number(value);
@@ -89,6 +122,10 @@ function toTelegramMoneyNumber(...values) {
   return 0;
 }
 
+/**
+ * @param {Object} order
+ * @returns {any[]}
+ */
 function normalizeCompletedOrderItems(order = {}) {
   const rawItems = pickFirstPresentValue(
     Array.isArray(order.items) ? order.items : null,
@@ -116,6 +153,10 @@ function normalizeCompletedOrderItems(order = {}) {
   }).filter(Boolean);
 }
 
+/**
+ * @param {any[]} items
+ * @returns {number}
+ */
 function calculateCompletedOrderSubtotal(items = []) {
   return items.reduce((sum, item) => {
     const qty = toTelegramMoneyNumber(item?.qty, 0);
@@ -125,6 +166,11 @@ function calculateCompletedOrderSubtotal(items = []) {
   }, 0);
 }
 
+/**
+ * @param {string} historyId
+ * @param {Object} order
+ * @returns {Object}
+ */
 function normalizeCompletedOrderForTelegram(historyId, order = {}) {
   const items = normalizeCompletedOrderItems(order);
   const subtotalFromItems = calculateCompletedOrderSubtotal(items);

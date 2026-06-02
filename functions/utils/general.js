@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Phase 10: General-purpose utility functions extracted from functions/index.js
  *
@@ -10,6 +11,9 @@ const telegramAds = require('../telegram/ads');
 
 /**
  * Send a JSON HTTP response.
+ * @param {any} res
+ * @param {number} code
+ * @param {any} data
  */
 function json(res, code, data) {
   res.status(code).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(data));
@@ -17,6 +21,9 @@ function json(res, code, data) {
 
 /**
  * Wrap text into lines that fit within a character limit (for SVG rendering).
+ * @param {string} text
+ * @param {number} limit
+ * @returns {string[]}
  */
 function wrapSvgText(text, limit = 36) {
   const normalized = String(text || '').trim();
@@ -38,6 +45,8 @@ function wrapSvgText(text, limit = 36) {
 
 /**
  * Strip the data-URL base64 prefix from a value.
+ * @param {string} value
+ * @returns {string}
  */
 function stripDataUrlBase64(value = '') {
   return String(value || '').replace(/^data:[^;]+;base64,/i, '').trim();
@@ -45,6 +54,8 @@ function stripDataUrlBase64(value = '') {
 
 /**
  * Extract the first JSON object found inside arbitrary text.
+ * @param {string} text
+ * @returns {any|null}
  */
 function extractFirstJson(text = '') {
   const source = String(text || '').trim();
@@ -101,6 +112,8 @@ function extractFirstJson(text = '') {
 
 /**
  * Map tool action type strings to canonical forms.
+ * @param {string} actionType
+ * @returns {string}
  */
 function mapToolActionType(actionType = '') {
   const raw = String(actionType || '').trim();
@@ -121,6 +134,9 @@ function extractTable(text) {
 
 /**
  * Build a pending-confirmation response for AI router tool calls.
+ * @param {Object} toolResult
+ * @param {string} originalText
+ * @returns {Object}
  */
 function buildAiRouterPendingResponse(toolResult = {}, originalText = '') {
   const actionType = String(toolResult.actionType || toolResult.tool || '').trim();
