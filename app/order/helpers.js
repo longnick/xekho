@@ -7,6 +7,7 @@
 
   var ITEM_TYPES = (global.ITEM_TYPES || {});
 
+  /** @returns {string} */
   function uid() {
     return (typeof global.uid === 'function') ? global.uid()
       : Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -14,12 +15,14 @@
 
   // ── History order helpers ──
 
+  /** @param {Object} order @returns {boolean} */
   function isCompletedHistoryOrderForUi(order) {
     var status = String(order && order.status || '').trim().toLowerCase();
     if (!status) return !(order && order.cancelledAt) && !(order && order.cancelReason);
     return status === 'completed' || status === 'closed';
   }
 
+  /** @param {Object} order @returns {boolean} */
   function isVisibleHistoryOrderForUi(order) {
     if (!order || typeof order !== 'object') return false;
     if (!isCompletedHistoryOrderForUi(order)) return false;
@@ -34,6 +37,7 @@
 
   // ── Vietnamese key normalization ──
 
+  /** @param {string} text @returns {string} */
   function normalizeViKey(text) {
     return String(text || '')
       .toLowerCase()
@@ -46,6 +50,7 @@
 
   // ── Inventory item helpers ──
 
+  /** @param {Object} item @returns {string} */
   function inferInventoryItemType(item) {
     item = item || {};
     if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
@@ -53,6 +58,7 @@
     return ITEM_TYPES.RAW;
   }
 
+  /** @param {Object} item @returns {Object} */
   function normalizeInventoryItemModel(item) {
     item = item || {};
     return {
@@ -67,12 +73,18 @@
 
   // ── Menu item helpers ──
 
+  /** @param {Object} item @returns {string} */
   function inferMenuItemType(item) {
     item = item || {};
     if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.FINISHED) return item.itemType;
     return Array.isArray(item.ingredients) && item.ingredients.length > 0 ? ITEM_TYPES.FINISHED : ITEM_TYPES.RETAIL;
   }
 
+  /**
+   * @param {Object} item
+   * @param {Array} inventory
+   * @returns {string|null}
+   */
   function findLinkedInventoryIdForMenuItem(item, inventory) {
     item = item || {};
     inventory = inventory || [];
@@ -81,6 +93,7 @@
     return exact ? exact.id : null;
   }
 
+  /** @param {string} unit @returns {string} */
   function normalizeUnitText(unit) {
     var raw = String(unit || '').trim();
     if (!raw) return 'ph\u1ea7n';
@@ -97,31 +110,37 @@
 
   // ── Kitchen order item helpers ──
 
+  /** @param {Object} item @returns {boolean} */
   function _isKitchenSkippedItem(item) {
     item = item || {};
     return String(item.itemType || '').trim().toLowerCase() === String(ITEM_TYPES.RETAIL).toLowerCase();
   }
 
+  /** @returns {string} */
   function createKitchenLineItemId() {
     return 'li_' + Date.now() + '_' + uid().slice(0, 6);
   }
 
+  /** @param {Object} item @returns {string} */
   function getKitchenLineItemId(item) {
     item = item || {};
     return String(item.lineItemId || '').trim();
   }
 
+  /** @param {string} status @returns {boolean} */
   function isKitchenFinalStatus(status) {
     var normalized = String(status || '').trim().toLowerCase();
     return normalized === 'served';
   }
 
+  /** @param {Object} item @returns {boolean} */
   function canToggleServedStatus(item) {
     item = item || {};
     var status = String(item.kitchenStatus || '').trim().toLowerCase();
     return status === 'done' || status === 'served';
   }
 
+  /** @param {Object} item @returns {string} */
   function getCartItemStatusLabel(item) {
     item = item || {};
     var status = String(item.kitchenStatus || '').trim().toLowerCase();
@@ -132,6 +151,7 @@
     return 'Cho lam';
   }
 
+  /** @param {Object} item @param {Map|null} menuMap @returns {Object} */
   function normalizeKitchenOrderItem(item, menuMap) {
     item = item || {};
     var base = Object.assign({}, item);
@@ -165,6 +185,7 @@
 
   // ── Online order helpers ──
 
+  /** @param {Object} order @returns {string} */
   function _mapOnlineOrderPayMethod(order) {
     order = order || {};
     var paymentMethod = String(order.paymentMethod || '').trim().toLowerCase();
@@ -175,6 +196,7 @@
     return 'cash';
   }
 
+  /** @param {Object} order @returns {string} */
   function _buildOnlineOrderBillNo(order) {
     order = order || {};
     var orderCode = String(order.orderCode || '').trim();
@@ -183,11 +205,13 @@
     return 'ONL-' + now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + '-' + uid().slice(0, 4).toUpperCase();
   }
 
+  /** @param {Object} item @returns {number} */
   function _getOnlineOrderItemQty(item) {
     item = item || {};
     return Number(item.qty != null ? item.qty : (item.quantity != null ? item.quantity : 1)) || 1;
   }
 
+  /** @param {Object} item @returns {number} */
   function _getOnlineOrderItemUnitPrice(item) {
     item = item || {};
     return Number(
@@ -199,6 +223,7 @@
     ) || 0;
   }
 
+  /** @param {Object} order @returns {number} */
   function _calculateOnlineOrderTotal(order) {
     order = order || {};
     var pricing = order.pricing || {};
@@ -223,6 +248,7 @@
     return Math.max(0, itemsTotal + shipping + vatAmount - discount);
   }
 
+  /** @param {Object} order @param {string} [fallbackId] @returns {string} */
   function _resolveOnlineOrderDocId(order, fallbackId) {
     order = order || {};
     return String(order._docId || order.id || fallbackId || '').trim();
@@ -251,6 +277,7 @@
   XekhoApp.order._calculateOnlineOrderTotal = _calculateOnlineOrderTotal;
   XekhoApp.order._resolveOnlineOrderDocId = _resolveOnlineOrderDocId;
 
+  /** @param {Object} dish @param {Array} inventoryList @returns {number} */
   function _resolveDishCostPerUnit(dish, inventoryList) {
     if (!dish) return 0;
     var inv = Array.isArray(inventoryList) ? inventoryList : [];
@@ -281,6 +308,7 @@
   }
   XekhoApp.order._resolveDishCostPerUnit = _resolveDishCostPerUnit;
 
+  /** @param {Object} item @param {Array} [inventory] @returns {Object} */
   function normalizeMenuItemModel(item, inventory) {
     item = item || {};
     if (!Array.isArray(inventory)) {
