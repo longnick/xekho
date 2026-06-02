@@ -1,14 +1,20 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @param {number} bytes @returns {string} */
   function formatBytes(bytes) {
     var mb = bytes / (1024 * 1024);
     if (mb < 1024) return mb.toFixed(1) + ' MB';
     return (mb / 1024).toFixed(2) + ' GB';
   }
 
+  /** @returns {number} */
   function getLocalStorageUsageBytes() {
     try {
       var total = 0;
@@ -23,6 +29,7 @@
     }
   }
 
+  /** @param {Blob} blob @returns {Promise<string>} */
   async function blobToBase64(blob) {
     return new Promise(function (resolve, reject) {
       var reader = new FileReader();
@@ -36,6 +43,7 @@
     });
   }
 
+  /** @param {string} raw @returns {string} */
   function normalizeGoogleScriptWebAppUrl(raw) {
     var u = String(raw || '').trim();
     if (!u) return '';
@@ -46,12 +54,14 @@
     return u.replace(/\/$/, '');
   }
 
+  /** @param {string} u @returns {boolean} */
   function isGoogleAppsScriptWebAppUrl(u) {
     if (!u) return false;
     return /script\.google\.com\/macros\/s\//i.test(u)
       || /script\.googleusercontent\.com\/macros\/exec/i.test(u);
   }
 
+  /** @param {{ uploadUrl: string, folderId?: string, filename: string, mimeType: string, blob: Blob }} opts @returns {Promise<{ data?: Object, opaque?: boolean }>} */
   async function uploadFileToGoogleDriveByEndpoint(opts) {
     var uploadUrl = opts.uploadUrl;
     var folderId = opts.folderId;

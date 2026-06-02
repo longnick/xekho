@@ -1,12 +1,18 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @returns {Object} */
   function _getFinancialProfile() {
-    return (global.appState && global.appState.settings && global.appState.settings.financial_profile) || {};
+    return (_global.appState && _global.appState.settings && _global.appState.settings.financial_profile) || {};
   }
 
+  /** @returns {{ monthlyFixedCostTotal: number, dailyFixedCost: number, monthlyManagementSalary: number, dailyManagementSalary: number, targetMonthlyProfit: number, isConfigured: boolean }} */
   function getFixedCostProfileForReports() {
     var financialProfile = _getFinancialProfile();
     var monthly = financialProfile.monthly_fixed_costs || {};
@@ -38,6 +44,7 @@
     };
   }
 
+  /** @returns {{ profile: Object, monthly: Object, managementSalary: number, rent: number, utilities: number, other: number }} */
   function _getPayrollProfile() {
     var profile = _getFinancialProfile();
     var monthly = profile.monthly_fixed_costs || {};

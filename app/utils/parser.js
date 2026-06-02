@@ -1,8 +1,13 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @param {string} text @param {string} [source] @returns {{ name: string, qty: number|null, price: number|null, rawText: string, source: string|undefined }} */
   function parsePurchaseText(text, source) {
     var numbers = (String(text || '').match(/\d[\d\.]*/g) || [])
       .map(function (x) { return parseFloat(x.replace(/\./g, '')); })
@@ -22,6 +27,7 @@
     return { name: bestLine || '', qty: qty, price: price, rawText: text, source: source };
   }
 
+  /** @param {Object} obj @param {string} [source] @returns {{ name: string, qty: number|null, price: number|null, rawText: string, source: string|undefined }} */
   function parsePurchaseJson(obj, source) {
     return {
       name: (obj && obj.name) || '',
@@ -32,6 +38,7 @@
     };
   }
 
+  /** @param {string} value @returns {string} */
   function getKitchenRoutingLabel(value) {
     var normalized = String(value || '').trim().toLowerCase();
     if (normalized === 'kitchen_1') return 'Bếp 1';
@@ -40,12 +47,14 @@
     return 'Cả 2 bếp';
   }
 
+  /** @returns {function(string): string} */
   function _resolveNormalizeViKey() {
-    if (typeof global.normalizeViKey === 'function') return global.normalizeViKey;
-    if (global.XekhoApp && global.XekhoApp.order && typeof global.XekhoApp.order.normalizeViKey === 'function') return global.XekhoApp.order.normalizeViKey;
+    if (typeof _global.normalizeViKey === 'function') return _global.normalizeViKey;
+    if (_global.XekhoApp && _global.XekhoApp.order && typeof _global.XekhoApp.order.normalizeViKey === 'function') return _global.XekhoApp.order.normalizeViKey;
     return function (t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
   }
 
+  /** @param {string} a @param {string} b @returns {number} */
   function tokenSimilarity(a, b) {
     var nvk = _resolveNormalizeViKey();
     var ta = new Set(nvk(a).split(' ').filter(Boolean));
@@ -56,6 +65,7 @@
     return common / Math.max(ta.size, tb.size);
   }
 
+  /** @param {Object} item @returns {string} */
   function getMenuItemImageUrl(item) {
     return String(
       (item && (item.image_url || item.imageUrl || item.photoUrl || item.thumbnail || item.photo)) || ''
