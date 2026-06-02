@@ -7,7 +7,10 @@
     "test": "jest",
     "backfill:history-costs": "node backfill_history_costs.js",
     "lint": "eslint app.js app/utils/ app/ui/ app/auth/ app/order/ app/report/",
-    "check": "node --check app.js && for f in app/utils/*.js app/ui/*.js app/auth/*.js app/order/*.js app/report/*.js; do node --check \"$f\"; done"
+    "check": "node --check app.js && for f in app/utils/*.js app/ui/*.js app/auth/*.js app/order/*.js app/report/*.js; do node --check \"$f\"; done",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +25,7 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "jest": "^30.3.0"
+    "jest": "^30.3.0",
+    "vite": "^8.0.16"
   }
 }
