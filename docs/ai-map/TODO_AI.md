@@ -3,17 +3,17 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1 compatibility harness is now in place.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1 compatibility harness is in place and E2 has started with the first DOM leaf facade.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~66% complete.
- - Core non-optional refactor/security/testing plan: ~73% complete.
- - Near-term safe-execution track: ~99% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~68% complete.
+ - Core non-optional refactor/security/testing plan: ~74% complete.
+ - Near-term safe-execution track: ~99.5% complete.
 
 ## Next
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
-- ESM Phase E1 complete: compatibility harness added at `app/esm/main.js`, loaded after classic scripts, verified by `scripts/verify-esm-entry.js`. Current ESM readiness is now ~38%; do not do one-shot ESM conversion.
-- Next safe coding sprint candidate: ESM Phase E2 first leaf utility facade (`app/utils/dom.js` dual-export/facade) or `Deep Extraction D1` (`app/ui/image-zoom.js`).
+- ESM Phase E2 started: `app/esm/utils/dom.js` added as the first importable leaf facade for `escapeHtml()`, and `app/esm/main.js` now installs/verifies DOM facade compatibility. Current ESM readiness is now ~40%; do not do one-shot ESM conversion.
+- Next safe coding sprint candidate: ESM Phase E2 second leaf utility facade (`app/utils/format.js` dual-export/facade) or `Deep Extraction D1` (`app/ui/image-zoom.js`).
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical

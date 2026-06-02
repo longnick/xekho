@@ -21,13 +21,19 @@ Related files:
   - notes: currently modified before AI map initialization; inspect diff before editing.
 
 - `app/esm/main.js`
-  - role: Phase E1 browser-module compatibility harness for future ESM migration.
-  - depends on: existing classic runtime being loaded first; reads/creates `window.XekhoApp.esm` only.
+  - role: Phase E1/E2 browser-module compatibility harness for future ESM migration.
+  - depends on: existing classic runtime being loaded first; imports `./utils/dom.js`; reads/creates `window.XekhoApp.esm` and installs DOM facade compatibility.
   - used by: `index.html` as `<script type="module">` after offline/classic scripts and before inline DOM helpers.
-  - notes: does not import legacy modules, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
+  - notes: does not import `app.js`, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
+
+- `app/esm/utils/dom.js`
+  - role: Phase E2 importable DOM utility facade.
+  - depends on: no app state; pure `escapeHtml()` plus optional global installer.
+  - used by: `app/esm/main.js` and future ESM consumers.
+  - notes: preserves `window.XekhoApp.utils.dom.escapeHtml()` compatibility and is verified by `scripts/verify-esm-dom-utils.js`.
 
 - `app/esm/README.md`
-  - role: ESM migration guardrails and next safe dual-export candidates.
+  - role: ESM migration guardrails, completed facade inventory, and next safe dual-export candidates.
   - depends on: ESM audit plan in `docs/ai-map/ESM_AUDIT.md`.
   - used by: future ESM conversion sprints.
   - notes: keep root `package.json` as `commonjs` until a later package-type strategy sprint.
