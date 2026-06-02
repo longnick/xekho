@@ -79,57 +79,78 @@
 
 ## API routes / Cloud Functions
 
-Source: `functions/index.js` (~6,816 lines, 35 exports, ~241 top-level functions). Phase 2 extracted 38 functions into 4 new modules.
+Source: `functions/index.js` (~5,702 lines, 34 exports). Phase 2 extracted 38+ functions into backend modules.
 
-### Exported Cloud Functions (35)
+### Exported Cloud Functions (34)
 
-**Orders & Payments:**
-- `approveOnlineOrder` (onCall, L4204) — approve pending online order
-- `rejectOnlineOrder` (onCall, L4228) — reject pending online order
+#### Orders & Payments (2)
+- `approveOnlineOrder` (onCall, L2655) — approve pending online order from POS or Telegram
+- `rejectOnlineOrder` (onCall, L2679) — reject pending online order
 
-**Telegram Reports & Notifications:**
-- `testDailyReportTelegram` (onRequest, L5378) — test daily report
-- `testAdsReportTelegram` (onRequest, L5414) — test ads report
-- `adsRevenueReportApi` (onRequest, L5450) — ads revenue API
-- `testPaymentBillTelegram` (onRequest, L5471) — test payment bill
-- `testCompletedOrderTelegram` (onRequest, L5505) — test completed order
-- `telegramWebhook` (onRequest, L5548) — main Telegram bot webhook
-- `scheduledTelegramReport` (onSchedule, L8290) — scheduled report cron
+#### Telegram Bot Webhook (1)
+- `telegramWebhook` (onRequest, L3429) — main Telegram bot webhook. Handles:
+  - **Callback queries**: online order approve/reject (`onl_order_ok_`, `onl_order_no_`), order draft confirm/edit/cancel (`odf_confirm_`, `odf_edit_`, `odf_cancel_`), customer order approve/reject (`cw_order_ok_`, `cw_order_no_`), customer service ack/done (`cw_service_ack_`, `cw_service_done_`), customer payment cash/bank/cancel/ack (`cw_payment_cash_`, `cw_payment_bank_`, `cw_payment_cancel_`, `cw_payment_ack_`), generic confirm/cancel
+  - **Photo messages**: order slip OCR → `createTelegramOrderDraftFromPhoto()`, or general image → `askGeminiVisionForImport()`
+  - **Voice/audio**: `askGeminiWithVoice()` with file_id download
+  - **Text messages**: smart report Q&A (`tryAnswerTelegramSmartReportQuestion`), then AI tool loop (`askGeminiWithFirestoreTools`)
+  - **Commands**: `/fix` for order draft editing
 
-**Firestore Triggers:**
-- `syncPublicMenuOnCatalogCreate/Update/Delete` (onDocument*, L6410-6439)
-- `onOrderRequestCreated` (onDocumentCreated, L6439)
-- `onOrderRequestApproved` (onDocumentUpdated, L6470)
-- `syncOrderRequestStatusFromPosOrder` (onDocumentUpdated, L6514)
-- `syncOnlineOrderStatusFromPosOrder` (onDocumentUpdated, L6540)
-- `onPaymentRequestCreated` (onDocumentCreated, L6589)
-- `onServiceRequestCreated` (onDocumentCreated, L6629)
-- `onHistoryFinalizeCustomerOrderRequests` (onDocumentCreated, L6659)
-- `onHistoryOrderCancelled` (onDocumentUpdated, L6671)
-- `onKitchenNotificationCreated` (onDocumentCreated, L6714)
-- `sendPushOnKitchenNotif` (onDocumentCreated, L6793)
-- `telegramOnKitchenOrderCreated` (onDocumentCreated, L6937)
-- `telegramOnKitchenOrderUpdated` (onDocumentUpdated, L6962)
-- `telegramOnCompletedOrderCreated` (onDocumentCreated, L6987)
+#### Telegram Reports & Notifications (5)
+- `testDailyReportTelegram` (onRequest, L3259) — test daily report
+- `testAdsReportTelegram` (onRequest, L3295) — test ads report
+- `adsRevenueReportApi` (onRequest, L3331) — ads revenue API
+- `testPaymentBillTelegram` (onRequest, L3352) — test payment bill
+- `testCompletedOrderTelegram` (onRequest, L3386) — test completed order
 
-**AI/Media:**
-- `adminProbeVertex` (onRequest, L7054) — Vertex AI probe
-- `apiVoice` (onRequest, L6333) — voice processing
-- `mediaRefineryApi` (onRequest, L7335) — media refinery
-- `aiStatus` (onRequest, L8026) — AI status check
-- `aiRouter` (onRequest, L8051) — AI routing endpoint
-- `adminGenerateMenuImage` (onRequest, L8099) — AI menu image gen
-- `adminGenerateMenuDescription` (onRequest, L8204) — AI menu description gen
+#### Scheduled Jobs (1)
+- `scheduledTelegramReport` (onSchedule, L5625) — every 5 minutes, checks `settings/telegram_report` for send time, builds daily report with revenue/expense/target data, sends to configured Telegram chat IDs, updates last sent range key to prevent duplicates
 
-**Admin/Maintenance:**
-- `cleanupDuplicateHistory` (onRequest, L6256) — cleanup duplicates
-- `adminUploadMenuImage` (onRequest, L7635) — upload menu image
-- `purchaseOcr` (onRequest, L8005) — purchase receipt OCR
+#### Firestore Triggers — Menu Sync (3)
+- `syncPublicMenuOnCatalogCreate` (onDocumentCreated, L4125) — `Product_Catalog/{productId}` → syncs to `public_menu`
+- `syncPublicMenuOnCatalogUpdate` (onDocumentUpdated, L4135) — `Product_Catalog/{productId}` → syncs to `public_menu`
+- `syncPublicMenuOnCatalogDelete` (onDocumentDeleted, L4145) — `Product_Catalog/{productId}` → deletes from `public_menu`
+
+#### Firestore Triggers — Order Requests (2)
+- `onOrderRequestCreated` (onDocumentCreated, L4154) — triggers on new `order_requests` doc, sends Telegram notification
+- `onOrderRequestApproved` (onDocumentUpdated, L4185) — triggers when `order_requests` status changes to `approved`, creates POS order
+
+#### Firestore Triggers — Order Status Sync (2)
+- `syncOrderRequestStatusFromPosOrder` (onDocumentUpdated, L4229) — syncs POS order status back to `order_requests`
+- `syncOnlineOrderStatusFromPosOrder` (onDocumentUpdated, L4255) — syncs POS order status back to `online_orders`
+
+#### Firestore Triggers — Customer Workflow (4)
+- `onPaymentRequestCreated` (onDocumentCreated, L4304) — triggers on new `payment_requests`, sends Telegram notification
+- `onServiceRequestCreated` (onDocumentCreated, L4344) — triggers on new `service_requests`, sends Telegram notification
+- `onHistoryFinalizeCustomerOrderRequests` (onDocumentCreated, L4374) — finalizes customer order requests when history doc created
+- `onHistoryOrderCancelled` (onDocumentUpdated, L4386) — handles cancelled orders, sends Telegram notification
+
+#### Firestore Triggers — Kitchen (4)
+- `onKitchenNotificationCreated` (onDocumentCreated, L4429) — handles new kitchen notifications, processes food-ready logic
+- `sendPushOnKitchenNotif` (onDocumentCreated, L4508) — sends FCM push notification on new kitchen notification
+- `telegramOnKitchenOrderCreated` (onDocumentCreated, L4654) — sends Telegram message for new kitchen orders
+- `telegramOnKitchenOrderUpdated` (onDocumentUpdated, L4679) — sends Telegram message for updated kitchen orders
+
+#### Firestore Triggers — Completed Orders (1)
+- `telegramOnCompletedOrderCreated` (onDocumentCreated, L4704) — sends Telegram message for completed orders
+
+#### AI/Media (7)
+- `adminProbeVertex` (onRequest, L4771) — Vertex AI probe/diagnostics
+- `apiVoice` (onRequest, L4054) — voice processing endpoint
+- `mediaRefineryApi` (onRequest, L7335 in prior count) — media refinery creative workflow
+- `aiStatus` (onRequest, L5399) — AI status check
+- `aiRouter` (onRequest, L5424) — AI routing endpoint for tool-calling loop
+- `adminGenerateMenuImage` (onRequest, L5472) — AI menu image generation (Vertex Imagen)
+- `adminGenerateMenuDescription` (onRequest, L5539) — AI menu description generation
+
+#### Admin/Maintenance (2)
+- `cleanupDuplicateHistory` (onRequest, L3977) — cleanup duplicate history orders, requires admin auth, 1GiB memory
+- `adminUploadMenuImage` (onRequest, L5122) — upload menu image
+- `purchaseOcr` (onRequest, L5378) — purchase receipt OCR processing
 
 ### Key helper function groups (not exported)
 
 **Pure utilities (safe to extract):**
-- `chunkArray` (L42) — array chunking
+- `chunkArray` (L42) — delegates to `functions/utils/text.chunkArray`
 - `formatCurrencyVi` (L573) — Vietnamese currency formatting
 - `formatQtyVi` (L577) — quantity formatting
 - `escapeTelegramHtml` (L509) — HTML escaping for Telegram
@@ -163,6 +184,249 @@ Source: `functions/index.js` (~6,816 lines, 35 exports, ~241 top-level functions
 
 **Telegram report/smart features (lines 573-1285):**
 - ~40 functions for report generation, smart Q&A, inventory queries, ads insights
+
+---
+
+## Extracted Module Inventory
+
+All extracted modules use an IIFE/global namespace pattern (frontend: `window.XekhoApp.*`) or CommonJS `module.exports` (backend).
+
+### Frontend Modules (19 files)
+
+#### `app/utils/` (9 files)
+
+| File | Namespace | Exports | Key functions |
+|------|-----------|---------|---------------|
+| `format.js` | `XekhoApp.utils.format` | 6 | `compactNumber`, `currency`, `date`, `time`, `dateTime`, `todayKey` |
+| `dom.js` | `XekhoApp.utils.dom` | 1 | `escapeHtml` |
+| `excel.js` | `XekhoApp.utils.excel` | 7 | `excelThinBorder`, `excelColLetter`, `excelFmtVnInt`, `applyReportTitleBlock`, `paintExcelHeaderRow`, `paintExcelTotalRow`, `setRowBorders` |
+| `date.js` | `XekhoApp.utils.date` | 3 | `formatLocalDateKey`, `getWeekStartKey`, `resolvePeriodDateRangePure` |
+| `print.js` | `XekhoApp.utils.print` | 1 | `buildStandaloneBillPrintHtml` |
+| `storage.js` | `XekhoApp.utils.storage` | 6 | `formatBytes`, `getLocalStorageUsageBytes`, `blobToBase64`, `normalizeGoogleScriptWebAppUrl`, `isGoogleAppsScriptWebAppUrl`, `uploadFileToGoogleDriveByEndpoint` |
+| `parser.js` | `XekhoApp.utils.parser` | 5 | `parsePurchaseText`, `parsePurchaseJson`, `getKitchenRoutingLabel`, `tokenSimilarity`, `getMenuItemImageUrl` |
+| `categorize.js` | `XekhoApp.utils.categorize` | 5 | `normalizeExpenseCategoryLabel`, `detectAdsExpensePlatform`, `isAdsExpenseEntry`, `mediaRefineryStatusClass`, `countInclusiveReportDays` |
+| `fixedcost.js` | `XekhoApp.utils.fixedcost` | 2 | `getFixedCostProfileForReports`, `_getPayrollProfile` |
+
+#### `app/ui/` (3 files)
+
+| File | Namespace | Exports | Key functions |
+|------|-----------|---------|---------------|
+| `toast.js` | `XekhoApp.ui` | 2 | `toast` (showToast), `repairVietnameseText` |
+| `theme.js` | `XekhoApp.ui` | 1 | `applyTheme` |
+| `modal.js` | `XekhoApp.ui` | 3 | `openModal`, `closeModal`, `isModalOpen` |
+
+#### `app/auth/` (1 file)
+
+| File | Namespace | Exports | Key functions |
+|------|-----------|---------|---------------|
+| `staff.js` | `XekhoApp.auth` | 5 | `normalizeStaffRole`, `normalizeStaffStatus`, `getStaffIdentity`, `buildCurrentUserFromStaff`, `validatePinFormat` |
+
+#### `app/order/` (1 file)
+
+| File | Namespace | Exports | Key functions |
+|------|-----------|---------|---------------|
+| `helpers.js` | `XekhoApp.order` | 22 | `uid`, `isCompletedHistoryOrderForUi`, `isVisibleHistoryOrderForUi`, `normalizeViKey`, `inferInventoryItemType`, `normalizeInventoryItemModel`, `inferMenuItemType`, `findLinkedInventoryIdForMenuItem`, `normalizeUnitText`, `_isKitchenSkippedItem`, `createKitchenLineItemId`, `getKitchenLineItemId`, `isKitchenFinalStatus`, `canToggleServedStatus`, `getCartItemStatusLabel`, `normalizeKitchenOrderItem`, `_mapOnlineOrderPayMethod`, `_buildOnlineOrderBillNo`, `_getOnlineOrderItemQty`, `_getOnlineOrderItemUnitPrice`, `_calculateOnlineOrderTotal`, `_resolveOnlineOrderDocId`, `_resolveDishCostPerUnit`, `normalizeMenuItemModel` |
+
+#### `app/report/` (4 files)
+
+| File | Namespace | Exports | Key functions |
+|------|-----------|---------|---------------|
+| `helpers.js` | `XekhoApp.report` | 6 | `getReportMenuIngredientKeys`, `doesOrderMatchReportMenuItem`, `doesPurchaseMatchReportMenuItem`, `doesExpenseMatchReportMenuItem`, `getIngredientMergeSuggestions`, `getDailyRevenueSnapshotsInRange` |
+| `ads.js` | `XekhoApp.report` | 1 | `buildAdsRevenueReportHtml` |
+| `expense.js` | `XekhoApp.report` | 1 | `buildOperationalExpenseBreakdown` |
+| `excel.js` | `XekhoApp.report` | 1 | `exportReportExcel` |
+
+#### `app/modules/` (1 file)
+
+| File | Namespace | Notes |
+|------|-----------|-------|
+| `media-refinery/index.js` | — | Media/creative workflow frontend module |
+
+### Backend Modules (8 files)
+
+#### `functions/utils/` (2 files)
+
+| File | Exports | Key functions |
+|------|---------|---------------|
+| `text.js` | 11 | `chunkArray`, `escapeTelegramHtml`, `escapeXml`, `scoreTelegramTextQuality`, `fixTelegramMojibake`, `normalizeTelegramText`, `normalizeTelegramTextPreserveLines`, `formatCurrencyVi`, `formatQtyVi`, `getTelegramProductDisplayName`, `shouldPreferTelegramCatalogName` |
+| `general.js` | 6 | `json`, `wrapSvgText`, `stripDataUrlBase64`, `extractFirstJson`, `mapToolActionType`, `buildAiRouterPendingResponse` |
+
+#### `functions/telegram/` (6 files)
+
+| File | Exports | Key functions |
+|------|---------|---------------|
+| `send.js` | 9 | `sendTelegramHtmlMessage`, `sendTelegramTextMessage`, `sendTelegramActionConfirmation`, `sendTelegramInlineMessage`, `sendTelegramPhotoMessage`, `answerTelegramCallback`, `editTelegramMessage`, `editTelegramInlineMessage`, `getTelegramPhotoAsBase64` |
+| `kitchen.js` | 10 | `normalizeTelegramTableLabel`, `buildKitchenNotifMessage`, `parseKitchenItemSummary`, `buildTelegramFoodReadyMessage`, `isKitchenOrderItemForTelegram`, `getKitchenOrderItemKey`, `getNewPendingKitchenItems`, `buildTelegramNewKitchenOrderMessage`, `buildTelegramFoodReadyMessageClean`, `buildTelegramNewKitchenOrderMessageClean` |
+| `reports.js` | 18 | `getVietnamDateParts`, `normalizeTelegramSmartReportText`, `normalizeTelegramWildcardText`, `buildTelegramWildcardRegex`, `parseTelegramLooseDateTime`, `getInclusiveVietnamDateCount`, `formatAchievementPercent`, `buildMorningRevenueMood`, `coerceHistoryDate`, `formatTelegramDateTimeVi`, `getTelegramPayMethodLabel`, `isTelegramBankPayMethod`, `formatTelegramSmartRangeLabel`, `parseTelegramSmartReportIntent`, `DEFAULT_TELEGRAM_REPORT_SETTINGS`, `getVietnamBusinessReportRange`, `getTelegramReportSettings`, `getTelegramReportRangeKey`, `shouldSendTelegramReportNow` |
+| `orders.js` | 11 | `getHistoryBusinessId`, `getHistoryVersionDate`, `getHistoryVersionTime`, `isCompletedHistoryOrderForReports`, `isVisibleHistoryOrderForReports`, `extractTelegramCashierName`, `pickFirstPresentValue`, `toTelegramMoneyNumber`, `normalizeCompletedOrderItems`, `calculateCompletedOrderSubtotal`, `normalizeCompletedOrderForTelegram` |
+| `online-orders.js` | 9 | `formatTelegramBillItemsClean`, `buildPosItemFromRequest`, `aggregateRequestStatusFromItems`, `buildPosItemFromOnlineOrder`, `buildOnlineOrderTelegramStatusLabel`, `buildOnlineOrderTelegramSummary`, `buildOnlineOrderTelegramStatusLabelClean`, `buildOnlineOrderTelegramSummaryClean`, `mapOnlineOrderStatusFromPosItems` |
+| `ads.js` | 22 | `getVietnamDayRange`, `normalizeVi`, `uniqueTokens`, `parseTimeEntity`, `buildDateRange`, `formatPercentVi`, `formatMultipleVi`, `getVietnamDateYmd`, `formatVietnamDateDisplayFromYmd`, `buildVietnamAbsoluteDayRangeFromYmd`, `buildVietnamAbsoluteRangeFromYmds`, `parseExplicitDateInput`, `getVietnamYesterdayYmd`, `buildAdsDateRangeFromText`, `buildAdsChannelMetrics`, `sumAdsChannels`, `formatIntVi`, `buildAdsChannelLines`, `buildAdsInsightLines`, `buildAdsRevenueDetailedMessage`, `buildAdsRevenueTelegramMessage`, `buildAdsRevenueTelegramData` |
+
+---
+
+## Script Load Order
+
+Source: `index.html` — all scripts loaded in `<body>` at bottom, non-module (IIFE/global namespace).
+
+```
+ 1. CDN: chart.js@4.4.0 (UMD)
+ 2. CDN: exceljs@4.4.0 (UMD)
+ 3. data.js                    — local/master data helpers
+ 4. app/utils/format.js        — XekhoApp.utils.format (compactNumber, currency, date, time, dateTime, todayKey)
+ 5. store.js                   — legacy global store; delegates to format.js when loaded
+ 6. db.js                      — Firebase/Firestore data layer (type="module", loads asynchronously)
+ 7. app/utils/dom.js           — XekhoApp.utils.dom.escapeHtml
+ 8. app/ui/toast.js            — XekhoApp.ui.toast, repairVietnameseText
+ 9. app/ui/theme.js            — XekhoApp.ui.applyTheme
+10. app/ui/modal.js            — XekhoApp.ui.openModal, closeModal, isModalOpen
+11. app/auth/staff.js          — XekhoApp.auth.* (normalizeStaffRole, getStaffIdentity, etc.)
+12. app/order/helpers.js       — XekhoApp.order.* (22 helpers for orders, kitchen, online orders)
+13. app/utils/excel.js         — XekhoApp.utils.excel (Excel formatting helpers)
+14. app/utils/date.js          — XekhoApp.utils.date (formatLocalDateKey, resolvePeriodDateRangePure)
+15. app/utils/print.js         — XekhoApp.utils.print.buildStandaloneBillPrintHtml
+16. app/utils/storage.js       — XekhoApp.utils.storage (formatBytes, blobToBase64, uploadFileToGoogleDrive)
+17. app/utils/parser.js        — XekhoApp.utils.parser (parsePurchaseText, tokenSimilarity)
+18. app/utils/categorize.js    — XekhoApp.utils.categorize (normalizeExpenseCategoryLabel, etc.)
+19. app/report/helpers.js      — XekhoApp.report (getReportMenuIngredientKeys, doesOrderMatchReportMenuItem, etc.)
+20. app/report/ads.js          — XekhoApp.report.buildAdsRevenueReportHtml
+21. app/report/expense.js      — XekhoApp.report.buildOperationalExpenseBreakdown
+22. app/report/excel.js        — XekhoApp.report.exportReportExcel
+23. app/utils/fixedcost.js     — XekhoApp.utils.fixedcost (getFixedCostProfileForReports)
+24. ai-core.js                 — AI core logic
+25. ai-actions.js              — AI action handlers
+26. ai-ui.js                   — AI UI layer
+27. app.js                     — main POS application (must load before inline scripts)
+28. offlineBackup.js           — offline queue (IndexedDB storage)
+29. offlineSync.js             — offline sync engine
+30. offlineFirestoreAdapter.js — offline Firestore adapter bridge
+31. offlineRuntime.js          — offline runtime init
+32. offlineStatusUI.js         — offline status badge/panel UI
+33. offlineOrderFallback.js    — offline order fallback wrapper
+34. offlineOrderFallbackDevTools.js — offline dev tools
+35. <inline script>            — saveAndBack(), clearTableLegacyFallback(), etc.
+```
+
+**Load order constraints:**
+- `format.js` must load before `store.js` (delegation)
+- `db.js` is `type="module"` and loads asynchronously
+- `dom.js` must load before `app.js` (used for HTML escaping)
+- `toast.js` / `theme.js` / `modal.js` must load before `app.js` (UI dependencies)
+- `app/order/helpers.js` must load before `app.js` (order helpers used by main app)
+- All `app/report/*` must load before `app.js` (report rendering)
+- `ai-core.js`, `ai-actions.js`, `ai-ui.js` must load before `app.js`
+- `offlineBackup.js` → `offlineSync.js` → `offlineFirestoreAdapter.js` → `offlineRuntime.js` must load in order (dependency chain)
+- `offlineStatusUI.js`, `offlineOrderFallback.js`, `offlineOrderFallbackDevTools.js` depend on the above chain
+
+---
+
+## Data Flows
+
+### 1. POS Order → Kitchen → Telegram
+
+```
+User taps item in POS UI
+  → app.js addCartItem() → Orders.open()/add()/update() (Firestore write to `orders/{tableId}`)
+  → Firestore trigger: onKitchenNotificationCreated (L4429)
+    → processes kitchen items, builds kitchen notification doc in `kitchen_notifications`
+  → Firestore trigger: sendPushOnKitchenNotif (L4508)
+    → sends FCM push notification to KDS service worker
+  → Firestore trigger: telegramOnKitchenOrderCreated (L4654)
+    → buildTelegramNewKitchenOrderMessageClean()
+    → sendTelegramInlineMessage() to KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID
+  → kitchen.html KDS receives FCM notification, updates UI
+```
+
+### 2. Kitchen Item Ready → Telegram Food-Ready
+
+```
+KDS marks item as "ready" (status update in `kitchen_notifications`)
+  → Firestore trigger: telegramOnKitchenOrderUpdated (L4679)
+    → buildTelegramFoodReadyMessageClean()
+    → sendTelegramHtmlMessage() to TELEGRAM_KITCHEN_READY_CHAT_ID
+  → Staff picks up item → marks "served"
+```
+
+### 3. POS Close Order → Completed Order Telegram
+
+```
+User closes order (close_order in POS)
+  → Firestore write to `history/{docId}`
+  → Firestore trigger: telegramOnCompletedOrderCreated (L4704)
+    → normalizeCompletedOrderForTelegram()
+    → sendTelegramHtmlMessage() to TELEGRAM_COMPLETED_ORDER_CHAT_ID
+  → Firestore trigger: onHistoryFinalizeCustomerOrderRequests (L4374)
+    → finalizes associated customer order requests
+```
+
+### 4. Online Order → Telegram Approval → POS Sync
+
+```
+External system writes to `online_orders/{orderId}` (status: "pending")
+  → Owner receives Telegram notification with approve/reject buttons
+  → Owner taps "Approve" callback button
+    → telegramWebhook callback: onl_order_ok_{orderId}
+    → approveOnlineOrderInternal()
+    → creates POS order, updates online_order status to "approved"
+  → Firestore trigger: syncOnlineOrderStatusFromPosOrder (L4255)
+    → syncs POS order progress back to online_orders status
+```
+
+### 5. Telegram Bot Message → AI Tool Loop → Firestore Actions
+
+```
+User sends text/photo/voice to Telegram bot
+  → telegramWebhook receives update
+  → Text: tryAnswerTelegramSmartReportQuestion() first (smart report Q&A)
+    → If not a report question: askGeminiWithFirestoreTools() (Vertex AI + Gemini tool loop)
+  → Photo: getTelegramPhotoAsBase64() → askGeminiVisionForImport() (image analysis)
+    → If order context: createTelegramOrderDraftFromPhoto() → order slip OCR
+  → Voice: getTelegramPhotoAsBase64() equivalent → askGeminiWithVoice()
+  → Result: geminiResult.text + pendingActions[]
+    → If pendingActions: sendTelegramActionConfirmation() with confirm/cancel buttons
+    → Otherwise: sendTelegramTextMessage() with answer
+```
+
+### 6. Menu Catalog → Public Menu Sync
+
+```
+Admin updates Product_Catalog in POS
+  → Firestore trigger: syncPublicMenuOnCatalogCreate/Update/Delete (L4125-4152)
+    → syncPublicMenuProjection() writes to `public_menu/{productId}`
+    → Delete removes from `public_menu`
+  → Public menu available for online ordering / customer-facing pages
+```
+
+### 7. Scheduled Daily Report → Telegram
+
+```
+Cloud Scheduler fires every 5 minutes
+  → scheduledTelegramReport (L5625)
+  → Reads settings/telegram_report for send time + config
+  → getVietnamBusinessReportRange() → determine current business period
+  → shouldSendTelegramReportNow() → check if it's time (dedup by rangeKey)
+  → buildDailyReportTelegramData() → aggregates revenue, orders, expenses
+  → loadTelegramReportFinancialProfile() → fixed costs, targets
+  → buildConfiguredDailyReportTelegramMessage() + buildMorningRevenueMood()
+  → sendTelegramHtmlMessage() to all configured chat IDs
+  → Updates lastSentRangeKey in settings/telegram_report
+```
+
+### 8. Order Request (Customer Web) → POS
+
+```
+Customer submits order via customer web page
+  → Writes to `order_requests/{requestId}` (status: "pending")
+  → Firestore trigger: onOrderRequestCreated (L4154)
+    → sends Telegram notification to owner
+  → Owner approves via Telegram callback or POS
+  → Firestore trigger: onOrderRequestApproved (L4185)
+    → creates POS order in `orders`
+    → updates order_request status to "approved"
+  → Firestore trigger: syncOrderRequestStatusFromPosOrder (L4229)
+    → syncs POS order completion back to order_request
+```
+
+---
 
 ## Services
 
