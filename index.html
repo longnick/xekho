@@ -233,11 +233,11 @@
       <div id="page-inventory" class="page">
         <!-- Tabs -->
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 TỒN KHO</button>
-          <button class="tab-btn" onclick="switchInvTab('menu',this)">🍔 Quản lý món</button>
-          <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập</button>
-          <button class="tab-btn" onclick="switchInvTab('ledger',this)">📓 Thẻ kho</button>
-          <button class="tab-btn" onclick="switchInvTab('stocktake',this)">📋 Kiểm kê</button>
+          <button class="tab-btn active" data-esm-inventory-tab="stock">📦 TỒN KHO</button>
+          <button class="tab-btn" data-esm-inventory-tab="menu">🍔 Quản lý món</button>
+          <button class="tab-btn" data-esm-inventory-tab="purchase">🚚 Nhập</button>
+          <button class="tab-btn" data-esm-inventory-tab="ledger">📓 Thẻ kho</button>
+          <button class="tab-btn" data-esm-inventory-tab="stocktake">📋 Kiểm kê</button>
           <button class="tab-btn" id="inv-tab-more" onclick="openInvMoreModal()">⚙️ Thêm <span style="font-size:10px">▼</span></button>
         </div>
 
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-report-date-controls"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-inventory-tabs"></script>
   <script>
     // Extra helpers that reference DOM
 
