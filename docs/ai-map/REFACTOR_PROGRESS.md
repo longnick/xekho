@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 10:22 (safe dirty tree cleanup)
+**Updated:** 2026-06-02 10:31 (ESM Phase E2 DOM facade)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~67% complete**.
-- Core non-optional refactor/security/testing plan: **~73% complete**.
-- Near-term safe-execution track: **~99% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~68% complete**.
+- Core non-optional refactor/security/testing plan: **~74% complete**.
+- Near-term safe-execution track: **~99.5% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -36,6 +36,7 @@ These percentages are conservative because the repo is production-adjacent and s
 - Tooling cleanup completed after audit: local ESLint dependency added, TypeScript 6 deprecation guard added, frontend/backend `@ts-check` errors fixed, ads data dependency injection made explicit, and lint/tsc/check/test/verify commands now pass.
 - ESM conversion audit completed: Vite config/build pass, but current frontend remains classic-script/IIFE-first with 31 local classic scripts, one module script (`db.js`), and inline handlers. Documented staged ESM plan in `ESM_AUDIT.md`; current ESM readiness ~35%.
 - ESM Phase E1 completed: added `app/esm/main.js` browser module harness, documented `app/esm/README.md`, loaded the module after the existing classic runtime in `index.html`, and added `scripts/verify-esm-entry.js`. Current ESM readiness ~38%.
+- ESM Phase E2 started: added `app/esm/utils/dom.js` as the first importable DOM facade for `escapeHtml()`, updated the ESM entry to install/mark `XekhoApp.esm.facades.dom`, added `scripts/verify-esm-dom-utils.js`, and bumped the module cache key to `20260602-e2-dom`. Current ESM readiness ~40%.
 - Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
