@@ -3,17 +3,17 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1 compatibility harness is in place and E2 has started with the first DOM leaf facade.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1 compatibility harness is in place and E2 leaf facades are complete for DOM, format, date, Excel, and staff helpers.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~68% complete.
- - Core non-optional refactor/security/testing plan: ~74% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~69% complete.
+ - Core non-optional refactor/security/testing plan: ~75% complete.
  - Near-term safe-execution track: ~99.5% complete.
 
 ## Next
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
-- ESM Phase E2 started: `app/esm/utils/dom.js` added as the first importable leaf facade for `escapeHtml()`, and `app/esm/main.js` now installs/verifies DOM facade compatibility. Current ESM readiness is now ~40%; do not do one-shot ESM conversion.
-- Next safe coding sprint candidate: ESM Phase E2 second leaf utility facade (`app/utils/format.js` dual-export/facade) or `Deep Extraction D1` (`app/ui/image-zoom.js`).
+- ESM Phase E2 leaf facade set complete: `app/esm/utils/dom.js`, `format.js`, `date.js`, `excel.js`, and `app/esm/auth/staff.js` are importable facades installed by `app/esm/main.js`. Current ESM readiness is now ~43%; do not do one-shot ESM conversion.
+- Next safe coding sprint candidate: ESM Phase E3 runtime adapters (`app/esm/adapters/dom.js`, `store.js`, `db.js`) or `Deep Extraction D1` (`app/ui/image-zoom.js`).
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 11:26: ESM Phase E2 leaf facades completed. Added importable facades for format/date/excel/staff, wired them into `app/esm/main.js`, preserved all classic globals, updated `scripts/verify-esm-entry.js`, added `scripts/verify-esm-leaf-facades.js`, and passed check/tsc/test/lint/build. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1126-esm-e2-leaf-facades.md`
 - 2026-06-02 10:08: ESM Phase E1 compatibility harness completed. Added `app/esm/main.js`, `app/esm/README.md`, module script tag in `index.html`, and `scripts/verify-esm-entry.js`. Verified ESM readiness marker/event, syntax checks, frontend/backend tsc, Vite build, and lint with existing warnings only. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1008-esm-e1-compat-harness.md`
 - 2026-06-02 09:31: ESM conversion audit completed. Verified Vite config/build, scanned script/load-order and JS module format state, documented blockers and staged ESM plan in `docs/ai-map/ESM_AUDIT.md`. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0931-esm-audit.md`
 - 2026-06-02 09:07: Tooling cleanup restored `npm run lint`, frontend/backend `tsc`, backend module lint, and all 33 verification scripts. Added local ESLint devDependency, TypeScript 6 deprecation guard, frontend/backend `@ts-check` fixes, and explicit ads data dependency injection. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0907-tooling-cleanup.md`

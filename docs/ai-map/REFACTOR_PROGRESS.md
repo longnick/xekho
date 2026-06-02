@@ -1,13 +1,13 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 10:31 (ESM Phase E2 DOM facade)
+**Updated:** 2026-06-02 11:26 (ESM Phase E2 leaf facades complete)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~68% complete**.
-- Core non-optional refactor/security/testing plan: **~74% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~69% complete**.
+- Core non-optional refactor/security/testing plan: **~75% complete**.
 - Near-term safe-execution track: **~99.5% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
@@ -36,7 +36,7 @@ These percentages are conservative because the repo is production-adjacent and s
 - Tooling cleanup completed after audit: local ESLint dependency added, TypeScript 6 deprecation guard added, frontend/backend `@ts-check` errors fixed, ads data dependency injection made explicit, and lint/tsc/check/test/verify commands now pass.
 - ESM conversion audit completed: Vite config/build pass, but current frontend remains classic-script/IIFE-first with 31 local classic scripts, one module script (`db.js`), and inline handlers. Documented staged ESM plan in `ESM_AUDIT.md`; current ESM readiness ~35%.
 - ESM Phase E1 completed: added `app/esm/main.js` browser module harness, documented `app/esm/README.md`, loaded the module after the existing classic runtime in `index.html`, and added `scripts/verify-esm-entry.js`. Current ESM readiness ~38%.
-- ESM Phase E2 started: added `app/esm/utils/dom.js` as the first importable DOM facade for `escapeHtml()`, updated the ESM entry to install/mark `XekhoApp.esm.facades.dom`, added `scripts/verify-esm-dom-utils.js`, and bumped the module cache key to `20260602-e2-dom`. Current ESM readiness ~40%.
+- ESM Phase E2 complete: added importable facades for DOM, format, date, Excel, and staff helpers; updated the ESM entry to install/mark `XekhoApp.esm.facades.dom/format/date/excel/authStaff`; added `scripts/verify-esm-dom-utils.js` and `scripts/verify-esm-leaf-facades.js`; bumped the module cache key to `20260602-e2-leaf-facades`. Current ESM readiness ~43%.
 - Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
@@ -139,12 +139,12 @@ These percentages are conservative because the repo is production-adjacent and s
 Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cleanup, and ESM audit complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. All modules have `@ts-check` + JSDoc. CI includes `tsc --noEmit`, and local TypeScript 6 deprecation handling has been restored. `CODE_MAP.md` fully expanded (474 lines, 34 Cloud Functions, 27 modules). `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). functions/index.js at 5702 lines (-1578 from original). Vite spike merged and build verified, but ESM audit says no one-shot conversion: keep root `commonjs`, keep IIFE compatibility globals, and start with Phase E1 ESM compatibility harness if moving forward. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline.
 
 ### ESM readiness — 2026-06-02
-- Overall ESM readiness: ~35%.
+- Overall ESM readiness: ~43%.
 - Tooling readiness: ~80% (Vite/build/scripts available and verified).
-- Frontend module boundary readiness: ~45% (many extracted IIFE modules, no ESM exports yet).
+- Frontend module boundary readiness: ~50% (five leaf helpers now have ESM facades; most extracted modules remain IIFE/global).
 - Runtime entry readiness: ~20% (`app.js`, inline handlers, `window.DB`, and classic script order still central).
 - Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
-- Recommended next sprint: Phase E1 — add non-invasive `app/esm/main.js` compatibility harness + `scripts/verify-esm-entry.js`.
+- Recommended next sprint: Phase E3 — add non-invasive ESM runtime adapters for DOM/store/db readiness; keep `app.js` and classic globals untouched.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
