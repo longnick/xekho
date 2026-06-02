@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-06-02 12:55 - ESM Phase E5.2 report tab delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the second safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/report-tabs.js` with delegated click handling for static report tab buttons.
+- Converted four report tab buttons from inline `onclick="switchReportTab(..., this)"` to `data-esm-report-tab`: revenue, ads, purchase, history.
+- Updated `app/esm/main.js` to import/install `reportTabs` under `window.XekhoApp.esm.ui.reportTabs`.
+- Bumped ESM entry cache/version to `20260602-e5-report-tabs`.
+- Added `scripts/verify-esm-report-tabs.js` and expanded `scripts/verify-esm-entry.js`.
+- Relaxed `scripts/verify-esm-header-actions.js` to accept later E5 cache keys while still verifying header delegation.
+
+Current E5 evidence: inline handler count reduced from 238 to 234; 31 local classic scripts remain. Continue E5 one island at a time with mobile/browser QA.
+
+Verification passed: ESM syntax checks, report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 12:42 - ESM Phase E5.1 header actions delegated handlers
 
 Repo: `/home/longnick/projects/xekho`

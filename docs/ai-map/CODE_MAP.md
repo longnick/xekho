@@ -496,3 +496,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.1 Header Actions
 
 - `app/esm/ui/header-actions.js`: importable delegated header action island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.headerActions`; replaces four static header inline `onclick` handlers with `data-esm-header-action`. Verified by `scripts/verify-esm-header-actions.js`.
+
+
+## ESM Phase E5.2 Report Tabs
+
+- `app/esm/ui/report-tabs.js`: importable delegated report tab island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportTabs`; replaces four static report tab inline `onclick` handlers with `data-esm-report-tab`. Verified by `scripts/verify-esm-report-tabs.js`.
