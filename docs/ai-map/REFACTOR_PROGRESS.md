@@ -6,9 +6,9 @@
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~48% complete**.
-- Core non-optional refactor/security/testing plan: **~55% complete**.
-- Near-term safe-execution track: **~92% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~52% complete**.
+- Core non-optional refactor/security/testing plan: **~60% complete**.
+- Near-term safe-execution track: **~95% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -123,7 +123,7 @@ These percentages are conservative because the repo is production-adjacent and s
 
 ## Recommended next sprint
 
-Sprints 1.7, 3.3, and Phase 10 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. functions/index.js at 5702 lines (-1578 from original). Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of extracted modules, or deeper frontend extraction (remaining state-dependent POS functions in app.js). Once baseline tests/smoke are available. Alternatively, start Phase 3 Sprint 3.3 (targeted ESLint) for code quality.
+Sprints 1.7, 3.3, Phase 10, and Phase 12 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. functions/index.js at 5702 lines (-1578 from original). Vite spike merged — dev server available for local development. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of extracted modules, ES module conversion planning for proper Vite tree-shaking, or deeper frontend extraction (remaining state-dependent POS functions in app.js).
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
@@ -137,3 +137,11 @@ Sprints 1.7, 3.3, and Phase 10 complete. 8 backend modules + 20 frontend modules
 - [x] Sprint 10.3b: 6 general utilities → functions/utils/general.js
 - [x] Sprint 10.4: Removed 4 duplicate declarations (-221 lines). functions/index.js now 5702 lines (from ~7280 original = -1578 lines total).
 - [x] Phase 10 COMPLETE: 8 backend modules + 20 frontend modules, 150+ total exports across 28 modules, app.js at 11895 lines (from ~12099)
+
+### Phase 12 — 2026-06-02
+- [x] Rebased `spike/vite-build-tooling` onto main (fast-forward)
+- [x] Merged into `test/xe-kho-repo-implementer-skill` (fast-forward)
+- [x] Vite build verified: `dist/` produces `index.html`, `main.js` (103KB), `main.css` (57KB), manifest
+- [x] Dev server config (`vite.config.mjs`) serves IIFE files as static assets — no ES module bundling yet
+- [x] All 33 verification scripts pass, Jest 6/6, git tree clean
+- [x] Phase 12 COMPLETE: Vite spike merged, build tooling available for dev workflow
