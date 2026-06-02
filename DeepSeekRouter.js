@@ -1202,7 +1202,7 @@ class DeepSeekRouter {
     rows.forEach(row => {
       const items = Array.isArray(row.items) ? row.items : [];
       items.forEach(item => {
-        const name = String(item.name || item.id || 'KhÃ´ng rÃµ');
+        const name = String(item.name || item.id || 'Không rõ');
         const score = focusLabel
           ? Math.max(
               matchedIds.has(String(item.id || '')) ? 5 : 0,
@@ -1267,7 +1267,7 @@ class DeepSeekRouter {
         ok: true,
         intent: 'query_sales',
         needs_clarification: false,
-        text: `${range.label}, ${focusLabel} bÃ¡n ÄÆ°á»£c ${qty.toLocaleString('vi-VN')} ÄÆ¡n vá», doanh thu ${revenue.toLocaleString('vi-VN')}Ä, lÃ£i gá»p ${profit.toLocaleString('vi-VN')}Ä.`,
+        text: `${range.label}, ${focusLabel} bán được ${qty.toLocaleString('vi-VN')} đơn vị, doanh thu ${revenue.toLocaleString('vi-VN')}đ, lãi gộp ${profit.toLocaleString('vi-VN')}đ.`,
         data: { range, revenue, cost, profit, qty, orders: rows.length, focus_term: focusLabel, items: statsList.slice(0, 10) },
       };
     }
@@ -1276,7 +1276,7 @@ class DeepSeekRouter {
       ok: true,
       intent: 'query_sales',
       needs_clarification: false,
-      text: `${range.label}, doanh thu ${revenue.toLocaleString('vi-VN')}Ä‘, lÃ£i gÃ´p ${profit.toLocaleString('vi-VN')}Ä‘ tá»« ${rows.length} Ä‘Æ¡n.`,
+      text: `${range.label}, doanh thu ${revenue.toLocaleString('vi-VN')}đ, lãi gộp ${profit.toLocaleString('vi-VN')}đ từ ${rows.length} đơn.`,
       data: { range, orders: rows.length, revenue, cost, profit },
     };
   }
@@ -1296,7 +1296,7 @@ class DeepSeekRouter {
         ok: true,
         intent: 'query_inventory',
         needs_clarification: false,
-        text: `${name} hiá»‡n cÃ²n ${stock.toLocaleString('vi-VN')} ${unit}`.trim(),
+        text: `${name} hiện còn ${stock.toLocaleString('vi-VN')} ${unit}`.trim(),
         data: { inventory_item_id: target.inv_id || target.docId, name, stock, unit },
       };
     }
@@ -1312,7 +1312,7 @@ class DeepSeekRouter {
         ok: false,
         intent: 'query_inventory',
         needs_clarification: true,
-        text: 'MÃ¬nh chÆ°a xÃ¡c Ä‘á»‹nh Ä‘Æ°á»£c máº·t hÃ ng kho cáº§n kiá»ƒm tra.',
+        text: 'Mình chưa xác định được mặt hàng kho cần kiểm tra.',
         data: payload,
       };
     }
@@ -1322,7 +1322,7 @@ class DeepSeekRouter {
       ok: true,
       intent: 'query_inventory',
       needs_clarification: false,
-      text: `Tá»•ng tá»“n ${focusTerm}: ${totalStock.toLocaleString('vi-VN')} trÃªn ${filtered.length} máº·t hÃ ng kho.`,
+      text: `Tổng tồn ${focusTerm}: ${totalStock.toLocaleString('vi-VN')} trên ${filtered.length} mặt hàng kho.`,
       data: { focus_term: focusTerm, total_stock: totalStock, items: filtered.slice(0, 20) },
     };
   }
@@ -1331,14 +1331,14 @@ class DeepSeekRouter {
     const tableId = payload.table_id ? String(payload.table_id) : null;
     const lineItems = Array.isArray(payload.line_items) ? payload.line_items.filter(item => item && item.item_id) : [];
     if (!tableId) {
-      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'Thiáº¿u table_id Ä‘á»ƒ thÃªm mÃ³n.', data: payload };
+      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'Thiếu table_id để thêm món.', data: payload };
     }
     if (!lineItems.length) {
-      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'KhÃ´ng cÃ³ line_items há»£p lá»‡ Ä‘á»ƒ thÃªm mÃ³n.', data: payload };
+      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'Không có line_items hợp lệ để thêm món.', data: payload };
     }
     const normalizedItems = await this.resolvePosLineItems(lineItems);
     if (!normalizedItems.length) {
-      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'KhÃ´ng map Ä‘Æ°á»£c item_id sang Product_Catalog.', data: payload };
+      return { ok: false, intent: 'pos_order', needs_clarification: true, text: 'Không map được item_id sang Product_Catalog.', data: payload };
     }
 
     const previewAddedTotal = normalizedItems.reduce((sum, item) => sum + (asNumber(item.price) * asNumber(item.qty)), 0);
@@ -1349,7 +1349,7 @@ class DeepSeekRouter {
         intent: 'pos_order',
         needs_clarification: false,
         preview_only: true,
-        text: `AI nháº­n lá»nh thÃªm ${normalizedItems.map(item => `${item.qty} ${item.name}`).join(', ')} cho bÃ n ${tableId}. Táº¡m tÃ­nh thÃªm ${previewAddedTotal.toLocaleString('vi-VN')}Ä.`,
+        text: `AI nhận lệnh thêm ${normalizedItems.map(item => `${item.qty} ${item.name}`).join(', ')} cho bàn ${tableId}. Tạm tính thêm ${previewAddedTotal.toLocaleString('vi-VN')}đ.`,
         data: { table_id: tableId, added_items: normalizedItems, preview_added_total: previewAddedTotal, client_action: clientAction },
       };
     }
@@ -1362,7 +1362,7 @@ class DeepSeekRouter {
       ok: true,
       intent: 'pos_order',
       needs_clarification: false,
-      text: `ÄÃ£ thÃªm ${normalizedItems.length} dÃ²ng mÃ³n vÃ o bÃ n ${tableId}. Táº¡m tÃ­nh hiá»n táº¡i ${summary.total.toLocaleString('vi-VN')}Ä.`,
+      text: `Đã thêm ${normalizedItems.length} dòng món vào bàn ${tableId}. Tạm tính hiện tại ${summary.total.toLocaleString('vi-VN')}đ.`,
       data: { table_id: tableId, order_id: updated.id || updated.docId, added_items: normalizedItems, order_summary: summary, client_action: clientAction },
     };
   }

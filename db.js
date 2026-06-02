@@ -184,6 +184,8 @@ window.appState = {
   settings:   null,
   users:      null,
   staff:      null,
+  attendanceDaily: null,
+  attendanceShifts: null,
   history:    null,
   expenses:   null,
   purchases:  null,
@@ -491,7 +493,7 @@ async function repairVietnameseNow(options = {}) {
 
 // Đếm số snapshot đã ready để biết khi nào appState.ready = true
 let _snapshotReadyCount  = 0;
-const TOTAL_SNAPSHOTS    = 13;   // settings, settings/financial_profile, tables, orders, onlineOrders, dailyRevenueSnapshots, menu, inventory, users, staff, history, expenses, purchases
+const TOTAL_SNAPSHOTS    = 16;   // settings, settings/financial_profile, settings/telegram_report, tables, orders, onlineOrders, dailyRevenueSnapshots, menu, inventory, users, staff, attendanceDaily, attendanceShifts, history, expenses, purchases
 
 function _markSnapshotReady() {
   _snapshotReadyCount++;
@@ -931,6 +933,23 @@ function _listen() {
     _dispatchEvent('db:update', { key: 'settings' });
   }, _snapErr('settings/financial_profile')));
 
+  // 5a.2 Telegram report settings
+  _unsubs.push(onSnapshot(doc(_db, 'settings', 'telegram_report'), snap => {
+    const saved = snap.exists() ? (snap.data() || {}) : {};
+    const patch = {};
+    for (const [k, v] of Object.entries(saved)) {
+      if (k.startsWith('telegramReport')) {
+        patch[k] = v;
+      } else {
+        const prefixedKey = 'telegramReport' + k.charAt(0).toUpperCase() + k.slice(1);
+        patch[prefixedKey] = v;
+      }
+    }
+    _mergeRuntimeSettingsPatch(patch);
+    _markSnapshotReady();
+    _dispatchEvent('db:update', { key: 'settings' });
+  }, _snapErr('settings/telegram_report')));
+
   // 5b. Tables  (sắp xếp theo id)
   _unsubs.push(onSnapshot(query(_col('tables'), orderBy('id')), snap => {
     window.appState.tables = snap.docs.map(_fromDoc).filter(Boolean);
@@ -1047,6 +1066,25 @@ function _listen() {
     _dispatchEvent('db:update', { key: 'staff' });
   }, _snapErr('Staff')));
 
+  // 5f++. Attendance (Telegram checkin/checkout + daily payroll)
+  _unsubs.push(onSnapshot(
+    query(_col('attendance_daily'), orderBy('dateKey', 'desc'), limit(180)),
+    snap => {
+      window.appState.attendanceDaily = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'attendanceDaily' });
+    }, _snapErr('attendance_daily')
+  ));
+
+  _unsubs.push(onSnapshot(
+    query(_col('attendance_shifts'), orderBy('checkInAtMs', 'desc'), limit(240)),
+    snap => {
+      window.appState.attendanceShifts = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'attendanceShifts' });
+    }, _snapErr('attendance_shifts')
+  ));
+
   // 5g. History  (500 đơn mới nhất – đủ cho báo cáo tháng)
   _unsubs.push(onSnapshot(
     query(_col('history'), orderBy('paidAt', 'desc'), limit(500)),
@@ -1156,6 +1194,8 @@ onAuthStateChanged(_auth, async user => {
     window.appState.settings = null;
     window.appState.users = null;
     window.appState.staff = null;
+    window.appState.attendanceDaily = null;
+    window.appState.attendanceShifts = null;
     window.appState.history = null;
     window.appState.expenses = null;
     window.appState.purchases = null;
@@ -1400,6 +1440,18 @@ const Orders = {
     const snap = await getDocs(query(
       _col('orders'),
       where('onlineOrderCode', '==', cleanCode),
+      limit(1)
+    ));
+    const docSnap = snap.docs[0] || null;
+    return docSnap ? _fromDoc(docSnap) : null;
+  },
+
+  async findByClientOrderId(clientOrderId) {
+    const cleanId = String(clientOrderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDocs(query(
+      _col('orders'),
+      where('clientOrderId', '==', cleanId),
       limit(1)
     ));
     const docSnap = snap.docs[0] || null;
@@ -1936,7 +1988,55 @@ const Settings = {
 
   /** Lưu settings – thay Store.setSettings() */
   async save(data) {
-    await _safeSetDoc(_settingsDoc(), { ...data }, { merge: true }, 'settings.save');
+    const cleanData = { ...data };
+    const reportPatch = {};
+    let hasReportKeys = false;
+    for (const key of Object.keys(cleanData)) {
+      if (key.startsWith('telegramReport')) {
+        const cleanKey = key.slice(14); // strip 'telegramReport'
+        const normalizedKey = cleanKey.charAt(0).toLowerCase() + cleanKey.slice(1);
+        reportPatch[normalizedKey] = cleanData[key];
+        delete cleanData[key];
+        hasReportKeys = true;
+      }
+    }
+    if (hasReportKeys) {
+      await Settings.saveTelegramReportSettings(reportPatch).catch(err => {
+        console.warn('[DB] Failed to save telegram report settings:', err);
+      });
+    }
+    await _safeSetDoc(_settingsDoc(), cleanData, { merge: true }, 'settings.save');
+  },
+
+  /** Đọc cấu hình báo cáo Telegram riêng biệt */
+  async getTelegramReportSettings() {
+    try {
+      const snap = await getDoc(doc(_db, 'settings', 'telegram_report'));
+      return snap.exists() ? snap.data() : null;
+    } catch (e) {
+      console.warn('[DB] getTelegramReportSettings failed:', e);
+      return null;
+    }
+  },
+
+  /** Lưu cấu hình báo cáo Telegram riêng biệt */
+  async saveTelegramReportSettings(patch) {
+    const ref = doc(_db, 'settings', 'telegram_report');
+    await _safeSetDoc(ref, {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: _getAuditActor()
+    }, { merge: true }, 'telegram_report.save');
+  },
+
+  /** Lưu cấu hình tài chính: lương quản lý tháng + chi phí cố định */
+  async saveFinancialProfile(patch) {
+    const ref = doc(_db, 'settings', 'financial_profile');
+    await _safeSetDoc(ref, {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: _getAuditActor()
+    }, { merge: true }, 'financial_profile.save');
   },
 };
 
@@ -2063,6 +2163,11 @@ const Staff = {
       pin_code: String(data?.pin_code || '').trim(),
       role: String(data?.role || 'staff').trim().toLowerCase(),
       status: String(data?.status || 'active').trim().toLowerCase(),
+      hourly_rate: Number(data?.hourly_rate || 0) || 0,
+      telegram_user_id: String(data?.telegram_user_id || '').trim() || null,
+      telegram_username: String(data?.telegram_username || '').trim() || null,
+      telegram_chat_id: String(data?.telegram_chat_id || '').trim() || null,
+      require_location_checkin: data?.require_location_checkin === true,
     });
     await _safeSetDoc(ref, _withCreateAudit(payload), undefined, `Staff.add(${ref.id})`);
     return ref.id;
@@ -2074,6 +2179,11 @@ const Staff = {
       pin_code: data?.pin_code != null ? String(data.pin_code).trim() : undefined,
       role: data?.role != null ? String(data.role).trim().toLowerCase() : undefined,
       status: data?.status != null ? String(data.status).trim().toLowerCase() : undefined,
+      hourly_rate: data?.hourly_rate != null ? (Number(data.hourly_rate || 0) || 0) : undefined,
+      telegram_user_id: data?.telegram_user_id != null ? (String(data.telegram_user_id || '').trim() || null) : undefined,
+      telegram_username: data?.telegram_username != null ? (String(data.telegram_username || '').trim() || null) : undefined,
+      telegram_chat_id: data?.telegram_chat_id != null ? (String(data.telegram_chat_id || '').trim() || null) : undefined,
+      require_location_checkin: data?.require_location_checkin != null ? data.require_location_checkin === true : undefined,
     });
     await _safeUpdateDoc(_doc('Staff', staffId), _withUpdateAudit(payload), `Staff.update(${staffId})`);
   },
@@ -2187,6 +2297,25 @@ const Expenses = {
 
   async delete(id) {
     await _safeDeleteDoc(_doc('expenses', id), `expenses.delete(${id})`);
+  },
+};
+
+const Attendance = {
+  getDaily() { return window.appState.attendanceDaily || []; },
+  getShifts() { return window.appState.attendanceShifts || []; },
+
+  async updateDaily(dailyId, data) {
+    await _safeUpdateDoc(_doc('attendance_daily', dailyId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), `attendance_daily.update(${dailyId})`);
+  },
+
+  async updateShift(shiftId, data) {
+    await _safeUpdateDoc(_doc('attendance_shifts', shiftId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), `attendance_shifts.update(${shiftId})`);
   },
 };
 
@@ -2659,8 +2788,8 @@ async function migrateLocalToFirestore(isDryRun = true) {
  * seedTablesIfEmpty(tableCount)
  *
  * Kiểm tra collection 'tables' trên Firestore.
- * Nếu CHƯ A CÓ BẬN NÀO hết → khởi tạo đủ tableCount bàn trống.
- * Náº¿u ÄÃ£ cÃ³ dá»¯ liá»u â khÃ´ng lÃ m gÃ¬ (chá»ng ghi ÄÃ¨).
+ * Nếu CHƯA CÓ BÀN NÀO hết → khởi tạo đủ tableCount bàn trống.
+ * Nếu đã có dữ liệu → không làm gì (chống ghi đè).
  *
  * Mục đích: Tránh lỗi "failed-precondition" khi app.js cố
  *   query/update một document bàn chưa tồn tại trên Firestore.
@@ -2779,7 +2908,7 @@ async function forceMigrateToCloud() {
   console.log(`- Đã bơm ${invData.length} Kho`);
   console.log(`- Đã đẩy Cấu hình Default Settings`);
   
-  alert('ÄÃ BÆ M Dá»® LIá»U LÃN CLOUD THÃNH CÃNG! TrÃ¬nh duyá»t sáº½ ÄÆ°á»£c táº£i láº¡i ngay.');
+  alert('ĐÃ BƠM DỮ LIỆU LÊN CLOUD THÀNH CÔNG! Trình duyệt sẽ được tải lại ngay.');
   window.location.reload();
 }
 
@@ -2944,7 +3073,7 @@ async function migrateFromBackupJson(backupObj, isDryRun = true) {
     });
 
     if (isDryRun) {
-      console.groupCollapsed('[migrateJson ð] users (password ÄÃ£ bá» loáº¡i bá»)');
+      console.groupCollapsed('[migrateJson 🔍] users (password đã bị loại bỏ)');
       console.table(usersClean);
       console.groupEnd();
     } else {
@@ -3002,6 +3131,115 @@ const Storage = {
       console.warn('[DB] Lỗi xóa ảnh Storage (có thể file không tồn tại):', err);
     }
   }
+};
+
+const MEDIA_REFINERY_FUNCTION_BASE = 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/mediaRefineryApi';
+
+async function _mediaRefineryRequest(path, options = {}) {
+  const authUser = _auth.currentUser;
+  if (!authUser?.getIdToken) {
+    throw new Error('Chưa có phiên đăng nhập Firebase để gọi media-refinery.');
+  }
+  const token = await authUser.getIdToken();
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...(options.headers || {}),
+  };
+  const init = { method, headers };
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(options.body || {});
+  }
+  const response = await fetch(`${MEDIA_REFINERY_FUNCTION_BASE}${path}`, init);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    throw new Error(data?.error || `Media-refinery request failed (${response.status})`);
+  }
+  return data;
+}
+
+function _toQueryString(params = {}) {
+  const sp = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    sp.set(key, String(value));
+  });
+  const qs = sp.toString();
+  return qs ? `?${qs}` : '';
+}
+
+const MediaRefinery = {
+  CONTENT_ALLOWED_STATUSES: ['REFINED', 'TAGGED', 'PUBLISH_READY', 'HERO_ASSET'],
+
+  async ingest(payload = {}) {
+    return _mediaRefineryRequest('/ingest', { method: 'POST', body: payload });
+  },
+
+  async list(params = {}) {
+    return _mediaRefineryRequest(`/assets${_toQueryString(params)}`);
+  },
+
+  async get(assetId) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}`);
+  },
+
+  async score(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/score`, { method: 'POST', body: payload });
+  },
+
+  async refine(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/refine`, { method: 'POST', body: payload });
+  },
+
+  async qa(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/qa`, { method: 'POST', body: payload });
+  },
+
+  async search(params = {}) {
+    return _mediaRefineryRequest(`/search${_toQueryString(params)}`);
+  },
+
+  async publishReady(params = {}) {
+    return _mediaRefineryRequest(`/publish-ready${_toQueryString(params)}`);
+  },
+
+  async createBrief(payload = {}) {
+    return _mediaRefineryRequest('/create-brief', { method: 'POST', body: payload });
+  },
+
+  async assertPublishReady(params = {}) {
+    const result = await this.publishReady(params);
+    if (!result.can_generate_post) {
+      const err = new Error(result.reason || 'Không có media publish-ready.');
+      err.result = result;
+      throw err;
+    }
+    return result;
+  },
+
+  listenAssets(handler, options = {}) {
+    if (typeof handler !== 'function') return () => {};
+    const status = String(options.status || '').trim();
+    const productId = String(options.productId || '').trim();
+    let q = _col('media_assets');
+    const constraints = [];
+    if (status) constraints.push(where('status', '==', status));
+    if (productId) constraints.push(where('detected_product_id', '==', productId));
+    constraints.push(limit(Math.max(1, Math.min(100, Number(options.limit || 50) || 50))));
+    q = query(q, ...constraints);
+    return onSnapshot(q, snap => {
+      handler(snap.docs.map(_fromDoc).filter(Boolean), snap);
+    }, _snapErr('media_assets'));
+  },
 };
 
 
@@ -3118,6 +3356,7 @@ window.DB = {
   Settings,
   Users,
   Staff,
+  Attendance,
   History,
   HistoryArchive,
   Expenses,
@@ -3130,6 +3369,7 @@ window.DB = {
   SystemLogs,
   ShiftLogs,    // FIX 3: Chốt ca Cloud
   Storage,
+  MediaRefinery,
 
   // Công cụ di trú dữ liệu
   migrate:     migrateLocalToFirestore,
