@@ -969,3 +969,15 @@ Task log:
 - Sprint 7.2: `app/utils/fixedcost.js` — `getFixedCostProfileForReports` + `_getPayrollProfile` (reads global.appState)
 - Sprint 7.3: extend `app/order/helpers.js` — `_resolveDishCostPerUnit` + `normalizeMenuItemModel` (23 total exports)
 - Commit: 6c8df9f
+
+## 2026-06-02 04:15 - Phase 8 complete (Sprints 8.1-8.3): Excel report, expense breakdown, Drive upload extraction
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+- Sprint 8.1: Extracted `uploadFileToGoogleDriveByEndpoint` (94 lines) into existing `app/utils/storage.js`. Pure HTTP upload utility, all dependencies already in the module. 6 exports total.
+- Sprint 8.2: Extracted `exportReportExcel` (573 lines — LARGEST function in app.js) into new `app/report/excel.js` IIFE module. Contains 5 sheet builders (revenue, orders, expense, purchase, inventory) + workbook assembly + download/upload logic. 10 lazy resolvers for dependencies.
+- Sprint 8.3: Extracted `buildOperationalExpenseBreakdown` (86 lines) into new `app/report/expense.js` IIFE module. Mixed-purity report builder with 12 lazy resolvers.
+- Phase 8 total: 3 functions extracted (683 lines), 2 new modules (`app/report/excel.js`, `app/report/expense.js`), 1 extended module (`app/utils/storage.js`).
+- All 29 verification scripts pass, Jest 6/6, ESLint 0 errors.
+- Progress update: ~35% total / ~40% core / ~80% near-term safe-execution.

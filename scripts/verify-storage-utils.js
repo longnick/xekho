@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'app', 'utils', 'storage.js'), 'utf-8');
+
+let lastFetchOpts = null;
 const sandbox = {
   window: { XekhoApp: {} },
   localStorage: {
@@ -18,13 +20,21 @@ const sandbox = {
     constructor() { this.onload = null; this.onerror = null; }
     readAsDataURL(blob) { setTimeout(() => { if (this.onload) this.onload({ target: { result: 'data:application/octet-stream;base64,dGVzdA==' } }); }, 0); }
   },
+  fetch: async function (url, opts) {
+    lastFetchOpts = { url, opts };
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ success: true, fileId: 'test123' }),
+    };
+  },
+  console: console,
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 new vm.Script(src, { filename: 'storage.js' }).runInContext(sandbox);
 
 const exported = sandbox.window.XekhoApp.utils.storage;
-const expected = ['formatBytes', 'getLocalStorageUsageBytes', 'blobToBase64', 'normalizeGoogleScriptWebAppUrl', 'isGoogleAppsScriptWebAppUrl'];
+const expected = ['formatBytes', 'getLocalStorageUsageBytes', 'blobToBase64', 'normalizeGoogleScriptWebAppUrl', 'isGoogleAppsScriptWebAppUrl', 'uploadFileToGoogleDriveByEndpoint'];
 
 const missing = expected.filter(fn => typeof exported[fn] !== 'function');
 if (missing.length) {
@@ -69,5 +79,36 @@ if (exported.isGoogleAppsScriptWebAppUrl('https://example.com')) {
   process.exit(1);
 }
 
-console.log('\u2705 verify-storage-utils Sprint 5.2 verification passed');
-console.log('   ' + expected.length + ' functions exported');
+// uploadFileToGoogleDriveByEndpoint — basic test
+(async function () {
+  try {
+    const fakeBlob = { size: 4 };
+    const result = await exported.uploadFileToGoogleDriveByEndpoint({
+      uploadUrl: 'https://script.google.com/macros/s/TEST/exec',
+      folderId: 'folder123',
+      filename: 'test.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      blob: fakeBlob,
+    });
+    if (!result || !result.data) {
+      console.error('FAIL: uploadFileToGoogleDriveByEndpoint should return result with data');
+      process.exit(1);
+    }
+    if (!lastFetchOpts || lastFetchOpts.url !== 'https://script.google.com/macros/s/TEST/exec') {
+      console.error('FAIL: fetch was not called with correct URL');
+      process.exit(1);
+    }
+    const body = JSON.parse(lastFetchOpts.opts.body);
+    if (body.filename !== 'test.xlsx' || body.folderId !== 'folder123') {
+      console.error('FAIL: payload mismatch');
+      process.exit(1);
+    }
+    console.log('\u2705 uploadFileToGoogleDriveByEndpoint test passed');
+  } catch (err) {
+    console.error('FAIL: uploadFileToGoogleDriveByEndpoint threw:', err.message);
+    process.exit(1);
+  }
+
+  console.log('\u2705 verify-storage-utils Sprint 8.1 verification passed');
+  console.log('   ' + expected.length + ' functions exported');
+})();
