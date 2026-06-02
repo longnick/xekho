@@ -7,9 +7,9 @@ Branch: `test/xe-kho-repo-implementer-skill`
 
 The repo is **not ready for one-shot ESM conversion**. Vite is installed and verified, and Phase E1 now provides a safe module-script bridge, but the app still mostly runs as classic-script/IIFE/global code. The safe path remains a staged frontend-only ESM migration that starts with leaf helpers and keeps compatibility globals until all inline handlers and global call sites are removed.
 
-Current ESM readiness estimate: **~62%**.
+Current ESM readiness estimate: **~63%**.
 
-E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7 status:
+E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7/E5.8 status:
 
 - `app/esm/main.js` now loads as `<script type="module">` after the existing classic runtime.
 - `window.XekhoApp.esm.harness` records readiness without importing the `app.js` monolith.
@@ -32,9 +32,9 @@ E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7 status:
 - `scripts/verify-esm-report-date-controls.js` verifies delegated dispatch, installer publishing, listener cleanup, and removal of inline handlers from the seven report date controls.
 - `scripts/verify-esm-settings-tabs.js` verifies delegated dispatch, installer publishing, listener cleanup, and removal of inline `onclick` from the seven settings tab buttons.
 
-- Build tooling readiness: **~86%** — Vite config, npm scripts, TypeScript checks, and build command are present and working.
-- Frontend module boundary readiness: **~67%** — 19 extracted `app/` IIFE modules exist, 5 low-risk leaf helpers, 3 runtime adapters, and 1 UI island are importable.
-- Runtime entry readiness: **~48%** — ESM can now access DOM/Store/appState/DB through adapters and one UI island, but `app.js`, AI/offline scripts, 204 inline handlers, and 31 local classic scripts still depend heavily on global script order.
+- Build tooling readiness: **~87%** — Vite config, npm scripts, TypeScript checks, and build command are present and working.
+- Frontend module boundary readiness: **~68%** — 19 extracted `app/` IIFE modules exist, 5 low-risk leaf helpers, 3 runtime adapters, and 1 UI island are importable.
+- Runtime entry readiness: **~50%** — ESM can now access DOM/Store/appState/DB through adapters and one UI island, but `app.js`, AI/offline scripts, 200 inline handlers, and 31 local classic scripts still depend heavily on global script order.
 - Backend ESM readiness: **~10%** — package is `commonjs`; Cloud Functions and Node scripts are CommonJS. Backend should stay CommonJS until frontend migration is stable.
 
 ## Evidence from audit
@@ -190,9 +190,9 @@ Goal: make `index.html` and templates call imported/event-delegated handlers ins
 
 Current evidence after E4:
 
-- `index.html` scan after E5.1: 204 inline handlers.
+- `index.html` scan after E5.1: 200 inline handlers.
 - Script scan: 31 local classic scripts, 2 local module scripts (`db.js`, `app/esm/main.js`).
-- E5.1 converted 4 static header buttons, E5.2 converted 4 static report tab buttons, E5.3 converted 7 static settings tab buttons, and E5.4 converted 7 report date controls, E5.5 converted 5 inventory tabs, E5.6 converted 5 finance period controls, and E5.7 converted 6 report transaction filters to delegated ESM handling. Image zoom classic calls are safely delegated, but most POS/inventory/report handlers still depend on globals.
+- E5.1 converted 4 static header buttons, E5.2 converted 4 static report tab buttons, E5.3 converted 7 static settings tab buttons, and E5.4 converted 7 report date controls, E5.5 converted 5 inventory tabs, E5.6 converted 5 finance period controls, E5.7 converted 6 report transaction filters, and E5.8 converted 4 report filter controls to delegated ESM handling. Image zoom classic calls are safely delegated, but most POS/inventory/report handlers still depend on globals.
 
 Safe next action: continue replacing handlers one island at a time with deterministic tests and mobile Safari QA. Do not attempt repo-wide inline handler removal in one sprint.
 
@@ -214,7 +214,7 @@ Risk: high if done before E5 removes most global/inline handler coupling.
 
 Phase E4 is complete. Remaining E phases are now gated by handler/package blockers:
 
-- E5: inline handler cleanup requires island-by-island work and mobile QA because 204 inline handlers remain.
+- E5: inline handler cleanup requires island-by-island work and mobile QA because 200 inline handlers remain.
 - E6: package strategy remains `commonjs` until E5 is substantially complete.
 - E7/E8: no E7/E8 exists in the current documented plan.
 

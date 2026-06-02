@@ -526,3 +526,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.7 Report Transaction Filters
 
 - `app/esm/ui/report-transaction-filters.js`: importable delegated report transaction filter island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportTransactionFilters`; replaces six duplicated report transaction filter inline handlers with `data-esm-report-transaction-filter`. Verified by `scripts/verify-esm-report-transaction-filters.js`.
+
+
+## ESM Phase E5.8 Report Filter Controls
+
+- `app/esm/ui/report-filter-controls.js`: importable delegated report menu filter/reset island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportFilterControls`; replaces two report menu filter selects and two report reset buttons with delegated data attributes. Verified by `scripts/verify-esm-report-filter-controls.js`.
