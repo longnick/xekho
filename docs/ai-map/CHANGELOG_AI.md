@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-06-02 13:55 - ESM Phase E5.6 finance period delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the sixth safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/finance-period.js` with delegated click handling for finance period buttons.
+- Converted five finance period buttons from inline `onclick="setFinancePeriod(...)"` to `data-esm-finance-period`: today, day, week, month, all.
+- Updated `app/esm/main.js` to import/install `financePeriod` under `window.XekhoApp.esm.ui.financePeriod`; also kept inventory tab publishing in the aggregate ESM UI namespace.
+- Bumped ESM entry cache/version to `20260602-e5-finance-period`.
+- Added `scripts/verify-esm-finance-period.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `setFinancePeriod` untouched; the ESM island delegates to it at click time.
+
+Current E5 evidence: inline handler count reduced from 215 to 210; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, finance-period/inventory-tabs/report-date-controls/settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 13:45 - ESM Phase E5.5 inventory tab delegated handlers
 
 Repo: `/home/longnick/projects/xekho`
