@@ -23,6 +23,10 @@ const textUtils = require('./utils/text');
 const telegramSend = require('./telegram/send');
 const telegramKitchen = require('./telegram/kitchen');
 const telegramReports = require('./telegram/reports');
+const telegramAds = require('./telegram/ads');
+const telegramOrders = require('./telegram/orders');
+const telegramOnlineOrders = require('./telegram/online-orders');
+const generalUtils = require('./utils/general');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -1254,37 +1258,23 @@ async function confirmTelegramOrderDraft({ draftId, chatId, messageId, botToken,
 }
 
 function getHistoryBusinessId(order) {
-  return String(order?.id || order?.historyId || order?.docId || '').trim() || String(order?.docId || '').trim();
+  return telegramOrders.getHistoryBusinessId(order);
 }
 
 function getHistoryVersionDate(order) {
-  const rawDate = order?.updatedAt || order?.paidAt || order?.timestamp || null;
-  if (rawDate instanceof Date) return rawDate;
-  if (rawDate?.toDate) return rawDate.toDate();
-  return new Date(rawDate || 0);
+  return telegramOrders.getHistoryVersionDate(order);
 }
 
 function getHistoryVersionTime(order) {
-  const date = getHistoryVersionDate(order);
-  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+  return telegramOrders.getHistoryVersionTime(order);
 }
 
 function isCompletedHistoryOrderForReports(order) {
-  const status = String(order?.status || '').trim().toLowerCase();
-  if (!status) return !order?.cancelledAt && !order?.cancelReason;
-  return status === 'completed' || status === 'closed';
+  return telegramOrders.isCompletedHistoryOrderForReports(order);
 }
 
 function isVisibleHistoryOrderForReports(order) {
-  if (!order || typeof order !== 'object') return false;
-  if (!isCompletedHistoryOrderForReports(order)) return false;
-  if (order.hidden === true) return false;
-  if (order.hiddenFromReports === true) return false;
-  if (order.hiddenFromHistory === true) return false;
-  if (order.deletedAt || order.deletedFromAppAt) return false;
-  if (order.archivedAt || order.archivedFromHistoryId) return false;
-  if (order.supersededAt || order.supersededByHistoryId) return false;
-  return true;
+  return telegramOrders.isVisibleHistoryOrderForReports(order);
 }
 
 function coerceHistoryDate(value) {
@@ -1308,48 +1298,11 @@ function normalizeTelegramTableLabel(value) {
 }
 
 function extractTelegramCashierName(value) {
-// Override table normalization so customer-request flows do not render labels like duplicated "BAN".
-function normalizeTelegramTableLabel(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang về';
-
-  const repeatedPrefixMatch = raw.match(/^(?:b[aà]n?\s*)?(?:ban|b[aà]n)\s*(.+)$/i);
-  if (repeatedPrefixMatch?.[1]) return `Bàn ${repeatedPrefixMatch[1].trim()}`;
-
-  const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
-
-  return raw;
-}
-
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof value !== 'object') return String(value).trim();
-
-  const candidates = [
-    value.name,
-    value.full_name,
-    value.fullName,
-    value.username,
-    value.displayName,
-    value.email,
-    value.id,
-    value.uid,
-  ];
-
-  for (const candidate of candidates) {
-    const name = String(candidate || '').trim();
-    if (name && name !== '[object Object]') return name;
-  }
-  return '';
+  return telegramOrders.extractTelegramCashierName(value);
 }
 
 function getVietnamDayRange(date = new Date()) {
-  const parts = getVietnamDateParts(date);
-  const from = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -7, 0, 0, 0));
-  const toExclusive = new Date(from.getTime() + (24 * 60 * 60 * 1000));
-  return { from, toExclusive };
+  return telegramAds.getVietnamDayRange(date);
 }
 
 async function buildTelegramCompletedOrderShiftSummary(order = {}) {
@@ -1384,93 +1337,23 @@ async function buildTelegramCompletedOrderShiftSummary(order = {}) {
 }
 
 function pickFirstPresentValue(...values) {
-  for (const value of values) {
-    if (value === undefined || value === null) continue;
-    if (typeof value === 'string' && !value.trim()) continue;
-    return value;
-  }
-  return null;
+  return telegramOrders.pickFirstPresentValue(...values);
 }
 
 function toTelegramMoneyNumber(...values) {
-  for (const value of values) {
-    const num = Number(value);
-    if (Number.isFinite(num)) return num;
-  }
-  return 0;
+  return telegramOrders.toTelegramMoneyNumber(...values);
 }
 
 function normalizeCompletedOrderItems(order = {}) {
-  const rawItems = pickFirstPresentValue(
-    Array.isArray(order.items) ? order.items : null,
-    Array.isArray(order.billItems) ? order.billItems : null,
-    Array.isArray(order.lineItems) ? order.lineItems : null,
-    Array.isArray(order.cartItems) ? order.cartItems : null,
-    Array.isArray(order.products) ? order.products : null
-  );
-
-  if (!Array.isArray(rawItems)) return [];
-
-  return rawItems.map(item => {
-    if (!item || typeof item !== 'object') return null;
-    const qty = toTelegramMoneyNumber(item.qty, item.quantity, item.count, 1) || 1;
-    const price = toTelegramMoneyNumber(item.price, item.unitPrice, item.sellPrice, item.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const cost = toTelegramMoneyNumber(item.cost, item.unitCost, item.baseCost, 0);
-    return {
-      ...item,
-      name: String(pickFirstPresentValue(item.name, item.itemName, item.productName, item.title, item.label, 'Món')).trim(),
-      qty,
-      price,
-      cost,
-      note: String(pickFirstPresentValue(item.note, item.notes, item.description, '') || '').trim(),
-    };
-  }).filter(Boolean);
+  return telegramOrders.normalizeCompletedOrderItems(order = {});
 }
 
 function calculateCompletedOrderSubtotal(items = []) {
-  return items.reduce((sum, item) => {
-    const qty = toTelegramMoneyNumber(item?.qty, 0);
-    const price = toTelegramMoneyNumber(item?.price, item?.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const lineTotal = qty > 0 ? qty * price : toTelegramMoneyNumber(item?.subtotal, item?.total, 0);
-    return sum + lineTotal;
-  }, 0);
+  return telegramOrders.calculateCompletedOrderSubtotal(items = []);
 }
 
 function normalizeCompletedOrderForTelegram(historyId, order = {}) {
-  const items = normalizeCompletedOrderItems(order);
-  const subtotalFromItems = calculateCompletedOrderSubtotal(items);
-  const discount = toTelegramMoneyNumber(order.discount, order.discountAmount, order.extras?.discount, 0);
-  const shipping = toTelegramMoneyNumber(order.shipping, order.shippingFee, order.deliveryFee, order.extras?.shipping, 0);
-  const vatAmount = toTelegramMoneyNumber(order.vatAmount, order.taxAmount, order.extras?.vatAmount, 0);
-  const subtotal = toTelegramMoneyNumber(order.subtotal, order.itemsTotal, order.amountBeforeTax, subtotalFromItems);
-  const total = toTelegramMoneyNumber(order.total, order.finalBillTotal, order.grandTotal, order.amount, order.totalAmount, subtotal - discount + shipping + vatAmount);
-  const cost = toTelegramMoneyNumber(
-    order.cost,
-    order.totalCost,
-    items.reduce((sum, item) => sum + (toTelegramMoneyNumber(item.cost, 0) * toTelegramMoneyNumber(item.qty, 0)), 0)
-  );
-
-  return {
-    ...order,
-    historyId: String(pickFirstPresentValue(order.historyId, order.docId, historyId, '') || '').trim(),
-    id: String(pickFirstPresentValue(order.id, order.billNo, order.orderId, historyId, '') || '').trim(),
-    billNo: String(pickFirstPresentValue(order.billNo, order.id, order.orderCode, order.historyId, historyId, '') || '').trim(),
-    tableId: String(pickFirstPresentValue(order.tableId, order.tableNumber, order.table, order.ban, '') || '').trim(),
-    tableName: String(pickFirstPresentValue(order.tableName, order.tableLabel, order.posTableName, order.channelName, order.tableId, order.tableNumber, '') || '').trim(),
-    payMethod: String(pickFirstPresentValue(order.payMethod, order.paymentMethod, order.payment?.method, '') || '').trim(),
-    paidAt: pickFirstPresentValue(order.paidAt, order.completedAt, order.closedAt, order.updatedAt, order.timestamp, order.createdAt),
-    note: String(pickFirstPresentValue(order.note, order.notes, order.message, '') || '').trim(),
-    discountNote: String(pickFirstPresentValue(order.discountNote, order.promotionName, order.discountReason, '') || '').trim(),
-    createdByName: pickFirstPresentValue(order.createdByName, order.cashierName, order.staffName, order.staff?.name, order.createdByName),
-    paidByName: pickFirstPresentValue(order.paidByName, order.cashierName, order.staffName, order.payment?.collectedByName, order.paidByName),
-    items,
-    subtotal,
-    discount,
-    shipping,
-    vatAmount,
-    total,
-    cost,
-  };
+  return telegramOrders.normalizeCompletedOrderForTelegram(historyId, order = {});
 }
 
 function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
@@ -1999,169 +1882,55 @@ function buildConfiguredDailyReportTelegramMessage(report, options = {}) {
 }
 
 function uniqueTokens(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(Boolean))];
+  return telegramAds.uniqueTokens(values);
 }
 
 function normalizeVi(text) {
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/Ä‘/g, 'd')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramAds.normalizeVi(text);
 }
 
 function parseTimeEntity(text) {
-  const t = normalizeVi(text);
-  if (!t) return null;
-  if (/(hom nay)\b/.test(t)) return { key: 'today', label: 'hôm nay' };
-  if (/(hom qua)\b/.test(t)) return { key: 'yesterday', label: 'hôm qua' };
-  if (/(tuan nay)\b/.test(t)) return { key: 'this_week', label: 'tuần này' };
-  if (/(thang nay)\b/.test(t)) return { key: 'this_month', label: 'tháng này' };
-  if (/(nam nay)\b/.test(t)) return { key: 'this_year', label: 'nm nay' };
-  return null;
+  return telegramAds.parseTimeEntity(text);
 }
 
 function buildDateRange(timeKey) {
-  const now = new Date();
-  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-  const endOfDay = d => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
-
-  if (timeKey === 'today') return { from: startOfDay(now), to: endOfDay(now) };
-  if (timeKey === 'yesterday') {
-    const d = new Date(now); d.setDate(d.getDate() - 1);
-    return { from: startOfDay(d), to: endOfDay(d) };
-  }
-  if (timeKey === 'this_week') {
-    const d = new Date(now);
-    const day = d.getDay();
-    const diff = (day === 0 ? -6 : 1) - day;
-    d.setDate(d.getDate() + diff);
-    return { from: startOfDay(d), to: endOfDay(now) };
-  }
-  if (timeKey === 'this_month') {
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: startOfDay(from), to: endOfDay(now) };
-  }
-  if (timeKey === 'this_year') {
-    const from = new Date(now.getFullYear(), 0, 1);
-    return { from: startOfDay(from), to: endOfDay(now) };
-  }
-  return { from: startOfDay(now), to: endOfDay(now) };
+  return telegramAds.buildDateRange(timeKey);
 }
 
 function formatPercentVi(value) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0%';
-  return `${numeric.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
+  return telegramAds.formatPercentVi(value);
 }
 
 function formatMultipleVi(value) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0x';
-  return `${numeric.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}x`;
+  return telegramAds.formatMultipleVi(value);
 }
 
 function getVietnamDateYmd(date = new Date()) {
-  const parts = getVietnamDateParts(date);
-  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  return telegramAds.getVietnamDateYmd(date);
 }
 
 function formatVietnamDateDisplayFromYmd(ymd) {
-  const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return String(ymd || '').trim();
-  return `${match[3]}/${match[2]}/${match[1]}`;
+  return telegramAds.formatVietnamDateDisplayFromYmd(ymd);
 }
 
 function buildVietnamAbsoluteDayRangeFromYmd(ymd) {
-  const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) throw new Error(`Invalid date format: ${ymd}`);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const from = new Date(Date.UTC(year, month - 1, day, -7, 0, 0, 0));
-  const toExclusive = new Date(from.getTime() + (24 * 60 * 60 * 1000));
-  return { from, toExclusive, ymd };
+  return telegramAds.buildVietnamAbsoluteDayRangeFromYmd(ymd);
 }
 
 function buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd) {
-  const start = buildVietnamAbsoluteDayRangeFromYmd(fromYmd);
-  const end = buildVietnamAbsoluteDayRangeFromYmd(toYmd);
-  if (end.from < start.from) throw new Error('Invalid date range');
-  return {
-    from: start.from,
-    toExclusive: new Date(end.toExclusive.getTime()),
-    fromYmd,
-    toYmd,
-    label: fromYmd === toYmd
-      ? formatVietnamDateDisplayFromYmd(fromYmd)
-      : `${formatVietnamDateDisplayFromYmd(fromYmd)} - ${formatVietnamDateDisplayFromYmd(toYmd)}`,
-  };
+  return telegramAds.buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd);
 }
 
 function parseExplicitDateInput(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  let match = raw.match(/\b(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})\b/);
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
-  }
-  match = raw.match(/\b(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b/);
-  if (match) {
-    return `${match[3]}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`;
-  }
-  return null;
+  return telegramAds.parseExplicitDateInput(text);
 }
 
 function getVietnamYesterdayYmd(now = new Date()) {
-  const todayRange = getVietnamDayRange(now);
-  const yesterdayStart = new Date(todayRange.from.getTime() - (24 * 60 * 60 * 1000));
-  return getVietnamDateYmd(yesterdayStart);
+  return telegramAds.getVietnamYesterdayYmd(now);
 }
 
 function buildAdsDateRangeFromText(text = '', now = new Date(), options = {}) {
-  const normalized = normalizeVi(text);
-  const defaultYesterday = options.defaultYesterday !== false;
-
-  const explicitDates = [...String(text || '').matchAll(/(\d{4}[\/-]\d{1,2}[\/-]\d{1,2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/g)]
-    .map(match => parseExplicitDateInput(match[1]))
-    .filter(Boolean);
-  if (explicitDates.length >= 2) {
-    return buildVietnamAbsoluteRangeFromYmds(explicitDates[0], explicitDates[1]);
-  }
-  if (explicitDates.length === 1) {
-    return buildVietnamAbsoluteRangeFromYmds(explicitDates[0], explicitDates[0]);
-  }
-
-  if (normalized.includes('hom qua')) {
-    const ymd = getVietnamYesterdayYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-  if (normalized.includes('hom nay')) {
-    const ymd = getVietnamDateYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-
-  const timeEntity = parseTimeEntity(text);
-  if (timeEntity) {
-    const baseRange = buildDateRange(timeEntity.key);
-    const fromYmd = getVietnamDateYmd(baseRange.from);
-    const toYmd = getVietnamDateYmd(baseRange.to);
-    return {
-      ...buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd),
-      label: timeEntity.label || `${formatVietnamDateDisplayFromYmd(fromYmd)} - ${formatVietnamDateDisplayFromYmd(toYmd)}`,
-    };
-  }
-
-  if (defaultYesterday) {
-    const ymd = getVietnamYesterdayYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-
-  const ymd = getVietnamDateYmd(now);
-  return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
+  return telegramAds.buildAdsDateRangeFromText(text, now, options);
 }
 
 async function queryManualAdsDailyStats(range) {
@@ -2205,48 +1974,11 @@ async function queryManualAdsDailyStats(range) {
 }
 
 function buildAdsChannelMetrics(input = {}) {
-  const spend = Number(input.spend || 0) || 0;
-  const clicks = Number(input.clicks || 0) || 0;
-  const interactions = Number(input.interactions || clicks || 0) || 0;
-  const impressions = Number(input.impressions || 0) || 0;
-  const reach = Number(input.reach || 0) || 0;
-  const purchases = Number(input.purchases || 0) || 0;
-  const addToCart = Number(input.addToCart || 0) || 0;
-  return {
-    ...input,
-    spend,
-    clicks,
-    interactions,
-    impressions,
-    reach,
-    purchases,
-    addToCart,
-    cpc: clicks > 0 ? spend / clicks : 0,
-    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
-    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-    cpa: purchases > 0 ? spend / purchases : 0,
-    conversionRate: clicks > 0 ? (purchases / clicks) * 100 : 0,
-  };
+  return telegramAds.buildAdsChannelMetrics(input);
 }
 
 function sumAdsChannels(channels = []) {
-  return buildAdsChannelMetrics(channels.reduce((sum, channel) => ({
-    spend: sum.spend + Number(channel?.spend || 0),
-    clicks: sum.clicks + Number(channel?.clicks || 0),
-    interactions: sum.interactions + Number(channel?.interactions || 0),
-    impressions: sum.impressions + Number(channel?.impressions || 0),
-    reach: sum.reach + Number(channel?.reach || 0),
-    purchases: sum.purchases + Number(channel?.purchases || 0),
-    addToCart: sum.addToCart + Number(channel?.addToCart || 0),
-  }), {
-    spend: 0,
-    clicks: 0,
-    interactions: 0,
-    impressions: 0,
-    reach: 0,
-    purchases: 0,
-    addToCart: 0,
-  }));
+  return telegramAds.sumAdsChannels(channels);
 }
 
 async function fetchMetaAdsInsights(range) {
@@ -2309,274 +2041,27 @@ async function fetchMetaAdsInsights(range) {
 }
 
 async function buildAdsRevenueTelegramData(range) {
-  const [posSummary, manualAds, metaAds, financialProfile] = await Promise.all([
-    queryHistoryRevenue({ from: range.from, to: new Date(range.toExclusive.getTime() - 1) }),
-    queryManualAdsDailyStats(range),
-    fetchMetaAdsInsights(range),
-    loadTelegramReportFinancialProfile(),
-  ]);
-
-  const facebook = (metaAds.source === 'meta-api')
-    ? metaAds
-    : (manualAds.facebook.spend > 0 || manualAds.facebook.clicks > 0 || manualAds.facebook.impressions > 0 ? buildAdsChannelMetrics({
-      configured: true,
-      source: 'manual',
-      spend: manualAds.facebook.spend,
-      clicks: manualAds.facebook.clicks,
-      interactions: manualAds.facebook.interactions,
-      impressions: manualAds.facebook.impressions,
-      reach: manualAds.facebook.reach,
-      purchases: manualAds.facebook.purchases,
-      addToCart: manualAds.facebook.addToCart,
-      warning: metaAds.error || '',
-    }) : metaAds);
-
-  const tiktok = (manualAds.tiktok.spend > 0 || manualAds.tiktok.clicks > 0 || manualAds.tiktok.impressions > 0)
-    ? buildAdsChannelMetrics({
-      configured: true,
-      source: 'manual',
-      spend: manualAds.tiktok.spend,
-      clicks: manualAds.tiktok.clicks,
-      interactions: manualAds.tiktok.interactions,
-      impressions: manualAds.tiktok.impressions,
-      reach: manualAds.tiktok.reach,
-      purchases: manualAds.tiktok.purchases,
-      addToCart: manualAds.tiktok.addToCart,
-    })
-    : buildAdsChannelMetrics({
-      configured: false,
-      source: 'missing-config',
-    });
-
-  const revenue = Number(posSummary.revenue || 0) || 0;
-  const orders = Number(posSummary.orders || 0) || 0;
-  const cost = Number(posSummary.cost || 0) || 0;
-  const grossProfit = Number(posSummary.grossProfit || (revenue - cost)) || 0;
-  const averageOrder = orders > 0 ? revenue / orders : 0;
-  const total = sumAdsChannels([facebook, tiktok]);
-  const totalAds = total.spend;
-  const roas = totalAds > 0 ? revenue / totalAds : 0;
-  const adsRevenueRatio = revenue > 0 ? (totalAds / revenue) * 100 : 0;
-  const attributedPurchases = total.purchases > 0 ? total.purchases : orders;
-  const cpa = attributedPurchases > 0 ? totalAds / attributedPurchases : 0;
-  const conversionRate = total.clicks > 0 && attributedPurchases > 0 ? (attributedPurchases / total.clicks) * 100 : 0;
-  const aov = orders > 0 ? revenue / orders : 0;
-  const adsAov = attributedPurchases > 0 ? revenue / attributedPurchases : 0;
-  const rangeDays = getInclusiveVietnamDateCount(range.fromYmd, range.toYmd);
-  const targetRevenueDaily = Number(financialProfile?.targetMonthlyRevenue || 0) > 0
-    ? Math.round((Number(financialProfile.targetMonthlyRevenue || 0) || 0) / 30)
-    : 0;
-  const targetRevenueForRange = targetRevenueDaily > 0 ? targetRevenueDaily * rangeDays : 0;
-  const revenueAchievementPercent = targetRevenueForRange > 0 ? (revenue / targetRevenueForRange) * 100 : 0;
-  const fixedCostDaily = Number(financialProfile?.dailyFixedCost || 0) || 0;
-  const fixedCostForRange = fixedCostDaily * rangeDays;
-  const profit = grossProfit - totalAds;
-  const profitAfterFixedCost = profit - fixedCostForRange;
-  const notes = [];
-  if (total.purchases <= 0 && orders > 0) notes.push('CPA/Conversion Rate đang dùng số đơn POS làm tham khảo vì chưa có Purchase từ pixel/API ads.');
-  if (facebook.error) notes.push(`Facebook Ads: ${facebook.error}`);
-  if (!tiktok.configured) notes.push('TikTok Ads: chưa cấu hình API hoặc chưa có dữ liệu nhập tay.');
-
-  return {
-    type: 'ads-revenue',
-    rangeLabel: range.label,
-    fromYmd: range.fromYmd,
-    toYmd: range.toYmd,
-    revenue,
-    orders,
-    cost,
-    grossProfit,
-    averageOrder,
-    facebook,
-    tiktok,
-    total,
-    totalAds,
-    roas,
-    adsRevenueRatio,
-    cpa,
-    conversionRate,
-    aov,
-    adsAov,
-    profit,
-    profitAfterFixedCost,
-    attributedPurchases,
-    financialProfile,
-    rangeDays,
-    targetRevenueDaily,
-    targetRevenueForRange,
-    revenueAchievementPercent,
-    fixedCostDaily,
-    fixedCostForRange,
-    notes,
-  };
+  return telegramAds.buildAdsRevenueTelegramData(range);
 }
 
 function buildAdsRevenueTelegramMessage(report, options = {}) {
-  return buildAdsRevenueDetailedMessage(report, options);
-  const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '📊 BÁO CÁO ADS + DOANH THU';
-  const singleDay = report.fromYmd === report.toYmd;
-  const dateLine = singleDay
-    ? `Ngày: ${escapeTelegramHtml(formatVietnamDateDisplayFromYmd(report.fromYmd))}`
-    : `Khoảng: ${escapeTelegramHtml(report.rangeLabel)}`;
-
-  const facebookMetricLabel = Number(report.facebook.interactions || 0) > 0 ? 'Click/tương tác' : 'Click';
-  const facebookLines = report.facebook.configured
-    ? [
-      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.spend))}</b>`,
-      `${facebookMetricLabel}: <b>${escapeTelegramHtml(String(Math.round(Number(report.facebook.interactions || report.facebook.clicks || 0))))}</b>`,
-      `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.cpc || 0))}</b>`,
-    ]
-    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-
-  const tiktokLines = report.tiktok.configured
-    ? [
-      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.spend))}</b>`,
-      `Click: <b>${escapeTelegramHtml(String(Math.round(Number(report.tiktok.clicks || 0))))}</b>`,
-      `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.cpc || 0))}</b>`,
-    ]
-    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-
-  const commentLine = report.totalAds > 0
-    ? `Hiệu quả tốt nếu biên lợi nhuận gộp > ${formatPercentVi(report.adsRevenueRatio)}.`
-    : 'Chưa có dữ liệu ads để tính tỷ lệ hiệu quả.';
-
-  const lines = [
-    `<b>${title}</b>`,
-    escapeTelegramHtml(dateLine),
-    '',
-    '<b>ðŸ’° POS</b>',
-    `Doanh thu: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `Số đơn: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
-    `TB/đơn: <b>${escapeTelegramHtml(formatCurrencyVi(report.averageOrder))}</b>`,
-    '',
-    '<b>ðŸ”µ Facebook</b>',
-    ...facebookLines,
-    '',
-    '<b>âš« TikTok</b>',
-    ...tiktokLines,
-    '',
-    '<b>📈 Tổng hợp</b>',
-    `Tổng ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
-    `ROAS tham khảo: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
-    `Ads / doanh thu: <b>${escapeTelegramHtml(formatPercentVi(report.adsRevenueRatio))}</b>`,
-    '',
-    '<b>Nhận xét</b>',
-    escapeTelegramHtml(commentLine),
-  ];
-
-  if (Array.isArray(report.notes) && report.notes.length) {
-    lines.push('', '<b>Ghi chú</b>');
-    report.notes.forEach(note => lines.push(`- ${escapeTelegramHtml(note)}`));
-  }
-
-  return lines.join('\n');
+  return telegramAds.buildAdsRevenueTelegramMessage(report, options);
 }
 
 function formatIntVi(value) {
-  return Math.round(Number(value || 0)).toLocaleString('vi-VN');
+  return telegramAds.formatIntVi(value);
 }
 
 function buildAdsChannelLines(channel = {}) {
-  if (!channel.configured) return ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-  return [
-    `Spend: <b>${escapeTelegramHtml(formatCurrencyVi(channel.spend))}</b>`,
-    `Impression: <b>${escapeTelegramHtml(formatIntVi(channel.impressions))}</b>`,
-    `Reach: <b>${escapeTelegramHtml(formatIntVi(channel.reach))}</b>`,
-    `Click: <b>${escapeTelegramHtml(formatIntVi(channel.clicks))}</b>`,
-    `CPM: <b>${escapeTelegramHtml(formatCurrencyVi(channel.cpm || 0))}</b>`,
-    `CTR: <b>${escapeTelegramHtml(formatPercentVi(channel.ctr || 0))}</b>`,
-    `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(channel.cpc || 0))}</b>`,
-    `Purchase: <b>${escapeTelegramHtml(formatIntVi(channel.purchases))}</b>`,
-    `Add to Cart: <b>${escapeTelegramHtml(formatIntVi(channel.addToCart))}</b>`,
-  ];
+  return telegramAds.buildAdsChannelLines(channel);
 }
 
 function buildAdsInsightLines(report = {}) {
-  const lines = [];
-  const grossMargin = Number(report.revenue || 0) > 0
-    ? (Number(report.grossProfit || 0) / Number(report.revenue || 1)) * 100
-    : 0;
-  if (Number(report.profit || 0) > 0) {
-    lines.push(`Đang lãi sau ads: ${formatCurrencyVi(report.profit)}. Giữ ngân sách và ưu tiên nhóm có CTR cao, CPC/CPA thấp.`);
-  } else if (Number(report.totalAds || 0) > 0) {
-    lines.push(`Đang âm sau ads: ${formatCurrencyVi(report.profit)}. Giảm nhóm ads CPC/CPA cao hoặc tăng AOV bằng combo/upsell.`);
-  } else {
-    lines.push('Chưa có spend ads để đánh giá hiệu quả marketing.');
-  }
-  if (Number(report.total?.ctr || 0) < 1 && Number(report.total?.impressions || 0) > 0) {
-    lines.push('CTR thấp: đổi creative, hook 3 giây đầu, ưu đãi rõ hơn hoặc tách lại đối tượng.');
-  }
-  if (Number(report.total?.clicks || 0) > 0 && Number(report.conversionRate || 0) < 2) {
-    lines.push('Conversion Rate thấp: kiểm tra landing/menu, tốc độ phản hồi, giá/ưu đãi và quy trình chốt đơn.');
-  }
-  if (Number(report.aov || 0) > 0) {
-    lines.push(`AOV POS ${formatCurrencyVi(report.aov)}; cần đẩy combo để AOV cao hơn CPA ${formatCurrencyVi(report.cpa)}.`);
-  }
-  lines.push(`Biên lợi nhuận gộp POS: ${formatPercentVi(grossMargin)}; ads/doanh thu: ${formatPercentVi(report.adsRevenueRatio || 0)}.`);
-  return lines;
+  return telegramAds.buildAdsInsightLines(report);
 }
 
 function buildAdsRevenueDetailedMessage(report, options = {}) {
-  const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '🌅 BÁO CÁO 7H ADS + DOANH THU';
-  const dateLine = report.fromYmd === report.toYmd
-    ? `Ngày: ${formatVietnamDateDisplayFromYmd(report.fromYmd)}`
-    : `Khoảng: ${report.rangeLabel}`;
-  const targetRevenueLine = Number(report.targetRevenueForRange || 0) > 0
-    ? `${formatCurrencyVi(report.revenue)} / ${formatCurrencyVi(report.targetRevenueForRange)} = ${formatAchievementPercent(report.revenue, report.targetRevenueForRange)}`
-    : 'Chưa có target doanh thu trong Sprint 0';
-  const moodLine = buildMorningRevenueMood(report);
-
-  const lines = [
-    `<b>${escapeTelegramHtml(title)}</b>`,
-    escapeTelegramHtml(dateLine),
-    '',
-    '<b>Tinh thần đầu ngày</b>',
-    escapeTelegramHtml(moodLine),
-    '',
-    '<b>Mốc target doanh thu</b>',
-    `Thực tế / target: <b>${escapeTelegramHtml(targetRevenueLine)}</b>`,
-    Number(report.targetRevenueDaily || 0) > 0
-      ? `Target ngày chuẩn: <b>${escapeTelegramHtml(formatCurrencyVi(report.targetRevenueDaily))}</b> | Số ngày tính: <b>${escapeTelegramHtml(String(report.rangeDays || 1))}</b>`
-      : '<i>Chưa cấu hình target doanh thu tháng trong Sprint 0.</i>',
-    '',
-    '<b>POS</b>',
-    `Doanh thu: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `Số đơn: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
-    `AOV POS: <b>${escapeTelegramHtml(formatCurrencyVi(report.aov || report.averageOrder))}</b>`,
-    `Giá vốn: <b>${escapeTelegramHtml(formatCurrencyVi(report.cost || 0))}</b>`,
-    `Lãi gộp: <b>${escapeTelegramHtml(formatCurrencyVi(report.grossProfit || 0))}</b>`,
-    '',
-    '<b>Facebook</b>',
-    ...buildAdsChannelLines(report.facebook),
-    '',
-    '<b>TikTok</b>',
-    ...buildAdsChannelLines(report.tiktok),
-    '',
-    '<b>Tổng hợp Ads + POS</b>',
-    `Spend: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
-    `Click: <b>${escapeTelegramHtml(formatIntVi(report.total?.clicks || 0))}</b>`,
-    `Impression: <b>${escapeTelegramHtml(formatIntVi(report.total?.impressions || 0))}</b>`,
-    `Reach: <b>${escapeTelegramHtml(formatIntVi(report.total?.reach || 0))}</b>`,
-    `Purchase: <b>${escapeTelegramHtml(formatIntVi(report.total?.purchases || 0))}</b>`,
-    `Add to Cart: <b>${escapeTelegramHtml(formatIntVi(report.total?.addToCart || 0))}</b>`,
-    `ROAS: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
-    `CPA: <b>${escapeTelegramHtml(formatCurrencyVi(report.cpa || 0))}</b>`,
-    `Conversion Rate: <b>${escapeTelegramHtml(formatPercentVi(report.conversionRate || 0))}</b>`,
-    `AOV theo purchase: <b>${escapeTelegramHtml(formatCurrencyVi(report.adsAov || 0))}</b>`,
-    `Lợi nhuận sau ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.profit || 0))}</b>`,
-    `Chi phí cố định kỳ này: <b>${escapeTelegramHtml(formatCurrencyVi(report.fixedCostForRange || 0))}</b>`,
-    `Lợi nhuận sau ads + chi phí cố định: <b>${escapeTelegramHtml(formatCurrencyVi(report.profitAfterFixedCost || 0))}</b>`,
-    '',
-    '<b>AI Insights</b>',
-    ...buildAdsInsightLines(report).map(line => `- ${escapeTelegramHtml(line)}`),
-  ];
-
-  if (Array.isArray(report.notes) && report.notes.length) {
-    lines.push('', '<b>Ghi chú</b>');
-    report.notes.forEach(note => lines.push(`- ${escapeTelegramHtml(note)}`));
-  }
-
-  return lines.join('\n');
+  return telegramAds.buildAdsRevenueDetailedMessage(report, options);
 }
 
 function extractTable(text) {
@@ -3056,16 +2541,7 @@ async function createOrReuseTelegramPaymentRequestByTable(tableNumber, userConte
 }
 
 function formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes = true } = {}) {
-  const list = Array.isArray(items) ? items : [];
-  if (!list.length) return `${bullet} Chưa có chi tiết món`;
-  return list.map(item => {
-    const name = normalizeTelegramText(String(item?.name || item?.productName || 'Món').trim());
-    const qty = Number(item?.qty || item?.quantity || 0) || 1;
-    const price = Number(item?.price || 0) || 0;
-    const lineTotal = price * qty;
-    const note = includeNotes ? normalizeTelegramText(String(item?.note || item?.notes || '').trim()) : '';
-    return `${bullet} ${escapeTelegramHtml(name || 'Món')} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-  }).join('\n');
+  return telegramOnlineOrders.formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes = true } = {});
 }
 
 // Override table normalization for customer-request Telegram flows.
@@ -3623,188 +3099,35 @@ async function enrichTelegramKitchenSummaryItems(rawItems = []) {
 }
 
 function buildPosItemFromRequest(requestId, index, requestItem = {}, product = {}) {
-  const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
-  const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
-  const kitchenRouting = String(product.kitchenRouting || '').trim().toLowerCase() || (itemType === 'retail_item' ? 'skip' : 'all');
-  const qty = Number(requestItem.quantity || requestItem.qty || 1) || 1;
-  const lineItemId = `WEB-${String(requestId)}-${index + 1}`;
-  return {
-    id: String(requestItem.menuItemId || requestItem.id || '').trim(),
-    name: String(requestItem.name || product.display_name || product.name || 'Món').trim(),
-    price: Number(requestItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
-    qty,
-    note: String(requestItem.notes || requestItem.note || '').trim(),
-    lineItemId,
-    sourceRequestId: String(requestId),
-    source: 'customer_web',
-    sourceChannel: 'webapp-menu',
-    itemType,
-    kitchenRouting,
-    kitchenStatus: kitchenRouting === 'skip' ? 'skip' : 'pending',
-    saleMode: itemType === 'retail_item' ? 'retail' : 'dish',
-    directSale: itemType === 'retail_item',
-    forceKitchen: false,
-    linkedInventoryId: String(product.linkedInventoryId || '').trim() || null,
-  };
+  return telegramOnlineOrders.buildPosItemFromRequest(requestId, index, requestItem = {}, product = {});
 }
 
 function aggregateRequestStatusFromItems(items = []) {
-  const statuses = items
-    .map(item => String(item?.kitchenStatus || '').trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!statuses.length) return 'approved';
-  if (statuses.every(status => status === 'served')) return 'served';
-  if (statuses.every(status => ['done', 'served', 'skip'].includes(status))) return 'ready_to_serve';
-  if (statuses.some(status => status === 'cooking')) return 'preparing';
-  return 'approved';
+  return telegramOnlineOrders.aggregateRequestStatusFromItems(items = []);
 }
 
 function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {}) {
-  const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
-  const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
-  const kitchenRouting = String(product.kitchenRouting || '').trim().toLowerCase() || (itemType === 'retail_item' ? 'skip' : 'all');
-  const qty = Number(orderItem.quantity || orderItem.qty || 1) || 1;
-  const lineItemId = `ONL-${String(orderId)}-${index + 1}`;
-  return {
-    id: String(orderItem.productId || orderItem.menuItemId || orderItem.id || '').trim(),
-    name: String(orderItem.productName || orderItem.name || product.display_name || product.name || 'Món').trim(),
-    price: Number(orderItem.unitPrice ?? orderItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
-    qty,
-    note: String(orderItem.note || orderItem.notes || '').trim(),
-    lineItemId,
-    onlineOrderId: String(orderId),
-    source: 'online_ordering',
-    sourceChannel: 'website',
-    itemType,
-    kitchenRouting,
-    kitchenStatus: kitchenRouting === 'skip' ? 'skip' : 'pending',
-    saleMode: itemType === 'retail_item' ? 'retail' : 'dish',
-    directSale: itemType === 'retail_item',
-    forceKitchen: false,
-    linkedInventoryId: String(product.linkedInventoryId || '').trim() || null,
-    kitchenSentAt: kitchenRouting === 'skip' ? null : Date.now(),
-  };
+  return telegramOnlineOrders.buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {});
 }
 
 function buildOnlineOrderTelegramStatusLabel(status) {
-  switch (String(status || '').trim().toLowerCase()) {
-    case 'approved':
-      return 'ĐÃ XÁC NHẬN';
-    case 'preparing':
-      return 'ĐANG LÀM';
-    case 'ready_to_serve':
-      return 'XONG';
-    case 'delivering':
-      return 'ANG GIAO';
-    case 'completed':
-      return 'ĐÃ GIAO';
-    case 'cancelled':
-    case 'rejected':
-      return 'ĐÃ HỦY';
-    default:
-      return 'CHỜ XÁC NHẬN';
-  }
+  return telegramOnlineOrders.buildOnlineOrderTelegramStatusLabel(status);
 }
 
 function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
-  const items = Array.isArray(orderData.items) ? orderData.items : [];
-  const itemLines = items.length
-    ? items.map((item) => {
-      const noteText = item.note ? ` (${item.note})` : '';
-      return `- ${item.productName || item.name || 'Món'} x${Number(item.quantity || item.qty || 0)}${noteText}`;
-    }).join('\n')
-    : '- Không có chi tiết';
-
-  const address = [
-    orderData.customer?.addressLine1,
-    orderData.customer?.ward,
-    orderData.customer?.district,
-    orderData.customer?.city,
-  ].filter(Boolean).join(', ');
-
-  return [
-    'ĐƠN ONLINE MỚI',
-    `Mã đơn: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
-    `Khách: ${String(orderData.customer?.fullName || '--').trim()}`,
-    `SDT: ${String(orderData.customer?.phone || '--').trim()}`,
-    `Địa chỉ: ${address || '--'}`,
-    `Thanh toán: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${String(orderData.paymentStatus || 'pending')}`,
-    `Tổng tiền: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
-    `Trạng thái: ${buildOnlineOrderTelegramStatusLabel(orderData.status)}`,
-    '',
-    'Món hàng:',
-    itemLines,
-  ].join('\n');
+  return telegramOnlineOrders.buildOnlineOrderTelegramSummary(orderId, orderData = {});
 }
 
 function buildOnlineOrderTelegramStatusLabelClean(status) {
-  switch (String(status || '').trim().toLowerCase()) {
-    case 'approved':
-      return 'ĐÃ XÁC NHẬN';
-    case 'preparing':
-      return 'ĐANG LÀM';
-    case 'ready_to_serve':
-      return 'XONG';
-    case 'delivering':
-      return 'ĐANG GIAO';
-    case 'completed':
-      return 'ĐÃ GIAO';
-    case 'cancelled':
-    case 'rejected':
-      return 'ĐÃ HỦY';
-    default:
-      return 'CHỜ XÁC NHẬN';
-  }
+  return telegramOnlineOrders.buildOnlineOrderTelegramStatusLabelClean(status);
 }
 
 function buildOnlineOrderTelegramSummaryClean(orderId, orderData = {}) {
-  const items = Array.isArray(orderData.items) ? orderData.items : [];
-  const itemLines = items.length
-    ? items.map((item) => {
-      const note = normalizeTelegramText(String(item.note || item.notes || '').trim());
-      const noteText = note ? ` (${note})` : '';
-      return `- ${normalizeTelegramText(item.productName || item.name || 'Món')} x${Number(item.quantity || item.qty || 0)}${noteText}`;
-    }).join('\n')
-    : '- Không có chi tiết';
-
-  const address = [
-    orderData.customer?.addressLine1,
-    orderData.customer?.ward,
-    orderData.customer?.district,
-    orderData.customer?.city,
-  ].filter(Boolean).map(part => normalizeTelegramText(part)).join(', ');
-
-  return [
-    'ĐƠN ONLINE MỚI',
-    `Mã đơn: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
-    `Khách: ${normalizeTelegramText(String(orderData.customer?.fullName || '--').trim())}`,
-    `SDT: ${String(orderData.customer?.phone || '--').trim()}`,
-    `Địa chỉ: ${address || '--'}`,
-    `Thanh toán: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${normalizeTelegramText(String(orderData.paymentStatus || 'pending'))}`,
-    `Tổng tiền: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
-    `Trạng thái: ${buildOnlineOrderTelegramStatusLabelClean(orderData.status)}`,
-    '',
-    'Món hàng:',
-    itemLines,
-  ].join('\n');
+  return telegramOnlineOrders.buildOnlineOrderTelegramSummaryClean(orderId, orderData = {});
 }
 
 function mapOnlineOrderStatusFromPosItems(order = {}, posItems = []) {
-  const orderStatus = String(order?.status || '').trim().toLowerCase();
-  if (['cancelled', 'rejected'].includes(orderStatus)) return orderStatus;
-  if (orderStatus === 'completed') return 'completed';
-
-  const statuses = (Array.isArray(posItems) ? posItems : [])
-    .map(item => String(item?.kitchenStatus || '').trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!statuses.length) return 'approved';
-  if (statuses.every(status => status === 'skip')) return 'approved';
-  if (statuses.every(status => ['served', 'skip'].includes(status))) return 'delivering';
-  if (statuses.every(status => ['done', 'served', 'skip'].includes(status))) return 'ready_to_serve';
-  if (statuses.some(status => status === 'cooking')) return 'preparing';
-  return 'approved';
+  return telegramOnlineOrders.mapOnlineOrderStatusFromPosItems(order = {}, posItems = []);
 }
 
 async function syncOnlineOrderTelegramMessage(orderId, orderData = {}, fallback = {}) {
@@ -4151,7 +3474,7 @@ async function queryPurchases(timeRange, itemName) {
 }
 
 function json(res, code, data) {
-  res.status(code).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(data));
+  return generalUtils.json(res, code, data);
 }
 
 exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
@@ -5788,21 +5111,7 @@ async function loadStorePaymentSettings() {
 }
 
 function wrapSvgText(text, limit = 36) {
-  const normalized = String(text || '').trim();
-  if (!normalized) return [''];
-  const words = normalized.split(/\s+/);
-  const lines = [];
-  let current = '';
-  words.forEach(word => {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= limit) current = next;
-    else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  });
-  if (current) lines.push(current);
-  return lines.slice(0, 3);
+  return generalUtils.wrapSvgText(text, limit);
 }
 
 async function buildPaymentBillImageAsset(context) {
@@ -6080,106 +5389,19 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
 });
 
 function stripDataUrlBase64(value = '') {
-  return String(value || '').replace(/^data:[^;]+;base64,/i, '').trim();
+  return generalUtils.stripDataUrlBase64(value);
 }
 
 function extractFirstJson(text = '') {
-  const source = String(text || '').trim();
-  if (!source) return null;
-
-  const firstBraceIndex = source.indexOf('{');
-  if (firstBraceIndex < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = firstBraceIndex; index < source.length; index += 1) {
-    const char = source[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === '{') {
-      depth += 1;
-      continue;
-    }
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        const candidate = source.slice(firstBraceIndex, index + 1);
-        try {
-          return JSON.parse(candidate);
-        } catch (_) {
-          return null;
-        }
-      }
-    }
-  }
-
-  return null;
+  return generalUtils.extractFirstJson(text);
 }
 
 function mapToolActionType(actionType = '') {
-  const raw = String(actionType || '').trim();
-  if (raw === 'goi_mon_ban') return 'goi_mon';
-  if (raw === 'nhap_hang_thu_cong') return 'nhap_hang';
-  return raw || 'unknown';
+  return generalUtils.mapToolActionType(actionType);
 }
 
 function buildAiRouterPendingResponse(toolResult = {}, originalText = '') {
-  const actionType = String(toolResult.actionType || toolResult.tool || '').trim();
-  const payload = { ...(toolResult.payload || {}) };
-  let preview = toolResult.preview || '';
-  if (actionType === 'goi_mon_ban') {
-    if (!String(payload.ban || '').trim()) {
-      const table = extractTable(originalText);
-      const fallbackTable = String(originalText || '').match(/\d+/)?.[0] || '';
-      if (table || fallbackTable) payload.ban = table || fallbackTable;
-    }
-    if (Array.isArray(payload.items) && payload.items.length > 1) {
-      const ghostNames = new Set((Array.isArray(toolResult.suggested_items) ? toolResult.suggested_items : [])
-        .filter(item => normalizeVi(item?.ten_mon_ai || '') === 'goi')
-        .map(item => normalizeVi(item?.ten_mon_chinh_ta || ''))
-        .filter(Boolean));
-      payload.items = payload.items.filter((item) => {
-        const name = normalizeVi(item?.ten_mon || item?.name || '');
-        if (name === 'goi') return false;
-        if (ghostNames.has(name)) return false;
-        return true;
-      });
-    }
-    const count = Array.isArray(payload.items) ? payload.items.length : 0;
-    preview = `Lên order ${payload.ban ? `bàn ${payload.ban}` : ''}: ${count} món`;
-  }
-  return {
-    ok: true,
-    status: 'pending_confirmation',
-    message: String(preview ? `Cần xác nhận trước khi thực hiện: ${preview}` : (toolResult.message || 'Cần xác nhận trước khi thực hiện thao tác này.')),
-    action_type: mapToolActionType(actionType),
-    tool: actionType,
-    payload,
-    preview,
-    validation_summary: toolResult.validation_summary || null,
-    suggested_items: toolResult.suggested_items || null,
-    rejected_items: toolResult.rejected_items || null,
-  };
+  return generalUtils.buildAiRouterPendingResponse(toolResult, originalText);
 }
 
 function pickProvider() {
