@@ -34,7 +34,7 @@ vm.createContext(sandbox);
 new vm.Script(src, { filename: 'storage.js' }).runInContext(sandbox);
 
 const exported = sandbox.window.XekhoApp.utils.storage;
-const expected = ['formatBytes', 'getLocalStorageUsageBytes', 'blobToBase64', 'normalizeGoogleScriptWebAppUrl', 'isGoogleAppsScriptWebAppUrl', 'uploadFileToGoogleDriveByEndpoint'];
+const expected = ['formatBytes', 'getLocalStorageUsageBytes', 'blobToBase64', 'normalizeGoogleScriptWebAppUrl', 'isGoogleAppsScriptWebAppUrl', 'uploadFileToGoogleDriveByEndpoint', 'getTelegramReportTestUrl'];
 
 const missing = expected.filter(fn => typeof exported[fn] !== 'function');
 if (missing.length) {
@@ -76,6 +76,12 @@ if (!exported.isGoogleAppsScriptWebAppUrl('https://script.google.com/macros/s/AB
 }
 if (exported.isGoogleAppsScriptWebAppUrl('https://example.com')) {
   console.error('FAIL: should not match non-GAS url');
+  process.exit(1);
+}
+
+// getTelegramReportTestUrl
+if (exported.getTelegramReportTestUrl() !== 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram') {
+  console.error('FAIL: getTelegramReportTestUrl should return Cloud Function URL');
   process.exit(1);
 }
 

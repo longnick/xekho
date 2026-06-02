@@ -52,11 +52,20 @@
     return /^\d{4}$/.test(String(pin || '').trim());
   }
 
+  /** @param {Object|null|undefined} posUser @returns {{ updatedBy: string|null, updatedByRole: string|null }} */
+  function getCurrentOrderActorMetaFromUser(posUser) {
+    return {
+      updatedBy: posUser && posUser.name ? posUser.name : null,
+      updatedByRole: posUser && posUser.role ? posUser.role : null,
+    };
+  }
+
   // ── Export ────────────────────────────────────────────────────────────
   XekhoApp.auth.normalizeStaffRole = normalizeStaffRole;
   XekhoApp.auth.normalizeStaffStatus = normalizeStaffStatus;
   XekhoApp.auth.getStaffIdentity = getStaffIdentity;
   XekhoApp.auth.buildCurrentUserFromStaff = buildCurrentUserFromStaff;
   XekhoApp.auth.validatePinFormat = validatePinFormat;
+  XekhoApp.auth.getCurrentOrderActorMetaFromUser = getCurrentOrderActorMetaFromUser;
 
 })(typeof window !== 'undefined' ? window : globalThis);
