@@ -1,5 +1,21 @@
 # AI Changelog
 
+## 2026-06-02 14:50 - ESM Phase E5.10 render/filter refresh delegated controls
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed another bounded safe Phase E5 island after user approved continuing:
+
+- Added `app/esm/ui/render-refresh-controls.js` with an allowlisted delegated handler for low-risk render/filter refresh calls only.
+- Converted 12 inline handlers to `data-esm-render-refresh`: `renderLedger` x3, `renderMediaRefinery` x3, `renderAttendanceManagement` x3, and `applyStocktakeHistoryFilter` x3.
+- Updated `app/esm/main.js` to install/publish `renderRefreshControls` and bumped the ESM cache/version to `20260602-e5-render-refresh-controls`.
+- Added `scripts/verify-esm-render-refresh-controls.js` and expanded `scripts/verify-esm-entry.js`.
+
+Current E5 evidence: inline handler count reduced from 159 to 147. Remaining handlers are mostly submit/save/reset/POS/payment/customer/media/upload/import/export/cleanup flows and stay BLOCKED for safe autonomous one-shot migration pending browser/mobile QA or explicit higher-risk approval.
+
+Verification passed: ESM syntax checks, all ESM verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build, and `git diff --check`.
+
 ## 2026-06-02 14:20 - ESM Phase E5.9 modal overlay and close delegated controls
 
 Repo: `/home/longnick/projects/xekho`

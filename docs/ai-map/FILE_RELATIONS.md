@@ -373,3 +373,12 @@ Related files:
   - depends on: browser `document`, modal element IDs in `index.html`, and existing global `ImgZoom` for reset/detach.
   - used by: `app/esm/main.js`, `index.html` elements with `data-esm-modal-self-dismiss`, `data-esm-modal-close`, `data-esm-modal-close-self`, and `data-esm-image-zoom-*`, `scripts/verify-esm-modal-overlay-controls.js`.
   - notes: modal business logic remains in legacy globals; this island only preserves existing close/dismiss behavior.
+
+
+## ESM Phase E5.10 relations
+
+- `app/esm/ui/render-refresh-controls.js`
+  - role: delegated input/change/click handler island for low-risk render/filter refresh controls.
+  - depends on: browser `document`, existing legacy globals `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, and `applyStocktakeHistoryFilter`.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-render-refresh`, `scripts/verify-esm-render-refresh-controls.js`, and `scripts/verify-esm-entry.js`.
+  - notes: allowlisted only; it does not expose submit/save/reset/POS/payment/import/export flows.
