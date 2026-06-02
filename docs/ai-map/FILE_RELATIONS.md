@@ -364,3 +364,12 @@ Related files:
   - depends on: browser `document`, existing global `setReportMenuFilter(value)`, and existing global `resetReportFilters()`.
   - used by: `app/esm/main.js`, `index.html` report menu selects with `data-esm-report-menu-filter`, reset buttons with `data-esm-report-filter-reset`, `scripts/verify-esm-report-filter-controls.js`.
   - notes: report filter state/rendering remains in legacy global functions.
+
+
+## ESM Phase E5.9 relations
+
+- `app/esm/ui/modal-overlay-controls.js`
+  - role: delegated click handler island for low-risk modal overlay self-dismiss, modal close buttons, and image-zoom modal controls.
+  - depends on: browser `document`, modal element IDs in `index.html`, and existing global `ImgZoom` for reset/detach.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-modal-self-dismiss`, `data-esm-modal-close`, `data-esm-modal-close-self`, and `data-esm-image-zoom-*`, `scripts/verify-esm-modal-overlay-controls.js`.
+  - notes: modal business logic remains in legacy globals; this island only preserves existing close/dismiss behavior.

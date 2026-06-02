@@ -1610,7 +1610,7 @@
 
   <!-- Reset Confirmation Modal -->
   <div class="modal-overlay" id="reset-modal" style="align-items:center;padding:20px"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet-center"
       style="padding:24px;display:flex;flex-direction:column;gap:12px;align-items:stretch;">
       <div style="text-align:center;font-size:36px">⚠️</div>
@@ -1640,20 +1640,20 @@
         <button class="btn btn-secondary" style="flex:1"
           onclick="exportBackup();showToast('📥 Đã backup trước khi reset','success')">💾 Backup trước</button>
         <button class="btn btn-secondary" style="flex:1"
-          onclick="document.getElementById('reset-modal').classList.remove('active')">❌ Huỷ</button>
+          data-esm-modal-close="reset-modal">❌ Huỷ</button>
       </div>
     </div>
   </div>
 
 
   <!-- Purchase Modal -->
-  <div class="modal-overlay" id="purchase-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="purchase-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="purchase-modal-title">🚚 Nhập hàng mới</div>
         <button class="modal-close"
-          onclick="document.getElementById('purchase-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="purchase-modal">✕</button>
       </div>
       <div class="modal-body purchase-modal-body">
         <div class="purchase-split">
@@ -1767,13 +1767,13 @@
 
   <!-- Purchase Photo Batch Modal -->
   <div class="modal-overlay" id="purchase-photo-batch-modal"
-    onclick="if(event.target===this)document.getElementById('purchase-photo-batch-modal').classList.remove('active')">
+    data-esm-modal-close-self="purchase-photo-batch-modal">
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📷 Ảnh chứng từ (Batch)</div>
         <button class="modal-close"
-          onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="purchase-photo-batch-modal">✕</button>
       </div>
       <div class="modal-body">
         <div id="purchase-photo-batch-meta" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
@@ -1783,7 +1783,7 @@
           <button class="btn btn-danger" style="flex:1"
             onclick="deletePurchasePhotoBatch(window._activePurchasePhotoBatchId || '')">🗑️ Xóa batch</button>
           <button class="btn btn-secondary" style="flex:1"
-            onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">Đóng</button>
+            data-esm-modal-close="purchase-photo-batch-modal">Đóng</button>
         </div>
       </div>
     </div>
@@ -1791,16 +1791,16 @@
 
   <!-- Purchase Photo Full Modal -->
   <div class="modal-overlay" id="purchase-photo-full-modal"
-    onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+    data-esm-image-zoom-self-dismiss>
     <div class="modal-sheet zoom-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0;">
         <div class="modal-title">📷 Ảnh chứng từ</div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺
+          <button class="btn btn-xs btn-outline" data-esm-image-zoom-reset title="Khôi phục kích thước gốc">↺
             Reset</button>
           <button class="modal-close"
-            onclick="document.getElementById('purchase-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+            data-esm-image-zoom-close="purchase-photo-full-modal">✕</button>
         </div>
       </div>
       <div id="purchase-photo-full-wrap" class="photo-zoom-wrap">
@@ -1814,13 +1814,13 @@
   </div>
 
   <!-- Expense Modal -->
-  <div class="modal-overlay" id="expense-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="expense-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">💸 Thêm chi phí</div>
         <button class="modal-close"
-          onclick="document.getElementById('expense-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="expense-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="expense-form" onsubmit="submitExpense(event)">
@@ -1852,13 +1852,13 @@
   </div>
 
   <!-- Inventory Edit Modal -->
-  <div class="modal-overlay" id="inv-edit-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="inv-edit-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="inv-edit-modal-title">Cập nhật Nguyên liệu</div>
         <button class="modal-close"
-          onclick="document.getElementById('inv-edit-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="inv-edit-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="inv-edit-form" onsubmit="submitInvEdit(event)">
@@ -1925,13 +1925,13 @@
   </div>
 
   <!-- Menu Item Modal -->
-  <div class="modal-overlay" id="menu-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="menu-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="menu-modal-title">Thêm món mới</div>
         <button class="modal-close"
-          onclick="document.getElementById('menu-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="menu-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="menu-form" onsubmit="submitMenuItem(event)">
@@ -2153,12 +2153,12 @@
 
   <!-- Payment Method Modal -->
   <div class="modal-overlay" id="pay-method-modal" style="align-items:center;padding:20px"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet-center" style="padding:0;overflow:hidden">
       <div class="modal-header" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
         <div class="modal-title">💳 Chọn phương thức thanh toán</div>
         <button class="modal-close"
-          onclick="document.getElementById('pay-method-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="pay-method-modal">✕</button>
       </div>
       <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
         <button class="btn btn-block"
@@ -2172,33 +2172,33 @@
           💵 Thanh toán tiền mặt
         </button>
         <button class="btn btn-secondary btn-block"
-          onclick="document.getElementById('pay-method-modal').classList.remove('active')">❌ Huỷ</button>
+          data-esm-modal-close="pay-method-modal">❌ Huỷ</button>
       </div>
     </div>
   </div>
 
   <!-- Discount Detail Modal -->
   <div class="modal-overlay" id="discount-detail-modal"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📉 Chi tiết đơn có giảm giá</div>
         <button class="modal-close"
-          onclick="document.getElementById('discount-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="discount-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="discount-detail-content"></div>
     </div>
   </div>
 
   <!-- Order Detail Modal -->
-  <div class="modal-overlay" id="order-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="order-detail-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🧾 Chi tiết đơn hàng</div>
         <button class="modal-close"
-          onclick="document.getElementById('order-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="order-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="order-detail-content"></div>
     </div>
@@ -2206,16 +2206,16 @@
 
   <!-- Order Detail Photo Full Modal -->
   <div class="modal-overlay" id="order-detail-photo-full-modal"
-    onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+    data-esm-image-zoom-self-dismiss>
     <div class="modal-sheet zoom-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0;">
         <div class="modal-title">📷 Ảnh ghi nhận</div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺
+          <button class="btn btn-xs btn-outline" data-esm-image-zoom-reset title="Khôi phục kích thước gốc">↺
             Reset</button>
           <button class="modal-close"
-            onclick="document.getElementById('order-detail-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+            data-esm-image-zoom-close="order-detail-photo-full-modal">✕</button>
         </div>
       </div>
       <div id="order-detail-photo-full-wrap" class="photo-zoom-wrap">
@@ -2229,7 +2229,7 @@
   </div>
 
   <!-- Stock Alert Modal -->
-  <div class="modal-overlay" id="stock-alert-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="stock-alert-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
@@ -2238,7 +2238,7 @@
           <div id="stock-alert-count" style="font-size:12px;color:var(--danger);margin-top:2px"></div>
         </div>
         <button class="modal-close"
-          onclick="document.getElementById('stock-alert-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="stock-alert-modal">✕</button>
       </div>
       <div class="modal-body" id="stock-alert-body">
       </div>
@@ -2246,12 +2246,12 @@
   </div>
 
   <!-- Stocktake (Kiểm kê) Modal -->
-  <div class="modal-overlay" id="stocktake-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="stocktake-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet" style="max-height:90vh;display:flex;flex-direction:column;">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📋 Kiểm kê kho</div>
-        <button class="modal-close" onclick="document.getElementById('stocktake-modal').classList.remove('active')">✕</button>
+        <button class="modal-close" data-esm-modal-close="stocktake-modal">✕</button>
       </div>
       <div class="modal-body" style="flex:1;overflow-y:auto;padding-bottom:80px;">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
@@ -2266,13 +2266,13 @@
   </div>
 
   <!-- AI Full History Modal -->
-  <div class="modal-overlay" id="ai-history-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ai-history-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🕰️ Lịch sử yêu cầu AI</div>
         <button class="modal-close"
-          onclick="document.getElementById('ai-history-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="ai-history-modal">✕</button>
       </div>
       <div class="modal-body">
         <div id="ai-history-list" style="display:flex;flex-direction:column;gap:12px"></div>
@@ -2511,12 +2511,12 @@
   </script>
 
   <!-- NCC Add/Edit Modal -->
-  <div class="modal-overlay" id="ncc-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ncc-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="ncc-modal-title">🏭 Thêm Nhà Cung Cấp</div>
-        <button class="modal-close" onclick="document.getElementById('ncc-modal').classList.remove('active')">✕</button>
+        <button class="modal-close" data-esm-modal-close="ncc-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="ncc-form" onsubmit="submitNCC(event)">
@@ -2558,13 +2558,13 @@
   </div>
 
   <!-- NCC Detail Modal -->
-  <div class="modal-overlay" id="ncc-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ncc-detail-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🏭 Chi tiết Nhà Cung Cấp</div>
         <button class="modal-close"
-          onclick="document.getElementById('ncc-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="ncc-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="ncc-detail-content"></div>
     </div>
@@ -2572,13 +2572,13 @@
 
   <!-- Hướng dẫn Google Drive — báo cáo Excel -->
   <div class="modal-overlay" id="gdrive-report-guide-modal"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet" style="max-height:92vh;display:flex;flex-direction:column">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0">
         <div class="modal-title">📖 Hướng dẫn đẩy báo cáo lên Google Drive</div>
         <button type="button" class="modal-close"
-          onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')"
+          data-esm-modal-close="gdrive-report-guide-modal"
           aria-label="Đóng">✕</button>
       </div>
       <div class="modal-body"
@@ -2677,20 +2677,20 @@
           sẻ công khai. Ai biết URL có thể gửi POST (có thể thêm kiểm tra mật khẩu trong script nếu cần).
         </p>
         <button type="button" class="btn btn-primary btn-block" style="margin-top:18px"
-          onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')">Đã hiểu,
+          data-esm-modal-close="gdrive-report-guide-modal">Đã hiểu,
           đóng</button>
       </div>
     </div>
   </div>
 
   <!-- User Add/Edit Modal -->
-  <div class="modal-overlay" id="user-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="user-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="user-modal-title">Thêm Nhân Viên</div>
         <button type="button" class="modal-close"
-          onclick="document.getElementById('user-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="user-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="user-form" onsubmit="submitUser(event)">
