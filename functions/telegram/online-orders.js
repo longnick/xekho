@@ -1,8 +1,14 @@
+// @ts-check
 'use strict';
 const textUtils = require('../utils/text');
 
 const { escapeTelegramHtml, normalizeTelegramText, formatQtyVi, formatCurrencyVi } = textUtils;
 
+/**
+ * @param {any[]} items
+ * @param {Object} options
+ * @returns {string}
+ */
 function formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes = true } = {}) {
   const list = Array.isArray(items) ? items : [];
   if (!list.length) return `${bullet} Chưa có chi tiết món`;
@@ -16,6 +22,13 @@ function formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes
   }).join('\n');
 }
 
+/**
+ * @param {string} requestId
+ * @param {number} index
+ * @param {Object} requestItem
+ * @param {Object} product
+ * @returns {Object}
+ */
 function buildPosItemFromRequest(requestId, index, requestItem = {}, product = {}) {
   const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
   const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
@@ -42,6 +55,10 @@ function buildPosItemFromRequest(requestId, index, requestItem = {}, product = {
   };
 }
 
+/**
+ * @param {any[]} items
+ * @returns {string}
+ */
 function aggregateRequestStatusFromItems(items = []) {
   const statuses = items
     .map(item => String(item?.kitchenStatus || '').trim().toLowerCase())
@@ -54,6 +71,13 @@ function aggregateRequestStatusFromItems(items = []) {
   return 'approved';
 }
 
+/**
+ * @param {string} orderId
+ * @param {number} index
+ * @param {Object} orderItem
+ * @param {Object} product
+ * @returns {Object}
+ */
 function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {}) {
   const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
   const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
@@ -81,6 +105,10 @@ function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {
   };
 }
 
+/**
+ * @param {string} status
+ * @returns {string}
+ */
 function buildOnlineOrderTelegramStatusLabel(status) {
   switch (String(status || '').trim().toLowerCase()) {
     case 'approved':
@@ -101,6 +129,11 @@ function buildOnlineOrderTelegramStatusLabel(status) {
   }
 }
 
+/**
+ * @param {string} orderId
+ * @param {Object} orderData
+ * @returns {string}
+ */
 function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
   const items = Array.isArray(orderData.items) ? orderData.items : [];
   const itemLines = items.length
@@ -132,6 +165,10 @@ function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
   ].join('\n');
 }
 
+/**
+ * @param {string} status
+ * @returns {string}
+ */
 function buildOnlineOrderTelegramStatusLabelClean(status) {
   switch (String(status || '').trim().toLowerCase()) {
     case 'approved':
@@ -152,6 +189,11 @@ function buildOnlineOrderTelegramStatusLabelClean(status) {
   }
 }
 
+/**
+ * @param {string} orderId
+ * @param {Object} orderData
+ * @returns {string}
+ */
 function buildOnlineOrderTelegramSummaryClean(orderId, orderData = {}) {
   const items = Array.isArray(orderData.items) ? orderData.items : [];
   const itemLines = items.length
@@ -184,6 +226,11 @@ function buildOnlineOrderTelegramSummaryClean(orderId, orderData = {}) {
   ].join('\n');
 }
 
+/**
+ * @param {Object} order
+ * @param {any[]} posItems
+ * @returns {string}
+ */
 function mapOnlineOrderStatusFromPosItems(order = {}, posItems = []) {
   const orderStatus = String(order?.status || '').trim().toLowerCase();
   if (['cancelled', 'rejected'].includes(orderStatus)) return orderStatus;

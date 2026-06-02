@@ -1,8 +1,13 @@
+// @ts-check
 'use strict';
 
 const axios = require('axios');
 const { normalizeTelegramTextPreserveLines, normalizeTelegramText } = require('../utils/text');
 
+/**
+ * @param {{chatId: string, text: string, botToken: string}} params
+ * @returns {Promise<any>}
+ */
 async function sendTelegramHtmlMessage({ chatId, text, botToken }) {
   const finalBotToken = String(botToken || '').trim();
   const finalChatId = String(chatId || '').trim();
@@ -33,6 +38,10 @@ async function sendTelegramHtmlMessage({ chatId, text, botToken }) {
   return response.data;
 }
 
+/**
+ * @param {{chatId: string, text: string, botToken: string}} params
+ * @returns {Promise<any>}
+ */
 async function sendTelegramTextMessage({ chatId, text, botToken }) {
   const finalBotToken = String(botToken || '').trim();
   const finalChatId = String(chatId || '').trim();
@@ -62,6 +71,10 @@ async function sendTelegramTextMessage({ chatId, text, botToken }) {
   return response.data;
 }
 
+/**
+ * @param {{chatId: string, text: string, actionDocId: string, botToken: string}} params
+ * @returns {Promise<any>}
+ */
 async function sendTelegramActionConfirmation({ chatId, text, actionDocId, botToken }) {
   const finalBotToken = String(botToken || '').trim();
   const finalChatId = String(chatId || '').trim();
@@ -93,6 +106,10 @@ async function sendTelegramActionConfirmation({ chatId, text, actionDocId, botTo
   return response.data;
 }
 
+/**
+ * @param {{chatId: string, text: string, buttons?: any[], botToken: string, parseMode?: string}} params
+ * @returns {Promise<any>}
+ */
 async function sendTelegramInlineMessage({ chatId, text, buttons = [], botToken, parseMode = 'HTML' }) {
   const finalBotToken = String(botToken || '').trim();
   const finalChatId = String(chatId || '').trim();
@@ -132,6 +149,10 @@ async function sendTelegramInlineMessage({ chatId, text, buttons = [], botToken,
   return response.data;
 }
 
+/**
+ * @param {{chatId: string, photo: string, caption?: string, botToken: string, parseMode?: string, buttons?: any[]}} params
+ * @returns {Promise<any>}
+ */
 async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken, parseMode = 'HTML', buttons = [] }) {
   const finalBotToken = String(botToken || '').trim();
   const finalChatId = String(chatId || '').trim();
@@ -168,6 +189,10 @@ async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken,
   return response.data;
 }
 
+/**
+ * @param {{callbackQueryId: string, text: string, botToken: string}} params
+ * @returns {Promise<any>}
+ */
 async function answerTelegramCallback({ callbackQueryId, text, botToken }) {
   if (!callbackQueryId) return null;
   return axios.post(
@@ -181,6 +206,10 @@ async function answerTelegramCallback({ callbackQueryId, text, botToken }) {
   ).catch(() => null);
 }
 
+/**
+ * @param {{chatId: string, messageId: string, text: string, botToken: string}} params
+ * @returns {Promise<any>}
+ */
 async function editTelegramMessage({ chatId, messageId, text, botToken }) {
   if (!chatId || !messageId) return null;
   return axios.post(
@@ -195,6 +224,10 @@ async function editTelegramMessage({ chatId, messageId, text, botToken }) {
   ).catch(() => null);
 }
 
+/**
+ * @param {{chatId: string, messageId: string, text: string, buttons?: any[], botToken: string, parseMode?: string}} params
+ * @returns {Promise<any>}
+ */
 async function editTelegramInlineMessage({ chatId, messageId, text, buttons = [], botToken, parseMode = 'HTML' }) {
   if (!chatId || !messageId) return null;
   return axios.post(
@@ -217,6 +250,10 @@ async function editTelegramInlineMessage({ chatId, messageId, text, buttons = []
   ).catch(() => null);
 }
 
+/**
+ * @param {{botToken: string, photo: any[]}} params
+ * @returns {Promise<{base64: string, mimeType: string}>}
+ */
 async function getTelegramPhotoAsBase64({ botToken, photo }) {
   const list = Array.isArray(photo) ? photo : [];
   if (!list.length) throw new Error('Telegram photo is empty');

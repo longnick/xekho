@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 const telegramReports = require('./reports');
 const textUtils = require('../utils/text');
@@ -7,6 +8,10 @@ const { escapeTelegramHtml, formatCurrencyVi } = textUtils;
 
 // --- Date/Time helpers ---
 
+/**
+ * @param {Date} [date]
+ * @returns {{from: Date, toExclusive: Date}}
+ */
 function getVietnamDayRange(date = new Date()) {
   const parts = getVietnamDateParts(date);
   const from = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -7, 0, 0, 0));
@@ -15,6 +20,10 @@ function getVietnamDayRange(date = new Date()) {
 }
 
 
+/**
+ * @param {string} text
+ * @returns {string}
+ */
 function normalizeVi(text) {
   return String(text || '')
     .toLowerCase()
@@ -27,11 +36,19 @@ function normalizeVi(text) {
 }
 
 
+/**
+ * @param {any[]} values
+ * @returns {string[]}
+ */
 function uniqueTokens(values = []) {
   return [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(Boolean))];
 }
 
 
+/**
+ * @param {string} text
+ * @returns {{key: string, label: string}|null}
+ */
 function parseTimeEntity(text) {
   const t = normalizeVi(text);
   if (!t) return null;
@@ -44,6 +61,10 @@ function parseTimeEntity(text) {
 }
 
 
+/**
+ * @param {string} timeKey
+ * @returns {{from: Date, to: Date}}
+ */
 function buildDateRange(timeKey) {
   const now = new Date();
   const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
@@ -73,6 +94,10 @@ function buildDateRange(timeKey) {
 }
 
 
+/**
+ * @param {number} value
+ * @returns {string}
+ */
 function formatPercentVi(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return '0%';
@@ -80,6 +105,10 @@ function formatPercentVi(value) {
 }
 
 
+/**
+ * @param {number} value
+ * @returns {string}
+ */
 function formatMultipleVi(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return '0x';
@@ -87,12 +116,20 @@ function formatMultipleVi(value) {
 }
 
 
+/**
+ * @param {Date} [date]
+ * @returns {string}
+ */
 function getVietnamDateYmd(date = new Date()) {
   const parts = getVietnamDateParts(date);
   return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
 
+/**
+ * @param {string} ymd
+ * @returns {string}
+ */
 function formatVietnamDateDisplayFromYmd(ymd) {
   const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return String(ymd || '').trim();
@@ -100,6 +137,10 @@ function formatVietnamDateDisplayFromYmd(ymd) {
 }
 
 
+/**
+ * @param {string} ymd
+ * @returns {{from: Date, toExclusive: Date, ymd: string}}
+ */
 function buildVietnamAbsoluteDayRangeFromYmd(ymd) {
   const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) throw new Error(`Invalid date format: ${ymd}`);
@@ -112,6 +153,11 @@ function buildVietnamAbsoluteDayRangeFromYmd(ymd) {
 }
 
 
+/**
+ * @param {string} fromYmd
+ * @param {string} toYmd
+ * @returns {{from: Date, toExclusive: Date, fromYmd: string, toYmd: string, label: string}}
+ */
 function buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd) {
   const start = buildVietnamAbsoluteDayRangeFromYmd(fromYmd);
   const end = buildVietnamAbsoluteDayRangeFromYmd(toYmd);
@@ -128,6 +174,10 @@ function buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd) {
 }
 
 
+/**
+ * @param {string} text
+ * @returns {string|null}
+ */
 function parseExplicitDateInput(text) {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -143,6 +193,10 @@ function parseExplicitDateInput(text) {
 }
 
 
+/**
+ * @param {Date} [now]
+ * @returns {string}
+ */
 function getVietnamYesterdayYmd(now = new Date()) {
   const todayRange = getVietnamDayRange(now);
   const yesterdayStart = new Date(todayRange.from.getTime() - (24 * 60 * 60 * 1000));
@@ -150,6 +204,12 @@ function getVietnamYesterdayYmd(now = new Date()) {
 }
 
 
+/**
+ * @param {string} text
+ * @param {Date} now
+ * @param {Object} options
+ * @returns {Object}
+ */
 function buildAdsDateRangeFromText(text = '', now = new Date(), options = {}) {
   const normalized = normalizeVi(text);
   const defaultYesterday = options.defaultYesterday !== false;
@@ -196,6 +256,10 @@ function buildAdsDateRangeFromText(text = '', now = new Date(), options = {}) {
 
 // --- Ads channel helpers ---
 
+/**
+ * @param {Object} input
+ * @returns {Object}
+ */
 function buildAdsChannelMetrics(input = {}) {
   const spend = Number(input.spend || 0) || 0;
   const clicks = Number(input.clicks || 0) || 0;
@@ -222,6 +286,10 @@ function buildAdsChannelMetrics(input = {}) {
 }
 
 
+/**
+ * @param {any[]} channels
+ * @returns {Object}
+ */
 function sumAdsChannels(channels = []) {
   return buildAdsChannelMetrics(channels.reduce((sum, channel) => ({
     spend: sum.spend + Number(channel?.spend || 0),
@@ -243,11 +311,19 @@ function sumAdsChannels(channels = []) {
 }
 
 
+/**
+ * @param {number} value
+ * @returns {string}
+ */
 function formatIntVi(value) {
   return Math.round(Number(value || 0)).toLocaleString('vi-VN');
 }
 
 
+/**
+ * @param {Object} channel
+ * @returns {string[]}
+ */
 function buildAdsChannelLines(channel = {}) {
   if (!channel.configured) return ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
   return [
@@ -264,6 +340,10 @@ function buildAdsChannelLines(channel = {}) {
 }
 
 
+/**
+ * @param {Object} report
+ * @returns {string[]}
+ */
 function buildAdsInsightLines(report = {}) {
   const lines = [];
   const grossMargin = Number(report.revenue || 0) > 0
@@ -292,6 +372,11 @@ function buildAdsInsightLines(report = {}) {
 
 // --- Ads report builders ---
 
+/**
+ * @param {Object} report
+ * @param {Object} options
+ * @returns {string}
+ */
 function buildAdsRevenueDetailedMessage(report, options = {}) {
   const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '🌅 BÁO CÁO 7H ADS + DOANH THU';
   const dateLine = report.fromYmd === report.toYmd
@@ -356,10 +441,19 @@ function buildAdsRevenueDetailedMessage(report, options = {}) {
 }
 
 
+/**
+ * @param {Object} report
+ * @param {Object} options
+ * @returns {string}
+ */
 function buildAdsRevenueTelegramMessage(report, options = {}) {
   return buildAdsRevenueDetailedMessage(report, options);
   }
 
+/**
+ * @param {Object} range
+ * @returns {Promise<Object>}
+ */
 /* eslint-disable no-undef */
 async function buildAdsRevenueTelegramData(range) {
   const [posSummary, manualAds, metaAds, financialProfile] = await Promise.all([
