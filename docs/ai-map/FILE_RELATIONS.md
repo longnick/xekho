@@ -382,3 +382,12 @@ Related files:
   - depends on: browser `document`, existing legacy globals `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, and `applyStocktakeHistoryFilter`.
   - used by: `app/esm/main.js`, `index.html` elements with `data-esm-render-refresh`, `scripts/verify-esm-render-refresh-controls.js`, and `scripts/verify-esm-entry.js`.
   - notes: allowlisted only; it does not expose submit/save/reset/POS/payment/import/export flows.
+
+
+## ESM Phase E5.11 relations
+
+- `app/esm/ui/admin-render-controls.js`
+  - role: delegated click/input/change handler island for low-risk table/menu/inventory admin render controls.
+  - depends on: browser `document`, existing legacy globals `renderTables`, `renderStockList`, `renderMenuAdmin`, `renderMenuItems`, and legacy `menuSearch`.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-admin-render` / `data-esm-menu-items-search`, `scripts/verify-esm-admin-render-controls.js`, and `scripts/verify-esm-entry.js`.
+  - notes: allowlisted only; it does not expose submit/save/delete/reset/import/export/POS/payment/media flows.

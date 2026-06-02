@@ -7,6 +7,7 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
 import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom.js';
 import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
+import { callAdminRender, callMenuItemsSearch, installAdminRenderControls } from './ui/admin-render-controls.js';
 import { callFinancePeriod, installFinancePeriodControls } from './ui/finance-period.js';
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
@@ -43,6 +44,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var domAdapter = installDomAdapter(anyRoot);
   var storeAdapter = installStoreAdapter(anyRoot);
   var dbAdapter = installDbAdapter(anyRoot);
+  var adminRenderControls = installAdminRenderControls(anyRoot);
   var financePeriod = installFinancePeriodControls(anyRoot);
   var headerActions = installHeaderActions(anyRoot);
   var inventoryTabs = installInventoryTabs(anyRoot);
@@ -99,6 +101,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     db: dbAdapter,
   });
   XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
+    adminRenderControls: adminRenderControls,
     financePeriod: financePeriod,
     headerActions: headerActions,
     inventoryTabs: inventoryTabs,
@@ -143,6 +146,12 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
   XekhoApp.esm.facades.uiIslands = {
     loaded: true,
+    adminRenderControls: {
+      callAdminRenderPresent: adminRenderControls.callAdminRender === callAdminRender,
+      callMenuItemsSearchPresent: adminRenderControls.callMenuItemsSearch === callMenuItemsSearch,
+      installed: adminRenderControls.installed === true,
+      selectorPresent: adminRenderControls.selector === '[data-esm-admin-render], [data-esm-menu-items-search]',
+    },
     financePeriod: {
       callFinancePeriodPresent: financePeriod.callFinancePeriod === callFinancePeriod,
       installed: financePeriod.installed === true,
@@ -208,7 +217,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-render-refresh-controls',
+    version: '20260602-e5-admin-render-controls',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
