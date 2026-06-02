@@ -7,9 +7,9 @@ Branch: `test/xe-kho-repo-implementer-skill`
 
 The repo is **not ready for one-shot ESM conversion**. Vite is installed and verified, and Phase E1 now provides a safe module-script bridge, but the app still mostly runs as classic-script/IIFE/global code. The safe path remains a staged frontend-only ESM migration that starts with leaf helpers and keeps compatibility globals until all inline handlers and global call sites are removed.
 
-Current ESM readiness estimate: **~50%**.
+Current ESM readiness estimate: **~55%**.
 
-E1/E2 status:
+E1/E2/E3/E4 status:
 
 - `app/esm/main.js` now loads as `<script type="module">` after the existing classic runtime.
 - `window.XekhoApp.esm.harness` records readiness without importing the `app.js` monolith.
@@ -19,10 +19,12 @@ E1/E2 status:
 - `scripts/verify-esm-dom-utils.js` and `scripts/verify-esm-leaf-facades.js` verify native dynamic imports plus global installers.
 - `app/esm/adapters/dom.js`, `store.js`, and `db.js` provide Phase E3 importable runtime adapters without importing `app.js` or Firebase directly.
 - `scripts/verify-esm-runtime-adapters.js` verifies DOM querying/events, read-only Store/appState access, and async DB readiness behavior.
+- `app/esm/ui/image-zoom.js` provides Phase E4 importable image zoom/pan UI island.
+- `scripts/verify-esm-ui-image-zoom.js` verifies controller attach/detach/reset behavior, listener cleanup, installer publishing, and classic `app.js` delegation marker.
 
 - Build tooling readiness: **~80%** — Vite config, npm scripts, TypeScript checks, and build command are present and working.
-- Frontend module boundary readiness: **~56%** — 19 extracted `app/` IIFE modules exist, 5 low-risk leaf helpers have importable ESM facades, and 3 runtime adapters are importable.
-- Runtime entry readiness: **~32%** — ESM can now access DOM/Store/appState/DB through adapters, but `app.js`, AI/offline scripts, and inline handlers still depend heavily on global script order.
+- Frontend module boundary readiness: **~60%** — 19 extracted `app/` IIFE modules exist, 5 low-risk leaf helpers, 3 runtime adapters, and 1 UI island are importable.
+- Runtime entry readiness: **~35%** — ESM can now access DOM/Store/appState/DB through adapters and one UI island, but `app.js`, AI/offline scripts, 243 inline handlers, and 31 local classic scripts still depend heavily on global script order.
 - Backend ESM readiness: **~10%** — package is `commonjs`; Cloud Functions and Node scripts are CommonJS. Backend should stay CommonJS until frontend migration is stable.
 
 ## Evidence from audit
@@ -161,52 +163,50 @@ Completed:
 
 Risk: medium; verified without POS/backend/data mutations.
 
-### Phase E4 — Convert leaf UI components only after adapter exists
+### Phase E4 — Convert leaf UI components only after adapter exists — COMPLETE
 
-Candidates:
+Completed first UI island:
 
-1. Image zoom/touch helper cluster currently near top of `app.js`.
-2. More/inventory modal navigation helpers.
-3. Stock alert popup renderer if isolated enough.
+1. Added `app/esm/ui/image-zoom.js` for image zoom/touch/pan behavior.
+2. Updated `app/esm/main.js` to import/install the island under `window.XekhoApp.esm.ui.imageZoom`.
+3. Updated classic `ImgZoom` in `app.js` to delegate `attach()`, `detach()`, and `reset()` when the ESM island is ready, while preserving original fallback logic.
+4. Added `scripts/verify-esm-ui-image-zoom.js` and expanded `scripts/verify-esm-entry.js`.
 
-Keep global wrappers until all inline handlers are replaced with event delegation/imported handlers.
+Risk: medium; verified without changing modal call sites or POS/backend/data flows.
 
-Risk: medium.
-Expected time: 1–2 days.
-
-### Phase E5 — Replace inline handlers and global calls gradually
+### Phase E5 — Replace inline handlers and global calls gradually — BLOCKED FOR ONE-SHOT
 
 Goal: make `index.html` and templates call imported/event-delegated handlers instead of global functions.
 
-Actions:
+Current evidence after E4:
 
-1. Inventory inline `onclick/onchange` usage in HTML/template strings.
-2. Convert one UI island at a time to delegated event listeners.
-3. Add browser/VM tests for each island.
+- `index.html` scan: 243 inline handlers.
+- Script scan: 31 local classic scripts, 2 local module scripts (`db.js`, `app/esm/main.js`).
+- Image zoom classic calls are now safely delegated, but most POS/inventory/report handlers still depend on globals.
+
+Safe next action: replace handlers one island at a time with deterministic tests and mobile Safari QA. Do not attempt repo-wide inline handler removal in one sprint.
 
 Risk: medium/high because POS UI can break if handlers disappear.
-Expected time: 2–4 days.
 
-### Phase E6 — Only then evaluate `package.json` `type` strategy
+### Phase E6 — Only then evaluate `package.json` `type` strategy — DEFERRED/BLOCKED
 
 Do not flip repo-wide `"type": "module"` now.
 
-Options later:
+Current decision:
 
-- Keep root `commonjs` and use `.mjs` for Vite/ESM config and frontend ESM entry files.
-- Or use nested package/config for frontend ESM only.
-- Backend Cloud Functions should remain CommonJS until a separate backend migration plan exists.
+- Keep root `commonjs`.
+- Continue using `<script type="module">` for browser ESM and `.mjs` for Vite config.
+- Backend Cloud Functions and Node scripts remain CommonJS.
 
-Risk: high if done too early.
-Expected time: separate planning sprint.
+Risk: high if done before E5 removes most global/inline handler coupling.
 
 ## Recommended immediate next sprint
 
-Move to **Phase E4 first isolated UI island** only after reviewing handler/global coupling:
+Phase E4 is complete. Remaining E phases are now gated by handler/package blockers:
 
-- Candidate: image zoom/touch helper cluster or another low-risk UI component that can keep global wrappers.
-- Use the E3 DOM/Store/DB adapters instead of importing `app.js`.
-- Keep root `package.json` as `commonjs`, keep classic scripts and inline/global handlers until each island is migrated safely, and verify with ESM smoke tests plus check/tsc/test/lint/build.
+- E5: inline handler cleanup requires island-by-island work and mobile QA because 243 inline handlers remain.
+- E6: package strategy remains `commonjs` until E5 is substantially complete.
+- E7/E8: no E7/E8 exists in the current documented plan.
 
 ## Do not do now
 

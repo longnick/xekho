@@ -235,6 +235,8 @@ const ImgZoom = (() => {
   }
 
   function attach(wrapEl, imgEl) {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.attach) return window.XekhoApp.esm.ui.imageZoom.attach(wrapEl, imgEl);
     detach();
     _img = imgEl;
     _wrap = wrapEl;
@@ -260,6 +262,8 @@ const ImgZoom = (() => {
   }
 
   function detach() {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.detach) return window.XekhoApp.esm.ui.imageZoom.detach();
     if (_wrap) {
       _wrap.removeEventListener('touchstart', _onTouchStart);
       _wrap.removeEventListener('touchmove', _onTouchMove);
@@ -275,6 +279,8 @@ const ImgZoom = (() => {
   }
 
   function reset() {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.reset) return window.XekhoApp.esm.ui.imageZoom.reset();
     _scale = 1; _translateX = 0; _translateY = 0;
     if (_img) _applyTransform();
   }
