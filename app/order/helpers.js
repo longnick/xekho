@@ -249,6 +249,65 @@
   XekhoApp.order._calculateOnlineOrderTotal = _calculateOnlineOrderTotal;
   XekhoApp.order._resolveOnlineOrderDocId = _resolveOnlineOrderDocId;
 
+  function _resolveDishCostPerUnit(dish, inventoryList) {
+    if (!dish) return 0;
+    var inv = Array.isArray(inventoryList) ? inventoryList : [];
+    var dishCost = Number(dish.cost || 0);
+    if (dish.itemType === ITEM_TYPES.RETAIL) {
+      var linked = null;
+      for (var i = 0; i < inv.length; i++) {
+        if (inv[i].id === dish.linkedInventoryId) { linked = inv[i]; break; }
+      }
+      if (!linked) {
+        var dishNameKey = normalizeViKey(dish.name);
+        for (var j = 0; j < inv.length; j++) {
+          if (normalizeViKey(inv[j].name) === dishNameKey) { linked = inv[j]; break; }
+        }
+      }
+      return Number((linked && linked.costPerUnit) || dishCost || 0);
+    }
+    if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+      dishCost = dish.ingredients.reduce(function (sum, ing) {
+        var stock = null;
+        for (var k = 0; k < inv.length; k++) {
+          if (inv[k].name === ing.name) { stock = inv[k]; break; }
+        }
+        return sum + (Number(stock && stock.costPerUnit || 0) * Number(ing.qty || 0));
+      }, 0);
+    }
+    return Number(dishCost || 0);
+  }
+  XekhoApp.order._resolveDishCostPerUnit = _resolveDishCostPerUnit;
+
+  function normalizeMenuItemModel(item, inventory) {
+    item = item || {};
+    if (!Array.isArray(inventory)) {
+      if (typeof global._getInventory === 'function') inventory = global._getInventory();
+      else if (global.Store && typeof global.Store.getInventory === 'function') inventory = global.Store.getInventory();
+      else inventory = [];
+    }
+    var itemType = inferMenuItemType(item);
+    var kitchenRoutingRaw = String(item.kitchenRouting || item.kitchenStation || '').trim().toLowerCase();
+    var kitchenRouting = itemType === ITEM_TYPES.RETAIL
+      ? 'skip'
+      : (['all', 'kitchen_1', 'kitchen_2', 'skip'].indexOf(kitchenRoutingRaw) !== -1 ? kitchenRoutingRaw : 'all');
+    var normalized = {
+      unit: normalizeUnitText(item.unit),
+      itemType: itemType,
+      kitchenRouting: kitchenRouting,
+      linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
+      ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
+    };
+    var merged = {};
+    var key;
+    for (key in item) { if (Object.prototype.hasOwnProperty.call(item, key)) merged[key] = item[key]; }
+    for (key in normalized) { if (Object.prototype.hasOwnProperty.call(normalized, key)) merged[key] = normalized[key]; }
+    var liveCost = _resolveDishCostPerUnit(merged, inventory);
+    merged.cost = Number(liveCost || item.cost || 0);
+    return merged;
+  }
+  XekhoApp.order.normalizeMenuItemModel = normalizeMenuItemModel;
+
   // Legacy global fallbacks
   if (typeof global.isCompletedHistoryOrderForUi !== 'function') global.isCompletedHistoryOrderForUi = isCompletedHistoryOrderForUi;
   if (typeof global.isVisibleHistoryOrderForUi !== 'function') global.isVisibleHistoryOrderForUi = isVisibleHistoryOrderForUi;
