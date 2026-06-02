@@ -1361,18 +1361,12 @@ function _attendanceDateFilterRange() {
 }
 
 function _getPayrollProfile() {
-  const profile = window.appState?.settings?.financial_profile || {};
-  const monthly = profile.monthly_fixed_costs || {};
-  const managementSalary = Number(profile.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
-  return {
-    profile,
-    monthly,
-    managementSalary,
-    rent: Number(monthly.rent || 0) || 0,
-    utilities: Number(monthly.utilities || 0) || 0,
-    other: Number(monthly.other || 0) || 0,
-  };
-}
+    if (window.XekhoApp?.utils?.fixedcost?._getPayrollProfile) return window.XekhoApp.utils.fixedcost._getPayrollProfile();
+    const profile = window.appState?.settings?.financial_profile || {};
+    const monthly = profile.monthly_fixed_costs || {};
+    const managementSalary = Number(profile.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
+    return { profile, monthly, managementSalary, rent: Number(monthly.rent || 0) || 0, utilities: Number(monthly.utilities || 0) || 0, other: Number(monthly.other || 0) || 0 };
+  }
 
 function renderPayrollProfile() {
   const wrap = document.getElementById('settings-payroll-profile');
@@ -2726,25 +2720,14 @@ function normalizeUnitText(unit) {
 }
 
 function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
-  const itemType = inferMenuItemType(item);
-  const kitchenRoutingRaw = String(item.kitchenRouting || item.kitchenStation || '').trim().toLowerCase();
-  const kitchenRouting = itemType === ITEM_TYPES.RETAIL
-    ? 'skip'
-    : (['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(kitchenRoutingRaw) ? kitchenRoutingRaw : 'all');
-  const normalized = {
-    ...item,
-    unit: normalizeUnitText(item.unit),
-    itemType,
-    kitchenRouting,
-    linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null,
-    ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
-  };
-  const liveCost = _resolveDishCostPerUnit(normalized, inventory);
-  return {
-    ...normalized,
-    cost: Number(liveCost || item.cost || 0),
-  };
-}
+    if (window.XekhoApp?.order?.normalizeMenuItemModel) return window.XekhoApp.order.normalizeMenuItemModel(item, inventory);
+    const itemType = inferMenuItemType(item);
+    const kitchenRoutingRaw = String(item.kitchenRouting || item.kitchenStation || '').trim().toLowerCase();
+    const kitchenRouting = itemType === ITEM_TYPES.RETAIL ? 'skip' : (['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(kitchenRoutingRaw) ? kitchenRoutingRaw : 'all');
+    const normalized = { ...item, unit: normalizeUnitText(item.unit), itemType, kitchenRouting, linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null, ingredients: Array.isArray(item.ingredients) ? item.ingredients : [] };
+    const liveCost = _resolveDishCostPerUnit(normalized, inventory);
+    return { ...normalized, cost: Number(liveCost || item.cost || 0) };
+  }
 
 function getInventoryTypeBadge(itemType) {
   if (itemType === ITEM_TYPES.RETAIL) return '<span class="badge badge-info">Bán thẳng</span>';
@@ -4100,22 +4083,19 @@ function renderMenuItems() {
 }
 
 function _resolveDishCostPerUnit(dish, inventoryList) {
-  if (!dish) return 0;
-  const inv = Array.isArray(inventoryList) ? inventoryList : [];
-  let dishCost = Number(dish.cost || 0);
-  if (dish.itemType === ITEM_TYPES.RETAIL) {
-    const linked = inv.find(i => i.id === dish.linkedInventoryId)
-      || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
-    return Number(linked?.costPerUnit || dishCost || 0);
+    if (window.XekhoApp?.order?._resolveDishCostPerUnit) return window.XekhoApp.order._resolveDishCostPerUnit(dish, inventoryList);
+    if (!dish) return 0;
+    const inv = Array.isArray(inventoryList) ? inventoryList : [];
+    let dishCost = Number(dish.cost || 0);
+    if (dish.itemType === ITEM_TYPES.RETAIL) {
+      const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
+      return Number(linked?.costPerUnit || dishCost || 0);
+    }
+    if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+      dishCost = dish.ingredients.reduce((sum, ing) => { const stock = inv.find(i => i.name === ing.name); return sum + (Number(stock?.costPerUnit || 0) * Number(ing.qty || 0)); }, 0);
+    }
+    return Number(dishCost || 0);
   }
-  if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
-    dishCost = dish.ingredients.reduce((sum, ing) => {
-      const stock = inv.find(i => i.name === ing.name);
-      return sum + (Number(stock?.costPerUnit || 0) * Number(ing.qty || 0));
-    }, 0);
-  }
-  return Number(dishCost || 0);
-}
 
 function addToOrder(itemId) {
   if (!requireOpenShiftForOrderFlow('add_to_order')) return;
@@ -7753,35 +7733,17 @@ function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
   }
 
 function getFixedCostProfileForReports() {
-  const financialProfile = window.appState?.settings?.financial_profile || {};
-  const monthly = financialProfile?.monthly_fixed_costs || {};
-  const monthlyManagementSalary = Number(
-    financialProfile?.management_salary_monthly
-    ?? monthly.management_salary
-    ?? monthly.manager_salary
-    ?? 0
-  ) || 0;
-  const itemizedMonthlyFixedCostTotal =
-    (Number(monthly.rent || 0) || 0)
-    + monthlyManagementSalary
-    + (Number(monthly.utilities || 0) || 0)
-    + (Number(monthly.other || 0) || 0);
-  const monthlyFixedCostTotal = itemizedMonthlyFixedCostTotal || (Number(monthly.total || 0) || 0);
-  const dailyFixedCost =
-    Number(financialProfile?.daily_fixed_cost || 0)
-    || (monthlyFixedCostTotal > 0 ? Math.round(monthlyFixedCostTotal / 30) : 0);
-  const dailyManagementSalary = monthlyManagementSalary > 0 ? Math.round(monthlyManagementSalary / 30) : 0;
-  const targetMonthlyProfit = Number(financialProfile?.target_monthly_profit || 0) || 0;
-
-  return {
-    monthlyFixedCostTotal,
-    dailyFixedCost,
-    monthlyManagementSalary,
-    dailyManagementSalary,
-    targetMonthlyProfit,
-    isConfigured: monthlyFixedCostTotal > 0 || dailyFixedCost > 0 || targetMonthlyProfit > 0,
-  };
-}
+    if (window.XekhoApp?.utils?.fixedcost?.getFixedCostProfileForReports) return window.XekhoApp.utils.fixedcost.getFixedCostProfileForReports();
+    const financialProfile = window.appState?.settings?.financial_profile || {};
+    const monthly = financialProfile?.monthly_fixed_costs || {};
+    const monthlyManagementSalary = Number(financialProfile?.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
+    const itemizedMonthlyFixedCostTotal = (Number(monthly.rent || 0) || 0) + monthlyManagementSalary + (Number(monthly.utilities || 0) || 0) + (Number(monthly.other || 0) || 0);
+    const monthlyFixedCostTotal = itemizedMonthlyFixedCostTotal || (Number(monthly.total || 0) || 0);
+    const dailyFixedCost = Number(financialProfile?.daily_fixed_cost || 0) || (monthlyFixedCostTotal > 0 ? Math.round(monthlyFixedCostTotal / 30) : 0);
+    const dailyManagementSalary = monthlyManagementSalary > 0 ? Math.round(monthlyManagementSalary / 30) : 0;
+    const targetMonthlyProfit = Number(financialProfile?.target_monthly_profit || 0) || 0;
+    return { monthlyFixedCostTotal, dailyFixedCost, monthlyManagementSalary, dailyManagementSalary, targetMonthlyProfit, isConfigured: monthlyFixedCostTotal > 0 || dailyFixedCost > 0 || targetMonthlyProfit > 0 };
+  }
 
 function countInclusiveReportDays(fromDate, toDate) {
     if (window.XekhoApp?.utils?.categorize?.countInclusiveReportDays) return window.XekhoApp.utils.categorize.countInclusiveReportDays(fromDate, toDate);
@@ -7792,101 +7754,13 @@ function countInclusiveReportDays(fromDate, toDate) {
   }
 
 function buildAdsRevenueReportHtml(summary = {}) {
-  const fmtMoney = (value) => `${fmt(Number(value || 0))}đ`;
-  const posMargin = Number(summary.posRevenue || 0) > 0
-    ? ((Number(summary.grossProfit || 0) / Number(summary.posRevenue || 0)) * 100).toFixed(1)
-    : '0.0';
-  const roasText = summary.adsSpendTotal > 0
-    ? `${Number(summary.roas || 0).toFixed(2)}x`
-    : '—';
-  const adsDataNote = summary.adsEntriesCount > 0 || summary.snapshotAdsDays > 0
-    ? `<div class="report-ads-note">${summary.dataSourceNote || ''}</div>`
-    : `<div class="empty-state report-ads-empty">
-        <div class="empty-text">Chưa có dữ liệu ads trong khoảng này. Hệ thống ưu tiên daily_revenue_snapshot.ads_spend_today, sau đó mới cộng các mục chi phí marketing/Facebook/TikTok nếu có.</div>
-      </div>`;
-
-  return `
-    <div class="report-ads-kpis">
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">Doanh thu POS</div>
-        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.posRevenue)}</div>
-      </div>
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">Đơn hàng</div>
-        <div class="stat-value report-ads-kpi-value">${fmt(summary.orderCount || 0)}</div>
-      </div>
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">Giá vốn</div>
-        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.cogsTotal)}</div>
-      </div>
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">Lãi gộp</div>
-        <div class="stat-value report-ads-kpi-value" style="color:var(--success)">${fmtMoney(summary.grossProfit)}</div>
-      </div>
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">Chi ads</div>
-        <div class="stat-value report-ads-kpi-value" style="color:var(--warning)">${fmtMoney(summary.adsSpendTotal)}</div>
-      </div>
-      <div class="stat-card report-ads-kpi">
-        <div class="stat-label">ROAS</div>
-        <div class="stat-value report-ads-kpi-value">${roasText}</div>
-      </div>
-    </div>
-
-    <div class="report-ads-grid">
-      <div class="card report-ads-panel">
-        <div class="card-title report-ads-panel-title">Tóm tắt khoảng ngày</div>
-        <div class="report-ads-meta-grid">
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Từ ngày</div>
-            <div class="report-ads-meta-value">${summary.fromDate || ''}</div>
-          </div>
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Đến ngày</div>
-            <div class="report-ads-meta-value">${summary.toDate || ''}</div>
-          </div>
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Món đã bán</div>
-            <div class="report-ads-meta-value">${fmt(summary.itemQty || 0)} phần</div>
-          </div>
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Biên lãi gộp</div>
-            <div class="report-ads-meta-value">${posMargin}%</div>
-          </div>
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Chi phí cố định / ngày</div>
-            <div class="report-ads-meta-value">${fmtMoney(summary.fixedCostDaily)}</div>
-          </div>
-          <div class="report-ads-meta-item">
-            <div class="report-ads-meta-label">Số ngày phân bổ</div>
-            <div class="report-ads-meta-value">${fmt(summary.reportDays || 0)} ngày</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card report-ads-panel">
-        <div class="card-title report-ads-panel-title">Chi phí & lợi nhuận</div>
-        <div class="report-ads-breakdown">
-          <div class="report-ads-row"><span>Facebook Ads</span><strong>${fmtMoney(summary.facebookAdsSpend)}</strong></div>
-          <div class="report-ads-row"><span>TikTok Ads</span><strong>${fmtMoney(summary.tiktokAdsSpend)}</strong></div>
-          <div class="report-ads-row"><span>Marketing khác</span><strong>${fmtMoney(summary.otherAdsSpend)}</strong></div>
-          <div class="report-ads-row"><span>Nhập hàng</span><strong>${fmtMoney(summary.purchaseSpend)}</strong></div>
-          <div class="report-ads-row"><span>Chi phí khác, gồm lương nhân viên chấm công</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>
-          <div class="report-ads-row"><span>Lương quản lý kỳ báo cáo</span><strong>${fmtMoney(summary.managementSalaryTotal)}</strong></div>
-          <div class="report-ads-row"><span>Chi phí cố định khác kỳ báo cáo</span><strong>${fmtMoney(summary.otherFixedCostTotal)}</strong></div>
-          <div class="report-ads-row report-ads-row-total">
-            <span>Lợi nhuận sau ads, chi phí khác & chi phí cố định</span>
-            <strong style="color:${summary.netAfterAdsAndExpenses >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtMoney(summary.netAfterAdsAndExpenses)}</strong>
-          </div>
-        </div>
-        ${summary.snapshotAdsDays > 0 ? `<div class="report-ads-pill">Meta Ads snapshot: ${fmt(summary.snapshotAdsDays)} ngày</div>` : ''}
-        ${summary.expenseAdsDays > 0 ? `<div class="report-ads-pill">Chi phí nội bộ: ${fmt(summary.expenseAdsDays)} dòng ads</div>` : ''}
-        ${summary.fixedCostConfigured ? `<div class="report-ads-pill">Chi phí cố định: ${fmtMoney(summary.fixedCostDaily)}/ngày, trong đó lương quản lý ${fmtMoney(summary.dailyManagementSalary)}/ngày</div>` : '<div class="report-ads-pill">Chi phí cố định: chưa cấu hình</div>'}
-        ${adsDataNote}
-      </div>
-    </div>
-  `;
-}
+    if (window.XekhoApp?.report?.buildAdsRevenueReportHtml) return window.XekhoApp.report.buildAdsRevenueReportHtml(summary);
+    const fmtMoney = (value) => `${fmt(Number(value || 0))}\u0111`;
+    const posMargin = Number(summary.posRevenue || 0) > 0 ? ((Number(summary.grossProfit || 0) / Number(summary.posRevenue || 0)) * 100).toFixed(1) : '0.0';
+    const roasText = summary.adsSpendTotal > 0 ? `${Number(summary.roas || 0).toFixed(2)}x` : '\u2014';
+    const adsDataNote = summary.adsEntriesCount > 0 || summary.snapshotAdsDays > 0 ? `<div class="report-ads-note">${summary.dataSourceNote || ''}</div>` : `<div class="empty-state report-ads-empty"><div class="empty-text">Ch\u01B0a c\u00F3 d\u1EEF li\u1EC7u ads trong kho\u1EA3ng n\u00E0y. H\u1EC7 th\u1ED1ng \u01B0u ti\u00EAn daily_revenue_snapshot.ads_spend_today, sau \u0111\u00F3 m\u1EDBi c\u1ED9ng c\u00E1c m\u1EE5c chi ph\u00ED marketing/Facebook/TikTok n\u1EBFu c\u00F3.</div></div>`;
+    return `\n    <div class="report-ads-kpis">\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Doanh thu POS</div>\n        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.posRevenue)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">\u0110\u01A1n h\u00E0ng</div>\n        <div class="stat-value report-ads-kpi-value">${fmt(summary.orderCount || 0)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Gi\u00E1 v\u1ED1n</div>\n        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.cogsTotal)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">L\u00E3i g\u1ED9p</div>\n        <div class="stat-value report-ads-kpi-value" style="color:var(--success)">${fmtMoney(summary.grossProfit)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Chi ads</div>\n        <div class="stat-value report-ads-kpi-value" style="color:var(--warning)">${fmtMoney(summary.adsSpendTotal)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">ROAS</div>\n        <div class="stat-value report-ads-kpi-value">${roasText}</div>\n      </div>\n    </div>\n\n    <div class="report-ads-grid">\n      <div class="card report-ads-panel">\n        <div class="card-title report-ads-panel-title">T\u00F3m t\u1EAFt kho\u1EA3ng ng\u00E0y</div>\n        <div class="report-ads-meta-grid">\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">T\u1EEB ng\u00E0y</div>\n            <div class="report-ads-meta-value">${summary.fromDate || ''}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">\u0110\u1EBFn ng\u00E0y</div>\n            <div class="report-ads-meta-value">${summary.toDate || ''}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">M\u00F3n \u0111\u00E3 b\u00E1n</div>\n            <div class="report-ads-meta-value">${fmt(summary.itemQty || 0)} ph\u1EA7n</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">Bi\u00EAn l\u00E3i g\u1ED9p</div>\n            <div class="report-ads-meta-value">${posMargin}%</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh / ng\u00E0y</div>\n            <div class="report-ads-meta-value">${fmtMoney(summary.fixedCostDaily)}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">S\u1ED1 ng\u00E0y ph\u00E2n b\u1ED5</div>\n            <div class="report-ads-meta-value">${fmt(summary.reportDays || 0)} ng\u00E0y</div>\n          </div>\n        </div>\n      </div>\n\n      <div class="card report-ads-panel">\n        <div class="card-title report-ads-panel-title">Chi ph\u00ED & l\u1EE3i nhu\u1EADn</div>\n        <div class="report-ads-breakdown">\n          <div class="report-ads-row"><span>Facebook Ads</span><strong>${fmtMoney(summary.facebookAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>TikTok Ads</span><strong>${fmtMoney(summary.tiktokAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>Marketing kh\u00E1c</span><strong>${fmtMoney(summary.otherAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>Nh\u1EADp h\u00E0ng</span><strong>${fmtMoney(summary.purchaseSpend)}</strong></div>\n          <div class="report-ads-row"><span>Chi ph\u00ED kh\u00E1c, g\u1ED3m l\u01B0\u01A1ng nh\u00E2n vi\u00EAn ch\u1EA5m c\u00F4ng</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>\n          <div class="report-ads-row"><span>L\u01B0\u01A1ng qu\u1EA3n l\u00FD k\u1EF3 b\u00E1o c\u00E1o</span><strong>${fmtMoney(summary.managementSalaryTotal)}</strong></div>\n          <div class="report-ads-row"><span>Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh kh\u00E1c k\u1EF3 b\u00E1o c\u00E1o</span><strong>${fmtMoney(summary.otherFixedCostTotal)}</strong></div>\n          <div class="report-ads-row report-ads-row-total">\n            <span>L\u1EE3i nhu\u1EADn sau ads, chi ph\u00ED kh\u00E1c & chi ph\u00ED c\u1ED1 \u0111\u1ECBnh</span>\n            <strong style="color:${summary.netAfterAdsAndExpenses >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtMoney(summary.netAfterAdsAndExpenses)}</strong>\n          </div>\n        </div>\n        ${summary.snapshotAdsDays > 0 ? '<div class="report-ads-pill">Meta Ads snapshot: ' + fmt(summary.snapshotAdsDays) + ' ng\u00E0y</div>' : ''}${summary.expenseAdsDays > 0 ? '<div class="report-ads-pill">Chi ph\u00ED n\u1ED9i b\u1ED9: ' + fmt(summary.expenseAdsDays) + ' d\u00F2ng ads</div>' : ''}${summary.fixedCostConfigured ? '<div class="report-ads-pill">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh: ' + fmtMoney(summary.fixedCostDaily) + '/ng\u00E0y, trong \u0111\u00F3 l\u01B0\u01A1ng qu\u1EA3n l\u00FD ' + fmtMoney(summary.dailyManagementSalary) + '/ng\u00E0y</div>' : '<div class="report-ads-pill">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh: ch\u01B0a c\u1EA5u h\u00ECnh</div>'}\n        ${adsDataNote}\n      </div>\n    </div>\n  `;
+  }
 
 function loadAdsRevenueReport() {
   const resultEl = document.getElementById('ads-revenue-report-result');
