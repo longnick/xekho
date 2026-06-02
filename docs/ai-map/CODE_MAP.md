@@ -521,3 +521,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.6 Finance Period Controls
 
 - `app/esm/ui/finance-period.js`: importable delegated finance period island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.financePeriod`; replaces five finance period inline handlers with `data-esm-finance-period`. Verified by `scripts/verify-esm-finance-period.js`.
+
+
+## ESM Phase E5.7 Report Transaction Filters
+
+- `app/esm/ui/report-transaction-filters.js`: importable delegated report transaction filter island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportTransactionFilters`; replaces six duplicated report transaction filter inline handlers with `data-esm-report-transaction-filter`. Verified by `scripts/verify-esm-report-transaction-filters.js`.
