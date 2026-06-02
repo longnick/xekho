@@ -1,20 +1,27 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @returns {function(*): string} */
   function _resolveRepairVietnameseText() {
-    if (typeof global.repairVietnameseText === 'function') return global.repairVietnameseText;
-    if (global.XekhoApp && global.XekhoApp.ui && typeof global.XekhoApp.ui.repairVietnameseText === 'function') return global.XekhoApp.ui.repairVietnameseText;
+    if (typeof _global.repairVietnameseText === 'function') return _global.repairVietnameseText;
+    if (_global.XekhoApp && _global.XekhoApp.ui && typeof _global.XekhoApp.ui.repairVietnameseText === 'function') return _global.XekhoApp.ui.repairVietnameseText;
     return function (t) { return String(t || ''); };
   }
 
+  /** @returns {function(string): string} */
   function _resolveNormalizeViKey() {
-    if (typeof global.normalizeViKey === 'function') return global.normalizeViKey;
-    if (global.XekhoApp && global.XekhoApp.order && typeof global.XekhoApp.order.normalizeViKey === 'function') return global.XekhoApp.order.normalizeViKey;
+    if (typeof _global.normalizeViKey === 'function') return _global.normalizeViKey;
+    if (_global.XekhoApp && _global.XekhoApp.order && typeof _global.XekhoApp.order.normalizeViKey === 'function') return _global.XekhoApp.order.normalizeViKey;
     return function (t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
   }
 
+  /** @param {*} input @returns {string} */
   function normalizeExpenseCategoryLabel(input) {
     var rvt = _resolveRepairVietnameseText();
     var nvk = _resolveNormalizeViKey();
@@ -38,6 +45,7 @@
     return raw;
   }
 
+  /** @param {Object} expense @returns {'facebook'|'tiktok'|''} */
   function detectAdsExpensePlatform(expense) {
     expense = expense || {};
     var rvt = _resolveRepairVietnameseText();
@@ -50,6 +58,7 @@
     return '';
   }
 
+  /** @param {Object} expense @returns {boolean} */
   function isAdsExpenseEntry(expense) {
     expense = expense || {};
     var rvt = _resolveRepairVietnameseText();
@@ -65,6 +74,7 @@
       || key.includes('marketing');
   }
 
+  /** @param {string} status @returns {'success'|'danger'|'warning'|'info'} */
   function mediaRefineryStatusClass(status) {
     var s = String(status || '').toUpperCase();
     if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].indexOf(s) !== -1) return 'success';
@@ -73,10 +83,12 @@
     return 'info';
   }
 
+  /** @param {string} fromDate @param {string} toDate @returns {number} */
   function countInclusiveReportDays(fromDate, toDate) {
     var start = new Date(String(fromDate || '').trim() + 'T00:00:00');
     var end = new Date(String(toDate || '').trim() + 'T00:00:00');
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    // @ts-ignore — Date subtraction is valid JS but TS strict mode flags it
     return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
   }
 

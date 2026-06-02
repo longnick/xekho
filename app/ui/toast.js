@@ -4,15 +4,21 @@
  * Provides XekhoApp.ui.toast and repairVietnameseText via IIFE/global namespace.
  * Loaded before app.js so showToast() is available everywhere.
  */
+// @ts-check
 (function (global) {
   'use strict';
 
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.ui = XekhoApp.ui || {};
 
   // ── repairVietnameseText (shared helper) ──────────────────────────────
+  /** @type {string[]} */
   var BAD_TOKENS = ['\uFFFD', 'Ã', 'Â', 'Ä\u0091', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
 
+  /** @param {*} input @returns {string} */
   function repairVietnameseText(input) {
     var str = String(input == null ? '' : input);
     if (!str) return str;
@@ -32,6 +38,7 @@
   }
 
   // ── showToast ─────────────────────────────────────────────────────────
+  /** @param {string} msg @param {'success'|'danger'|'warning'|'info'} [type] @param {number} [duration] @returns {void} */
   function showToast(msg, type, duration) {
     var toast = document.getElementById('toast');
     if (!toast) {
@@ -41,6 +48,7 @@
       document.body.appendChild(toast);
     }
     // Clear previous auto-hide timer
+    // @ts-ignore — custom property on toast element
     if (toast._hideTimer) clearTimeout(toast._hideTimer);
     toast.textContent = repairVietnameseText(msg);
     toast.style.borderColor = type === 'success' ? 'var(--success)'
@@ -52,6 +60,7 @@
       toast.style.transform = 'translateX(-50%) translateY(0)';
     });
     var ms = (typeof duration === 'number' && duration > 0) ? duration : 2500;
+    // @ts-ignore — custom property on toast element
     toast._hideTimer = setTimeout(function () {
       toast.style.opacity = '0';
       toast.style.transform = 'translateX(-50%) translateY(20px)';

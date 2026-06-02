@@ -5,26 +5,34 @@
  * via IIFE/global namespace. Functions that depend on app state
  * (currentUser, appState.staff) are NOT extracted — they stay in app.js.
  */
+// @ts-check
 (function (global) {
   'use strict';
 
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.auth = XekhoApp.auth || {};
 
   // ── Pure staff helpers (no app state dependency) ──────────────────────
 
+  /** @param {*} role @returns {'admin'|'staff'} */
   function normalizeStaffRole(role) {
     return String(role || 'staff').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
   }
 
+  /** @param {*} status @returns {'inactive'|'active'} */
   function normalizeStaffStatus(status) {
     return String(status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
   }
 
+  /** @param {Object} staff @returns {string} */
   function getStaffIdentity(staff) {
     return String((staff && (staff.staff_id || staff.id)) || '');
   }
 
+  /** @param {Object|null} staff @param {string} [pin] @returns {Object|null} */
   function buildCurrentUserFromStaff(staff, pin) {
     if (!staff) return null;
     var normalizedRole = normalizeStaffRole(staff.role);
@@ -39,6 +47,7 @@
     };
   }
 
+  /** @param {*} pin @returns {boolean} */
   function validatePinFormat(pin) {
     return /^\d{4}$/.test(String(pin || '').trim());
   }

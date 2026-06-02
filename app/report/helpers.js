@@ -1,24 +1,32 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
 
+  /** @returns {function(string): string} */
   function _resolveNormalizeViKey() {
-    if (typeof global.normalizeViKey === 'function') return global.normalizeViKey;
-    if (global.XekhoApp && global.XekhoApp.order && typeof global.XekhoApp.order.normalizeViKey === 'function') return global.XekhoApp.order.normalizeViKey;
+    if (typeof _global.normalizeViKey === 'function') return _global.normalizeViKey;
+    if (_global.XekhoApp && _global.XekhoApp.order && typeof _global.XekhoApp.order.normalizeViKey === 'function') return _global.XekhoApp.order.normalizeViKey;
     return function (t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
   }
 
+  /** @returns {function(string, string): number} */
   function _resolveTokenSimilarity() {
-    if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.parser && typeof global.XekhoApp.utils.parser.tokenSimilarity === 'function') return global.XekhoApp.utils.parser.tokenSimilarity;
+    if (_global.XekhoApp && _global.XekhoApp.utils && _global.XekhoApp.utils.parser && typeof _global.XekhoApp.utils.parser.tokenSimilarity === 'function') return _global.XekhoApp.utils.parser.tokenSimilarity;
     return function (a, b) { return String(a) === String(b) ? 1 : 0; };
   }
 
+  /** @returns {function(): Object[]} */
   function _resolveGetInventory() {
-    if (typeof global._getInventory === 'function') return global._getInventory;
-    if (global.Store && typeof global.Store.getInventory === 'function') return global.Store.getInventory;
+    if (typeof _global._getInventory === 'function') return _global._getInventory;
+    if (_global.Store && typeof _global.Store.getInventory === 'function') return _global.Store.getInventory;
     return function () { return []; };
   }
 
+  /** @param {Object} menuItem @returns {string[]} */
   function getReportMenuIngredientKeys(menuItem) {
     if (!menuItem) return [];
     var nvk = _resolveNormalizeViKey();
@@ -38,6 +46,7 @@
     return Object.keys(ingredientNames).filter(Boolean);
   }
 
+  /** @param {Object} order @param {Object|null} menuItem @returns {boolean} */
   function doesOrderMatchReportMenuItem(order, menuItem) {
     if (!menuItem) return true;
     var nvk = _resolveNormalizeViKey();
@@ -48,6 +57,7 @@
     });
   }
 
+  /** @param {Object} purchase @param {Object|null} menuItem @returns {boolean} */
   function doesPurchaseMatchReportMenuItem(purchase, menuItem) {
     if (!menuItem) return true;
     var nvk = _resolveNormalizeViKey();
@@ -57,6 +67,7 @@
     return ingredientKeys.indexOf(purchaseKey) !== -1;
   }
 
+  /** @param {Object} expense @param {Object|null} menuItem @returns {boolean} */
   function doesExpenseMatchReportMenuItem(expense, menuItem) {
     if (!menuItem) return true;
     var nvk = _resolveNormalizeViKey();
@@ -70,6 +81,7 @@
     return ingredientKeys.some(function (key) { return key && haystack.includes(key); });
   }
 
+  /** @returns {Array<{ id: string, source: Object, target: Object, score: number }>} */
   function getIngredientMergeSuggestions() {
     var nvk = _resolveNormalizeViKey();
     var ts = _resolveTokenSimilarity();
@@ -93,9 +105,11 @@
     return suggestions.sort(function (a, b) { return b.score - a.score; });
   }
 
+  /** @param {string} fromDate @param {string} toDate @returns {Object[]} */
   function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
+    /** @type {Object[]} */
     var rows = [];
-    try { rows = global.appState && Array.isArray(global.appState.dailyRevenueSnapshots) ? global.appState.dailyRevenueSnapshots : []; } catch (_e) { rows = []; }
+    try { rows = _global.appState && Array.isArray(_global.appState.dailyRevenueSnapshots) ? _global.appState.dailyRevenueSnapshots : []; } catch (_e) { rows = []; }
     return rows.filter(function (snapshot) {
       var dateKey = String(snapshot && snapshot.date || '').trim().slice(0, 10);
       return !!dateKey && dateKey >= fromDate && dateKey <= toDate;
