@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-02 12:42 - ESM Phase E5.1 header actions delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the first safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/header-actions.js` with delegated click handling for static header actions.
+- Converted four header buttons from inline `onclick` to `data-esm-header-action`: AI assistant, stock alert, hard reload, logout.
+- Updated `app/esm/main.js` to import/install `headerActions` under `window.XekhoApp.esm.ui.headerActions`.
+- Bumped ESM entry cache/version to `20260602-e5-header-actions`.
+- Added `scripts/verify-esm-header-actions.js` and expanded `scripts/verify-esm-entry.js`.
+
+Current E5 evidence: inline handler count reduced from 243 to 238; 31 local classic scripts and most POS/report/settings handlers remain. Continue E5 one island at a time with mobile/browser QA.
+
+Verification passed: ESM syntax checks, header-actions/image-zoom/runtime/leaf/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 11:56 - ESM Phase E4 image zoom UI island complete
 
 Repo: `/home/longnick/projects/xekho`
