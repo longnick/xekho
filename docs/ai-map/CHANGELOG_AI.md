@@ -1,5 +1,20 @@
 # AI Changelog
 
+## 2026-06-02 11:26 - ESM Phase E2 leaf facades complete
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the safe E2 leaf facade set without touching `app.js`, POS order flow, backend Cloud Functions, or runtime data:
+
+- Added importable ESM facades for `app/utils/format.js`, `app/utils/date.js`, `app/utils/excel.js`, and `app/auth/staff.js`.
+- Updated `app/esm/main.js` to import/install DOM + format + date + Excel + staff facades and mark `window.XekhoApp.esm.facades.*` readiness.
+- Preserved classic compatibility globals/namespaces: `window.XekhoApp.utils.*`, `window.XekhoApp.auth.*`, formatter globals (`fmt`, `fmtFull`, `fmtDate`, `fmtTime`, `fmtDateTime`, `today`), date globals, and Excel helper globals.
+- Updated `index.html` module cache key to `20260602-e2-leaf-facades`.
+- Added `scripts/verify-esm-leaf-facades.js` and expanded `scripts/verify-esm-entry.js` for the full E2 facade set.
+
+Verification passed: ESM facade scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 10:31 - ESM Phase E2 DOM facade
 
 Repo: `/home/longnick/projects/xekho`
