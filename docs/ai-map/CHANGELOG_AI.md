@@ -956,3 +956,10 @@ Review existing dirty working tree before any code edits. Several pre-existing s
 
 Task log:
 `docs/ai-map/TASK_LOGS/2026-05-31-0935-initialize-ai-code-map.md`
+
+## Phase 6 — 2026-06-02 — parser, categorize, report helpers
+- Sprint 6.1: `app/utils/parser.js` — 5 pure functions (parsePurchaseText, parsePurchaseJson, getKitchenRoutingLabel, tokenSimilarity, getMenuItemImageUrl)
+- Sprint 6.2: `app/utils/categorize.js` — 5 pure functions (normalizeExpenseCategoryLabel, detectAdsExpensePlatform, isAdsExpenseEntry, mediaRefineryStatusClass, countInclusiveReportDays)
+- Sprint 6.3: `app/report/helpers.js` — 6 pure functions (getReportMenuIngredientKeys, doesOrderMatchReportMenuItem, doesPurchaseMatchReportMenuItem, doesExpenseMatchReportMenuItem, getIngredientMergeSuggestions, getDailyRevenueSnapshotsInRange)
+- All use lazy dependency resolution for cross-module deps
+- Commit: 73081b8
