@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02
+**Updated:** 2026-06-02 (Phase 14)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
--- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~58% complete**.
-- Core non-optional refactor/security/testing plan: **~65% complete**.
-- Near-term safe-execution track: **~97% complete**.
+-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~65% complete**.
+- Core non-optional refactor/security/testing plan: **~72% complete**.
+- Near-term safe-execution track: **~99% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -28,6 +28,11 @@ These percentages are conservative because the repo is production-adjacent and s
 - Phase 13 Sprint 13.1 completed: created `jsconfig.json`, added `@ts-check` to all 18 frontend modules.
 - Phase 13 Sprint 13.2 completed: added JSDoc annotations to 3 complex modules (`app/order/helpers.js`, `app/report/excel.js`, `app/report/expense.js`).
 - Phase 13 COMPLETE: all 18 frontend modules have `@ts-check` + JSDoc annotations on ~150+ exported functions. `tsc --noEmit` passes with 0 type errors. jsconfig.json created for editor type checking.
+- Phase 14 Sprint 14.1 completed: backend `@ts-check` + JSDoc annotations for all 8 backend modules.
+- Phase 14 Sprint 14.2 completed: `tsc --noEmit` added to CI pipeline for frontend + backend type checking.
+- Phase 14 Sprint 14.3 completed: `CODE_MAP.md` expanded (210→474 lines) — all 34 Cloud Functions documented, all 27 modules mapped, data flows added.
+- Phase 14 Sprint 14.4 completed: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections documented with field schemas, indexes, and security rules.
+- Phase 14 COMPLETE: backend typed, CI type checking active, CODE_MAP fully expanded, DATA_SCHEMA created.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
 - Fifth compatibility extraction completed in Sprint 7: `app/ui/modal.js` (openModal/closeModal/isModalOpen as IIFE), 6 compatibility wrappers in `app.js`.
@@ -126,7 +131,7 @@ These percentages are conservative because the repo is production-adjacent and s
 
 ## Recommended next sprint
 
-Sprints 1.7, 3.3, Phase 10, and Phase 12 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. functions/index.js at 5702 lines (-1578 from original). Vite spike merged — dev server available for local development. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of extracted modules, ES module conversion planning for proper Vite tree-shaking, or deeper frontend extraction (remaining state-dependent POS functions in app.js).
+Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, and Phase 14 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. All modules have `@ts-check` + JSDoc. CI includes `tsc --noEmit`. `CODE_MAP.md` fully expanded (474 lines, 34 Cloud Functions, 27 modules). `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). functions/index.js at 5702 lines (-1578 from original). Vite spike merged — dev server available. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of all extracted modules, ES module conversion planning for proper Vite tree-shaking, or deeper frontend extraction (remaining state-dependent POS functions in app.js).
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
@@ -148,3 +153,10 @@ Sprints 1.7, 3.3, Phase 10, and Phase 12 complete. 8 backend modules + 20 fronte
 - [x] Dev server config (`vite.config.mjs`) serves IIFE files as static assets — no ES module bundling yet
 - [x] All 33 verification scripts pass, Jest 6/6, git tree clean
 - [x] Phase 12 COMPLETE: Vite spike merged, build tooling available for dev workflow
+
+### Phase 14 — 2026-06-02
+- [x] Sprint 14.1: Backend `@ts-check` + JSDoc annotations for all 8 backend modules
+- [x] Sprint 14.2: `tsc --noEmit` added to CI pipeline (frontend + backend)
+- [x] Sprint 14.3: `CODE_MAP.md` expanded (210→474 lines) — 34 Cloud Functions, 27 modules, data flows
+- [x] Sprint 14.4: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections, field schemas, indexes
+- [x] Phase 14 COMPLETE: backend typed, CI type checking active, documentation expanded
