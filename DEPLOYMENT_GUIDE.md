@@ -2,6 +2,10 @@
 
 Hướng dẫn chi tiết deploy hệ thống POS và Kitchen Display lên Firebase Production.
 
+> Warning
+> `xekho` functions are currently aligned with cloud, but this project still overlaps with `webapp-menu` in some feature areas.
+> Read `TECH_AUDIT.md` before changing deploy ownership, especially for Telegram reports and online-order related flows.
+
 ## 📋 Prerequisites
 
 ### 1. Tools Required
@@ -383,7 +387,6 @@ curl https://pos-v2-909ff.web.app/kitchen
 curl -X POST https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/aiRouter \
   -H "Content-Type: application/json" \
   -d '{"text":"hello"}'
-# Should return AI response
 ```
 
 ### 2. Functional Tests
@@ -613,7 +616,7 @@ exports.myFunction = onRequest((req, res) => {
 
 ### Vertex AI Resources
 - [Vertex AI Console](https://console.cloud.google.com/vertex-ai)
-- [Gemini API Docs](https://ai.google.dev/docs)
+- [Vertex AI / Gemini model docs](https://cloud.google.com/vertex-ai/generative-ai/docs/models)
 
 ### Telegram Bot
 - [Bot API Docs](https://core.telegram.org/bots/api)
