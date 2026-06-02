@@ -1,5 +1,21 @@
 # AI Changelog
 
+## 2026-06-02 15:29 - Deep extraction D4 small utility cleanup outside E phase
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed one bounded non-ESM cleanup sprint after re-reading `REFACTOR_PLAN.md`, `DEEP_EXTRACTION_PLAN.md`, `ESM_CONVERSION_PLAN.md`, current AI-map docs, and recent git history:
+
+- Extended `app/utils/storage.js` with `getTelegramReportTestUrl()` and kept the legacy global fallback in `app.js` as a thin delegate.
+- Extended `app/auth/staff.js` with `getCurrentOrderActorMetaFromUser(posUser)` and kept `getCurrentOrderActorMeta()` in `app.js` as a state-reading wrapper.
+- Removed unreachable dead fallback code from `getFinanceExpenseRows()` after its existing early return to `buildOperationalExpenseBreakdown()`.
+- Expanded `scripts/verify-storage-utils.js` and `scripts/verify-auth-staff.js` to assert the new exports.
+
+Progress note: this completes the safe D4 small-utility part that was still actionable outside the E phase. Remaining `DEEP_EXTRACTION_PLAN.md` candidates are mostly mixed/stateful POS/report functions and should be handled only as separate QA-backed sprints, not as a one-shot rewrite.
+
+Verification passed: syntax checks, storage/auth verifiers, app.js delegation/dead-code smoke, `npm run check`, frontend/backend `tsc`, Jest, `npm run lint` with 5 existing warnings, Vite build with expected classic-script warnings, all 49 `scripts/verify-*.js`, and `git diff --check`.
+
 ## 2026-06-02 14:58 - ESM Phase E5.11 admin render delegated controls
 
 Repo: `/home/longnick/projects/xekho`

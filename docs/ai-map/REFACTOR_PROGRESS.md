@@ -1,6 +1,6 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 14:58 (ESM Phase E5.11 admin render controls complete)
+**Updated:** 2026-06-02 15:29 (Deep Extraction D4 small utility cleanup complete)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
@@ -8,7 +8,7 @@
 
 - Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~85% complete**.
 - Core non-optional refactor/security/testing plan: **~90% complete**.
-- Near-term safe-execution track: **~99.998% complete**.
+- Near-term safe-execution track: **~99.999% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -50,7 +50,8 @@ These percentages are conservative because the repo is production-adjacent and s
 - ESM Phase E5.9 complete: added `app/esm/ui/modal-overlay-controls.js` and converted 41 modal overlay/close/image-zoom inline handlers to delegated data attributes.
 - ESM Phase E5.10 complete: added `app/esm/ui/render-refresh-controls.js` and converted 12 low-risk render/filter refresh inline handlers to delegated data attributes.
 - ESM Phase E5.11 complete: added `app/esm/ui/admin-render-controls.js` and converted 6 low-risk admin render/search inline handlers to delegated data attributes.
-Current ESM readiness ~67%.
+- Deep Extraction D4 small-utility cleanup complete: added `getTelegramReportTestUrl()` to `app/utils/storage.js`, added `getCurrentOrderActorMetaFromUser()` to `app/auth/staff.js`, delegated both legacy `app.js` functions, and removed unreachable fallback code from `getFinanceExpenseRows()`.
+Current ESM readiness ~67%. Non-ESM deep extraction readiness: D1 complete via E4 image zoom island, D4 small utilities complete; D2/D3 remaining candidates are mixed/stateful and require QA-backed sprints.
 - Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
@@ -159,6 +160,11 @@ Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cle
 - Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 141 inline handlers, and classic script order still central).
 - Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
 - ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 141 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
+
+### Deep extraction outside E — 2026-06-02
+- [x] D1: image zoom behavior moved into importable UI island (`app/esm/ui/image-zoom.js`) with classic delegation.
+- [x] D4 small utilities: `getTelegramReportTestUrl()` → `app/utils/storage.js`; `getCurrentOrderActorMetaFromUser()` → `app/auth/staff.js`; removed unreachable `getFinanceExpenseRows()` fallback code.
+- [!] D2/D3 remaining: cart qty/note, report summaries, online cost, kitchen normalization, and finance rows are mixed with global state/DOM/cloud sync; do not one-shot extract without manual browser/POS/report QA.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
