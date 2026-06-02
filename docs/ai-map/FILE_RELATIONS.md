@@ -22,7 +22,7 @@ Related files:
 
 - `app/esm/main.js`
   - role: Phase E1/E2 browser-module compatibility harness for future ESM migration.
-  - depends on: existing classic runtime being loaded first; imports `./utils/dom.js`; reads/creates `window.XekhoApp.esm` and installs DOM facade compatibility.
+  - depends on: existing classic runtime being loaded first; imports DOM/format/date/Excel/staff ESM facades; reads/creates `window.XekhoApp.esm` and installs compatibility globals.
   - used by: `index.html` as `<script type="module">` after offline/classic scripts and before inline DOM helpers.
   - notes: does not import `app.js`, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
 
@@ -31,6 +31,12 @@ Related files:
   - depends on: no app state; pure `escapeHtml()` plus optional global installer.
   - used by: `app/esm/main.js` and future ESM consumers.
   - notes: preserves `window.XekhoApp.utils.dom.escapeHtml()` compatibility and is verified by `scripts/verify-esm-dom-utils.js`.
+
+- `app/esm/utils/format.js`, `app/esm/utils/date.js`, `app/esm/utils/excel.js`, `app/esm/auth/staff.js`
+  - role: Phase E2 importable leaf facades for already-extracted pure helpers.
+  - depends on: no app state; installer functions write only compatibility namespaces/globals.
+  - used by: `app/esm/main.js`, `scripts/verify-esm-leaf-facades.js`, and future ESM consumers.
+  - notes: preserves current IIFE/global API while allowing direct ESM imports for format/date/Excel/staff helpers.
 
 - `app/esm/README.md`
   - role: ESM migration guardrails, completed facade inventory, and next safe dual-export candidates.
