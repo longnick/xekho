@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-06-02 14:00 - ESM Phase E5.7 report transaction filter delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the seventh safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/report-transaction-filters.js` with delegated change handling for report transaction filter checkboxes.
+- Converted six report transaction filter inputs from inline `onchange="setReportTransactionFilter(..., this.checked)"` to `data-esm-report-transaction-filter`: sales, purchases, expenses across the duplicated filter layouts.
+- Updated `app/esm/main.js` to import/install `reportTransactionFilters` under `window.XekhoApp.esm.ui.reportTransactionFilters`.
+- Bumped ESM entry cache/version to `20260602-e5-report-transaction-filters`.
+- Added `scripts/verify-esm-report-transaction-filters.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `setReportTransactionFilter` untouched; the ESM island delegates to it at change time.
+
+Current E5 evidence: inline handler count reduced from 210 to 204; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, report-transaction-filters/finance-period/inventory-tabs/report-date-controls/settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 13:55 - ESM Phase E5.6 finance period delegated handlers
 
 Repo: `/home/longnick/projects/xekho`

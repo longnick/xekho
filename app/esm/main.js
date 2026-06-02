@@ -12,6 +12,7 @@ import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
+import { callReportTransactionFilter, installReportTransactionFilters } from './ui/report-transaction-filters.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
 import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
@@ -44,6 +45,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var inventoryTabs = installInventoryTabs(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
   var reportDateControls = installReportDateControls(anyRoot);
+  var reportTransactionFilters = installReportTransactionFilters(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
   var settingsTabs = installSettingsTabs(anyRoot);
 
@@ -96,6 +98,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     inventoryTabs: inventoryTabs,
     imageZoom: imageZoom,
     reportDateControls: reportDateControls,
+    reportTransactionFilters: reportTransactionFilters,
     reportTabs: reportTabs,
     settingsTabs: settingsTabs,
   });
@@ -152,6 +155,11 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       installed: reportDateControls.installed === true,
       selectorPresent: reportDateControls.selector === '[data-esm-report-period], [data-esm-report-date-mode]',
     },
+    reportTransactionFilters: {
+      callReportTransactionFilterPresent: reportTransactionFilters.callReportTransactionFilter === callReportTransactionFilter,
+      installed: reportTransactionFilters.installed === true,
+      selectorPresent: reportTransactionFilters.selector === '[data-esm-report-transaction-filter]',
+    },
     reportTabs: {
       callReportTabPresent: reportTabs.callReportTab === callReportTab,
       installed: reportTabs.installed === true,
@@ -171,7 +179,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-finance-period',
+    version: '20260602-e5-report-transaction-filters',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
