@@ -1,5 +1,25 @@
 # AI Changelog
 
+## 2026-06-02 - Phase 10 Complete: Full backend + frontend function extraction
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Phase 10 extracted 48+ pure functions from `functions/index.js` into 4 new modules and cleaned 4 duplicate declarations. `functions/index.js` reduced to 5702 lines (from ~7280 original = -1578 lines total). 8 backend modules + 20 frontend modules now active with 150+ total exports across 28 modules.
+
+- Sprint 10.1: 11 Telegram report helpers → `functions/telegram/reports.js` (already committed)
+- Sprint 10.2: 22 ads/date/NLP helpers → `functions/telegram/ads.js`
+- Sprint 10.3a: 11 order helpers → `functions/telegram/orders.js`
+- Sprint 10.3a: 9 online order helpers → `functions/telegram/online-orders.js`
+- Sprint 10.3b: 6 general utilities → `functions/utils/general.js`
+- Sprint 10.4: Removed 4 duplicate declarations (-221 lines)
+
+Backend modules (8): `functions/utils/text.js` (11), `functions/utils/general.js` (6), `functions/telegram/send.js` (9), `functions/telegram/kitchen.js` (10), `functions/telegram/reports.js` (19), `functions/telegram/ads.js` (22), `functions/telegram/orders.js` (11), `functions/telegram/online-orders.js` (9)
+
+Frontend modules (20): `app/utils/{dom,format,excel,date,print,storage,parser,categorize,fixedcost}.js`, `app/ui/{toast,theme,modal}.js`, `app/auth/staff.js`, `app/order/helpers.js`, `app/report/{helpers,ads,expense,excel}.js`
+
+Verification: 33 scripts (29 existing + 4 new), Jest 6/6, ESLint 0 errors. Total lines extracted: ~1782.
+
 ## 2026-06-02 - Phase 10 Sprint 10.1: Telegram report helpers batch 2
 
 Repo: `/home/longnick/projects/xekho`
