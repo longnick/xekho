@@ -12,6 +12,7 @@ import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
+import { callReportMenuFilter, callReportFilterReset, installReportFilterControls } from './ui/report-filter-controls.js';
 import { callReportTransactionFilter, installReportTransactionFilters } from './ui/report-transaction-filters.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
 import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
@@ -45,6 +46,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var inventoryTabs = installInventoryTabs(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
   var reportDateControls = installReportDateControls(anyRoot);
+  var reportFilterControls = installReportFilterControls(anyRoot);
   var reportTransactionFilters = installReportTransactionFilters(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
   var settingsTabs = installSettingsTabs(anyRoot);
@@ -98,6 +100,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     inventoryTabs: inventoryTabs,
     imageZoom: imageZoom,
     reportDateControls: reportDateControls,
+    reportFilterControls: reportFilterControls,
     reportTransactionFilters: reportTransactionFilters,
     reportTabs: reportTabs,
     settingsTabs: settingsTabs,
@@ -155,6 +158,12 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       installed: reportDateControls.installed === true,
       selectorPresent: reportDateControls.selector === '[data-esm-report-period], [data-esm-report-date-mode]',
     },
+    reportFilterControls: {
+      callReportMenuFilterPresent: reportFilterControls.callReportMenuFilter === callReportMenuFilter,
+      callReportFilterResetPresent: reportFilterControls.callReportFilterReset === callReportFilterReset,
+      installed: reportFilterControls.installed === true,
+      selectorPresent: reportFilterControls.selector === '[data-esm-report-menu-filter], [data-esm-report-filter-reset]',
+    },
     reportTransactionFilters: {
       callReportTransactionFilterPresent: reportTransactionFilters.callReportTransactionFilter === callReportTransactionFilter,
       installed: reportTransactionFilters.installed === true,
@@ -179,7 +188,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-report-transaction-filters',
+    version: '20260602-e5-report-filter-controls',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
