@@ -868,55 +868,6 @@ function showKitchenBrowserAlert(notif = {}, docId = '') {
   }
 }
 
-function showKitchenToast(notif = {}, docId = '') {
-  if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
-  const notifType = String(notif.type || '').toLowerCase();
-  const isReady = notifType === 'ready';
-  const isAccepted = notifType === 'accepted';
-  const isDelay = notifType === 'delay';
-  const toast = document.createElement('div');
-  toast.className = `kitchen-toast ${isReady || isAccepted ? 'ready' : 'delay'}`;
-  toast.dataset.docId = docId;
-
-  const safeTitle = _escapeHtml(notif.tableName || 'Bep');
-  const safeItems = Array.isArray(notif.items) && notif.items.length
-    ? _escapeHtml(notif.items.join(', '))
-    : _escapeHtml(notif.message || 'Co cap nhat tu bep');
-
-  toast.innerHTML = `
-    <div class="kitchen-toast-icon">${isReady ? '🍽️' : '⚠️'}</div>
-    <div class="kitchen-toast-body">
-      <div class="kitchen-toast-title">${safeTitle} - ${isReady ? 'SAN SANG' : 'BAO CHAM'}</div>
-      <div class="kitchen-toast-items">${safeItems}</div>
-    </div>
-    <button class="kitchen-toast-close" type="button" aria-label="Dong">×</button>
-  `;
-
-  const closeToast = () => {
-    if (toast.dataset.closing === '1') return;
-    toast.dataset.closing = '1';
-    toast.classList.add('closing');
-    setTimeout(() => {
-      try { toast.remove(); } catch (_) {}
-    }, 220);
-  };
-
-  const markReadAndClose = async () => {
-    try { await markKitchenNotifRead(docId); } catch (_) {}
-    closeToast();
-  };
-
-  toast.querySelector('.kitchen-toast-close')?.addEventListener('click', () => {
-    markReadAndClose().catch(() => closeToast());
-  });
-
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add('show'));
-
-  setTimeout(() => {
-    markReadAndClose().catch(() => closeToast());
-  }, 8000);
-}
 
 function showKitchenToast(notif = {}, docId = '') {
   if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
@@ -8224,31 +8175,6 @@ function renderTrendChart() {
   });
 }
 
-function renderCategoryChart() {
-  const orders = getFilteredReportOrders();
-  const menu = Store.getMenu();
-  const catRevenue = {};
-  orders.forEach(o => (o.items||[]).forEach(item => {
-    const dish = menu.find(m => m.id === item.id);
-    const cat = dish.category || 'Khác';
-    catRevenue[cat] = (catRevenue[cat]||0) + item.price * item.qty;
-  }));
-  const labels = Object.keys(catRevenue);
-  const data = labels.map(l => catRevenue[l]);
-  const ctx = document.getElementById('category-chart');
-  if(!ctx) return;
-  if(chartInstances.category) chartInstances.category.destroy();
-  const colors = ['#FF6B35','#FFD700','#00D68F','#0095FF','#FF3D71','#A855F7','#F97316'];
-  chartInstances.category = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth:0, hoverOffset:8 }] },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
-    }
-  });
-}
-
 function renderHourlyChart() {
   const orders = getFilteredReportOrders();
   const hours = Array(24).fill(0);
@@ -9074,36 +9000,6 @@ async function handleMenuImageChange(event) {
 }
 
 window.handleMenuImageChange = handleMenuImageChange;
-
-function openAddMenuModal(id) {
-  const menu = _getMenu();
-  const inventory = _getInventory().filter(i => !i.hidden);
-  const dish = id ? menu.find(m => m.id === id) : null;
-  document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
-  document.getElementById('menu-item-id').value = dish.id || '';
-  document.getElementById('menu-item-name').value = dish.name || '';
-  document.getElementById('menu-item-unit').value = dish.unit || 'phần';
-  document.getElementById('menu-item-price').value = dish.price || '';
-  document.getElementById('menu-item-category').value = dish.category || CATEGORIES[0];
-  document.getElementById('menu-item-type').value = dish.itemType || ITEM_TYPES.FINISHED;
-  const linkedSel = document.getElementById('menu-linked-inventory-id');
-  if (linkedSel) {
-    linkedSel.innerHTML = '<option value="">-- Chọn hàng tồn kho --</option>' + inventory
-      .map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
-    linkedSel.value = dish.linkedInventoryId || '';
-  }
-  
-  const list = document.getElementById('menu-ingredients-list');
-  list.innerHTML = '';
-  if (dish && dish.ingredients && dish.ingredients.length > 0) {
-    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty, ing.unit));
-  } else {
-    // addIngredientRow(); // Add an empty row by default
-  }
-  toggleMenuItemTypeUI();
-  
-  document.getElementById('menu-modal').classList.add('active');
-}
 
 function editMenuItem(id) { openAddMenuModal(id); }
 
