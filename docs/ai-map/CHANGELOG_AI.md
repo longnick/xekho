@@ -981,3 +981,14 @@ Branch: `test/xe-kho-repo-implementer-skill`
 - Phase 8 total: 3 functions extracted (683 lines), 2 new modules (`app/report/excel.js`, `app/report/expense.js`), 1 extended module (`app/utils/storage.js`).
 - All 29 verification scripts pass, Jest 6/6, ESLint 0 errors.
 - Progress update: ~35% total / ~40% core / ~80% near-term safe-execution.
+
+## 2026-06-02 04:30 - Phase 9 Sprint 9.1: ESLint duplicate declaration cleanup
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+- Removed 3 duplicate function declarations in app.js: showKitchenToast, renderCategoryChart, openAddMenuModal
+- Kept newer versions of each (null-safe, Map-based lookup, ASCII text)
+- app.js reduced from 11,999 to 11,895 lines (-104 lines)
+- ESLint: 1 parsing error → 0 errors
+- All 29 verification scripts pass, Jest 6/6
