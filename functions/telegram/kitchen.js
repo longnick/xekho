@@ -1,7 +1,12 @@
+// @ts-check
 'use strict';
 
 const { escapeTelegramHtml, normalizeTelegramText, formatQtyVi } = require('../utils/text');
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function normalizeTelegramTableLabel(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'Kh\u00f4ng r\u00f5';
@@ -13,6 +18,11 @@ function normalizeTelegramTableLabel(value) {
   return raw;
 }
 
+/**
+ * @param {Object} notif
+ * @param {Object} options
+ * @returns {{title: string, body: string, zaloText: string}}
+ */
 function buildKitchenNotifMessage(notif = {}, options = {}) {
   const type = String(notif.type || '').toLowerCase();
   const tableName = String(notif.tableName || notif.tableId || 'Ban');
@@ -50,6 +60,10 @@ function buildKitchenNotifMessage(notif = {}, options = {}) {
   };
 }
 
+/**
+ * @param {string} itemText
+ * @returns {{name: string, qty: string, summary: string}|null}
+ */
 function parseKitchenItemSummary(itemText = '') {
   const raw = String(itemText || '').trim();
   if (!raw) return null;
@@ -72,6 +86,10 @@ function parseKitchenItemSummary(itemText = '') {
   };
 }
 
+/**
+ * @param {Object} notif
+ * @returns {string}
+ */
 function buildTelegramFoodReadyMessage(notif = {}) {
   const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
   const parsedItems = rawItems
@@ -99,6 +117,10 @@ function buildTelegramFoodReadyMessage(notif = {}) {
   ].join('\\n');
 }
 
+/**
+ * @param {Object} item
+ * @returns {boolean}
+ */
 function isKitchenOrderItemForTelegram(item = {}) {
   const status = String(item?.kitchenStatus || '').trim().toLowerCase();
   const itemType = String(item?.itemType || '').trim().toLowerCase();
@@ -111,10 +133,20 @@ function isKitchenOrderItemForTelegram(item = {}) {
   return true;
 }
 
+/**
+ * @param {Object} item
+ * @param {number} index
+ * @returns {string}
+ */
 function getKitchenOrderItemKey(item = {}, index = 0) {
   return String(item?.lineItemId || `${item?.id || 'item'}:${item?.kitchenSentAt || 0}:${index}`);
 }
 
+/**
+ * @param {any[]} afterItems
+ * @param {any[]} beforeItems
+ * @returns {any[]}
+ */
 function getNewPendingKitchenItems(afterItems = [], beforeItems = []) {
   const beforeKeys = new Set((Array.isArray(beforeItems) ? beforeItems : [])
     .map((item, index) => {
@@ -128,6 +160,11 @@ function getNewPendingKitchenItems(afterItems = [], beforeItems = []) {
     .filter(row => isKitchenOrderItemForTelegram(row.item) && !beforeKeys.has(row.key));
 }
 
+/**
+ * @param {Object} order
+ * @param {any[]} rows
+ * @returns {string}
+ */
 function buildTelegramNewKitchenOrderMessage(order = {}, rows = []) {
   const tableName = String(order.tableName || order.tableId || 'Khong ro');
   const itemLines = rows.length
@@ -150,6 +187,10 @@ function buildTelegramNewKitchenOrderMessage(order = {}, rows = []) {
   ].join('\\n');
 }
 
+/**
+ * @param {Object} notif
+ * @returns {string}
+ */
 function buildTelegramFoodReadyMessageClean(notif = {}) {
   const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
   const parsedItems = rawItems
@@ -177,6 +218,11 @@ function buildTelegramFoodReadyMessageClean(notif = {}) {
   ].join('\\n');
 }
 
+/**
+ * @param {Object} order
+ * @param {any[]} rows
+ * @returns {string}
+ */
 function buildTelegramNewKitchenOrderMessageClean(order = {}, rows = []) {
   const tableName = normalizeTelegramTableLabel(order.tableName || order.tableId || '');
   const itemLines = rows.length
