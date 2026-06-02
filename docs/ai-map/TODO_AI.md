@@ -3,11 +3,11 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 10 COMPLETE: extracted 48+ pure functions from `functions/index.js` into 4 new backend modules + cleaned 4 duplicate declarations. `functions/index.js` reduced to 5702 lines (from ~7280 = -1578 lines). 8 backend modules + 20 frontend modules, 150+ total exports across 28 modules.
+- Phase 12 COMPLETE: Vite spike merged into working branch. Vite build produces dist/ with index.html, main.js (103KB), main.css (57KB), manifest. Dev server available. All 33 verification scripts pass, Jest 6/6, git tree clean.
 - Current conservative progress estimate:
-  - Total long-term plan including optional TypeScript/CI/build tooling: ~48% complete.
-  - Core non-optional refactor/security/testing plan: ~55% complete.
-  - Near-term safe-execution track: ~92% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~52% complete.
+ - Core non-optional refactor/security/testing plan: ~60% complete.
+ - Near-term safe-execution track: ~95% complete.
 
 ## Next
 
@@ -48,9 +48,11 @@
 - `functions/index.js`, `app.js`, `db.js`, and `firestore.rules` are high-impact files; changes may affect production behavior.
 - Import/backfill scripts may mutate database/POS history; do not run casually.
 - Immediate ES modules/Vite migration may break global script order and browser runtime assumptions; use compatibility-first extraction.
+- Vite spike merged but IIFE→ESM conversion not yet started; dev server serves IIFE files as static assets.
 
 ## Done recently
 
+- 2026-06-02: Phase 12 COMPLETE: Rebased and merged `spike/vite-build-tooling` into `test/xe-kho-repo-implementer-skill`. Vite build verified (dist/ with index.html, main.js 103KB, main.css 57KB, manifest). All 33 verification scripts pass, Jest 6/6, git tree clean. Progress: ~52% total / ~60% core / ~95% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase12-vite-spike-merged.md`
 - 2026-06-02: Phase 10 COMPLETE: extracted 48+ pure functions from `functions/index.js` into 4 new backend modules (`functions/telegram/ads.js`, `functions/telegram/orders.js`, `functions/telegram/online-orders.js`, `functions/utils/general.js`), cleaned 4 duplicate declarations. functions/index.js at 5702 lines (from ~7280 = -1578 lines). 8 backend modules + 20 frontend modules, 150+ exports across 28 modules. 33 verification scripts (29 existing + 4 new). Progress: ~48% total / ~55% core / ~92% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase10-full-extraction.md`
 - 2026-06-02 01:44: Safe refactor Sprint 9 (Phase 2 Sprint 2.1+2.2): mapped all 35 exports in `functions/index.js` into CODE_MAP.md, extracted 11 pure text/formatting utilities into `functions/utils/text.js` with delegation wrappers. Progress: ~21% total / ~25% core / ~52% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0144-safe-refactor-sprint-9-phase2-mapping-text-utils.md`
 - 2026-06-02 01:38: Safe refactor Sprint 8: extracted pure staff helpers into `app/auth/staff.js` IIFE, added 4 compatibility wrappers in `app.js`. Progress: ~19% total / ~23% core / ~48% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0138-safe-refactor-sprint-8-auth-staff.md`
@@ -85,3 +87,9 @@
 - [x] Sprint 10.3a: 11 order helpers → functions/telegram/orders.js, 9 online order helpers → functions/telegram/online-orders.js
 - [x] Sprint 10.3b: 6 general utilities → functions/utils/general.js
 - [x] Sprint 10.4: Removed 4 duplicate declarations (-221 lines)
+
+## Phase 12 — 2026-06-02
+- [x] Rebased `spike/vite-build-tooling` onto main (fast-forward)
+- [x] Merged into `test/xe-kho-repo-implementer-skill` (fast-forward)
+- [x] Vite build verified: dist/ produces index.html, main.js (103KB), main.css (57KB), manifest
+- [x] All 33 verification scripts pass, Jest 6/6, git tree clean

@@ -1,5 +1,24 @@
 # AI Changelog
 
+## 2026-06-02 - Phase 12 Complete: Vite spike merged into working branch
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Rebased `spike/vite-build-tooling` onto main (fast-forward), then merged into `test/xe-kho-repo-implementer-skill` (fast-forward). Vite build confirmed working: `dist/` produces `index.html`, `main.js` (103KB), `main.css` (57KB), and manifest. Dev server config (`vite.config.mjs`) serves existing IIFE files as static assets — no ES module bundling yet, preserving script-order/browser-global runtime behavior.
+
+Current state after Phase 12:
+- `app.js`: 11,895 lines (397 functions, 73 with delegation wrappers)
+- `functions/index.js`: 5,702 lines (200 functions, 100 with delegation wrappers)
+- 28 extracted modules (8 backend + 20 frontend)
+- ~150+ exported functions
+- 33 verification scripts — all pass
+- Jest 6/6 pass
+- Vite spike merged (dev server + future build config)
+- Git tree clean
+
+Progress: ~52% total / ~60% core / ~95% near-term.
+
 ## 2026-06-02 - Phase 10 Complete: Full backend + frontend function extraction
 
 Repo: `/home/longnick/projects/xekho`
