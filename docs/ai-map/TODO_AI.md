@@ -3,11 +3,11 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 12 COMPLETE: Vite spike merged into working branch. Vite build produces dist/ with index.html, main.js (103KB), main.css (57KB), manifest. Dev server available. All 33 verification scripts pass, Jest 6/6, git tree clean.
+- Phase 13 COMPLETE: TypeScript JSDoc migration. All 18 frontend modules have @ts-check + JSDoc annotations on ~150+ exported functions. jsconfig.json created. tsc --noEmit passes with 0 type errors. All 33 verification scripts pass, Jest 6/6.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~52% complete.
- - Core non-optional refactor/security/testing plan: ~60% complete.
- - Near-term safe-execution track: ~95% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~58% complete.
+ - Core non-optional refactor/security/testing plan: ~65% complete.
+ - Near-term safe-execution track: ~97% complete.
 
 ## Next
 
@@ -32,6 +32,8 @@
 - Expand data schema notes after a dedicated read of `README.md`, `db.js`, and relevant Firestore helpers.
 - Consider targeted commit staging of all 28 extracted modules and verification scripts.
 - Remaining ~30 functions in `functions/index.js` depend on db/admin/config and should stay inline for now.
+- Consider adding `@ts-check` + JSDoc to backend modules (`functions/`) if Firebase Admin types can be resolved.
+- Consider adding `tsc --noEmit` to CI/pre-commit hooks.
 
 ## Blocked
 
@@ -49,8 +51,10 @@
 - Import/backfill scripts may mutate database/POS history; do not run casually.
 - Immediate ES modules/Vite migration may break global script order and browser runtime assumptions; use compatibility-first extraction.
 - Vite spike merged but IIFE→ESM conversion not yet started; dev server serves IIFE files as static assets.
+- TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules not yet annotated.
 
 ## Done recently
+- 2026-06-02: Phase 13 COMPLETE: TypeScript JSDoc migration. Created jsconfig.json, added @ts-check to all 18 frontend modules, added JSDoc annotations to ~150+ exported functions. tsc --noEmit passes with 0 type errors. 33 verification scripts pass, Jest 6/6. Progress: ~58% total / ~65% core / ~97% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase13-typescript-jsdoc.md`
 
 - 2026-06-02: Phase 12 COMPLETE: Rebased and merged `spike/vite-build-tooling` into `test/xe-kho-repo-implementer-skill`. Vite build verified (dist/ with index.html, main.js 103KB, main.css 57KB, manifest). All 33 verification scripts pass, Jest 6/6, git tree clean. Progress: ~52% total / ~60% core / ~95% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase12-vite-spike-merged.md`
 - 2026-06-02: Phase 10 COMPLETE: extracted 48+ pure functions from `functions/index.js` into 4 new backend modules (`functions/telegram/ads.js`, `functions/telegram/orders.js`, `functions/telegram/online-orders.js`, `functions/utils/general.js`), cleaned 4 duplicate declarations. functions/index.js at 5702 lines (from ~7280 = -1578 lines). 8 backend modules + 20 frontend modules, 150+ exports across 28 modules. 33 verification scripts (29 existing + 4 new). Progress: ~48% total / ~55% core / ~92% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase10-full-extraction.md`
@@ -93,3 +97,8 @@
 - [x] Merged into `test/xe-kho-repo-implementer-skill` (fast-forward)
 - [x] Vite build verified: dist/ produces index.html, main.js (103KB), main.css (57KB), manifest
 - [x] All 33 verification scripts pass, Jest 6/6, git tree clean
+
+## Phase 13 — 2026-06-02
+- [x] Sprint 13.1: Created jsconfig.json, added @ts-check to all 18 frontend modules
+- [x] Sprint 13.2: Added JSDoc annotations to 3 complex modules (order/helpers.js, report/excel.js, report/expense.js)
+- [x] tsc --noEmit passes with 0 type errors
