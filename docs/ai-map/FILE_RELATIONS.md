@@ -310,3 +310,12 @@ Related files:
   - depends on: browser `document` and existing global `switchReportTab(tab, trigger)`.
   - used by: `app/esm/main.js`, `index.html` report buttons with `data-esm-report-tab`, `scripts/verify-esm-report-tabs.js`.
   - notes: removes inline handlers only from the four static report tab buttons; report filters and other report actions remain for later E5 islands.
+
+
+## ESM Phase E5.3 relations
+
+- `app/esm/ui/settings-tabs.js`
+  - role: delegated click handler island for static settings tab buttons.
+  - depends on: browser `document` and existing global `switchSettingsTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` settings tab buttons with `data-esm-settings-tab`, `scripts/verify-esm-settings-tabs.js`.
+  - notes: removes inline handlers only from the seven static settings tab buttons; settings forms/toggles/buttons remain delegated later because they touch config save/reset flows.
