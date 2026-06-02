@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 13:25 (ESM Phase E5.3 settings tabs complete)
+**Updated:** 2026-06-02 13:35 (ESM Phase E5.4 report date controls complete)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~76% complete**.
-- Core non-optional refactor/security/testing plan: **~82% complete**.
-- Near-term safe-execution track: **~99.97% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~77% complete**.
+- Core non-optional refactor/security/testing plan: **~83% complete**.
+- Near-term safe-execution track: **~99.98% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -42,7 +42,8 @@ These percentages are conservative because the repo is production-adjacent and s
 - ESM Phase E5.1 complete: added `app/esm/ui/header-actions.js`, converted 4 static header buttons from inline `onclick` to delegated `data-esm-header-action`, wired the ESM entry, and verified deterministic dispatch.
 - ESM Phase E5.2 complete: added `app/esm/ui/report-tabs.js`, converted 4 static report tabs from inline `onclick` to delegated `data-esm-report-tab`, wired the ESM entry, and verified deterministic dispatch.
 - ESM Phase E5.3 complete: added `app/esm/ui/settings-tabs.js`, converted 7 static settings tabs from inline `onclick` to delegated `data-esm-settings-tab`, wired the ESM entry, and verified deterministic dispatch.
-Current ESM readiness ~58%.
+- ESM Phase E5.4 complete: added `app/esm/ui/report-date-controls.js`, converted 5 report period and 2 report date mode controls from inline handlers to delegated `data-esm-*`, wired the ESM entry, and verified deterministic dispatch.
+Current ESM readiness ~59%.
 - Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
@@ -148,9 +149,9 @@ Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cle
 - Overall ESM readiness: ~57%.
 - Tooling readiness: ~80% (Vite/build/scripts available and verified).
 - Frontend module boundary readiness: ~62% (five leaf helpers, three runtime adapters, and one UI island are importable; most report/order/admin UI modules remain IIFE/global).
-- Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 227 inline handlers, and classic script order still central).
+- Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 220 inline handlers, and classic script order still central).
 - Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
-- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 227 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
+- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 220 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
