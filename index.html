@@ -2379,6 +2379,8 @@
   <script src="offlineStatusUI.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
+  <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
+  <script type="module" src="app/esm/main.js?v=20260602-e1"></script>
   <script>
     // Extra helpers that reference DOM
 

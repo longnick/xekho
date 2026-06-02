@@ -3,19 +3,17 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections).
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E1 compatibility harness is now in place.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~65% complete.
- - Core non-optional refactor/security/testing plan: ~72% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~66% complete.
+ - Core non-optional refactor/security/testing plan: ~73% complete.
  - Near-term safe-execution track: ~99% complete.
 
 ## Next
 
-- Use `docs/ai-map/REFACTOR_PROGRESS.md` and `docs/ai-map/STAGING_REVIEW.md` before further edits to avoid mixing unrelated dirty files.
-- Review the current staged set with:
-  - `git diff --cached --stat`
-  - `git diff --cached --name-status`
-- If approved, commit the explicit staged safe set only; otherwise continue splitting remaining dirty paths into smaller reviewed scopes.
+- Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
+- ESM Phase E1 complete: compatibility harness added at `app/esm/main.js`, loaded after classic scripts, verified by `scripts/verify-esm-entry.js`. Current ESM readiness is now ~38%; do not do one-shot ESM conversion.
+- Next safe coding sprint candidate: ESM Phase E2 first leaf utility facade (`app/utils/dom.js` dual-export/facade) or `Deep Extraction D1` (`app/ui/image-zoom.js`).
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -51,11 +49,15 @@
 - Sensitive-file paths were removed from Git tracking, but credentials may still need rotation and Git history cleanup.
 - `functions/index.js`, `app.js`, `db.js`, and `firestore.rules` are high-impact files; changes may affect production behavior.
 - Import/backfill scripts may mutate database/POS history; do not run casually.
-- Immediate ES modules/Vite migration may break global script order and browser runtime assumptions; use compatibility-first extraction.
+- Immediate ES modules/Vite migration may break global script order and browser runtime assumptions; use compatibility-first extraction. ESM Phase E1 harness is loaded safely after classic scripts.
 - Vite spike merged but IIFE→ESM conversion not yet started; dev server serves IIFE files as static assets.
-- TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14.
+- ESM audit confirms Vite build passes, but current `index.html` still has 31 local classic scripts, 1 module script (`db.js`), and 2 inline scripts. Keep `package.json` as `commonjs` for now.
+- TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 10:08: ESM Phase E1 compatibility harness completed. Added `app/esm/main.js`, `app/esm/README.md`, module script tag in `index.html`, and `scripts/verify-esm-entry.js`. Verified ESM readiness marker/event, syntax checks, frontend/backend tsc, Vite build, and lint with existing warnings only. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1008-esm-e1-compat-harness.md`
+- 2026-06-02 09:31: ESM conversion audit completed. Verified Vite config/build, scanned script/load-order and JS module format state, documented blockers and staged ESM plan in `docs/ai-map/ESM_AUDIT.md`. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0931-esm-audit.md`
+- 2026-06-02 09:07: Tooling cleanup restored `npm run lint`, frontend/backend `tsc`, backend module lint, and all 33 verification scripts. Added local ESLint devDependency, TypeScript 6 deprecation guard, frontend/backend `@ts-check` fixes, and explicit ads data dependency injection. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0907-tooling-cleanup.md`
 - 2026-06-02: Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, tsc --noEmit in CI, CODE_MAP.md expanded (210→474 lines, 34 Cloud Functions, 27 modules, data flows), DATA_SCHEMA.md created (855 lines, 33+ Firestore collections). Progress: ~65% total / ~72% core / ~99% near-term.
 - 2026-06-02: Phase 13 COMPLETE: TypeScript JSDoc migration. Created jsconfig.json, added @ts-check to all 18 frontend modules, added JSDoc annotations to ~150+ exported functions. tsc --noEmit passes with 0 type errors. 33 verification scripts pass, Jest 6/6. Progress: ~58% total / ~65% core / ~97% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase13-typescript-jsdoc.md`
 
