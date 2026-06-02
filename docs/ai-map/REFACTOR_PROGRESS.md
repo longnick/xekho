@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 03:38
+**Updated:** 2026-06-02
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~37% complete**.
-- Core non-optional refactor/security/testing plan: **~42% complete**.
-- Near-term safe-execution track: **~85% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~48% complete**.
+- Core non-optional refactor/security/testing plan: **~55% complete**.
+- Near-term safe-execution track: **~92% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -123,7 +123,7 @@ These percentages are conservative because the repo is production-adjacent and s
 
 ## Recommended next sprint
 
-Sprints 1.7 and 3.3 complete. Remaining: POS state-dependent functions (order sync, online order CRUD) stay in `app.js`. Next: deeper extraction or commit staging. once baseline tests/smoke are available. Remaining ~30 functions in `functions/index.js` that depend on db/admin/config should stay inline. — extract domain handler groups (Telegram message sending infrastructure, kitchen notifications, or Telegram report helpers). Each group should be a separate small sprint following the same require/delegate pattern. Alternatively, start Phase 3 Sprint 3.3 (targeted ESLint) for code quality.
+Sprints 1.7, 3.3, and Phase 10 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. functions/index.js at 5702 lines (-1578 from original). Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of extracted modules, or deeper frontend extraction (remaining state-dependent POS functions in app.js). Once baseline tests/smoke are available. Alternatively, start Phase 3 Sprint 3.3 (targeted ESLint) for code quality.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
@@ -132,3 +132,8 @@ Sprints 1.7 and 3.3 complete. Remaining: POS state-dependent functions (order sy
 
 ### Phase 10 — 2026-06-02
 - [x] Sprint 10.1: Telegram report helpers batch 2 — 11 new exports into functions/telegram/reports.js (coerceHistoryDate, formatTelegramDateTimeVi, getTelegramPayMethodLabel, isTelegramBankPayMethod, formatTelegramSmartRangeLabel, parseTelegramSmartReportIntent, DEFAULT_TELEGRAM_REPORT_SETTINGS, getVietnamBusinessReportRange, getTelegramReportSettings, getTelegramReportRangeKey, shouldSendTelegramReportNow). functions/index.js reduced by 115 lines.
+- [x] Sprint 10.2: 22 ads/date/NLP helpers → functions/telegram/ads.js
+- [x] Sprint 10.3a: 11 order helpers → functions/telegram/orders.js, 9 online order helpers → functions/telegram/online-orders.js
+- [x] Sprint 10.3b: 6 general utilities → functions/utils/general.js
+- [x] Sprint 10.4: Removed 4 duplicate declarations (-221 lines). functions/index.js now 5702 lines (from ~7280 original = -1578 lines total).
+- [x] Phase 10 COMPLETE: 8 backend modules + 20 frontend modules, 150+ total exports across 28 modules, app.js at 11895 lines (from ~12099)

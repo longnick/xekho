@@ -3,11 +3,11 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 10 Sprint 10.1 completed: extracted 11 pure Telegram report helpers into `functions/telegram/reports.js`, reduced `functions/index.js` by 115 lines.
+- Phase 10 COMPLETE: extracted 48+ pure functions from `functions/index.js` into 4 new backend modules + cleaned 4 duplicate declarations. `functions/index.js` reduced to 5702 lines (from ~7280 = -1578 lines). 8 backend modules + 20 frontend modules, 150+ total exports across 28 modules.
 - Current conservative progress estimate:
-  - Total long-term plan including optional TypeScript/CI/build tooling: ~37% complete.
-  - Core non-optional refactor/security/testing plan: ~42% complete.
-  - Near-term safe-execution track: ~85% complete.
+  - Total long-term plan including optional TypeScript/CI/build tooling: ~48% complete.
+  - Core non-optional refactor/security/testing plan: ~55% complete.
+  - Near-term safe-execution track: ~92% complete.
 
 ## Next
 
@@ -26,10 +26,12 @@
 - Before any coding task, inspect current dirty working tree carefully with:
   - `git status --short`
   - `git diff --stat`
-  - targeted `git diff -- <file>` for files to be edited.
+  - `git diff -- <file>` for files to be edited.
 - Update this AI map after each future coding/refactor task.
 - Expand `CODE_MAP.md` Cloud Functions endpoint/API section after a dedicated read of `functions/index.js`.
 - Expand data schema notes after a dedicated read of `README.md`, `db.js`, and relevant Firestore helpers.
+- Consider targeted commit staging of all 28 extracted modules and verification scripts.
+- Remaining ~30 functions in `functions/index.js` depend on db/admin/config and should stay inline for now.
 
 ## Blocked
 
@@ -49,6 +51,7 @@
 
 ## Done recently
 
+- 2026-06-02: Phase 10 COMPLETE: extracted 48+ pure functions from `functions/index.js` into 4 new backend modules (`functions/telegram/ads.js`, `functions/telegram/orders.js`, `functions/telegram/online-orders.js`, `functions/utils/general.js`), cleaned 4 duplicate declarations. functions/index.js at 5702 lines (from ~7280 = -1578 lines). 8 backend modules + 20 frontend modules, 150+ exports across 28 modules. 33 verification scripts (29 existing + 4 new). Progress: ~48% total / ~55% core / ~92% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase10-full-extraction.md`
 - 2026-06-02 01:44: Safe refactor Sprint 9 (Phase 2 Sprint 2.1+2.2): mapped all 35 exports in `functions/index.js` into CODE_MAP.md, extracted 11 pure text/formatting utilities into `functions/utils/text.js` with delegation wrappers. Progress: ~21% total / ~25% core / ~52% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0144-safe-refactor-sprint-9-phase2-mapping-text-utils.md`
 - 2026-06-02 01:38: Safe refactor Sprint 8: extracted pure staff helpers into `app/auth/staff.js` IIFE, added 4 compatibility wrappers in `app.js`. Progress: ~19% total / ~23% core / ~48% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0138-safe-refactor-sprint-8-auth-staff.md`
 - 2026-06-02 01:36: Safe refactor Sprint 7: extracted `openModal`/`closeModal`/`isModalOpen` into `app/ui/modal.js` IIFE, wrapped 6 existing modal functions in `app.js`. Progress: ~18% total / ~22% core / ~45% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-0136-safe-refactor-sprint-7-modal-ui.md`
@@ -75,3 +78,10 @@
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js
 - [x] Sprint 8.2: exportReportExcel (573 lines) → app/report/excel.js
 - [x] Sprint 8.3: buildOperationalExpenseBreakdown → app/report/expense.js
+
+## Phase 10 — 2026-06-02
+- [x] Sprint 10.1: 11 Telegram report helpers → functions/telegram/reports.js
+- [x] Sprint 10.2: 22 ads/date/NLP helpers → functions/telegram/ads.js
+- [x] Sprint 10.3a: 11 order helpers → functions/telegram/orders.js, 9 online order helpers → functions/telegram/online-orders.js
+- [x] Sprint 10.3b: 6 general utilities → functions/utils/general.js
+- [x] Sprint 10.4: Removed 4 duplicate declarations (-221 lines)
