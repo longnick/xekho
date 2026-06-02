@@ -9,6 +9,7 @@ import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
+import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
 import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
@@ -38,6 +39,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var dbAdapter = installDbAdapter(anyRoot);
   var headerActions = installHeaderActions(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
+  var reportDateControls = installReportDateControls(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
   var settingsTabs = installSettingsTabs(anyRoot);
 
@@ -87,6 +89,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
     headerActions: headerActions,
     imageZoom: imageZoom,
+    reportDateControls: reportDateControls,
     reportTabs: reportTabs,
     settingsTabs: settingsTabs,
   });
@@ -127,6 +130,12 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       installed: headerActions.installed === true,
       selectorPresent: headerActions.selector === '[data-esm-header-action]',
     },
+    reportDateControls: {
+      callReportPeriodPresent: reportDateControls.callReportPeriod === callReportPeriod,
+      callReportDateModePresent: reportDateControls.callReportDateMode === callReportDateMode,
+      installed: reportDateControls.installed === true,
+      selectorPresent: reportDateControls.selector === '[data-esm-report-period], [data-esm-report-date-mode]',
+    },
     reportTabs: {
       callReportTabPresent: reportTabs.callReportTab === callReportTab,
       installed: reportTabs.installed === true,
@@ -146,7 +155,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-settings-tabs',
+    version: '20260602-e5-report-date-controls',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),

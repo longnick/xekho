@@ -506,3 +506,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.3 Settings Tabs
 
 - `app/esm/ui/settings-tabs.js`: importable delegated settings tab island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.settingsTabs`; replaces seven static settings tab inline `onclick` handlers with `data-esm-settings-tab`. Verified by `scripts/verify-esm-settings-tabs.js`.
+
+
+## ESM Phase E5.4 Report Date Controls
+
+- `app/esm/ui/report-date-controls.js`: importable delegated report period/date mode island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportDateControls`; replaces seven report date inline handlers with `data-esm-report-period` / `data-esm-report-date-mode`. Verified by `scripts/verify-esm-report-date-controls.js`.
