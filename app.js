@@ -6777,6 +6777,7 @@ function renderFinance() {
 }
 
 function formatLocalDateKey(date) {
+  if (window.XekhoApp?.utils?.date?.formatLocalDateKey) return window.XekhoApp.utils.date.formatLocalDateKey(date);
   const value = new Date(date);
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -10822,6 +10823,7 @@ async function cleanupHeavyData() {
 }
 
 function excelThinBorder() {
+  if (window.XekhoApp?.utils?.excel?.excelThinBorder) return window.XekhoApp.utils.excel.excelThinBorder();
   const color = { argb: 'FFAAAAAA' };
   return {
     top: { style: 'thin', color },
@@ -10832,6 +10834,7 @@ function excelThinBorder() {
 }
 
 function excelColLetter(n) {
+  if (window.XekhoApp?.utils?.excel?.excelColLetter) return window.XekhoApp.utils.excel.excelColLetter(n);
   let s = '';
   let x = n;
   while(x > 0) {
@@ -10843,10 +10846,12 @@ function excelColLetter(n) {
 }
 
 function excelFmtVnInt(n) {
+  if (window.XekhoApp?.utils?.excel?.excelFmtVnInt) return window.XekhoApp.utils.excel.excelFmtVnInt(n);
   return (Math.round(Number(n) || 0)).toLocaleString('vi-VN');
 }
 
 function applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol }) {
+  if (window.XekhoApp?.utils?.excel?.applyReportTitleBlock) return window.XekhoApp.utils.excel.applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol });
   const end = excelColLetter(lastCol);
   ws.mergeCells(`A1:${end}1`);
   const t = ws.getCell('A1');
@@ -10873,6 +10878,7 @@ function applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol 
 }
 
 function paintExcelHeaderRow(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.paintExcelHeaderRow) return window.XekhoApp.utils.excel.paintExcelHeaderRow(ws, rowIndex, colCount);
   const row = ws.getRow(rowIndex);
   for(let c = 1; c <= colCount; c++) {
     const cell = row.getCell(c);
@@ -10884,6 +10890,7 @@ function paintExcelHeaderRow(ws, rowIndex, colCount) {
 }
 
 function paintExcelTotalRow(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.paintExcelTotalRow) return window.XekhoApp.utils.excel.paintExcelTotalRow(ws, rowIndex, colCount);
   const row = ws.getRow(rowIndex);
   for(let c = 1; c <= colCount; c++) {
     const cell = row.getCell(c);
@@ -10893,6 +10900,7 @@ function paintExcelTotalRow(ws, rowIndex, colCount) {
 }
 
 function setRowBorders(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.setRowBorders) return window.XekhoApp.utils.excel.setRowBorders(ws, rowIndex, colCount);
   for(let c = 1; c <= colCount; c++) {
     ws.getRow(rowIndex).getCell(c).border = excelThinBorder();
   }
@@ -11602,9 +11610,9 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
 }
 
 function getWeekStartKey(d) {
+  if (window.XekhoApp?.utils?.date?.getWeekStartKey) return window.XekhoApp.utils.date.getWeekStartKey(d);
   const x = new Date(d);
   x.setHours(0,0,0,0);
-  // getDay: 0=Sun..6=Sat để chuyđơ về Monday start
   const diff = (x.getDay() + 6) % 7;
   x.setDate(x.getDate() - diff);
   return x.toISOString().slice(0,10);
