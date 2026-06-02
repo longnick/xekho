@@ -3,10 +3,10 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1/E5.2/E5.3/E5.4/E5.5/E5.6/E5.7/E5.8/E5.9/E5.10/E5.11 are complete: audit/guardrails, harness, DOM/format/date/Excel/staff leaf facades, runtime adapters for DOM/Store/appState/DB readiness, first image zoom UI island, and first delegated header action handler island, report tab delegated handler island, settings tab delegated handler island, and report date controls delegated handler island, and inventory tab delegated handler island, and finance period delegated handler island, and report transaction filter delegated handler island, and report filter control delegated handler island.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1→E5.11 are complete. Non-ESM Deep Extraction D4 small-utility cleanup is complete: `getTelegramReportTestUrl()` moved to storage utils, `getCurrentOrderActorMetaFromUser()` moved to auth/staff helpers, and unreachable `getFinanceExpenseRows()` fallback code removed.
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~83% complete.
- - Core non-optional refactor/security/testing plan: ~88% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~85% complete.
+ - Core non-optional refactor/security/testing plan: ~90% complete.
  - Near-term safe-execution track: ~99.998% complete.
 
 ## Next
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-02 15:29: Deep Extraction D4 small-utility cleanup completed outside E phase. Added `getTelegramReportTestUrl()` to `app/utils/storage.js`, added `getCurrentOrderActorMetaFromUser()` to `app/auth/staff.js`, delegated both legacy `app.js` functions, removed unreachable `getFinanceExpenseRows()` fallback code, and expanded storage/auth verifiers. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1529-deep-d4-small-utils.md`
 - 2026-06-02 14:58: ESM Phase E5.11 admin render controls completed. Added `app/esm/ui/admin-render-controls.js`, converted 6 low-risk admin render/search inline handlers to delegated data attributes, wired `app/esm/main.js`, added `scripts/verify-esm-admin-render-controls.js`, and reduced inline handlers to 141. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1458-esm-e5-admin-render-controls.md`
 - 2026-06-02 14:50: ESM Phase E5.10 render/filter refresh controls completed. Added `app/esm/ui/render-refresh-controls.js`, converted 12 low-risk render/filter refresh inline handlers to delegated `data-esm-render-refresh`, wired `app/esm/main.js`, added `scripts/verify-esm-render-refresh-controls.js`, and reduced inline handlers to 147. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1450-esm-e5-render-refresh-controls.md`
 - 2026-06-02 14:20: ESM Phase E5.9 modal overlay/close controls completed. Added `app/esm/ui/modal-overlay-controls.js`, converted 41 low-risk modal/image-zoom inline handlers to delegated data attributes, wired `app/esm/main.js`, added `scripts/verify-esm-modal-overlay-controls.js`, and reduced inline handlers to 159. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1420-esm-e5-modal-overlay-controls.md`
