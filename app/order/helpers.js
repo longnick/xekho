@@ -1,5 +1,7 @@
+// @ts-check
 (function (global) {
   'use strict';
+  /** @type {any} */
   var XekhoApp = global.XekhoApp = global.XekhoApp || {};
   XekhoApp.order = XekhoApp.order || {};
 
