@@ -5,7 +5,9 @@
   "main": "app.js",
   "scripts": {
     "test": "jest",
-    "backfill:history-costs": "node backfill_history_costs.js"
+    "backfill:history-costs": "node backfill_history_costs.js",
+    "lint": "eslint app.js app/utils/ app/ui/ app/auth/ app/order/ app/report/",
+    "check": "node --check app.js && for f in app/utils/*.js app/ui/*.js app/auth/*.js app/order/*.js app/report/*.js; do node --check \"$f\"; done"
   },
   "keywords": [],
   "author": "",
