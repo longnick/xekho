@@ -541,3 +541,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.10 Render Refresh Controls
 
 - `app/esm/ui/render-refresh-controls.js`: importable delegated render/filter refresh island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.renderRefreshControls`; replaces 12 low-risk inline handlers with `data-esm-render-refresh`. Allowlist: `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, `applyStocktakeHistoryFilter`. Verified by `scripts/verify-esm-render-refresh-controls.js`.
+
+
+## ESM Phase E5.11 Admin Render Controls
+
+- `app/esm/ui/admin-render-controls.js`: importable delegated admin render/search island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.adminRenderControls`; replaces 6 low-risk inline handlers with `data-esm-admin-render` / `data-esm-menu-items-search`. Allowlist: `renderTables`, `renderStockList`, `renderMenuAdmin`, plus menu-search assignment followed by `renderMenuItems`. Verified by `scripts/verify-esm-admin-render-controls.js`.

@@ -16,6 +16,7 @@ const staffFacadePath = path.join(root, 'app', 'esm', 'auth', 'staff.js');
 const domAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'dom.js');
 const storeAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'store.js');
 const dbAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'db.js');
+const adminRenderControlsPath = path.join(root, 'app', 'esm', 'ui', 'admin-render-controls.js');
 const financePeriodPath = path.join(root, 'app', 'esm', 'ui', 'finance-period.js');
 const headerActionsPath = path.join(root, 'app', 'esm', 'ui', 'header-actions.js');
 const inventoryTabsPath = path.join(root, 'app', 'esm', 'ui', 'inventory-tabs.js');
@@ -44,6 +45,7 @@ const staffFacadeSource = fs.readFileSync(staffFacadePath, 'utf8');
 const domAdapterSource = fs.readFileSync(domAdapterPath, 'utf8');
 const storeAdapterSource = fs.readFileSync(storeAdapterPath, 'utf8');
 const dbAdapterSource = fs.readFileSync(dbAdapterPath, 'utf8');
+const adminRenderControlsSource = fs.readFileSync(adminRenderControlsPath, 'utf8');
 const financePeriodSource = fs.readFileSync(financePeriodPath, 'utf8');
 const headerActionsSource = fs.readFileSync(headerActionsPath, 'utf8');
 const inventoryTabsSource = fs.readFileSync(inventoryTabsPath, 'utf8');
@@ -55,7 +57,7 @@ const reportTransactionFiltersSource = fs.readFileSync(reportTransactionFiltersP
 const reportTabsSource = fs.readFileSync(reportTabsPath, 'utf8');
 const renderRefreshControlsSource = fs.readFileSync(renderRefreshControlsPath, 'utf8');
 const settingsTabsSource = fs.readFileSync(settingsTabsPath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-render-refresh-controls"></script>';
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-admin-render-controls"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -69,6 +71,7 @@ assert(entrySource.includes("from './auth/staff.js';"), 'ESM entry must import s
 assert(entrySource.includes("from './adapters/dom.js';"), 'ESM entry must import dom adapter');
 assert(entrySource.includes("from './adapters/store.js';"), 'ESM entry must import store adapter');
 assert(entrySource.includes("from './adapters/db.js';"), 'ESM entry must import db adapter');
+assert(entrySource.includes("from './ui/admin-render-controls.js';"), 'ESM entry must import admin render controls UI island');
 assert(entrySource.includes("from './ui/header-actions.js';"), 'ESM entry must import header actions UI island');
 assert(entrySource.includes("from './ui/image-zoom.js';"), 'ESM entry must import image zoom UI island');
 assert(entrySource.includes("from './ui/report-date-controls.js';"), 'ESM entry must import report date controls UI island');
@@ -93,6 +96,7 @@ assert(staffFacadeSource.includes('export function installGlobalStaffAuth'), 'st
 assert(domAdapterSource.includes('export function installDomAdapter'), 'dom adapter must export installer');
 assert(storeAdapterSource.includes('export function installStoreAdapter'), 'store adapter must export installer');
 assert(dbAdapterSource.includes('export function installDbAdapter'), 'db adapter must export installer');
+assert(adminRenderControlsSource.includes('export function installAdminRenderControls'), 'admin render controls island must export installer');
 assert(financePeriodSource.includes('export function installFinancePeriodControls'), 'finance period island must export installer');
 assert(headerActionsSource.includes('export function installHeaderActions'), 'header actions island must export installer');
 assert(inventoryTabsSource.includes('export function installInventoryTabs'), 'inventory tabs island must export installer');
@@ -371,6 +375,20 @@ const sandbox = {
     };
     return rootScope.XekhoApp.esm.ui.reportTransactionFilters;
   },
+  callAdminRender: function callAdminRender() {},
+  callMenuItemsSearch: function callMenuItemsSearch() {},
+  installAdminRenderControls: function installAdminRenderControls(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.adminRenderControls = {
+      selector: '[data-esm-admin-render], [data-esm-menu-items-search]',
+      installed: true,
+      detach: function detach() {},
+      callAdminRender: sandbox.callAdminRender,
+      callMenuItemsSearch: sandbox.callMenuItemsSearch,
+    };
+    return rootScope.XekhoApp.esm.ui.adminRenderControls;
+  },
   callRenderRefresh: function callRenderRefresh() {},
   installRenderRefreshControls: function installRenderRefreshControls(globalScope) {
     var rootScope = globalScope || win;
@@ -452,7 +470,7 @@ vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e5-render-refresh-controls', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-admin-render-controls', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -465,6 +483,8 @@ assert(win.XekhoApp.esm.facades.runtimeAdapters.dom.qsPresent === true, 'dom ada
 assert(win.XekhoApp.esm.facades.runtimeAdapters.store.getAppStatePresent === true, 'store adapter marker mismatch');
 assert(win.XekhoApp.esm.facades.runtimeAdapters.db.waitForDBPresent === true, 'db adapter marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.loaded === true, 'ui island marker should be loaded');
+assert(win.XekhoApp.esm.facades.uiIslands.adminRenderControls.installed === true, 'admin render controls marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.adminRenderControls.selectorPresent === true, 'admin render controls selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.financePeriod.installed === true, 'finance period marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.financePeriod.selectorPresent === true, 'finance period selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.headerActions.installed === true, 'header actions marker mismatch');
@@ -484,6 +504,8 @@ assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.selectorPresent === true, '
 assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.installed === true, 'settings tabs marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.selectorPresent === true, 'settings tabs selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.imageZoom.attachPresent === true, 'image zoom marker mismatch');
+assert(typeof win.XekhoApp.esm.ui.adminRenderControls.callAdminRender === 'function', 'admin render controls island should install under XekhoApp.esm.ui');
+assert(typeof win.XekhoApp.esm.ui.adminRenderControls.callMenuItemsSearch === 'function', 'admin render controls menu search should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.financePeriod.callFinancePeriod === 'function', 'finance period island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.headerActions.callHeaderAction === 'function', 'header actions island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.inventoryTabs.callInventoryTab === 'function', 'inventory tabs island should install under XekhoApp.esm.ui');
