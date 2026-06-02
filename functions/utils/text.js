@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Sprint 2.2: Pure text/formatting utilities extracted from functions/index.js
  *
@@ -6,12 +7,21 @@
  */
 'use strict';
 
+/**
+ * @param {any[]} arr
+ * @param {number} size
+ * @returns {any[][]}
+ */
 function chunkArray(arr, size) {
   const chunks = [];
   for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
   return chunks;
 }
 
+/**
+ * @param {string} text
+ * @returns {string}
+ */
 function escapeTelegramHtml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -19,6 +29,10 @@ function escapeTelegramHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
+/**
+ * @param {string} text
+ * @returns {string}
+ */
 function escapeXml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -28,6 +42,10 @@ function escapeXml(text) {
     .replace(/'/g, '&apos;');
 }
 
+/**
+ * @param {string} text
+ * @returns {number}
+ */
 function scoreTelegramTextQuality(text = '') {
   const value = String(text || '');
   let score = 0;
@@ -36,14 +54,26 @@ function scoreTelegramTextQuality(text = '') {
   return score;
 }
 
+/**
+ * @param {string} text
+ * @returns {string}
+ */
 function fixTelegramMojibake(text = '') {
   return String(text || '');
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function normalizeTelegramText(value = '') {
   return fixTelegramMojibake(String(value || '')).replace(/\s+\n/g, '\n').trim();
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function normalizeTelegramTextPreserveLines(value = '') {
   return fixTelegramMojibake(String(value || ''))
     .replace(/\r\n/g, '\n')
@@ -51,10 +81,18 @@ function normalizeTelegramTextPreserveLines(value = '') {
     .replace(/[ \t]+\n/g, '\n');
 }
 
+/**
+ * @param {number} amount
+ * @returns {string}
+ */
 function formatCurrencyVi(amount) {
   return `${Number(amount || 0).toLocaleString('vi-VN')}đ`;
 }
 
+/**
+ * @param {number} amount
+ * @returns {string}
+ */
 function formatQtyVi(amount) {
   const value = Number(amount || 0);
   if (!Number.isFinite(value)) return '0';
@@ -62,12 +100,22 @@ function formatQtyVi(amount) {
   return value.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+/**
+ * @param {Object} product
+ * @param {string} fallback
+ * @returns {string}
+ */
 function getTelegramProductDisplayName(product = {}, fallback = 'Món') {
   return normalizeTelegramText(
     String(product.display_name || product.name || fallback || 'Món').trim() || fallback,
   );
 }
 
+/**
+ * @param {string} currentName
+ * @param {Object} product
+ * @returns {boolean}
+ */
 function shouldPreferTelegramCatalogName(currentName = '', product = {}) {
   const candidate = String(currentName || '').trim();
   const catalogName = String(product.display_name || product.name || '').trim();

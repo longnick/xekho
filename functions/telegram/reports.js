@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 /**
@@ -5,6 +6,10 @@
  * No external dependencies beyond basic JS and Intl APIs.
  */
 
+/**
+ * @param {Date} [date]
+ * @returns {{year: number, month: number, day: number, hour: number, minute: number}}
+ */
 function getVietnamDateParts(date) {
   if (!date) date = new Date();
   var dtf = new Intl.DateTimeFormat('en-CA', {
@@ -18,16 +23,28 @@ function getVietnamDateParts(date) {
   return { year: Number(map.year), month: Number(map.month), day: Number(map.day), hour: Number(map.hour), minute: Number(map.minute) };
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function normalizeTelegramSmartReportText(value) {
   if (!value) value = '';
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u0111/g, 'd').replace(/\u0110/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function normalizeTelegramWildcardText(value) {
   if (!value) value = '';
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u0111/g, 'd').replace(/\u0110/g, 'D').toLowerCase().replace(/[^a-z0-9?\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * @param {string} value
+ * @returns {RegExp|null}
+ */
 function buildTelegramWildcardRegex(value) {
   if (!value) value = '';
   var normalized = normalizeTelegramWildcardText(value);
@@ -38,6 +55,11 @@ function buildTelegramWildcardRegex(value) {
   return new RegExp('^' + pattern + '$', 'i');
 }
 
+/**
+ * @param {string} value
+ * @param {Date} fallbackNow
+ * @returns {Date|null}
+ */
 function parseTelegramLooseDateTime(value, fallbackNow) {
   if (!value) value = '';
   if (!fallbackNow) fallbackNow = new Date();
@@ -69,6 +91,11 @@ function parseTelegramLooseDateTime(value, fallbackNow) {
   return new Date(Date.UTC(year, month - 1, day, h, m, 0) - 7 * 60 * 60 * 1000);
 }
 
+/**
+ * @param {string} fromYmd
+ * @param {string} toYmd
+ * @returns {number}
+ */
 function getInclusiveVietnamDateCount(fromYmd, toYmd) {
   var start = new Date(String(fromYmd || '').trim() + 'T00:00:00');
   var end = new Date(String(toYmd || '').trim() + 'T00:00:00');
@@ -76,6 +103,11 @@ function getInclusiveVietnamDateCount(fromYmd, toYmd) {
   return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
 }
 
+/**
+ * @param {number} value
+ * @param {number} target
+ * @returns {string}
+ */
 function formatAchievementPercent(value, target) {
   if (!value) value = 0;
   if (!target) target = 0;
@@ -84,6 +116,10 @@ function formatAchievementPercent(value, target) {
   return percent.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + '%';
 }
 
+/**
+ * @param {Object} report
+ * @returns {string}
+ */
 function buildMorningRevenueMood(report) {
   if (!report) report = {};
   var target = Number(report.targetRevenueForRange || 0) || 0;
@@ -99,6 +135,10 @@ function buildMorningRevenueMood(report) {
 
 // --- Phase 10: New pure helpers ---
 
+/**
+ * @param {any} value
+ * @returns {Date|null}
+ */
 function coerceHistoryDate(value) {
   if (value && typeof value.getTime === 'function') return value;
   if (value && value.toDate) return value.toDate();
@@ -107,6 +147,10 @@ function coerceHistoryDate(value) {
   return null;
 }
 
+/**
+ * @param {any} value
+ * @returns {string}
+ */
 function formatTelegramDateTimeVi(value) {
   var date = coerceHistoryDate(value);
   if (!date || typeof date.getTime !== 'function' || Number.isNaN(date.getTime())) return 'Kh\u00f4ng r\u00f5';
@@ -116,6 +160,10 @@ function formatTelegramDateTimeVi(value) {
   }).format(date);
 }
 
+/**
+ * @param {string} payMethod
+ * @returns {string}
+ */
 function getTelegramPayMethodLabel(payMethod) {
   var method = String(payMethod || '').trim().toLowerCase();
   if (['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(method)) return 'Chuy\u1ec3n kho\u1ea3n';
@@ -123,14 +171,27 @@ function getTelegramPayMethodLabel(payMethod) {
   return method || 'Kh\u00f4ng r\u00f5';
 }
 
+/**
+ * @param {string} payMethod
+ * @returns {boolean}
+ */
 function isTelegramBankPayMethod(payMethod) {
   return ['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(String(payMethod || '').trim().toLowerCase());
 }
 
+/**
+ * @param {any} from
+ * @param {any} toExclusive
+ * @returns {string}
+ */
 function formatTelegramSmartRangeLabel(from, toExclusive) {
   return 't\u1eeb ' + formatTelegramDateTimeVi(from) + ' \u0111\u1ebfn ' + formatTelegramDateTimeVi(toExclusive);
 }
 
+/**
+ * @param {string} userText
+ * @returns {Object|null}
+ */
 function parseTelegramSmartReportIntent(userText) {
   if (!userText) userText = '';
   var normalized = normalizeTelegramSmartReportText(userText);
@@ -156,6 +217,10 @@ var DEFAULT_TELEGRAM_REPORT_SETTINGS = {
   includePaymentBreakdown: true, includeInvoiceCount: true, includeTopItem: true, includeRetailStock: true,
 };
 
+/**
+ * @param {Date} [now]
+ * @returns {{from: Date, toExclusive: Date, label: string}}
+ */
 function getVietnamBusinessReportRange(now) {
   if (!now) now = new Date();
   var parts = getVietnamDateParts(now);
@@ -168,6 +233,10 @@ function getVietnamBusinessReportRange(now) {
   return { from: from, toExclusive: toExclusive, label: labelStart + ' -> ' + labelEnd };
 }
 
+/**
+ * @param {Object} raw
+ * @returns {Object}
+ */
 function getTelegramReportSettings(raw) {
   if (!raw) raw = {};
   var hour = Math.min(23, Math.max(0, parseInt(raw.telegramReportSendHour, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendHour));
@@ -183,10 +252,20 @@ function getTelegramReportSettings(raw) {
   };
 }
 
+/**
+ * @param {Object} range
+ * @returns {string}
+ */
 function getTelegramReportRangeKey(range) {
   return range.from.toISOString() + '__' + range.toExclusive.toISOString();
 }
 
+/**
+ * @param {Object} settings
+ * @param {Date} [now]
+ * @param {Object} [range]
+ * @returns {{shouldSend: boolean, reason: string, range: Object, rangeKey?: string}}
+ */
 function shouldSendTelegramReportNow(settings, now, range) {
   if (!now) now = new Date();
   if (!range) range = getVietnamBusinessReportRange(now);
