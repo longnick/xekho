@@ -8,6 +8,7 @@ import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom
 import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
+import { callInventoryTab, installInventoryTabs } from './ui/inventory-tabs.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
@@ -38,6 +39,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var storeAdapter = installStoreAdapter(anyRoot);
   var dbAdapter = installDbAdapter(anyRoot);
   var headerActions = installHeaderActions(anyRoot);
+  var inventoryTabs = installInventoryTabs(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
   var reportDateControls = installReportDateControls(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
@@ -130,6 +132,11 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       installed: headerActions.installed === true,
       selectorPresent: headerActions.selector === '[data-esm-header-action]',
     },
+    inventoryTabs: {
+      callInventoryTabPresent: inventoryTabs.callInventoryTab === callInventoryTab,
+      installed: inventoryTabs.installed === true,
+      selectorPresent: inventoryTabs.selector === '[data-esm-inventory-tab]',
+    },
     reportDateControls: {
       callReportPeriodPresent: reportDateControls.callReportPeriod === callReportPeriod,
       callReportDateModePresent: reportDateControls.callReportDateMode === callReportDateMode,
@@ -155,7 +162,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-report-date-controls',
+    version: '20260602-e5-inventory-tabs',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),

@@ -328,3 +328,12 @@ Related files:
   - depends on: browser `document`, existing global `setReportPeriod(period)`, and existing global `setDateMode(page, mode, trigger)`.
   - used by: `app/esm/main.js`, `index.html` report controls with `data-esm-report-period` / `data-esm-report-date-mode`, `scripts/verify-esm-report-date-controls.js`.
   - notes: removes inline handlers only from low-risk report date navigation; date input changes and report export/action buttons remain delegated later.
+
+
+## ESM Phase E5.5 relations
+
+- `app/esm/ui/inventory-tabs.js`
+  - role: delegated click handler island for inventory tab buttons.
+  - depends on: browser `document` and existing global `switchInvTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` inventory tab buttons with `data-esm-inventory-tab`, `scripts/verify-esm-inventory-tabs.js`.
+  - notes: removes inline handlers only from the five primary inventory tabs; the inventory more modal button remains inline for a later modal/action island.
