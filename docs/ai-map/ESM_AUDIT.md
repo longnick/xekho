@@ -7,19 +7,19 @@ Branch: `test/xe-kho-repo-implementer-skill`
 
 The repo is **not ready for one-shot ESM conversion**. Vite is installed and verified, and Phase E1 now provides a safe module-script bridge, but the app still mostly runs as classic-script/IIFE/global code. The safe path remains a staged frontend-only ESM migration that starts with leaf helpers and keeps compatibility globals until all inline handlers and global call sites are removed.
 
-Current ESM readiness estimate: **~40%**.
+Current ESM readiness estimate: **~43%**.
 
 E1/E2 status:
 
 - `app/esm/main.js` now loads as `<script type="module">` after the existing classic runtime.
 - `window.XekhoApp.esm.harness` records readiness without importing the `app.js` monolith.
 - `xekho:esm-ready` is dispatched when browser event APIs exist.
-- `scripts/verify-esm-entry.js` verifies load order, readiness marker, DOM facade marker, and event behavior.
-- `app/esm/utils/dom.js` is the first ESM leaf facade; it exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()`.
-- `scripts/verify-esm-dom-utils.js` verifies the importable DOM facade and global installer.
+- `scripts/verify-esm-entry.js` verifies load order, readiness marker, all E2 facade markers, and event behavior.
+- `app/esm/utils/dom.js`, `format.js`, `date.js`, `excel.js`, and `app/esm/auth/staff.js` are ESM leaf facades with installers that preserve classic globals/namespaces.
+- `scripts/verify-esm-dom-utils.js` and `scripts/verify-esm-leaf-facades.js` verify native dynamic imports plus global installers.
 
 - Build tooling readiness: **~80%** — Vite config, npm scripts, TypeScript checks, and build command are present and working.
-- Frontend module boundary readiness: **~45%** — 19 extracted `app/` modules exist, but they are IIFE/global modules, not `export` modules.
+- Frontend module boundary readiness: **~50%** — 19 extracted `app/` IIFE modules exist, and 5 low-risk leaf helpers now have importable ESM facades.
 - Runtime entry readiness: **~20%** — `app.js`, `store.js`, AI/offline scripts, and inline handlers still depend heavily on global script order.
 - Backend ESM readiness: **~10%** — package is `commonjs`; Cloud Functions and Node scripts are CommonJS. Backend should stay CommonJS until frontend migration is stable.
 
@@ -122,22 +122,19 @@ Implemented:
 
 Risk: low; verified.
 
-### Phase E2 — Dual-export leaf utility modules — IN PROGRESS
+### Phase E2 — Dual-export leaf utility modules — COMPLETE
 
 Goal: convert the safest pure helper modules to support both global IIFE and ESM import.
 
 Completed:
 
 1. `app/utils/dom.js` → `app/esm/utils/dom.js` facade with `escapeHtml()` and `installGlobalDomUtils()`.
-2. `app/esm/main.js` imports the DOM facade and records `window.XekhoApp.esm.facades.dom` readiness.
-3. `scripts/verify-esm-dom-utils.js` verifies native dynamic import from a data URL plus global installation.
-
-Remaining candidates, in order:
-
-1. `app/utils/format.js` — 6 pure exports, but must preserve legacy formatter globals used by `store.js`.
-2. `app/utils/date.js` — 3 pure exports.
-3. `app/utils/excel.js` — 7 pure worksheet-formatting exports.
-4. `app/auth/staff.js` — 5 pure staff helpers.
+2. `app/utils/format.js` → `app/esm/utils/format.js` facade with formatter helpers and legacy globals.
+3. `app/utils/date.js` → `app/esm/utils/date.js` facade with date helpers and legacy globals.
+4. `app/utils/excel.js` → `app/esm/utils/excel.js` facade with worksheet formatting helpers and legacy globals.
+5. `app/auth/staff.js` → `app/esm/auth/staff.js` facade with pure staff helpers.
+6. `app/esm/main.js` imports the full E2 facade set and records `window.XekhoApp.esm.facades.*` readiness.
+7. `scripts/verify-esm-dom-utils.js` and `scripts/verify-esm-leaf-facades.js` verify native dynamic imports plus global installation.
 
 Pattern:
 
@@ -203,12 +200,12 @@ Expected time: separate planning sprint.
 
 ## Recommended immediate next sprint
 
-Continue **Phase E2** with the second leaf utility facade:
+Move to **Phase E3 runtime adapters** before importing any stateful code:
 
-- Add `app/esm/utils/format.js` for the pure formatter helpers already exposed by `app/utils/format.js`.
-- Keep legacy globals (`fmt`, `fmtFull`, `fmtDate`, `fmtTime`, `fmtDateTime`, `today`) and `window.XekhoApp.utils.format.*` compatibility intact.
-- Add an ESM import smoke test similar to `scripts/verify-esm-dom-utils.js`.
-- Verify: `npm run check`, frontend/backend `tsc`, `npm test -- --runInBand`, `npm run lint -- --max-warnings=9999`, Vite build through execSync wrapper, and ESM verification scripts.
+- Add `app/esm/adapters/dom.js` for query/event helpers that do not depend on `app.js`.
+- Add `app/esm/adapters/store.js` as a read-only wrapper around `window.Store`/`window.appState`.
+- Add `app/esm/adapters/db.js` that waits for `window.DB` readiness without importing Firebase/Cloud Functions directly.
+- Keep root `package.json` as `commonjs`, keep classic scripts, and verify with ESM smoke tests plus check/tsc/test/lint/build.
 
 ## Do not do now
 
