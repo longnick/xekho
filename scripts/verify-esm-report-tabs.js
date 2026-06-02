@@ -85,6 +85,7 @@ function makeButton(tab) {
   assert.strictEqual(documentRef.listeners.has('click'), false, 'uninstall should remove click listener');
 
   const indexHtml = fs.readFileSync(indexPath, 'utf8');
+  assert(indexHtml.includes('20260602-e5-'), 'main.js version not bumped for E5');
   assert.strictEqual((indexHtml.match(/data-esm-report-tab=/g) || []).length, 4, 'expected four delegated report tab buttons');
   assert(!indexHtml.includes("onclick=\"switchReportTab('revenue', this)\""), 'revenue inline handler should be removed');
   assert(!indexHtml.includes("onclick=\"switchReportTab('ads', this)\""), 'ads inline handler should be removed');

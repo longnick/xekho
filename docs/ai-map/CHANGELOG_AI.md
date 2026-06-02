@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-06-02 13:25 - ESM Phase E5.3 settings tab delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the third safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/settings-tabs.js` with delegated click handling for static settings tab buttons.
+- Converted seven settings tab buttons from inline `onclick="switchSettingsTab(..., this)"` to `data-esm-settings-tab`: store, theme, users, attendance, payment, ai, data.
+- Updated `app/esm/main.js` to import/install `settingsTabs` under `window.XekhoApp.esm.ui.settingsTabs`.
+- Bumped ESM entry cache/version to `20260602-e5-settings-tabs`.
+- Added `scripts/verify-esm-settings-tabs.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `switchSettingsTab` untouched; the ESM island delegates to it at click time.
+
+Current E5 evidence: inline handler count reduced from 234 to 227; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 12:55 - ESM Phase E5.2 report tab delegated handlers
 
 Repo: `/home/longnick/projects/xekho`
