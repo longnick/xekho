@@ -401,49 +401,11 @@ function parseTelegramLooseDateTime(value = '', fallbackNow = new Date()) {
 }
 
 function formatTelegramSmartRangeLabel(from, toExclusive) {
-  return `từ ${formatTelegramDateTimeVi(from)} đến ${formatTelegramDateTimeVi(toExclusive)}`;
+  return telegramReports.formatTelegramSmartRangeLabel(from, toExclusive);
 }
 
 function parseTelegramSmartReportIntent(userText = '') {
-  const normalized = normalizeTelegramSmartReportText(userText);
-  if (!normalized) return null;
-
-  const metric = normalized.includes('doanh thu')
-    ? 'revenue'
-    : (
-      normalized.includes('loi nhuan')
-      || normalized.includes('lai gop')
-      || normalized.includes('lai bao nhieu')
-      || normalized.includes('lai ')
-    )
-      ? 'profit'
-      : (
-        normalized.includes('ban duoc bao nhieu')
-        || normalized.includes('duoc bao nhieu')
-        || normalized.includes('ban duoc may')
-        || normalized.includes('co bao nhieu don')
-      )
-        ? 'summary'
-        : '';
-  if (!metric) return null;
-
-  const rangeMatch = normalized.match(/\btu\s+(.+?)\s+\bden\s+(bay gio|hien tai|luc nay|now)\b/i);
-  if (!rangeMatch) return null;
-
-  const itemMatch = normalized.match(/(?:doanh thu|loi nhuan|lai gop|lai)\s+(.+?)(?=\s+\btu\b|\s+\bhom nay\b|\s+\bngay\b|$)/i);
-  const itemName = String(itemMatch?.[1] || '').trim();
-  const from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
-  if (!from) return null;
-  const toExclusive = new Date();
-  const rangeLabel = formatTelegramSmartRangeLabel(from, toExclusive);
-
-  return {
-    metric,
-    itemName: itemName || '',
-    rangeLabel,
-    from,
-    toExclusive,
-  };
+  return telegramReports.parseTelegramSmartReportIntent(userText);
 }
 
 async function tryAnswerTelegramSmartReportQuestion(userText = '') {
@@ -545,86 +507,26 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
   };
 }
 
-const DEFAULT_TELEGRAM_REPORT_SETTINGS = {
-  enabled: true,
-  sendHour: 7,
-  sendMinute: 0,
-  includeRevenue: true,
-  includePaymentBreakdown: true,
-  includeInvoiceCount: true,
-  includeTopItem: true,
-  includeRetailStock: true,
-};
+const DEFAULT_TELEGRAM_REPORT_SETTINGS = telegramReports.DEFAULT_TELEGRAM_REPORT_SETTINGS;
 
 function getVietnamDateParts(date = new Date()) {
   return telegramReports.getVietnamDateParts(date);
 }
 
 function getVietnamBusinessReportRange(now = new Date()) {
-  const parts = getVietnamDateParts(now);
-  const todaySixAmUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -1, 0, 0, 0));
-  const latestWindowEnd = (parts.hour >= 6)
-    ? todaySixAmUtc
-    : new Date(todaySixAmUtc.getTime() - (24 * 60 * 60 * 1000));
-  const from = new Date(latestWindowEnd.getTime() - (24 * 60 * 60 * 1000));
-  const toExclusive = latestWindowEnd;
-  const labelStart = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(from);
-  const labelEnd = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(toExclusive.getTime() - 1));
-
-  return {
-    from,
-    toExclusive,
-    label: `${labelStart} -> ${labelEnd}`,
-  };
+  return telegramReports.getVietnamBusinessReportRange(now);
 }
 
 function getTelegramReportSettings(raw = {}) {
-  const hour = Math.min(23, Math.max(0, parseInt(raw.telegramReportSendHour, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendHour));
-  const minute = Math.min(59, Math.max(0, parseInt(raw.telegramReportSendMinute, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendMinute));
-  return {
-    enabled: raw.telegramReportEnabled !== false,
-    sendHour: hour,
-    sendMinute: minute,
-    includeRevenue: raw.telegramReportIncludeRevenue !== false,
-    includePaymentBreakdown: raw.telegramReportIncludePaymentBreakdown !== false,
-    includeInvoiceCount: raw.telegramReportIncludeInvoiceCount !== false,
-    includeTopItem: raw.telegramReportIncludeTopItem !== false,
-    includeRetailStock: raw.telegramReportIncludeRetailStock !== false,
-    lastSentRangeKey: String(raw.telegramReportLastSentRangeKey || '').trim(),
-  };
+  return telegramReports.getTelegramReportSettings(raw);
 }
 
 function getTelegramReportRangeKey(range) {
-  return `${range.from.toISOString()}__${range.toExclusive.toISOString()}`;
+  return telegramReports.getTelegramReportRangeKey(range);
 }
 
 function shouldSendTelegramReportNow(settings, now = new Date(), range = getVietnamBusinessReportRange(now)) {
-  if (!settings?.enabled) return { shouldSend: false, reason: 'disabled', range };
-  const parts = getVietnamDateParts(now);
-  const currentMinuteOfDay = (parts.hour * 60) + parts.minute;
-  const targetMinuteOfDay = (Number(settings.sendHour || 0) * 60) + Number(settings.sendMinute || 0);
-  if (currentMinuteOfDay < targetMinuteOfDay || currentMinuteOfDay >= (targetMinuteOfDay + 5)) {
-    return { shouldSend: false, reason: 'outside-window', range };
-  }
-  const rangeKey = getTelegramReportRangeKey(range);
-  if (String(settings.lastSentRangeKey || '') === rangeKey) {
-    return { shouldSend: false, reason: 'already-sent', range, rangeKey };
-  }
-  return { shouldSend: true, reason: 'ready', range, rangeKey };
+  return telegramReports.shouldSendTelegramReportNow(settings, now, range);
 }
 
 function getTelegramReportTargetChatIds() {
@@ -1386,36 +1288,19 @@ function isVisibleHistoryOrderForReports(order) {
 }
 
 function coerceHistoryDate(value) {
-  if (value instanceof Date) return value;
-  if (value?.toDate) return value.toDate();
-  if (typeof value === 'number') return new Date(value);
-  if (typeof value === 'string' && value.trim()) return new Date(value);
-  return null;
+  return telegramReports.coerceHistoryDate(value);
 }
 
 function formatTelegramDateTimeVi(value) {
-  const date = coerceHistoryDate(value);
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Không rõ';
-  return new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  return telegramReports.formatTelegramDateTimeVi(value);
 }
 
 function getTelegramPayMethodLabel(payMethod) {
-  const method = String(payMethod || '').trim().toLowerCase();
-  if (['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(method)) return 'Chuyển khoản';
-  if (['cash', 'tienmat', 'cashier'].includes(method)) return 'Tiền mặt';
-  return method || 'Không rõ';
+  return telegramReports.getTelegramPayMethodLabel(payMethod);
 }
 
 function isTelegramBankPayMethod(payMethod) {
-  return ['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(String(payMethod || '').trim().toLowerCase());
+  return telegramReports.isTelegramBankPayMethod(payMethod);
 }
 
 function normalizeTelegramTableLabel(value) {

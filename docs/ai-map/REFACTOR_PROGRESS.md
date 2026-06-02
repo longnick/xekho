@@ -6,9 +6,9 @@
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~35% complete**.
-- Core non-optional refactor/security/testing plan: **~40% complete**.
-- Near-term safe-execution track: **~80% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~37% complete**.
+- Core non-optional refactor/security/testing plan: **~42% complete**.
+- Near-term safe-execution track: **~85% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -129,3 +129,6 @@ Sprints 1.7 and 3.3 complete. Remaining: POS state-dependent functions (order sy
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
 - [x] Sprint 8.2: exportReportExcel → app/report/excel.js (573 lines, largest function in app.js, 5 sheet builders)
 - [x] Sprint 8.3: buildOperationalExpenseBreakdown → app/report/expense.js (86 lines, mixed-purity report builder)
+
+### Phase 10 — 2026-06-02
+- [x] Sprint 10.1: Telegram report helpers batch 2 — 11 new exports into functions/telegram/reports.js (coerceHistoryDate, formatTelegramDateTimeVi, getTelegramPayMethodLabel, isTelegramBankPayMethod, formatTelegramSmartRangeLabel, parseTelegramSmartReportIntent, DEFAULT_TELEGRAM_REPORT_SETTINGS, getVietnamBusinessReportRange, getTelegramReportSettings, getTelegramReportRangeKey, shouldSendTelegramReportNow). functions/index.js reduced by 115 lines.

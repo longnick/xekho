@@ -1,5 +1,12 @@
 # AI Changelog
 
+## 2026-06-02 - Phase 10 Sprint 10.1: Telegram report helpers batch 2
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Extended `functions/telegram/reports.js` with 11 new pure functions/constants: `coerceHistoryDate`, `formatTelegramDateTimeVi`, `getTelegramPayMethodLabel`, `isTelegramBankPayMethod`, `formatTelegramSmartRangeLabel`, `parseTelegramSmartReportIntent`, `DEFAULT_TELEGRAM_REPORT_SETTINGS`, `getVietnamBusinessReportRange`, `getTelegramReportSettings`, `getTelegramReportRangeKey`, `shouldSendTelegramReportNow`. Delegation wrappers in `functions/index.js`. Module now has 19 exports. `functions/index.js` reduced by 115 lines (6816→6701). Fixed VM sandbox `instanceof Date` pitfall.
+
 ## 2026-06-02 02:28 - Safe refactor Phase 2 complete (Sprints 10-12): Telegram send, kitchen, reports extraction
 
 Repo: `/home/longnick/projects/xekho`
