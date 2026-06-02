@@ -992,3 +992,10 @@ Branch: `test/xe-kho-repo-implementer-skill`
 - app.js reduced from 11,999 to 11,895 lines (-104 lines)
 - ESLint: 1 parsing error → 0 errors
 - All 29 verification scripts pass, Jest 6/6
+
+## 2026-06-02 05:00 - CI/CD + Vite spike
+
+Repo: `/home/longnick/projects/xekho`
+
+- CI/CD: GitHub Actions workflow (Node 20/22 matrix, Jest, ESLint). Added .nvmrc, npm scripts (lint, check).
+- Vite spike: `spike/vite-build-tooling` branch with vite.config.mjs, npm scripts (dev, build, preview). Config validated. Not merged — spike only.
