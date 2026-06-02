@@ -1,5 +1,20 @@
 # AI Changelog
 
+## 2026-06-02 10:31 - ESM Phase E2 DOM facade
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Started Phase E2 with the safest leaf utility:
+
+- Added `app/esm/utils/dom.js` with importable `escapeHtml()` and `installGlobalDomUtils()` exports.
+- Updated `app/esm/main.js` to import the DOM facade and mark `window.XekhoApp.esm.facades.dom` readiness.
+- Updated `index.html` cache key to `20260602-e2-dom`.
+- Updated ESM verification to account for the imported facade and added `scripts/verify-esm-dom-utils.js`.
+- Updated `app/esm/README.md`, ESM audit, progress, TODO, code map, file relations, and task log.
+
+Compatibility preserved: `window.XekhoApp.utils.dom.escapeHtml()` remains available; `app.js` and POS runtime/order/data flows were not changed.
+
 ## 2026-06-02 10:22 - Safe dirty tree cleanup
 
 Repo: `/home/longnick/projects/xekho`
