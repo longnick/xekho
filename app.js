@@ -2902,39 +2902,33 @@ async function syncInventoryReferenceRenameToCloud(oldItem, newItem) {
 }
 
 function tokenSimilarity(a, b) {
-  const ta = new Set(normalizeViKey(a).split(' ').filter(Boolean));
-  const tb = new Set(normalizeViKey(b).split(' ').filter(Boolean));
-  if (!ta.size || !tb.size) return 0;
-  let common = 0;
-  ta.forEach(x => { if (tb.has(x)) common += 1; });
-  return common / Math.max(ta.size, tb.size);
-}
+    if (window.XekhoApp?.utils?.parser?.tokenSimilarity) return window.XekhoApp.utils.parser.tokenSimilarity(a, b);
+    const ta = new Set(normalizeViKey(a).split(' ').filter(Boolean));
+    const tb = new Set(normalizeViKey(b).split(' ').filter(Boolean));
+    if (!ta.size || !tb.size) return 0;
+    let common = 0;
+    ta.forEach(x => { if (tb.has(x)) common += 1; });
+    return common / Math.max(ta.size, tb.size);
+  }
 
 function getIngredientMergeSuggestions() {
-  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
-  const suggestions = [];
-  for (let i = 0; i < inv.length; i++) {
-    for (let j = i + 1; j < inv.length; j++) {
-      const a = inv[i];
-      const b = inv[j];
-      if (a.itemType !== b.itemType || a.unit !== b.unit) continue;
-      const na = normalizeViKey(a.name);
-      const nb = normalizeViKey(b.name);
-      const score = na === nb ? 1 : (na.includes(nb) || nb.includes(na) ? 0.9 : tokenSimilarity(a.name, b.name));
-      if (score < 0.72) continue;
-      const target = a.qty >= b.qty ? a : b;
-      const source = target.id === a.id ? b : a;
-      if (suggestions.some(s => s.source.id === source.id || s.target.id === source.id)) continue;
-      suggestions.push({
-        id: `merge_${source.id}_${target.id}`,
-        source,
-        target,
-        score,
-      });
+    if (window.XekhoApp?.report?.getIngredientMergeSuggestions) return window.XekhoApp.report.getIngredientMergeSuggestions();
+    const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+    const suggestions = [];
+    for (let i = 0; i < inv.length; i++) {
+      for (let j = i + 1; j < inv.length; j++) {
+        const a = inv[i]; const b = inv[j];
+        if (a.itemType !== b.itemType || a.unit !== b.unit) continue;
+        const na = normalizeViKey(a.name); const nb = normalizeViKey(b.name);
+        const score = na === nb ? 1 : (na.includes(nb) || nb.includes(na) ? 0.9 : tokenSimilarity(a.name, b.name));
+        if (score < 0.72) continue;
+        const target = a.qty >= b.qty ? a : b; const source = target.id === a.id ? b : a;
+        if (suggestions.some(s => s.source.id === source.id || s.target.id === source.id)) continue;
+        suggestions.push({ id: `merge_${source.id}_${target.id}`, source, target, score });
+      }
     }
+    return suggestions.sort((a, b) => b.score - a.score);
   }
-  return suggestions.sort((a, b) => b.score - a.score);
-}
 
 function renderIngredientMergeBoard() {
   const el = document.getElementById('ingredient-merge-board');
@@ -5141,39 +5135,20 @@ async function runOnlinePurchaseOcr(dataUrl) {
 }
 
 function parsePurchaseText(text, source) {
-  // Heuristic đơn giản: tìm sđ lđơ nhất làm price, sđ còn lại làm qty
-  const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
-  let price = null;
-  let qty = null;
-  if(numbers.length) {
-    price = Math.max(...numbers);
-    const others = numbers.filter(n => n !== price);
-    if(others.length) qty = others[0];
+    if (window.XekhoApp?.utils?.parser?.parsePurchaseText) return window.XekhoApp.utils.parser.parsePurchaseText(text, source);
+    const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
+    let price = null; let qty = null;
+    if(numbers.length) { price = Math.max(...numbers); const others = numbers.filter(n => n !== price); if(others.length) qty = others[0]; }
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let bestLine = '';
+    lines.forEach(l => { if(/[A-Za-z\u00C0-\u1EF9]/.test(l) && l.length > bestLine.length) bestLine = l; });
+    return { name: bestLine || '', qty, price, rawText: text, source };
   }
-  // Tên: lấy dòng có chữ cái nhiều nhất
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  let bestLine = '';
-  lines.forEach(l => {
-    if(/[A-Za-z\u00C0-\u1EF9]/.test(l) && l.length > bestLine.length) bestLine = l;
-  });
-  return {
-    name: bestLine || '',
-    qty,
-    price,
-    rawText: text,
-    source,
-  };
-}
 
 function parsePurchaseJson(obj, source) {
-  return {
-    name: obj.name || '',
-    qty: typeof obj.qty === 'number' ? obj.qty : null,
-    price: typeof obj.price === 'number' ? obj.price : null,
-    rawText: obj.rawText || '',
-    source,
-  };
-}
+    if (window.XekhoApp?.utils?.parser?.parsePurchaseJson) return window.XekhoApp.utils.parser.parsePurchaseJson(obj, source);
+    return { name: obj.name || '', qty: typeof obj.qty === 'number' ? obj.qty : null, price: typeof obj.price === 'number' ? obj.price : null, rawText: obj.rawText || '', source };
+  }
 
 function applyPurchaseOcrResult(result) {
   const nameInp = document.getElementById('pur-name');
@@ -7598,28 +7573,22 @@ function ensureReportSummaryLayout() {
 }
 
 function getReportMenuIngredientKeys(menuItem) {
-  if (!menuItem) return [];
-  const inventory = _getInventory();
-  const ingredientNames = new Set();
-
-  if (Array.isArray(menuItem.ingredients)) {
-    menuItem.ingredients.forEach(ing => {
-      const name = String(ing?.name || '').trim();
-      if (name) ingredientNames.add(normalizeViKey(name));
-    });
+    if (window.XekhoApp?.report?.getReportMenuIngredientKeys) return window.XekhoApp.report.getReportMenuIngredientKeys(menuItem);
+    if (!menuItem) return [];
+    const inventory = _getInventory();
+    const ingredientNames = new Set();
+    if (Array.isArray(menuItem.ingredients)) {
+      menuItem.ingredients.forEach(ing => { const name = String(ing?.name || '').trim(); if (name) ingredientNames.add(normalizeViKey(name)); });
+    }
+    if (menuItem.itemType === ITEM_TYPES.RETAIL && menuItem.linkedInventoryId) {
+      const stock = inventory.find(item => String(item.id || '') === String(menuItem.linkedInventoryId));
+      const stockName = String(stock?.name || '').trim();
+      if (stockName) ingredientNames.add(normalizeViKey(stockName));
+    }
+    const ownName = String(menuItem.name || '').trim();
+    if (ownName) ingredientNames.add(normalizeViKey(ownName));
+    return Array.from(ingredientNames).filter(Boolean);
   }
-
-  if (menuItem.itemType === ITEM_TYPES.RETAIL && menuItem.linkedInventoryId) {
-    const stock = inventory.find(item => String(item.id || '') === String(menuItem.linkedInventoryId));
-    const stockName = String(stock?.name || '').trim();
-    if (stockName) ingredientNames.add(normalizeViKey(stockName));
-  }
-
-  const ownName = String(menuItem.name || '').trim();
-  if (ownName) ingredientNames.add(normalizeViKey(ownName));
-
-  return Array.from(ingredientNames).filter(Boolean);
-}
 
 function getReportMenuSalesSummary(menuItem) {
   const orders = getFilteredReportOrders();
@@ -7692,33 +7661,29 @@ function resetReportFilters() {
 }
 
 function doesOrderMatchReportMenuItem(order, menuItem) {
-  if (!menuItem) return true;
-  const menuItemKey = normalizeViKey(menuItem.name);
-  return (order.items || []).some(item => {
-    if (String(item.id || '') === String(menuItem.id)) return true;
-    return normalizeViKey(item.name) === menuItemKey;
-  });
-}
+    if (window.XekhoApp?.report?.doesOrderMatchReportMenuItem) return window.XekhoApp.report.doesOrderMatchReportMenuItem(order, menuItem);
+    if (!menuItem) return true;
+    const menuItemKey = normalizeViKey(menuItem.name);
+    return (order.items || []).some(item => { if (String(item.id || '') === String(menuItem.id)) return true; return normalizeViKey(item.name) === menuItemKey; });
+  }
 
 function doesPurchaseMatchReportMenuItem(purchase, menuItem) {
-  if (!menuItem) return true;
-  const ingredientKeys = getReportMenuIngredientKeys(menuItem);
-  if (!ingredientKeys.length) return false;
-  const purchaseKey = normalizeViKey(purchase?.name || '');
-  return ingredientKeys.includes(purchaseKey);
-}
+    if (window.XekhoApp?.report?.doesPurchaseMatchReportMenuItem) return window.XekhoApp.report.doesPurchaseMatchReportMenuItem(purchase, menuItem);
+    if (!menuItem) return true;
+    const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+    if (!ingredientKeys.length) return false;
+    const purchaseKey = normalizeViKey(purchase?.name || '');
+    return ingredientKeys.includes(purchaseKey);
+  }
 
 function doesExpenseMatchReportMenuItem(expense, menuItem) {
-  if (!menuItem) return true;
-  const ingredientKeys = getReportMenuIngredientKeys(menuItem);
-  if (!ingredientKeys.length) return false;
-  const haystack = normalizeViKey([
-    expense?.name || '',
-    expense?.note || '',
-    expense?.category || '',
-  ].join(' '));
-  return ingredientKeys.some(key => key && haystack.includes(key));
-}
+    if (window.XekhoApp?.report?.doesExpenseMatchReportMenuItem) return window.XekhoApp.report.doesExpenseMatchReportMenuItem(expense, menuItem);
+    if (!menuItem) return true;
+    const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+    if (!ingredientKeys.length) return false;
+    const haystack = normalizeViKey([expense?.name || '', expense?.note || '', expense?.category || ''].join(' '));
+    return ingredientKeys.some(key => key && haystack.includes(key));
+  }
 
 function getFilteredReportOrders() {
   if (!isReportTransactionEnabled('sales')) return [];
@@ -7764,33 +7729,28 @@ function ensureAdsRevenueReportDateInputs() {
 }
 
 function detectAdsExpensePlatform(expense = {}) {
-  const raw = `${expense.name || ''} ${expense.category || ''}`;
-  const key = normalizeViKey(repairVietnameseText(raw));
-  if (!key) return '';
-  if (key.includes('facebook') || key.includes('meta')) return 'facebook';
-  if (key.includes('tiktok')) return 'tiktok';
-  return '';
-}
+    if (window.XekhoApp?.utils?.categorize?.detectAdsExpensePlatform) return window.XekhoApp.utils.categorize.detectAdsExpensePlatform(expense);
+    const raw = `${expense.name || ''} ${expense.category || ''}`;
+    const key = normalizeViKey(repairVietnameseText(raw));
+    if (!key) return '';
+    if (key.includes('facebook') || key.includes('meta')) return 'facebook';
+    if (key.includes('tiktok')) return 'tiktok';
+    return '';
+  }
 
 function isAdsExpenseEntry(expense = {}) {
-  const raw = `${expense.name || ''} ${expense.category || ''}`;
-  const key = normalizeViKey(repairVietnameseText(raw));
-  if (!key) return false;
-  return key.includes('facebook')
-    || key.includes('meta')
-    || key.includes('tiktok')
-    || key.includes('ads')
-    || key.includes('quang cao')
-    || key.includes('marketing');
-}
+    if (window.XekhoApp?.utils?.categorize?.isAdsExpenseEntry) return window.XekhoApp.utils.categorize.isAdsExpenseEntry(expense);
+    const raw = `${expense.name || ''} ${expense.category || ''}`;
+    const key = normalizeViKey(repairVietnameseText(raw));
+    if (!key) return false;
+    return key.includes('facebook') || key.includes('meta') || key.includes('tiktok') || key.includes('ads') || key.includes('quang cao') || key.includes('marketing');
+  }
 
 function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
-  const rows = Array.isArray(window.appState?.dailyRevenueSnapshots) ? window.appState.dailyRevenueSnapshots : [];
-  return rows.filter((snapshot) => {
-    const dateKey = String(snapshot?.date || '').trim().slice(0, 10);
-    return !!dateKey && dateKey >= fromDate && dateKey <= toDate;
-  });
-}
+    if (window.XekhoApp?.report?.getDailyRevenueSnapshotsInRange) return window.XekhoApp.report.getDailyRevenueSnapshotsInRange(fromDate, toDate);
+    const rows = Array.isArray(window.appState?.dailyRevenueSnapshots) ? window.appState.dailyRevenueSnapshots : [];
+    return rows.filter((snapshot) => { const dateKey = String(snapshot?.date || '').trim().slice(0, 10); return !!dateKey && dateKey >= fromDate && dateKey <= toDate; });
+  }
 
 function getFixedCostProfileForReports() {
   const financialProfile = window.appState?.settings?.financial_profile || {};
@@ -7824,11 +7784,12 @@ function getFixedCostProfileForReports() {
 }
 
 function countInclusiveReportDays(fromDate, toDate) {
-  const start = new Date(`${String(fromDate || '').trim()}T00:00:00`);
-  const end = new Date(`${String(toDate || '').trim()}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
-  return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
-}
+    if (window.XekhoApp?.utils?.categorize?.countInclusiveReportDays) return window.XekhoApp.utils.categorize.countInclusiveReportDays(fromDate, toDate);
+    const start = new Date(`${String(fromDate || '').trim()}T00:00:00`);
+    const end = new Date(`${String(toDate || '').trim()}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+  }
 
 function buildAdsRevenueReportHtml(summary = {}) {
   const fmtMoney = (value) => `${fmt(Number(value || 0))}đ`;
@@ -8907,12 +8868,13 @@ function syncMediaRefineryProductSelects() {
 }
 
 function mediaRefineryStatusClass(status = '') {
-  const s = String(status || '').toUpperCase();
-  if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(s)) return 'success';
-  if (s === 'REJECTED') return 'danger';
-  if (s === 'NEEDS_MANUAL_REVIEW') return 'warning';
-  return 'info';
-}
+    if (window.XekhoApp?.utils?.categorize?.mediaRefineryStatusClass) return window.XekhoApp.utils.categorize.mediaRefineryStatusClass(status);
+    const s = String(status || '').toUpperCase();
+    if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(s)) return 'success';
+    if (s === 'REJECTED') return 'danger';
+    if (s === 'NEEDS_MANUAL_REVIEW') return 'warning';
+    return 'info';
+  }
 
 function renderMediaRefineryKpis(assets = []) {
   const el = document.getElementById('media-refinery-kpis');
@@ -9201,15 +9163,9 @@ function renderMenuAdmin() {
 }
 
 function getMenuItemImageUrl(item = {}) {
-  return String(
-    item.image_url ||
-    item.imageUrl ||
-    item.photoUrl ||
-    item.thumbnail ||
-    item.photo ||
-    ''
-  ).trim();
-}
+    if (window.XekhoApp?.utils?.parser?.getMenuItemImageUrl) return window.XekhoApp.utils.parser.getMenuItemImageUrl(item);
+    return String(item.image_url || item.imageUrl || item.photoUrl || item.thumbnail || item.photo || '').trim();
+  }
 
 function syncMenuItemImagePreview(imageUrl) {
   const previewEl = document.getElementById('menu-item-image-preview');
@@ -9825,25 +9781,24 @@ function repairVietnameseText(input) {
 }
 
 function normalizeExpenseCategoryLabel(input) {
-  const raw = repairVietnameseText(input || '').trim();
-  const key = normalizeViKey(raw);
-  if (!key) return 'Chi phí khác';
-
-  if (key.includes('nguyen lieu')) return 'Chi phí nguyên liệu';
-  if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return 'Lãi/Lỗ do kiểm kê';
-  if (key.includes('chenh lech ca')) return 'Chênh lệch ca';
-  if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return 'Nhập hàng';
-  if (key.includes('nhan su') || /nh n s/.test(key)) return 'Chi phí nhân sự';
-  if (key.includes('marketing')) return 'Chi phí marketing';
-  if (key.includes('van chuyen') || key.includes('giao hang')) return 'Chi phí vận chuyển';
-  if (key.includes('dien nuoc')) return 'Chi phí điện nước';
-  if (key.includes('mat bang')) return 'Chi phí mặt bằng';
-  if (key.includes('nhap so') || /nh p s/.test(key)) return 'Chi phí nhập sổ';
-  if (key.includes('hao hut')) return 'Chi phí hao hụt';
-  if (key.includes('khac')) return 'Chi phí khác';
-
-  return raw;
-}
+    if (window.XekhoApp?.utils?.categorize?.normalizeExpenseCategoryLabel) return window.XekhoApp.utils.categorize.normalizeExpenseCategoryLabel(input);
+    const raw = repairVietnameseText(input || '').trim();
+    const key = normalizeViKey(raw);
+    if (!key) return 'Chi phí khác';
+    if (key.includes('nguyen lieu')) return 'Chi phí nguyên liệu';
+    if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return 'Lãi/Lỗ do kiểm kê';
+    if (key.includes('chenh lech ca')) return 'Chênh lệch ca';
+    if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return 'Nhập hàng';
+    if (key.includes('nhan su') || /nh n s/.test(key)) return 'Chi phí nhân sự';
+    if (key.includes('marketing')) return 'Chi phí marketing';
+    if (key.includes('van chuyen') || key.includes('giao hang')) return 'Chi phí vận chuyển';
+    if (key.includes('dien nuoc')) return 'Chi phí điện nước';
+    if (key.includes('mat bang')) return 'Chi phí mặt bằng';
+    if (key.includes('nhap so') || /nh p s/.test(key)) return 'Chi phí nhập sổ';
+    if (key.includes('hao hut')) return 'Chi phí hao hụt';
+    if (key.includes('khac')) return 'Chi phí khác';
+    return raw;
+  }
 
 function showToast(msg, type, duration) {
   // Sprint 1.3: delegate to app/ui/toast.js IIFE
@@ -12042,12 +11997,13 @@ function renderKdsMonitor() {
 }
 
 function getKitchenRoutingLabel(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'kitchen_1') return 'Bep 1';
-  if (normalized === 'kitchen_2') return 'Bep 2';
-  if (normalized === 'skip') return 'Khong qua bep';
-  return 'Ca 2 bep';
-}
+    if (window.XekhoApp?.utils?.parser?.getKitchenRoutingLabel) return window.XekhoApp.utils.parser.getKitchenRoutingLabel(value);
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'kitchen_1') return 'Bếp 1';
+    if (normalized === 'kitchen_2') return 'Bếp 2';
+    if (normalized === 'skip') return 'Không qua bếp';
+    return 'Cả 2 bếp';
+  }
 
 let customerRequestFabLayoutObserver = null;
 let customerRequestFabResizeBound = false;
