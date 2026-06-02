@@ -560,19 +560,20 @@ const Store = {
 };
 
 // Utility functions
-const fmt = n => {
+const _formatUtils = (typeof window !== 'undefined' ? window.XekhoApp?.utils?.format : globalThis.XekhoApp?.utils?.format) || {};
+const fmt = n => _formatUtils.compactNumber ? _formatUtils.compactNumber(n) : (() => {
   if(n >= 1000000) return (n/1000000).toFixed(1) + 'M';
   if(n >= 1000) return (n/1000).toFixed(0) + 'K';
   return n.toLocaleString('vi-VN');
-};
-const fmtFull = n => n.toLocaleString('vi-VN') + 'đ';
-const fmtDate = d => {
+})();
+const fmtFull = n => _formatUtils.currency ? _formatUtils.currency(n) : n.toLocaleString('vi-VN') + 'đ';
+const fmtDate = d => _formatUtils.date ? _formatUtils.date(d) : (() => {
   const dt = new Date(d);
   return dt.toLocaleDateString('vi-VN', {day:'2-digit',month:'2-digit',year:'numeric'});
-};
-const fmtTime = d => new Date(d).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
-const fmtDateTime = d => `${fmtDate(d)} ${fmtTime(d)}`;
-const today = () => new Date().toISOString().split('T')[0];
+})();
+const fmtTime = d => _formatUtils.time ? _formatUtils.time(d) : new Date(d).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+const fmtDateTime = d => _formatUtils.dateTime ? _formatUtils.dateTime(d) : `${fmtDate(d)} ${fmtTime(d)}`;
+const today = () => _formatUtils.todayKey ? _formatUtils.todayKey() : new Date().toISOString().split('T')[0];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
 function getPeriodDateRange(period, opts) {

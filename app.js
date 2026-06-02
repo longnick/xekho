@@ -100,6 +100,9 @@ let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
 const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
 
 function applyTheme(themeName) {
+  // Sprint 1.4: delegate to app/ui/theme.js IIFE
+  if (window.XekhoApp?.ui?.applyTheme) return window.XekhoApp.ui.applyTheme(themeName);
+  // Fallback: inline if IIFE not loaded
   const body = document.body;
   if (!body) return;
 
@@ -388,6 +391,10 @@ function getCurrentPosUserName() {
 }
 
 function _escapeHtml(text) {
+  const escapeHtml = window.XekhoApp?.utils?.dom?.escapeHtml;
+  if (typeof escapeHtml === 'function') {
+    return escapeHtml(text);
+  }
   return String(text ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -397,10 +404,14 @@ function _escapeHtml(text) {
 }
 
 function _normalizeStaffRole(role) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.normalizeStaffRole) return window.XekhoApp.auth.normalizeStaffRole(role);
   return String(role || 'staff').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
 }
 
 function _normalizeStaffStatus(status) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.normalizeStaffStatus) return window.XekhoApp.auth.normalizeStaffStatus(status);
   return String(status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
 }
 
@@ -413,6 +424,8 @@ function _getManagedStaff(includeInactive = false) {
 }
 
 function _getStaffIdentity(staff = {}) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.getStaffIdentity) return window.XekhoApp.auth.getStaffIdentity(staff);
   return String(staff.staff_id || staff.id || '');
 }
 
@@ -424,6 +437,8 @@ function _findStaffByPin(pin, options = {}) {
 }
 
 function _buildCurrentUserFromStaff(staff, pin) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.buildCurrentUserFromStaff) return window.XekhoApp.auth.buildCurrentUserFromStaff(staff, pin);
   if (!staff) return null;
   const normalizedRole = _normalizeStaffRole(staff.role);
   return {
@@ -1106,6 +1121,8 @@ function renderUserManagement() {
     const roleText = _normalizeStaffRole(staff.role);
     const statusText = _normalizeStaffStatus(staff.status);
     const pinMasked = String(staff.pin_code || '').replace(/\d/g, '•') || 'Chưa có PIN';
+    const hourlyRate = Number(staff.hourly_rate || 0) || 0;
+    const telegramText = staff.telegram_user_id ? ` · Telegram: ${_escapeHtml(staff.telegram_user_id)}` : ' · Chưa link Telegram';
     const isCurrentUser = String(currentUser?.staff_id || currentUser?.id || '') === staffId;
     const isAdminStaff = roleText === 'admin';
     const roleBadge = isAdminStaff
@@ -1120,7 +1137,7 @@ function renderUserManagement() {
       <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👥</div>
       <div class="list-item-content">
         <div class="list-item-title">${_escapeHtml(fullName)} ${roleBadge} ${statusBadge}</div>
-        <div class="list-item-sub">PIN: ${pinMasked} · Mã: ${_escapeHtml(staffId)}${isCurrentUser ? ' · Đang đăng nhập' : ''}</div>
+        <div class="list-item-sub">PIN: ${pinMasked} · Mã: ${_escapeHtml(staffId)} · Lương: ${fmt(hourlyRate)}đ/giờ${telegramText}${isCurrentUser ? ' · Đang đăng nhập' : ''}</div>
       </div>
       <div>
         <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUserById('${staffId}')">Sửa</button>
@@ -1138,6 +1155,9 @@ function openAddUserModal() {
   const pinEl = document.getElementById('user-edit-pin');
   const roleEl = document.getElementById('user-edit-role');
   const statusEl = document.getElementById('user-edit-status');
+  const hourlyRateEl = document.getElementById('user-edit-hourly-rate');
+  const telegramIdEl = document.getElementById('user-edit-telegram-id');
+  const requireLocationEl = document.getElementById('user-edit-require-location');
   const submitBtn = document.getElementById('user-save-btn');
 
   if (idEl) idEl.value = '';
@@ -1148,6 +1168,9 @@ function openAddUserModal() {
   }
   if (roleEl) roleEl.value = 'staff';
   if (statusEl) statusEl.value = 'active';
+  if (hourlyRateEl) hourlyRateEl.value = '';
+  if (telegramIdEl) telegramIdEl.value = '';
+  if (requireLocationEl) requireLocationEl.checked = false;
   if (submitBtn) {
     submitBtn.disabled = false;
     submitBtn.textContent = '✅ Lưu';
@@ -1171,6 +1194,12 @@ function editUserById(userId) {
   document.getElementById('user-edit-pin').value = String(staff.pin_code || '');
   document.getElementById('user-edit-role').value = _normalizeStaffRole(staff.role);
   document.getElementById('user-edit-status').value = _normalizeStaffStatus(staff.status);
+  const hourlyRateEl = document.getElementById('user-edit-hourly-rate');
+  const telegramIdEl = document.getElementById('user-edit-telegram-id');
+  const requireLocationEl = document.getElementById('user-edit-require-location');
+  if (hourlyRateEl) hourlyRateEl.value = Number(staff.hourly_rate || 0) || '';
+  if (telegramIdEl) telegramIdEl.value = staff.telegram_user_id || '';
+  if (requireLocationEl) requireLocationEl.checked = staff.require_location_checkin === true;
 
   document.getElementById('user-modal').classList.add('active');
 }
@@ -1210,6 +1239,9 @@ async function submitUser(e) {
   const pinCode = document.getElementById('user-edit-pin').value.trim();
   const role = _normalizeStaffRole(document.getElementById('user-edit-role').value);
   const status = _normalizeStaffStatus(document.getElementById('user-edit-status').value);
+  const hourlyRate = Math.max(0, Number(document.getElementById('user-edit-hourly-rate')?.value || 0) || 0);
+  const telegramUserId = String(document.getElementById('user-edit-telegram-id')?.value || '').trim();
+  const requireLocation = document.getElementById('user-edit-require-location')?.checked === true;
   const submitBtn = document.getElementById('user-save-btn');
 
   if (!fullName) {
@@ -1243,6 +1275,9 @@ async function submitUser(e) {
       pin_code: pinCode,
       role,
       status,
+      hourly_rate: hourlyRate,
+      telegram_user_id: telegramUserId || null,
+      require_location_checkin: requireLocation,
     };
 
     if (staffId) {
@@ -1257,6 +1292,7 @@ async function submitUser(e) {
     document.getElementById('user-modal').classList.remove('active');
     showToast('✅ Cập nhật thành công', 'success');
     renderUserManagement();
+    renderAttendanceManagement();
     renderSystemLogs();
   } catch (err) {
     console.error(err);
@@ -1306,6 +1342,211 @@ function deleteUser(username) {
   );
   if (!staff) return;
   deleteUserById(_getStaffIdentity(staff));
+}
+
+function _getAttendanceDailyRows() {
+  return Array.isArray(window.appState?.attendanceDaily) ? window.appState.attendanceDaily : [];
+}
+
+function _attendanceDateFilterRange() {
+  const today = formatLocalDateKey(new Date());
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl = document.getElementById('attendance-to-date');
+  if (fromEl && !fromEl.value) fromEl.value = today;
+  if (toEl && !toEl.value) toEl.value = today;
+  return {
+    fromDate: fromEl?.value || today,
+    toDate: toEl?.value || today,
+  };
+}
+
+function _getPayrollProfile() {
+  const profile = window.appState?.settings?.financial_profile || {};
+  const monthly = profile.monthly_fixed_costs || {};
+  const managementSalary = Number(profile.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
+  return {
+    profile,
+    monthly,
+    managementSalary,
+    rent: Number(monthly.rent || 0) || 0,
+    utilities: Number(monthly.utilities || 0) || 0,
+    other: Number(monthly.other || 0) || 0,
+  };
+}
+
+function renderPayrollProfile() {
+  const wrap = document.getElementById('settings-payroll-profile');
+  if (!wrap) return;
+  if (!isAdminUser()) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  const data = _getPayrollProfile();
+  const fields = [
+    ['payroll-management-salary', data.managementSalary],
+    ['payroll-fixed-rent', data.rent],
+    ['payroll-fixed-utilities', data.utilities],
+    ['payroll-fixed-other', data.other],
+  ];
+  fields.forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el) el.value = value ? String(value) : '';
+  });
+  const monthlyTotal = data.managementSalary + data.rent + data.utilities + data.other;
+  const summaryEl = document.getElementById('payroll-profile-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = [
+      `Lương quản lý: <b>${fmt(data.managementSalary)}đ/tháng</b> (${fmt(Math.round(data.managementSalary / 30))}đ/ngày).`,
+      `Lương nhân viên không nằm trong chi phí cố định; hệ thống lấy theo chấm công và ghi vào category <b>Lương nhân viên</b>.`,
+      `Tổng cố định đang tính: <b>${fmt(monthlyTotal)}đ/tháng</b> (${fmt(Math.round(monthlyTotal / 30))}đ/ngày).`,
+    ].join('<br>');
+  }
+}
+
+async function savePayrollProfile() {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được cấu hình lương.', 'danger');
+    return;
+  }
+  const readMoney = (id) => Math.max(0, Number(document.getElementById(id)?.value || 0) || 0);
+  const managementSalary = readMoney('payroll-management-salary');
+  const rent = readMoney('payroll-fixed-rent');
+  const utilities = readMoney('payroll-fixed-utilities');
+  const other = readMoney('payroll-fixed-other');
+  const monthlyTotal = managementSalary + rent + utilities + other;
+  const patch = {
+    management_salary_monthly: managementSalary,
+    monthly_fixed_costs: {
+      management_salary: managementSalary,
+      rent,
+      utilities,
+      other,
+      total: monthlyTotal,
+    },
+    daily_fixed_cost: monthlyTotal > 0 ? Math.round(monthlyTotal / 30) : 0,
+  };
+  try {
+    if (window.DB?.Settings?.saveFinancialProfile) {
+      await window.DB.Settings.saveFinancialProfile(patch);
+    }
+    window.appState.settings = {
+      ...(window.appState.settings || {}),
+      financial_profile: {
+        ...(window.appState.settings?.financial_profile || {}),
+        ...patch,
+      },
+    };
+    renderPayrollProfile();
+    showToast('✅ Đã lưu cấu hình lương và chi phí cố định', 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi lưu cấu hình lương: ' + (err?.message || err), 'danger');
+  }
+}
+
+function renderAttendanceManagement() {
+  renderPayrollProfile();
+  const section = document.getElementById('settings-attendance-management');
+  if (!section) return;
+  if (!isAdminUser()) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  const listEl = document.getElementById('attendance-management-list');
+  const summaryEl = document.getElementById('attendance-summary');
+  if (!listEl) return;
+
+  const { fromDate, toDate } = _attendanceDateFilterRange();
+  const rows = _getAttendanceDailyRows()
+    .filter(row => String(row.dateKey || '') >= fromDate && String(row.dateKey || '') <= toDate)
+    .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || String(a.staffName || '').localeCompare(String(b.staffName || '')));
+
+  const totalMinutes = rows.reduce((sum, row) => sum + (Number(row.totalMinutes || 0) || 0), 0);
+  const payableMinutes = rows.reduce((sum, row) => sum + (Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0), 0);
+  const totalWage = rows.reduce((sum, row) => sum + (Number(row.totalWage || 0) || 0), 0);
+  const openCount = rows.filter(row => String(row.status || '') === 'open').length;
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Ngày công</div><div class="stat-value">${fmt(rows.length)}</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ tính lương</div><div class="stat-value">${(payableMinutes / 60).toFixed(2)}h</div></div>
+      <div class="stat-card"><div class="stat-label">Tổng lương</div><div class="stat-value">${fmt(totalWage)}đ</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ thực tế</div><div class="stat-value">${(totalMinutes / 60).toFixed(2)}h</div></div>
+    `;
+  }
+
+  if (!rows.length) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏱️</div><div class="empty-text">Chưa có dòng chấm công trong khoảng ngày này</div></div>';
+    return;
+  }
+
+  listEl.innerHTML = rows.map(row => {
+    const dailyId = row.dailyId || row.id || `${row.staffId}_${row.dateKey}`;
+    const status = String(row.status || 'closed');
+    const statusBadge = status === 'open'
+      ? '<span class="badge badge-warning">Đang làm</span>'
+      : '<span class="badge badge-success">Đã chốt</span>';
+    const inTime = row.firstCheckInAt ? fmtTime(row.firstCheckInAt?.toDate ? row.firstCheckInAt.toDate().toISOString() : row.firstCheckInAt) : '--:--';
+    const outTime = row.lastCheckOutAt ? fmtTime(row.lastCheckOutAt?.toDate ? row.lastCheckOutAt.toDate().toISOString() : row.lastCheckOutAt) : '--:--';
+    const actualHours = ((Number(row.totalMinutes || 0) || 0) / 60).toFixed(2);
+    const payableHours = ((Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0) / 60).toFixed(2);
+    return `
+      <div class="list-item">
+        <div class="list-item-icon" style="background:rgba(14,165,233,0.12)">⏱️</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${_escapeHtml(row.staffName || 'Nhân viên')} ${statusBadge}</div>
+          <div class="list-item-sub">${_escapeHtml(row.dateKey || '')} · Vào ${inTime} · Ra ${outTime} · Tính lương ${payableHours}h · Thực tế ${actualHours}h · ${fmt(Number(row.hourlyRate || 0))}đ/giờ</div>
+          ${row.expenseId ? `<div class="list-item-sub">Chi phí lương: ${_escapeHtml(row.expenseId)}</div>` : ''}
+        </div>
+        <div class="list-item-right">
+          <div class="list-item-amount">${fmt(Number(row.totalWage || 0))}đ</div>
+          <button type="button" class="btn btn-xs btn-secondary" onclick="adjustAttendanceDaily('${_escapeHtml(dailyId)}')">Sửa</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function adjustAttendanceDaily(dailyId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được sửa chấm công.', 'danger');
+    return;
+  }
+  const row = _getAttendanceDailyRows().find(item => String(item.dailyId || item.id || '') === String(dailyId));
+  if (!row) return;
+  const currentHours = ((Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0) / 60).toFixed(2);
+  const nextHoursRaw = prompt(`Nhập giờ tính lương cho ${row.staffName || 'nhân viên'} ngày ${row.dateKey}:`, currentHours);
+  if (nextHoursRaw === null) return;
+  const nextHours = Number(String(nextHoursRaw).replace(',', '.'));
+  if (!Number.isFinite(nextHours) || nextHours < 0) {
+    showToast('Số giờ không hợp lệ.', 'warning');
+    return;
+  }
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const payableMinutes = Math.round(nextHours * 60);
+  const totalWage = Math.round(nextHours * hourlyRate);
+  try {
+    await window.DB?.Attendance?.updateDaily?.(dailyId, {
+      payableMinutes,
+      payableHours: Number(nextHours.toFixed(2)),
+      totalWage,
+      status: 'adjusted',
+      adjustedBy: currentUser?.username || currentUser?.name || 'admin',
+      adjustedAt: new Date().toISOString(),
+    });
+    if (row.expenseId && window.DB?.Expenses?.update) {
+      await window.DB.Expenses.update(row.expenseId, {
+        amount: totalWage,
+        note: `${nextHours.toFixed(2)} giờ tính lương x ${fmt(hourlyRate)}đ/giờ (admin chỉnh)`,
+      });
+    }
+    showToast('✅ Đã cập nhật chấm công và chi phí lương', 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi cập nhật chấm công: ' + (err?.message || err), 'danger');
+  }
 }
 
 function syncCurrentStaffSession() {
@@ -1529,6 +1770,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       initKitchenPushClient().catch(err => console.warn('[KitchenPush] settings init error', err));
     }
     if (key === 'users' || key === 'presence' || key === 'staff') renderUserManagement();
+    if (key === 'attendanceDaily' || key === 'attendanceShifts' || key === 'staff') renderAttendanceManagement();
     if (key === 'staff') syncCurrentStaffSession();
     if (key === 'menu') {
       renderMenuItems();
@@ -1939,7 +2181,7 @@ function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more') {
-      n.classList.toggle('active', ['menu', 'settings', 'insights'].includes(page));
+      n.classList.toggle('active', ['menu', 'settings', 'insights', 'media'].includes(page));
     } else {
       n.classList.toggle('active', n.dataset.page === page);
     }
@@ -1948,10 +2190,14 @@ function navigate(page) {
 }
 
 function openMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.openModal) return window.XekhoApp.ui.openModal('more-modal');
   document.getElementById('more-modal').classList.add('active');
 }
 
 function closeMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('more-modal');
   document.getElementById('more-modal').classList.remove('active');
 }
 
@@ -1974,10 +2220,14 @@ function navigateMore(page) {
 }
 
 function openInvMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.openModal) return window.XekhoApp.ui.openModal('inv-more-modal');
   document.getElementById('inv-more-modal').classList.add('active');
 }
 
 function closeInvMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('inv-more-modal');
   document.getElementById('inv-more-modal').classList.remove('active');
 }
 
@@ -1995,6 +2245,7 @@ function renderPage(page) {
     case 'finance':  renderFinance(); break;
     case 'reports':  renderReports(); break;
     case 'insights': renderInsights(); break;
+    case 'media':    renderMediaRefinery(); break;
     case 'menu':     renderMenuAdmin(); break;
     case 'settings': renderSettings(); break;
   }
@@ -2012,6 +2263,7 @@ function switchSettingsTab(tabId, btn) {
   settingsWrap.querySelectorAll('.settings-tab-content').forEach(el => el.style.display = 'none');
   const target = document.getElementById('set-tab-' + tabId);
   if(target) target.style.display = 'block';
+  if (tabId === 'attendance') renderAttendanceManagement();
 }
 
 function switchReportTab(tabId, btn) {
@@ -2272,12 +2524,14 @@ function _getHistory() {
 }
 
 function isCompletedHistoryOrderForUi(order) {
+  if (window.XekhoApp?.order?.isCompletedHistoryOrderForUi) return window.XekhoApp.order.isCompletedHistoryOrderForUi(order);
   const status = String(order?.status || '').trim().toLowerCase();
   if (!status) return !order?.cancelledAt && !order?.cancelReason;
   return status === 'completed' || status === 'closed';
 }
 
 function isVisibleHistoryOrderForUi(order) {
+  if (window.XekhoApp?.order?.isVisibleHistoryOrderForUi) return window.XekhoApp.order.isVisibleHistoryOrderForUi(order);
   if (!order || typeof order !== 'object') return false;
   if (!isCompletedHistoryOrderForUi(order)) return false;
   if (order.hidden === true) return false;
@@ -2327,6 +2581,7 @@ function isAdminUser() {
 }
 
 function normalizeViKey(text) {
+  if (window.XekhoApp?.order?.normalizeViKey) return window.XekhoApp.order.normalizeViKey(text);
   return String(text || '')
     .toLowerCase()
     .normalize('NFD')
@@ -2337,12 +2592,17 @@ function normalizeViKey(text) {
 }
 
 function inferInventoryItemType(item = {}) {
+  if (window.XekhoApp?.order?.inferInventoryItemType) return window.XekhoApp.order.inferInventoryItemType(item);
   if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
   if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
   return ITEM_TYPES.RAW;
 }
 
 function normalizeInventoryItemModel(item = {}) {
+  if (window.XekhoApp?.order?.normalizeInventoryItemModel) {
+    const base = window.XekhoApp.order.normalizeInventoryItemModel(item);
+    return { ...item, ...base };
+  }
   return {
     ...item,
     itemType: inferInventoryItemType(item),
@@ -2355,39 +2615,47 @@ function normalizeInventoryItemModel(item = {}) {
 }
 
 function inferMenuItemType(item = {}) {
+  if (window.XekhoApp?.order?.inferMenuItemType) return window.XekhoApp.order.inferMenuItemType(item);
   if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.FINISHED) return item.itemType;
   return Array.isArray(item.ingredients) && item.ingredients.length > 0 ? ITEM_TYPES.FINISHED : ITEM_TYPES.RETAIL;
 }
 
 function findLinkedInventoryIdForMenuItem(item = {}, inventory = []) {
+  if (window.XekhoApp?.order?.findLinkedInventoryIdForMenuItem) return window.XekhoApp.order.findLinkedInventoryIdForMenuItem(item, inventory);
   if (item.linkedInventoryId && inventory.some(inv => inv.id === item.linkedInventoryId)) return item.linkedInventoryId;
   const exact = inventory.find(inv => !inv.hidden && normalizeViKey(inv.name) === normalizeViKey(item.name));
   return exact ? exact.id : null;
 }
 
 function _isKitchenSkippedItem(item = {}) {
+  if (window.XekhoApp?.order?._isKitchenSkippedItem) return window.XekhoApp.order._isKitchenSkippedItem(item);
   return String(item?.itemType || '').trim().toLowerCase() === String(ITEM_TYPES.RETAIL).toLowerCase();
 }
 
 function createKitchenLineItemId() {
+  if (window.XekhoApp?.order?.createKitchenLineItemId) return window.XekhoApp.order.createKitchenLineItemId();
   return `li_${Date.now()}_${uid().slice(0, 6)}`;
 }
 
 function getKitchenLineItemId(item = {}) {
+  if (window.XekhoApp?.order?.getKitchenLineItemId) return window.XekhoApp.order.getKitchenLineItemId(item);
   return String(item?.lineItemId || '').trim();
 }
 
 function isKitchenFinalStatus(status) {
+  if (window.XekhoApp?.order?.isKitchenFinalStatus) return window.XekhoApp.order.isKitchenFinalStatus(status);
   const normalized = String(status || '').trim().toLowerCase();
   return normalized === 'served';
 }
 
 function canToggleServedStatus(item = {}) {
+  if (window.XekhoApp?.order?.canToggleServedStatus) return window.XekhoApp.order.canToggleServedStatus(item);
   const status = String(item?.kitchenStatus || '').trim().toLowerCase();
   return status === 'done' || status === 'served';
 }
 
 function getCartItemStatusLabel(item = {}) {
+  if (window.XekhoApp?.order?.getCartItemStatusLabel) return window.XekhoApp.order.getCartItemStatusLabel(item);
   const status = String(item?.kitchenStatus || '').trim().toLowerCase();
   if (status === 'served') return 'Da mang ra';
   if (status === 'done') return 'Cho mang ra';
@@ -2397,6 +2665,7 @@ function getCartItemStatusLabel(item = {}) {
 }
 
 function normalizeKitchenOrderItem(item = {}, menuMap = null) {
+  if (window.XekhoApp?.order?.normalizeKitchenOrderItem) return window.XekhoApp.order.normalizeKitchenOrderItem(item, menuMap);
   const base = { ...item };
   const menuItem = menuMap instanceof Map ? menuMap.get(String(base.id || '')) : null;
   const inferredItemType = menuItem?.itemType || base.itemType || inferMenuItemType(menuItem || base);
@@ -2954,6 +3223,8 @@ function openOnlineOrdersPanel() {
 }
 
 function closeOnlineOrdersModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('online-orders-modal');
   const modal = document.getElementById('online-orders-modal');
   if (!modal) return;
   modal.classList.remove('active');
@@ -3068,6 +3339,7 @@ function renderOnlineOrdersPanel() {
 }
 
 function _mapOnlineOrderPayMethod(order = {}) {
+  if (window.XekhoApp?.order?._mapOnlineOrderPayMethod) return window.XekhoApp.order._mapOnlineOrderPayMethod(order);
   const paymentMethod = String(order.paymentMethod || '').trim().toLowerCase();
   const paymentStatus = String(order.paymentStatus || '').trim().toLowerCase();
   if (paymentMethod && paymentMethod !== 'cod') {
@@ -3077,6 +3349,7 @@ function _mapOnlineOrderPayMethod(order = {}) {
 }
 
 function _buildOnlineOrderBillNo(order = {}) {
+  if (window.XekhoApp?.order?._buildOnlineOrderBillNo) return window.XekhoApp.order._buildOnlineOrderBillNo(order);
   const orderCode = String(order.orderCode || '').trim();
   if (orderCode) return `ONL-${orderCode}`;
   const now = new Date();
@@ -3098,10 +3371,12 @@ function _estimateOnlineOrderCost(items = []) {
 }
 
 function _getOnlineOrderItemQty(item = {}) {
+  if (window.XekhoApp?.order?._getOnlineOrderItemQty) return window.XekhoApp.order._getOnlineOrderItemQty(item);
   return Number(item?.qty ?? item?.quantity ?? 1) || 1;
 }
 
 function _getOnlineOrderItemUnitPrice(item = {}) {
+  if (window.XekhoApp?.order?._getOnlineOrderItemUnitPrice) return window.XekhoApp.order._getOnlineOrderItemUnitPrice(item);
   return Number(
     item?.unitPrice ??
     item?.price ??
@@ -3112,6 +3387,7 @@ function _getOnlineOrderItemUnitPrice(item = {}) {
 }
 
 function _calculateOnlineOrderTotal(order = {}) {
+  if (window.XekhoApp?.order?._calculateOnlineOrderTotal) return window.XekhoApp.order._calculateOnlineOrderTotal(order);
   const pricing = order?.pricing || {};
   const explicitTotal = Number(
     order?.total ??
@@ -3153,6 +3429,7 @@ function _patchLocalOnlineOrderMeta(orderId, patch = {}) {
 }
 
 function _resolveOnlineOrderDocId(order = {}, fallbackId = '') {
+  if (window.XekhoApp?.order?._resolveOnlineOrderDocId) return window.XekhoApp.order._resolveOnlineOrderDocId(order, fallbackId);
   return String(order?._docId || order?.id || fallbackId || '').trim();
 }
 
@@ -4244,6 +4521,8 @@ function confirmPaymentMethod(method) {
 
 function closeBillModal() {
   stopPaymentWatcher();
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('bill-modal');
   document.getElementById('bill-modal').classList.remove('active');
 }
 
@@ -6497,6 +6776,154 @@ function renderFinance() {
   setFinancePeriod(financePeriod);
 }
 
+function formatLocalDateKey(date) {
+  const value = new Date(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function resolvePeriodDateRange(period, opts = {}) {
+  const now = new Date();
+
+  if (period === 'today') {
+    const dateKey = formatLocalDateKey(now);
+    return { fromDate: dateKey, toDate: dateKey };
+  }
+
+  if (period === 'day') {
+    const singleDate = opts?.date || opts?.singleDate;
+    if (singleDate) {
+      return { fromDate: String(singleDate), toDate: String(singleDate) };
+    }
+  }
+
+  if (period === 'range' && opts?.fromDate && opts?.toDate) {
+    return { fromDate: String(opts.fromDate), toDate: String(opts.toDate) };
+  }
+
+  if (period === 'week') {
+    const end = new Date(now);
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    return { fromDate: formatLocalDateKey(start), toDate: formatLocalDateKey(end) };
+  }
+
+  if (period === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { fromDate: formatLocalDateKey(start), toDate: formatLocalDateKey(end) };
+  }
+
+  const sourceDates = [
+    ...(filterHistory(period, opts) || []).map(order => order?.paidAt),
+    ...(filterExpenses(period, opts) || []).map(expense => expense?.date),
+    ...(filterPurchases(period, opts) || []).map(purchase => purchase?.date),
+  ]
+    .map(value => new Date(value))
+    .filter(value => !Number.isNaN(value.getTime()))
+    .sort((a, b) => a - b);
+
+  if (!sourceDates.length) {
+    const dateKey = formatLocalDateKey(now);
+    return { fromDate: dateKey, toDate: dateKey };
+  }
+
+  return {
+    fromDate: formatLocalDateKey(sourceDates[0]),
+    toDate: formatLocalDateKey(sourceDates[sourceDates.length - 1]),
+  };
+}
+
+function buildOperationalExpenseBreakdown(period, opts = {}, options = {}) {
+  const includeFixedCost = options.includeFixedCost !== false;
+  const ignoreMenuFilter = options.ignoreMenuFilter !== false;
+  const purchases = ignoreMenuFilter ? filterPurchases(period, opts) : getFilteredReportPurchases();
+  const expenses = ignoreMenuFilter ? filterExpenses(period, opts) : getFilteredReportExpenses();
+
+  const purchaseRows = purchases.map(p => ({
+    type: 'purchase',
+    id: p.id || uid(),
+    name: p.name,
+    category: 'Chi phí nguyên liệu',
+    date: p.date,
+    amount: normalizePositiveAmount(p.price),
+    qty: Number(p.qty) || 0,
+    unit: p.unit || '',
+    supplier: p.supplier || '',
+    note: `${fmt(Number(p.qty) || 0)} ${repairVietnameseText(p.unit || '')} - ${repairVietnameseText(p.supplier || '')}`,
+  })).filter(row => row.date && row.amount > 0);
+
+  const expenseRows = expenses.map(e => ({
+    type: 'expense',
+    id: e.id || uid(),
+    name: repairVietnameseText(e.name),
+    category: normalizeExpenseCategoryLabel(e.category || 'Chi phí khác'),
+    date: e.date,
+    amount: normalizePositiveAmount(e.amount),
+    note: repairVietnameseText(e.category || ''),
+  })).filter(row => row.date && row.amount > 0);
+
+  const range = resolvePeriodDateRange(period, opts);
+  const fixedCostProfile = getFixedCostProfileForReports();
+  const reportDays = countInclusiveReportDays(range.fromDate, range.toDate);
+  const fixedCostDaily = Number(fixedCostProfile.dailyFixedCost || 0) || 0;
+  const fixedCostTotal = includeFixedCost ? fixedCostDaily * (Number(reportDays || 0) || 0) : 0;
+  const managementSalaryTotal = includeFixedCost
+    ? (Number(fixedCostProfile.dailyManagementSalary || 0) || 0) * (Number(reportDays || 0) || 0)
+    : 0;
+  const otherFixedCostTotal = Math.max(0, fixedCostTotal - managementSalaryTotal);
+  const fixedCostRows = [
+    ...(managementSalaryTotal > 0 ? [{
+      type: 'fixed_cost',
+      id: `management_salary_${range.fromDate}_${range.toDate}`,
+      name: 'Lương quản lý',
+      category: 'Lương quản lý',
+      date: `${range.toDate}T23:59:59`,
+      amount: managementSalaryTotal,
+      note: `${fmt(reportDays)} ngày x ${fmt(fixedCostProfile.dailyManagementSalary || 0)}đ/ngày`,
+    }] : []),
+    ...(otherFixedCostTotal > 0 ? [{
+      type: 'fixed_cost',
+      id: `fixed_cost_${range.fromDate}_${range.toDate}`,
+      name: 'Chi phí cố định',
+      category: 'Chi phí cố định',
+      date: `${range.toDate}T23:59:59`,
+      amount: otherFixedCostTotal,
+      note: `${fmt(reportDays)} ngày x ${fmt(Math.max(0, fixedCostDaily - (Number(fixedCostProfile.dailyManagementSalary || 0) || 0)))}đ/ngày`,
+    }] : []),
+  ];
+
+  const rows = [...purchaseRows, ...expenseRows, ...fixedCostRows]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sums = rows.reduce((acc, row) => {
+    acc[row.category] = (acc[row.category] || 0) + (Number(row.amount) || 0);
+    return acc;
+  }, {});
+
+  const purchaseTotal = purchaseRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const otherExpenseTotal = expenseRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const total = purchaseTotal + otherExpenseTotal + fixedCostTotal;
+
+  return {
+    rows,
+    sums,
+    total,
+    purchaseTotal,
+    otherExpenseTotal,
+    fixedCostTotal,
+    managementSalaryTotal,
+    otherFixedCostTotal,
+    fixedCostDaily,
+    dailyManagementSalary: fixedCostProfile.dailyManagementSalary,
+    fixedCostConfigured: fixedCostProfile.isConfigured,
+    reportDays,
+    range,
+  };
+}
+
 function setFinancePeriod(p) {
   financePeriod = p;
   document.querySelectorAll('.finance-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
@@ -6518,12 +6945,17 @@ function setFinancePeriod(p) {
 }
 
 function updateFinanceUI(s) {
+  const expenseSummary = buildOperationalExpenseBreakdown(financePeriod, financeDateOpts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  });
+  const netProfitAfterFixedCost = Number(s.gross || 0) - Number(s.operatingExpenseTotal || 0) - Number(expenseSummary.fixedCostTotal || 0);
   // Thay đăi cách hiđơ thđ các chđ sđ tài chính
   document.getElementById('fin-revenue').textContent = fmtFull(s.netSales);
   document.getElementById('fin-cost').textContent = fmtFull(s.cost);
   document.getElementById('fin-gross').textContent = fmtFull(s.gross);
-  document.getElementById('fin-expense').textContent = fmtFull(s.cashOutTotal || s.expenseTotal || 0);
-  document.getElementById('fin-profit').textContent = fmtFull(s.profit);
+  document.getElementById('fin-expense').textContent = fmtFull(expenseSummary.total || 0);
+  document.getElementById('fin-profit').textContent = fmtFull(netProfitAfterFixedCost || 0);
   document.getElementById('fin-orders').textContent = s.orders;
   document.getElementById('fin-bank').textContent = fmtFull(s.revenueBank || 0);
   document.getElementById('fin-cash').textContent = fmtFull(s.revenueCash || 0);
@@ -6558,6 +6990,10 @@ function updateFinanceUI(s) {
 }
 
 function getFinanceExpenseRows(period = financePeriod, opts = financeDateOpts) {
+  return buildOperationalExpenseBreakdown(period, opts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  }).rows;
   const expenses = filterExpenses(period, opts);
   const purchases = filterPurchases(period, opts);
   return [
@@ -7357,22 +7793,29 @@ function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
 function getFixedCostProfileForReports() {
   const financialProfile = window.appState?.settings?.financial_profile || {};
   const monthly = financialProfile?.monthly_fixed_costs || {};
-  const monthlyFixedCostTotal =
-    Number(monthly.total || 0)
-    || (
-      (Number(monthly.rent || 0) || 0)
-      + (Number(monthly.staff || 0) || 0)
-      + (Number(monthly.utilities || 0) || 0)
-      + (Number(monthly.other || 0) || 0)
-    );
+  const monthlyManagementSalary = Number(
+    financialProfile?.management_salary_monthly
+    ?? monthly.management_salary
+    ?? monthly.manager_salary
+    ?? 0
+  ) || 0;
+  const itemizedMonthlyFixedCostTotal =
+    (Number(monthly.rent || 0) || 0)
+    + monthlyManagementSalary
+    + (Number(monthly.utilities || 0) || 0)
+    + (Number(monthly.other || 0) || 0);
+  const monthlyFixedCostTotal = itemizedMonthlyFixedCostTotal || (Number(monthly.total || 0) || 0);
   const dailyFixedCost =
     Number(financialProfile?.daily_fixed_cost || 0)
     || (monthlyFixedCostTotal > 0 ? Math.round(monthlyFixedCostTotal / 30) : 0);
+  const dailyManagementSalary = monthlyManagementSalary > 0 ? Math.round(monthlyManagementSalary / 30) : 0;
   const targetMonthlyProfit = Number(financialProfile?.target_monthly_profit || 0) || 0;
 
   return {
     monthlyFixedCostTotal,
     dailyFixedCost,
+    monthlyManagementSalary,
+    dailyManagementSalary,
     targetMonthlyProfit,
     isConfigured: monthlyFixedCostTotal > 0 || dailyFixedCost > 0 || targetMonthlyProfit > 0,
   };
@@ -7465,8 +7908,9 @@ function buildAdsRevenueReportHtml(summary = {}) {
           <div class="report-ads-row"><span>TikTok Ads</span><strong>${fmtMoney(summary.tiktokAdsSpend)}</strong></div>
           <div class="report-ads-row"><span>Marketing khác</span><strong>${fmtMoney(summary.otherAdsSpend)}</strong></div>
           <div class="report-ads-row"><span>Nhập hàng</span><strong>${fmtMoney(summary.purchaseSpend)}</strong></div>
-          <div class="report-ads-row"><span>Chi phí khác</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>
-          <div class="report-ads-row"><span>Chi phí cố định kỳ báo cáo</span><strong>${fmtMoney(summary.fixedCostTotal)}</strong></div>
+          <div class="report-ads-row"><span>Chi phí khác, gồm lương nhân viên chấm công</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>
+          <div class="report-ads-row"><span>Lương quản lý kỳ báo cáo</span><strong>${fmtMoney(summary.managementSalaryTotal)}</strong></div>
+          <div class="report-ads-row"><span>Chi phí cố định khác kỳ báo cáo</span><strong>${fmtMoney(summary.otherFixedCostTotal)}</strong></div>
           <div class="report-ads-row report-ads-row-total">
             <span>Lợi nhuận sau ads, chi phí khác & chi phí cố định</span>
             <strong style="color:${summary.netAfterAdsAndExpenses >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtMoney(summary.netAfterAdsAndExpenses)}</strong>
@@ -7474,7 +7918,7 @@ function buildAdsRevenueReportHtml(summary = {}) {
         </div>
         ${summary.snapshotAdsDays > 0 ? `<div class="report-ads-pill">Meta Ads snapshot: ${fmt(summary.snapshotAdsDays)} ngày</div>` : ''}
         ${summary.expenseAdsDays > 0 ? `<div class="report-ads-pill">Chi phí nội bộ: ${fmt(summary.expenseAdsDays)} dòng ads</div>` : ''}
-        ${summary.fixedCostConfigured ? `<div class="report-ads-pill">Chi phí cố định: ${fmtMoney(summary.fixedCostDaily)}/ngày từ Sprint 0</div>` : '<div class="report-ads-pill">Chi phí cố định: chưa cấu hình trong Sprint 0</div>'}
+        ${summary.fixedCostConfigured ? `<div class="report-ads-pill">Chi phí cố định: ${fmtMoney(summary.fixedCostDaily)}/ngày, trong đó lương quản lý ${fmtMoney(summary.dailyManagementSalary)}/ngày</div>` : '<div class="report-ads-pill">Chi phí cố định: chưa cấu hình</div>'}
         ${adsDataNote}
       </div>
     </div>
@@ -7559,6 +8003,8 @@ function loadAdsRevenueReport() {
   const fixedCostProfile = getFixedCostProfileForReports();
   const reportDays = countInclusiveReportDays(fromDate, toDate);
   const fixedCostTotal = (Number(fixedCostProfile.dailyFixedCost || 0) || 0) * (Number(reportDays || 0) || 0);
+  const managementSalaryTotal = (Number(fixedCostProfile.dailyManagementSalary || 0) || 0) * (Number(reportDays || 0) || 0);
+  const otherFixedCostTotal = Math.max(0, fixedCostTotal - managementSalaryTotal);
   const purchaseSpend = purchases.reduce((sum, purchase) => sum + Number(purchase?.price || 0), 0);
   const grossProfit = posSummary.posRevenue - posSummary.cogsTotal;
   const netAfterAdsAndExpenses = grossProfit - adsSpendTotal - adsSummary.otherExpenseSpend - fixedCostTotal;
@@ -7579,7 +8025,10 @@ function loadAdsRevenueReport() {
     purchaseSpend,
     netAfterAdsAndExpenses,
     fixedCostDaily: fixedCostProfile.dailyFixedCost,
+    dailyManagementSalary: fixedCostProfile.dailyManagementSalary,
     fixedCostTotal,
+    managementSalaryTotal,
+    otherFixedCostTotal,
     fixedCostConfigured: fixedCostProfile.isConfigured,
     reportDays,
     roas: adsSpendTotal > 0 ? (posSummary.posRevenue / adsSpendTotal) : 0,
@@ -8034,6 +8483,92 @@ function renderExpenseReport() {
   const listEl = document.getElementById('purchase-report-list');
   if (!ctx || !listEl) return;
 
+  const tabEl = document.getElementById('report-tab-purchase');
+  if (tabEl && !document.getElementById('report-expense-summary-card')) {
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'card';
+    summaryCard.id = 'report-expense-summary-card';
+    summaryCard.style.marginBottom = '16px';
+    summaryCard.innerHTML = `
+      <div class="card-title" style="margin-bottom:12px">Tóm tắt chi phí toàn quán</div>
+      <div id="report-expense-summary-content"></div>
+    `;
+    tabEl.insertBefore(summaryCard, tabEl.firstElementChild);
+  }
+
+  const expenseSummary = buildOperationalExpenseBreakdown(reportPeriod, reportDateOpts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  });
+  const summaryContentEl = document.getElementById('report-expense-summary-content');
+  if (summaryContentEl) {
+    summaryContentEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Tổng chi phí</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.total || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Nhập hàng</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.purchaseTotal || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Chi phí khác</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.otherExpenseTotal || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Lương quản lý</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.managementSalaryTotal || 0)}đ</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${expenseSummary.dailyManagementSalary ? `${fmt(expenseSummary.dailyManagementSalary || 0)}đ/ngày x ${fmt(expenseSummary.reportDays || 0)} ngày` : 'Chưa cấu hình'}</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Chi phí cố định khác</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.otherFixedCostTotal || 0)}đ</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${expenseSummary.fixedCostConfigured ? `Tổng cố định: ${fmt(expenseSummary.fixedCostTotal || 0)}đ` : 'Chưa cấu hình'}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text2)">
+        Tab Chi phí luôn hiển thị chi phí toàn quán theo ngày/kỳ báo cáo để khớp với tab Tài chính. Bộ lọc món ăn không áp vào chi phí chung.
+      </div>
+    `;
+  }
+
+  const expenseSums = expenseSummary.sums;
+  const expenseLabels = Object.keys(expenseSums);
+  const expenseData = expenseLabels.map(label => expenseSums[label]);
+
+  if (chartInstances.expense) chartInstances.expense.destroy();
+  if (expenseData.every(value => value === 0)) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-text">Chưa có chi phí nào trong khoảng thời gian này.</div></div>';
+    ctx.style.display = 'none';
+    return;
+  }
+
+  ctx.style.display = 'block';
+  const expenseColors = ['#00D68F','#FF3D71','#A855F7','#0095FF','#FFD700','#FF6B35','#8F9BB3'];
+  chartInstances.expense = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: expenseLabels, datasets: [{ data: expenseData, backgroundColor: expenseColors, borderWidth: 0, hoverOffset: 8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { position: 'bottom', labels: { color: '#A0A0B5', padding: 10, font: { size: 11 } } } }
+    }
+  });
+
+  listEl.innerHTML = expenseSummary.rows.map(item => `
+    <div class="list-item" style="cursor:pointer;" onclick="${item.type === 'purchase' ? `editPurchase('${item.id}')` : (item.type === 'expense' ? `editExpense('${item.id}')` : '')}">
+      <div class="list-item-icon" style="background:${item.type === 'purchase' ? 'rgba(0,214,143,0.1)' : (item.type === 'fixed_cost' ? 'rgba(0,149,255,0.12)' : 'rgba(255,61,113,0.1)')}">${item.type === 'purchase' ? '📥' : (item.type === 'fixed_cost' ? '🏢' : '💸')}</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.type === 'purchase' ? `Nhập: ${repairVietnameseText(item.name)}` : repairVietnameseText(item.name)}</div>
+        <div class="list-item-sub">${fmtDate(item.date)} · ${item.note || ''}</div>
+      </div>
+      <div class="list-item-right" style="color:var(--danger);font-weight:bold;">
+        ${fmt(item.amount)}đ
+      </div>
+    </div>
+  `).join('');
+  return;
+
   const rawPurchases = getFilteredReportPurchases();
   const rawExpenses = getFilteredReportExpenses();
 
@@ -8341,6 +8876,243 @@ function renderInsights() {
     ? `<div class="alert-card danger"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cảnh báo doanh thu</div><div class="alert-desc">Hôm nay thấp hơn ${((1-today.revenue/avgWeekly)*100).toFixed(0)}% so với trung bình tuần (${fmt(avgWeekly)}đ/ngày)</div></div></div>`
     : `<div class="alert-card success"><div class="alert-icon">✅</div><div class="alert-content"><div class="alert-title">Doanh thu ổn định</div><div class="alert-desc">Hôm nay: ${fmtFull(today.revenue)} - trong mức bình thường</div></div></div>`;
   document.getElementById('revenue-warning').innerHTML = warnHtml;
+}
+
+// ============================================================
+// PAGE: MEDIA REFINERY
+// ============================================================
+let mediaRefineryAssetsCache = [];
+let mediaRefineryBusy = false;
+
+function getMediaRefineryProductOptions(selectedId = '', placeholder = 'Gắn món sau') {
+  const menu = Store.getMenu() || [];
+  return [`<option value="">${_escapeHtml(placeholder)}</option>`].concat(menu.map(item => {
+    const id = _escapeHtml(item.id || '');
+    const selected = String(item.id || '') === String(selectedId || '') ? ' selected' : '';
+    return `<option value="${id}"${selected}>${_escapeHtml(item.name || item.id || '')}</option>`;
+  })).join('');
+}
+
+function syncMediaRefineryProductSelects() {
+  const uploadSelect = document.getElementById('media-refinery-product');
+  if (uploadSelect && uploadSelect.options.length <= 1) {
+    uploadSelect.innerHTML = getMediaRefineryProductOptions(uploadSelect.value || '', 'Gắn món sau');
+  }
+  const briefSelect = document.getElementById('media-refinery-brief-product');
+  if (briefSelect && briefSelect.options.length <= 1) {
+    briefSelect.innerHTML = getMediaRefineryProductOptions(briefSelect.value || '', 'Chọn món để kiểm tra publish-ready');
+  }
+}
+
+function mediaRefineryStatusClass(status = '') {
+  const s = String(status || '').toUpperCase();
+  if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(s)) return 'success';
+  if (s === 'REJECTED') return 'danger';
+  if (s === 'NEEDS_MANUAL_REVIEW') return 'warning';
+  return 'info';
+}
+
+function renderMediaRefineryKpis(assets = []) {
+  const el = document.getElementById('media-refinery-kpis');
+  if (!el) return;
+  const counts = assets.reduce((acc, asset) => {
+    const status = String(asset.status || 'UNKNOWN').toUpperCase();
+    acc.total += 1;
+    acc[status] = (acc[status] || 0) + 1;
+    if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(status)) acc.ready += 1;
+    return acc;
+  }, { total: 0, ready: 0 });
+  el.innerHTML = [
+    ['Tổng asset', counts.total],
+    ['Publish-ready', counts.ready],
+    ['Chờ refine', counts.REFINE_READY || 0],
+    ['Cần duyệt', counts.NEEDS_MANUAL_REVIEW || 0],
+  ].map(([label, value]) => `
+    <div class="media-refinery-kpi">
+      <div class="media-refinery-kpi-value">${_escapeHtml(value)}</div>
+      <div class="media-refinery-kpi-label">${_escapeHtml(label)}</div>
+    </div>
+  `).join('');
+}
+
+function filterMediaRefineryAssets(assets = []) {
+  const qRaw = document.getElementById('media-refinery-query')?.value || '';
+  const q = normalizeViKey(qRaw);
+  if (!q) return assets;
+  return assets.filter(asset => {
+    const haystack = [
+      asset.detected_product_name,
+      asset.scene_type,
+      asset.orientation,
+      asset.status,
+      asset.qa_notes,
+    ].join(' ');
+    return normalizeViKey(haystack).includes(q);
+  });
+}
+
+function renderMediaRefineryList(assets = []) {
+  const el = document.getElementById('media-refinery-list');
+  if (!el) return;
+  const filtered = filterMediaRefineryAssets(assets);
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state">Chưa có asset phù hợp. Upload raw ảnh món rồi bấm Refine để đưa vào publish-ready.</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(asset => {
+    const id = _escapeHtml(asset.id || '');
+    const imageUrl = _escapeHtml(asset.thumbnail_url || asset.refined_file_url || asset.original_file_url || '');
+    const status = _escapeHtml(asset.status || 'UNKNOWN');
+    const product = _escapeHtml(asset.detected_product_name || 'Chưa gắn món');
+    const score = Math.round(Number(asset.publish_score || 0));
+    const scene = _escapeHtml(asset.scene_type || 'unknown');
+    const orientation = _escapeHtml(asset.orientation || '');
+    return `
+      <div class="media-refinery-item">
+        <div class="media-refinery-thumb">${imageUrl ? `<img src="${imageUrl}" alt="">` : '<span>No image</span>'}</div>
+        <div class="media-refinery-main">
+          <div class="media-refinery-title">${product}</div>
+          <div class="media-refinery-meta">${scene}${orientation ? ` · ${orientation}` : ''} · Score ${score}</div>
+          <div class="media-refinery-meta">${_escapeHtml(asset.qa_notes || '')}</div>
+          <span class="badge badge-${mediaRefineryStatusClass(status)}">${status}</span>
+        </div>
+        <div class="media-refinery-actions">
+          <button class="btn btn-xs btn-secondary" onclick="scoreMediaRefineryAsset('${id}')">Score</button>
+          <button class="btn btn-xs btn-secondary" onclick="refineMediaRefineryAsset('${id}')">Refine</button>
+          <button class="btn btn-xs btn-success" onclick="qaMediaRefineryAsset('${id}','PUBLISH_READY')">Approve</button>
+          <button class="btn btn-xs btn-danger" onclick="qaMediaRefineryAsset('${id}','REJECTED')">Reject</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function renderMediaRefinery() {
+  const page = document.getElementById('page-media');
+  if (!page) return;
+  syncMediaRefineryProductSelects();
+  const listEl = document.getElementById('media-refinery-list');
+  if (listEl) listEl.innerHTML = '<div class="empty-state">Đang tải media...</div>';
+  try {
+    const status = String(document.getElementById('media-refinery-status')?.value || '').trim();
+    const result = await window.DB?.MediaRefinery?.list({ status, limit: 80 });
+    mediaRefineryAssetsCache = Array.isArray(result?.assets) ? result.assets : [];
+    renderMediaRefineryKpis(mediaRefineryAssetsCache);
+    renderMediaRefineryList(mediaRefineryAssetsCache);
+  } catch (err) {
+    console.error('[MediaRefinery] render failed', err);
+    if (listEl) listEl.innerHTML = `<div class="empty-state">${_escapeHtml(err?.message || 'Không tải được media-refinery.')}</div>`;
+  }
+}
+
+function triggerMediaRefineryUpload() {
+  document.getElementById('media-refinery-file')?.click();
+}
+
+async function handleMediaRefineryUpload(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  if (!window.DB?.MediaRefinery?.ingest) {
+    showToast('MediaRefinery chưa sẵn sàng.', 'danger');
+    return;
+  }
+  if (mediaRefineryBusy) return;
+  mediaRefineryBusy = true;
+  try {
+    const productId = String(document.getElementById('media-refinery-product')?.value || '').trim();
+    const product = (Store.getMenu() || []).find(item => String(item.id) === productId);
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(String(e.target?.result || ''));
+      reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
+      reader.readAsDataURL(file);
+    });
+    await window.DB.MediaRefinery.ingest({
+      dataUrl,
+      fileName: file.name,
+      mimeType: file.type || 'image/jpeg',
+      source: 'staff_upload',
+      productId: productId || '',
+      productName: product?.name || '',
+      autoScore: true,
+    });
+    showToast('Đã ingest raw asset. Bấm Refine để tạo bản publish-ready.', 'success');
+    await renderMediaRefinery();
+  } catch (err) {
+    console.error('[MediaRefinery] upload failed', err);
+    showToast(err?.message || 'Upload media thất bại.', 'danger');
+  } finally {
+    mediaRefineryBusy = false;
+    if (event?.target) event.target.value = '';
+  }
+}
+
+async function scoreMediaRefineryAsset(assetId) {
+  try {
+    await window.DB.MediaRefinery.score(assetId, { useVision: true });
+    showToast('Đã score asset.', 'success');
+    await renderMediaRefinery();
+  } catch (err) {
+    console.error('[MediaRefinery] score failed', err);
+    showToast(err?.message || 'Score thất bại.', 'danger');
+  }
+}
+
+async function refineMediaRefineryAsset(assetId) {
+  try {
+    await window.DB.MediaRefinery.refine(assetId);
+    showToast('Đã tạo refined assets.', 'success');
+    await renderMediaRefinery();
+  } catch (err) {
+    console.error('[MediaRefinery] refine failed', err);
+    showToast(err?.message || 'Refine thất bại.', 'danger');
+  }
+}
+
+async function qaMediaRefineryAsset(assetId, status) {
+  try {
+    await window.DB.MediaRefinery.qa(assetId, { status, qa_notes: `QA ${status} từ POS UI` });
+    showToast('Đã cập nhật QA.', 'success');
+    await renderMediaRefinery();
+  } catch (err) {
+    console.error('[MediaRefinery] qa failed', err);
+    showToast(err?.message || 'QA thất bại.', 'danger');
+  }
+}
+
+async function createMediaRefineryBrief() {
+  const resultEl = document.getElementById('media-refinery-brief-result');
+  try {
+    const productId = String(document.getElementById('media-refinery-brief-product')?.value || '').trim();
+    const format = String(document.getElementById('media-refinery-brief-format')?.value || '4:5').trim();
+    if (!productId) {
+      showToast('Chọn món trước khi tạo brief.', 'warning');
+      return;
+    }
+    const product = (Store.getMenu() || []).find(item => String(item.id) === productId);
+    const result = await window.DB.MediaRefinery.createBrief({
+      productId,
+      productName: product?.name || '',
+      format,
+      content_angle: 'healing_after_work',
+    });
+    if (!resultEl) return;
+    if (!result.can_generate_post) {
+      resultEl.innerHTML = `<div class="media-refinery-brief media-refinery-brief-blocked"><strong>Chưa thể tạo bài.</strong><br>${_escapeHtml(result.reason || '')}<br>${_escapeHtml(result.recommended_action || '')}</div>`;
+      return;
+    }
+    resultEl.innerHTML = `
+      <div class="media-refinery-brief">
+        <strong>Brief OK</strong><br>
+        Asset: ${_escapeHtml(result.selected_refined_asset?.asset_id || '')}<br>
+        Format: ${_escapeHtml(result.target_format || format)}<br>
+        Direction: ${_escapeHtml(result.creative_direction || '')}
+      </div>
+    `;
+  } catch (err) {
+    console.error('[MediaRefinery] brief failed', err);
+    if (resultEl) resultEl.innerHTML = `<div class="media-refinery-brief media-refinery-brief-blocked">${_escapeHtml(err?.message || 'Tạo brief thất bại.')}</div>`;
+  }
 }
 
 // ============================================================
@@ -9034,11 +9806,12 @@ function applyDateFilter(page) {
 
 // ============================================================
 function repairVietnameseText(input) {
+  // Sprint 1.3: delegate to app/ui/toast.js IIFE
+  if (window.XekhoApp?.ui?.repairVietnameseText) return window.XekhoApp.ui.repairVietnameseText(input);
+  // Fallback: inline if IIFE not loaded
   let str = String(input ?? '');
   if (!str) return str;
-
-  // Chỉ sửa khi có dấu hiệu mojibake rõ ràng.
-  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä\u0091', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
   if (badTokens.some(t => str.includes(t))) {
     try { str = decodeURIComponent(escape(str)); } catch (_) {}
     try {
@@ -9071,6 +9844,9 @@ function normalizeExpenseCategoryLabel(input) {
 }
 
 function showToast(msg, type, duration) {
+  // Sprint 1.3: delegate to app/ui/toast.js IIFE
+  if (window.XekhoApp?.ui?.toast) return window.XekhoApp.ui.toast(msg, type, duration);
+  // Fallback: inline if IIFE not loaded
   let toast = document.getElementById('toast');
   if(!toast) {
     toast = document.createElement('div');
@@ -9078,7 +9854,6 @@ function showToast(msg, type, duration) {
     toast.style.cssText = 'position:fixed;bottom:calc(var(--nav-height,70px) + env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--text);padding:10px 14px;border-radius:14px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all 0.3s;white-space:normal;word-break:break-word;line-height:1.45;max-width:min(92vw,420px);text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid var(--border);';
     document.body.appendChild(toast);
   }
-  // Clear previous auto-hide timer
   if(toast._hideTimer) clearTimeout(toast._hideTimer);
   toast.textContent = repairVietnameseText(msg);
   toast.style.borderColor = type === 'success' ? 'var(--success)' : type === 'danger' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--border)';
@@ -9336,6 +10111,7 @@ function renderSettings() {
   updateStorageQuotaInfo();
   
   try { renderUserManagement(); } catch(e){}
+  try { renderAttendanceManagement(); } catch(e){}
   try { renderSystemLogs(); } catch(e){}
 }
 
@@ -9463,7 +10239,32 @@ async function submitSettings(e) {
   // FIX 4: Ghi settings lên Firestore (đồng bộ đa thiết bị)
   if (window.DB && window.DB.Settings) {
     try {
-      await window.DB.Settings.save(updated);
+      const {
+        telegramReportEnabled,
+        telegramReportSendHour,
+        telegramReportSendMinute,
+        telegramReportIncludeRevenue,
+        telegramReportIncludePaymentBreakdown,
+        telegramReportIncludeInvoiceCount,
+        telegramReportIncludeTopItem,
+        telegramReportIncludeRetailStock,
+        ...generalSettings
+      } = updated;
+
+      await window.DB.Settings.save(generalSettings);
+
+      if (window.DB.Settings.saveTelegramReportSettings) {
+        await window.DB.Settings.saveTelegramReportSettings({
+          enabled: telegramReportEnabled,
+          sendHour: telegramReportSendHour,
+          sendMinute: telegramReportSendMinute,
+          includeRevenue: telegramReportIncludeRevenue,
+          includePaymentBreakdown: telegramReportIncludePaymentBreakdown,
+          includeInvoiceCount: telegramReportIncludeInvoiceCount,
+          includeTopItem: telegramReportIncludeTopItem,
+          includeRetailStock: telegramReportIncludeRetailStock,
+        });
+      }
     } catch (e) {
       console.warn('[Settings] Cloud save error:', e);
     }

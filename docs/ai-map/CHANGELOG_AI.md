@@ -1,0 +1,958 @@
+# AI Changelog
+
+## 2026-06-02 02:28 - Safe refactor Phase 2 complete (Sprints 10-12): Telegram send, kitchen, reports extraction
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+- Sprint 2.3 (Sprint 10): Extracted 9 Telegram message sending functions into `functions/telegram/send.js`: `sendTelegramHtmlMessage`, `sendTelegramTextMessage`, `sendTelegramActionConfirmation`, `sendTelegramInlineMessage`, `sendTelegramPhotoMessage`, `answerTelegramCallback`, `editTelegramMessage`, `editTelegramInlineMessage`, `getTelegramPhotoAsBase64`. All are async, depend only on axios + text utils. Thin wrappers in `functions/index.js`.
+- Sprint 2.4 (Sprint 11): Extracted 10 kitchen notification functions into `functions/telegram/kitchen.js`: `normalizeTelegramTableLabel`, `buildKitchenNotifMessage`, `parseKitchenItemSummary`, `buildTelegramFoodReadyMessage`, `isKitchenOrderItemForTelegram`, `getKitchenOrderItemKey`, `getNewPendingKitchenItems`, `buildTelegramNewKitchenOrderMessage`, `buildTelegramFoodReadyMessageClean`, `buildTelegramNewKitchenOrderMessageClean`. Pure helpers with no external deps. Thin wrappers in `functions/index.js`.
+- Sprint 2.5 (Sprint 12): Extracted 8 pure report helper utilities into `functions/telegram/reports.js`: `getVietnamDateParts`, `normalizeTelegramSmartReportText`, `normalizeTelegramWildcardText`, `buildTelegramWildcardRegex`, `parseTelegramLooseDateTime`, `getInclusiveVietnamDateCount`, `formatAchievementPercent`, `buildMorningRevenueMood`. No external deps beyond Intl APIs. Thin wrappers in `functions/index.js`.
+- Phase 2 total: 4 new modules (`functions/utils/text.js`, `functions/telegram/send.js`, `functions/telegram/kitchen.js`, `functions/telegram/reports.js`), 38 functions extracted, `functions/index.js` reduced from ~7280 to ~6816 lines (-464 lines).
+- All 10 verification scripts pass, all 7 offline scripts pass, Jest 6/6.
+- UTF-8/mojibake encoding pitfall noted for `write_file` tool: must use terminal `cat` heredoc for Vietnamese string literals in IIFE/CJS modules.
+
+## 2026-06-02 01:44 - Safe refactor Sprint 9 Phase 2 mapping + text utils extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Sprint 2.1: Mapped all 35 exports and ~241 helper functions in `functions/index.js` into `docs/ai-map/CODE_MAP.md`. Sprint 2.2: Extracted 11 pure text/formatting utilities into `functions/utils/text.js` CommonJS module. `functions/index.js` now requires the module and delegates through thin wrappers.
+
+Files:
+- Created `functions/utils/text.js`
+- Created `scripts/verify-text-utils.js`
+- Modified `functions/index.js` (require + 11 delegation wrappers)
+- Modified `docs/ai-map/CODE_MAP.md` (endpoint/API section)
+
+## 2026-06-02 01:38 - Safe refactor Sprint 8 auth/staff helper extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Extracted pure staff helper functions (`_normalizeStaffRole`, `_normalizeStaffStatus`, `_getStaffIdentity`, `_buildCurrentUserFromStaff`) from `app.js` into `app/auth/staff.js` IIFE module. Added `validatePinFormat` utility. Login/logout/lock/unlock/idle-timer stay in app.js (state-dependent, production risk).
+
+Files:
+- Created `app/auth/staff.js`
+- Created `scripts/verify-auth-staff.js`
+- Modified `app.js` (4 compatibility wrappers)
+- Modified `index.html` (script load order)
+
+## 2026-06-02 01:36 - Safe refactor Sprint 7 modal helper extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Extracted generic `openModal`/`closeModal`/`isModalOpen` from app.js modal pattern into `app/ui/modal.js` IIFE. 6 existing modal functions in app.js now delegate to the generic helpers.
+
+Files:
+- Created `app/ui/modal.js`
+- Created `scripts/verify-modal-ui.js`
+- Modified `app.js` (6 compatibility wrappers)
+- Modified `index.html` (script load order)
+
+## 2026-06-02 01:32 - Safe refactor Sprint 6 theme helper extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Extracted `applyTheme()` from `app.js` into standalone IIFE module `app/ui/theme.js`. Module exports via `window.XekhoApp.ui.applyTheme`. app.js wrapper delegates to IIFE with inline fallback.
+
+Files:
+- Created `app/ui/theme.js`
+- Created `scripts/verify-theme-ui.js`
+- Modified `app.js` (compatibility wrapper)
+- Modified `index.html` (script load order)
+
+## 2026-06-02 01:25 - Safe refactor Sprint 5 toast/notification UI extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Extracted `showToast()` and `repairVietnameseText()` from `app.js` into standalone IIFE module `app/ui/toast.js`. Module exports via `window.XekhoApp.ui.*` namespace. app.js wrappers delegate to IIFE with inline fallback. Added deterministic verification script.
+
+Files:
+- Created `app/ui/toast.js`
+- Created `scripts/verify-toast-ui.js`
+- Modified `app.js` (compatibility wrappers)
+- Modified `index.html` (script load order)
+
+## 2026-06-02 00:44 - Safe refactor Sprint 4 explicit staging review
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Executed Sprint 4 direction 1. Reviewed the dirty tree path-by-path, staged only explicit security/docs/refactor paths with specific `git add` arguments and partial cached patches, and documented staged vs unstaged groups in `docs/ai-map/STAGING_REVIEW.md`. Did not use `git add -A`, did not commit, did not deploy, and did not read secret contents.
+
+Staged groups:
+
+- Sensitive paths as staged Git deletions only, preserving local files where present.
+- `.gitignore` secret/generated ignore rules.
+- `REFACTOR_PLAN.md` and `docs/ai-map/`.
+- Safe compatibility modules: `app/utils/dom.js`, `app/utils/format.js`, `store.js`.
+- Partial staged hunks only for `app.js` `_escapeHtml()` delegation and `index.html` script-load seam.
+- Verification scripts: `scripts/verify-dom-utils.js`, `scripts/verify-format-utils.js`, `scripts/verify-offline-runtime.js`.
+
+Left unstaged:
+
+- Generated/cache/log artifacts.
+- High-impact runtime/backend files with broad pre-existing changes.
+- Import/backfill/data scripts.
+- Unrelated root planning docs, media refinery modules, brand/prompts, and remaining mixed hunks in `app.js`/`index.html`.
+
+Files changed:
+
+- `docs/ai-map/STAGING_REVIEW.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/REFACTOR_PROGRESS.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0044-safe-refactor-sprint-4-staging-review.md`
+
+Verification:
+
+- Reviewed `git diff --cached --stat` and `git diff --cached --name-status`.
+- Ran safe syntax/verification/test commands after staging.
+- Ran UTF-8/mojibake scan on touched Sprint 4 docs.
+
+Next:
+Review/commit only the explicit staged set if approved, or continue splitting remaining dirty paths into smaller reviewed scopes.
+
+## 2026-06-02 00:32 - Safe refactor Sprint 3 format utility extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Continued executing `REFACTOR_PLAN.md` with one bounded compatibility refactor. Added `app/utils/format.js` under the existing `window.XekhoApp.utils` namespace, loaded it before `store.js`, and kept legacy formatter names in `store.js` as wrappers/delegates with fallbacks. Added deterministic Node VM verification for the new utility and updated progress tracking.
+
+Progress estimate:
+
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: ~15% complete.
+- Core non-optional refactor/security/testing plan: ~19% complete.
+- Near-term safe-execution track: ~36% complete.
+
+Files changed:
+
+- `app/utils/format.js`
+- `store.js`
+- `index.html`
+- `scripts/verify-format-utils.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/REFACTOR_PROGRESS.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0032-safe-refactor-sprint-3-format-utils.md`
+
+Verification:
+
+- `node scripts/verify-format-utils.js` passed.
+- Syntax checks for touched JS passed.
+- Existing DOM/offline verification scripts passed.
+- `npm test -- --runInBand` passed: 1 suite, 6 tests.
+- UTF-8/mojibake scan passed for touched text files.
+
+Next:
+Continue with one more bounded compatibility extraction around a small app.js UI/helper seam, or pause to review/stage explicit security/docs/refactor paths before larger work.
+
+## 2026-06-02 00:16 - Safe refactor Sprint 2 dirty-tree classification and progress tracking
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Continued executing `REFACTOR_PLAN.md` with a docs-only safety sprint before further source refactors. Created `docs/ai-map/REFACTOR_PROGRESS.md` to track conservative completion percentages and classify the full dirty working tree by path-only categories: security-untracked paths, generated/cache/log artifacts, docs/plans, high-impact runtime files, backend functions, import/data scripts, offline/POS modules, repo config, new app modules, and other assets. Also cleaned a duplicate `scripts/verify-offline-runtime.js` entry from `CODE_MAP.md`. This sprint did not touch runtime source code and did not read secret contents.
+
+Progress estimate:
+
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: ~14% complete.
+- Core non-optional refactor/security/testing plan: ~18% complete.
+- Near-term safe-execution track: ~32% complete.
+
+Files changed:
+
+- `docs/ai-map/REFACTOR_PROGRESS.md`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0016-safe-refactor-sprint-2-dirty-tree-progress.md`
+
+Verification:
+
+- Read the generated progress/classification report.
+- Ran safe syntax/test checks already used by the refactor track.
+- Ran UTF-8/mojibake scan on touched docs.
+
+Next:
+Use the classification report to decide whether to stage/review security/docs first or continue with one small compatibility extraction such as format helpers after confirming actual ownership in `store.js`/`app.js`.
+
+## 2026-06-02 00:07 - Safe refactor Sprint 1 security baseline and DOM utility extraction
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Started executing `REFACTOR_PLAN.md` with the safest first increments. Created an external backup folder for files touched in this session, performed path-only sensitive inventory without reading secret contents, expanded `.gitignore` secret/generated patterns, and removed known sensitive paths from Git tracking with `git rm --cached` so local env files remain on disk but are no longer in the index. Fixed the Jest permission blocker by making `node_modules/.bin/*` executable; `npm test -- --runInBand` now passes. Implemented the first compatibility refactor by adding `app/utils/dom.js` with `window.XekhoApp.utils.dom.escapeHtml()`, loading it before `app.js`, and changing the existing `_escapeHtml()` wrapper to delegate to the utility while keeping the fallback implementation. Also updated `scripts/verify-offline-runtime.js` to match the current Sprint 19 runtime version marker.
+
+Files changed:
+
+- `.gitignore`
+- `app/utils/dom.js`
+- `app.js`
+- `index.html`
+- `scripts/verify-dom-utils.js`
+- `scripts/verify-offline-runtime.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0007-safe-refactor-sprint-1.md`
+
+Sensitive path handling:
+
+- Removed from Git tracking only, without reading contents: `functions/.env.gcloud-completed-order.yaml`, `functions/.env.pos-v2-909ff`, `pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json`, `project-724ee6ef-5290-41f4-892-a47703f4859e.json`.
+- Verified tracked sensitive-looking path query returns no matches after untracking.
+
+Verification:
+
+- `node scripts/verify-dom-utils.js` passed.
+- `node --check app/utils/dom.js`, `node --check app.js`, `node --check scripts/verify-dom-utils.js`, and `node --check scripts/verify-offline-runtime.js` passed.
+- `node scripts/verify-offline-runtime.js`, `node scripts/verify-offline-status-ui.js`, `node scripts/verify-offline-backup.js`, `node scripts/verify-offline-sync.js`, `node scripts/verify-offline-firestore-adapter.js`, `node scripts/verify-offline-order-fallback.js`, and `node scripts/verify-offline-order-fallback-devtools.js` passed.
+- `npm test -- --runInBand` passed: 1 suite, 6 tests.
+- UTF-8 decode/replacement-character scan passed for touched text files.
+
+Next:
+Continue with the next small compatibility refactor only after reviewing the still-dirty pre-existing working tree; candidate next sprint is extracting format helpers or creating a dirty-tree classification report.
+
+## 2026-06-01 18:58 - Safe refactor plan rewrite
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Rewrote `REFACTOR_PLAN.md` from a high-level refactor outline into a sprint-safe production refactor plan. The new version adds security containment first, a baseline stabilization phase before any code split, path-only handling rules for sensitive files, corrected `functions/firestoreMegaTools.js` sizing, compatibility-first frontend modularization, Cloud Functions export mapping before behavior changes, and explicit verification/AI-map requirements for every refactor sprint. The plan avoids immediate ES module/Vite migration and recommends IIFE/global namespace compatibility while the POS app remains dependent on script order/global browser runtime behavior.
+
+Files changed:
+
+- `REFACTOR_PLAN.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1858-safe-refactor-plan-rewrite.md`
+
+Verification:
+
+- Read the rewritten `REFACTOR_PLAN.md` after writing.
+- Ran `git diff --stat` to confirm the scope was docs/plan-only plus AI map updates.
+
+Next:
+Start with security inventory/path-only review and baseline dirty-tree classification before any source refactor.
+
+## 2026-06-01 18:30 - POS offline backup Sprint 19 production with auto sync
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Production release: enabled auto sync and cleaned up review-phase UI. `offlineRuntime.js` now creates the runtime with `enableSync: true` and calls `startAutoSync(60000)` (60-second interval). The offline status modal no longer shows "Copy queue report" button, textarea, or copy-status (these were for the review/debug phase). The modal now shows "Auto sync đang chạy" when sync is enabled, with "Đồng bộ thủ công" available for manual retry of failed actions. The `?xkPayloadReview=1` devtools page still works for debugging but is not linked from the production UI.
+
+Files changed:
+
+- `offlineRuntime.js`
+- `offlineStatusUI.js`
+- `index.html`
+- `scripts/verify-offline-status-ui.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineRuntime.js`, `node --check offlineStatusUI.js`, `node --check offlineFirestoreAdapter.js` — passed.
+- Ran `node scripts/verify-offline-status-ui.js` — Sprint 19 verification passed.
+- Ran `node scripts/verify-offline-firestore-adapter.js` — Sprint 3 verification passed.
+- Deployed Sprint 19 hosting-only.
+
+Next:
+Monitor production for sync behavior. Auto sync runs every 60s, retries failed actions with backoff. "Đồng bộ thủ công" still available for immediate retry.
+
+## 2026-06-01 18:20 - POS offline backup Sprint 18 persistent orderId resolution
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Sprint 17 fix (in-memory `clientOrderIdToOrderId` mapping) didn't work because the mapping only lives in the current session. When the user reloads the page and retries the failed `add_item`, the adapter creates a new instance with an empty mapping → `resolveOrderId` returns the offline ID unchanged → same error. Fixed by adding `db.Orders.findByClientOrderId()` method that queries Firestore directly for orders with the matching `clientOrderId` field (written during `open_order` via `updateMeta`). The adapter's `resolveOrderId` is now async and checks: (1) in-memory cache, (2) Firestore query via `findByClientOrderId`, (3) fallback to original orderId. This persists across page loads because the `clientOrderId` field lives in the Firestore order document.
+
+Files changed:
+
+- `db.js` (added `findByClientOrderId`)
+- `offlineFirestoreAdapter.js` (async `resolveOrderId` with Firestore fallback)
+- `index.html`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineFirestoreAdapter.js` and `node scripts/verify-offline-firestore-adapter.js` — passed.
+- Ran `node --check offlineStatusUI.js` and `node scripts/verify-offline-status-ui.js` — passed.
+- Deployed Sprint 18 hosting-only.
+
+Next:
+Ask user to retry the failed `add_item` on iPhone. The adapter will now query Firestore to find the real order ID by `clientOrderId`, even across page loads.
+
+## 2026-06-01 18:15 - POS offline backup Sprint 17 idempotent orderId resolution
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Fixed the root cause of the `add_item` sync failure: `db.Orders.open()` creates an order with ID `ORD-{tableId}-{timestamp}` in Firestore, but offline `add_item`/`update_meta`/`close_order`/`cancel_order` actions reference `orderId: "offline_order_..."` (the offline clientOrderId). The adapter now tracks a `clientOrderId → firestoreOrderId` mapping after `open_order` succeeds, and all subsequent action apply methods use `resolveOrderId()` to translate the ID before calling Firestore operations. Additionally, after opening the order, the adapter writes `clientOrderId` + `offlineDeviceId` + `offlineCreatedAt` to the order document via `updateMeta`, enabling `findExistingByClientOrderId` to find it for idempotency checks.
+
+Files changed:
+
+- `offlineFirestoreAdapter.js`
+- `index.html`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineFirestoreAdapter.js` and `node scripts/verify-offline-firestore-adapter.js` — passed.
+- Ran `node --check offlineStatusUI.js` and `node scripts/verify-offline-status-ui.js` — passed.
+- Deployed Sprint 17 hosting-only.
+
+Next:
+Ask user to retry the failed `add_item` action on iPhone via `Đồng bộ thủ công` → `Xác nhận đồng bộ 1 lần`. The adapter will now resolve `offline_order_...` to the real Firestore order ID.
+
+## 2026-06-01 18:05 - POS offline backup Sprint 16 bugfixes
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Fixed two bugs from iPhone guarded manual sync test: (1) Clipboard API on mobile Safari rejects `writeText` in non-user-gesture context; the outer catch was swallowing the error and showing "Không tạo được queue report" even though the report was already rendered in the textarea. Now clipboard call has its own try-catch, and the textarea always shows the report regardless of clipboard permission. (2) `formatQueueReviewReport` assumed `report.pending.length` and `report.failed.length` always existed, but the sync result report has a different shape (`syncResult` instead of `pending`/`failed` arrays). Now the formatter checks `Array.isArray()` before accessing, and adds a `## Sync result` section when present.
+
+Files changed:
+
+- `index.html`
+- `offlineStatusUI.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineStatusUI.js` and verification script passes.
+- Deployed Sprint 16 hosting-only.
+
+Next:
+Ask user to reload iPhone and retest `Đồng bộ thủ công` -> retry failed action if needed. The failed `add_item` error `Đơn không tồn tại` is likely a Firestore adapter issue with idempotency check or order creation order.
+
+## 2026-06-01 17:55 - POS offline backup Sprint 15 guarded manual sync
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+After the iPhone queue review report was accepted with 4 real pending actions, added a guarded manual sync button to the offline status modal. Tapping `Đồng bộ thủ công` shows a confirmation panel; after tapping `Xác nhận đồng bộ 1 lần`, the UI creates a temporary sync engine using `XekhoOfflineSync` + `XekhoOfflineFirestoreAdapter`, replays pending actions to Firestore once, shows per-action results, and refreshes the summary. Auto sync remains disabled.
+
+Files changed:
+
+- `index.html`
+- `offlineStatusUI.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineStatusUI.js` and verification script passes.
+- Re-ran `node --check offlineOrderFallbackDevTools.js` and its verification script.
+
+Next:
+Deploy Sprint 15 hosting-only, ask user to tap `Đồng bộ thủ công` -> `Xác nhận đồng bộ 1 lần` on iPhone, then verify synced count in modal and check Firestore.
+
+## 2026-06-01 16:32 - POS offline backup Sprint 14 mobile queue review report
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+After the iPhone status modal refresh was confirmed working, added the next read-only review gate: the status modal can now generate/copy a local pending queue report from `XekhoOfflineBackupRuntime.listPendingActions()` and `listFailedActions()`. The report is explicitly `queue-review-read-only` and states no DB wrap, no enqueue, no Firestore, and no sync. The modal shows a textarea fallback for iPhone manual copy if Clipboard API is unavailable. Cache-busted offline scripts to Sprint 14.
+
+Files changed:
+
+- `index.html`
+- `offlineStatusUI.js`
+- `scripts/verify-offline-status-ui.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineStatusUI.js`.
+- Ran `node --check scripts/verify-offline-status-ui.js`.
+- Ran `node scripts/verify-offline-status-ui.js` and verified the generated queue review report includes one pending `add_item`, side-effect-free mode, and copy/manual-copy UI state.
+- Re-ran `node --check offlineOrderFallbackDevTools.js` and `node scripts/verify-offline-order-fallback-devtools.js`; guarded queue-write helper still passes.
+- Deployed Sprint 14 hosting-only and smoke-checked `https://xe-kho.web.app/?xkQueueWriteGuard=1` plus `offlineStatusUI.js?v=20260601-sprint14`; live asset contains `Copy queue report`, `queue-review-read-only`, and the side-effect-free marker.
+
+Next:
+Ask the user to reload iPhone and send the copied queue report for review before any sync enablement.
+
+## 2026-06-01 16:20 - POS offline backup Sprint 13 status refresh feedback
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+After the iPhone guarded queue-write test showed `Offline: 1 chờ`, the user reported the status modal `Cập nhật` button did not appear clickable. Patched `offlineStatusUI.js` so refresh clicks prevent bubbling, resolve the nearest `[data-action]`, temporarily show `Đang cập nhật...`, restore the button text, and display `Cập nhật lần cuối: HH:MM:SS` after each refresh. Also fixed the test-only `intervalMs: 0` option to avoid creating a timer and cache-busted offline script URLs to Sprint 13.
+
+Files changed:
+
+- `index.html`
+- `offlineStatusUI.js`
+- `scripts/verify-offline-status-ui.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+
+Verification:
+
+- Ran `node --check offlineStatusUI.js`.
+- Ran `node --check scripts/verify-offline-status-ui.js`.
+- Ran `node scripts/verify-offline-status-ui.js` and verified refresh click updates counts and last-updated text.
+- Re-ran `node --check offlineOrderFallbackDevTools.js` and `node scripts/verify-offline-order-fallback-devtools.js` to ensure guarded queue-write helper still passes.
+- Deployed Sprint 13 hosting-only and smoke-checked `https://xe-kho.web.app/?xkQueueWriteGuard=1` plus `offlineStatusUI.js?v=20260601-sprint13`; live asset contains the Sprint 13 marker, `Cập nhật lần cuối`, and `Đang cập nhật...`.
+
+Next:
+Ask the user to reload the iPhone page and retest `Cập nhật`. Auto sync remains disabled.
+
+## 2026-06-01 16:04 - POS offline backup Sprint 12 guarded queue-write helper
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Deployed Sprint 11 hosting-only, then added Sprint 12 guarded queue-write enablement. `offlineOrderFallbackDevTools.js` now exposes `enableQueueWriteGuarded({ confirmation: 'ENABLE_OFFLINE_QUEUE_WRITE' })`, which explicitly wraps `DB.Orders` in enabled fallback mode only after confirmation and requires `window.XekhoOfflineBackupRuntime.savePendingOrderAction`; auto sync remains disabled. The mobile helper panel is also available through `?xkQueueWriteGuard=1` for iPhone testing. `index.html` cache-busts offline scripts with Sprint 12 query strings.
+
+Files changed:
+
+- `index.html`
+- `offlineOrderFallbackDevTools.js`
+- `scripts/verify-offline-order-fallback-devtools.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1604-pos-offline-backup-sprint-12.md`
+
+Verification:
+
+- Deployed Sprint 11 to Firebase Hosting and smoke-checked live assets.
+- Ran targeted syntax checks and offline verification scripts.
+- Verified guarded queue-write helper refuses to enable without confirmation and queues fake runtime actions only when explicitly confirmed, while `autoSyncEnabled` remains false.
+- Reviewed iPhone payload report generated at `2026-06-01T16:13:46.779Z`; no pre-enable blockers seen in submitted payload shapes: stable `deviceId`, nonblank table IDs, nonempty `close_order.items`, close table metadata, and explicit `remove_item` without sentinel delta.
+
+Next:
+Sprint 12 has been deployed hosting-only and the copied iPhone payload review passed shape review. Run the controlled guarded queue-write test with `https://xe-kho.web.app/?xkQueueWriteGuard=1`, then inspect pending queue/status badge before considering any sync enablement. Keep auto sync disabled until queued real-device actions are reviewed.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1604-pos-offline-backup-sprint-12.md`
+
+## 2026-06-01 15:55 - POS offline backup Sprint 11 stable device ID and safe removeItem
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Codex
+
+Summary:
+Fixed the Sprint 10 pre-enable blockers while keeping real queue writes and auto sync disabled by default. `offlineOrderFallback.js` now creates a stable localStorage-backed `deviceId` when no explicit device ID is injected, falls back to an in-memory device ID if storage is unavailable, and maps `Orders.removeItem` to an explicit `remove_item` payload with `removeMode: line_item` instead of a sentinel quantity decrement. The backup validator and Firestore adapter memory path now understand `remove_item`, and payload review warnings continue to catch regressions without warning on the fixed sample report.
+
+Files changed:
+
+- `offlineBackup.js`
+- `offlineOrderFallback.js`
+- `offlineOrderFallbackDevTools.js`
+- `offlineFirestoreAdapter.js`
+- `scripts/verify-offline-order-fallback.js`
+- `scripts/verify-offline-order-fallback-devtools.js`
+- `scripts/verify-offline-firestore-adapter.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1555-pos-offline-backup-sprint-11.md`
+
+Verification:
+
+- Ran required syntax checks for fallback/devtools modules and verifier scripts.
+- Ran required fallback/devtools verification scripts.
+- Ran the Firestore adapter verifier to cover `remove_item` adapter routing.
+
+Next:
+Re-run mobile payload review on the deployed POS after a hosting deploy is explicitly requested. Only after the fixed report is accepted should guarded real queue writes be added; auto sync should remain disabled until queue data is validated.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1555-pos-offline-backup-sprint-11.md`
+
+## 2026-06-01 13:28 - POS offline backup Sprint 10 payload report review fixes
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Reviewed the iPhone payload report submitted from `?xkPayloadReview=1`. Found expected pre-enable risks: `device_unknown`, blank table IDs on non-open sample actions, empty `close_order.items`, and a sentinel `removeItem` delta. Updated the side-effect-free payload review helper to fill dry-run table IDs, include close sample items/table metadata, surface validation warnings directly in the mobile report, and let `close_order` payloads derive items from `payInfo.items`.
+
+Files changed:
+
+- `offlineOrderFallback.js`
+- `offlineOrderFallbackDevTools.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1328-pos-offline-backup-sprint-10.md`
+
+Verification:
+
+- Ran targeted syntax checks for offline modules/scripts.
+- Ran targeted offline verification scripts.
+- Confirmed generated report now has dry-run table IDs for all sample actions and `close_order.items.length === 1`.
+
+Next:
+Before enabling real queue writes, resolve `device_unknown` and replace/confirm the `removeItem` sentinel behavior so sync removes the intended line item instead of applying a large decrement.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1328-pos-offline-backup-sprint-10.md`
+
+## 2026-06-01 13:17 - POS offline backup Sprint 9B iPhone payload review UI
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added an iPhone-friendly payload review path because mobile Safari cannot open a developer console. `offlineOrderFallbackDevTools.js` can now expose a floating `Payload Review` button when the POS URL includes `?xkPayloadReview=1` or when localStorage flag `xekho:payload-review-ui` is set to `1`. The panel displays the formatted dry-run payload report and supports copy/select-all. This remains side-effect-free: no DB wrapping, no offline queue writes, no Firestore writes, and no sync enablement.
+
+Files changed:
+
+- `offlineOrderFallbackDevTools.js`
+- `scripts/verify-offline-order-fallback-devtools.js`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1317-pos-offline-backup-sprint-9b-iphone-payload-review-ui.md`
+
+Verification:
+
+- `node --check offlineOrderFallbackDevTools.js`
+- `node --check scripts/verify-offline-order-fallback-devtools.js`
+- `node scripts/verify-offline-order-fallback-devtools.js`
+- Deployed hosting-only with `npx --yes firebase-tools@latest deploy --only hosting --project pos-v2-909ff`
+- Live smoke: `https://xe-kho.web.app/?xkPayloadReview=1` returned HTTP 200 and deployed `offlineOrderFallbackDevTools.js` contains the payload review UI marker.
+
+Next:
+Ask the iPhone user to open the deployed POS URL with `?xkPayloadReview=1`, tap `Payload Review`, then copy/share the report text for review before enabling real offline queue writes.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1317-pos-offline-backup-sprint-9b-iphone-payload-review-ui.md`
+
+## 2026-06-01 13:04 - POS offline backup Sprint 9 payload review helper
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+User confirmed the deployed POS opens, the offline badge appears, and there is no boot error. Added a side-effect-free payload review helper to `offlineOrderFallbackDevTools.js`: `buildPayloadReviewReport()` and `printPayloadReviewReport()` generate sample open/add/change/remove/update/close/cancel offline payloads for review without wrapping `DB.Orders`, enqueuing actions, writing Firestore, or enabling sync. Verification now asserts the report's safety flags and payload types.
+
+Files changed:
+
+- `offlineOrderFallbackDevTools.js`
+- `scripts/verify-offline-order-fallback-devtools.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1304-pos-offline-backup-sprint-9.md`
+
+Verification:
+
+- Ran syntax checks for the devtools module and verification script.
+- Ran Sprint 7 devtools verification covering Sprint 9 payload review report.
+
+Next:
+Open browser console on the deployed POS and run `window.XekhoOfflineOrderFallbackDevTools.printPayloadReviewReport()` to review payload shapes. Only after acceptance should a guarded real queue-write flag be added, still with auto sync disabled first.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1304-pos-offline-backup-sprint-9.md`
+
+## 2026-06-01 12:38 - POS offline backup Sprint 8 smoke QA + hosting deploy
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Ran Sprint 8 smoke QA for the POS offline backup stack and deployed Firebase Hosting only. Local static smoke confirmed the POS HTML and offline backup assets are served. Targeted Sprint 1-7 verification passed. Firebase Hosting deploy completed for project `pos-v2-909ff`, site `xe-kho`, with live URL `https://xe-kho.web.app`; post-deploy HTTPS smoke confirmed the deployed POS and offline assets return HTTP 200.
+
+Files changed:
+
+- `.firebase/hosting..cache`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1238-pos-offline-backup-sprint-8-smoke-deploy.md`
+
+Verification:
+
+- Ran local static smoke on `http://127.0.0.1:4173/` and offline JS assets.
+- Ran syntax checks and Sprint 1-7 targeted verification scripts.
+- `node node_modules/jest/bin/jest.js --runInBand` remains blocked by repo/tooling dependency state: `napi-postinstall: Permission denied` and missing `jest-circus/build/runner.js`.
+- Deployed with `npx --yes firebase-tools@latest deploy --only hosting --project pos-v2-909ff`.
+- Ran live HTTPS smoke on `https://xe-kho.web.app/` and offline JS assets.
+
+Next:
+Real iPad/operator visual QA should still open the deployed POS, confirm login/table boot, and optionally run `window.XekhoOfflineOrderFallbackDevTools.enableDryRun()` in a test browser session before any real offline queue writes are enabled.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1238-pos-offline-backup-sprint-8-smoke-deploy.md`
+
+## 2026-06-01 12:27 - POS offline backup Sprint 7 browser dry-run dev tools
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added `offlineOrderFallbackDevTools.js`, explicit browser/manual dry-run helpers for the POS offline order fallback. The script exposes `window.XekhoOfflineOrderFallbackDevTools` with `enableDryRun()`, `disable()`, `simulateFailure()`, `simulateAllFailures()`, and dry-run action inspection. Loading the file is safe by default: it does not wrap live `DB.Orders`, enqueue queue actions, sync, or write Firestore until a developer manually calls the dry-run helper; dry-run still captures only offline/server-like failures and rethrows errors.
+
+Files changed:
+
+- `index.html`
+- `offlineOrderFallbackDevTools.js`
+- `scripts/verify-offline-order-fallback-devtools.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1227-pos-offline-backup-sprint-7.md`
+
+Verification:
+
+- Ran syntax checks for offline backup/runtime/status/fallback/devtools files and verify scripts.
+- Ran Sprint 1-7 verification scripts.
+
+Next:
+Sprint 8 should do actual browser/iPad manual QA: boot POS, call `window.XekhoOfflineOrderFallbackDevTools.enableDryRun()` only in a test session, simulate network failures, inspect `getDryRunActions()`, then disable. Do not enable real queue writes until these dry-run payloads are reviewed.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1227-pos-offline-backup-sprint-7.md`
+
+## 2026-06-01 12:17 - POS offline backup Sprint 6 disabled/dry-run order fallback wrapper
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added `offlineOrderFallback.js`, a safe POS order fallback wrapper/payload builder. The module builds offline queue actions for order open/add/change/remove/update-meta/update-item/close/cancel, but auto-installs in disabled mode so it does not wrap live `window.DB.Orders`, write Firestore, or enqueue production actions by default. Added Node verification for payload shape, disabled mode, dry-run capture, and explicit enabled memory-queue save.
+
+Files changed:
+
+- `index.html`
+- `offlineOrderFallback.js`
+- `scripts/verify-offline-order-fallback.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1217-pos-offline-backup-sprint-6.md`
+
+Verification:
+
+- Ran syntax checks for offline backup/runtime/status/fallback files and verify scripts.
+- Ran Sprint 1-6 verification scripts.
+
+Next:
+Sprint 7 should do browser/manual dry-run integration around live `window.DB.Orders` behind an explicit dev-only install path, still without enabling queue writes or auto sync by default.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1217-pos-offline-backup-sprint-6.md`
+
+## 2026-06-01 12:08 - POS offline backup Sprint 5 visible status UI
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added a read-only POS offline backup status badge/panel. `offlineStatusUI.js` injects a header badge and popup panel that reads `window.XekhoOfflineBackupRuntime.getSummary()`, showing online/offline state plus pending/failed/synced/total counts. This remains non-invasive: sync is still disabled by default, no Firestore writes, and no live order methods are wrapped.
+
+Files changed:
+
+- `index.html`
+- `offlineStatusUI.js`
+- `scripts/verify-offline-status-ui.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1208-pos-offline-backup-sprint-5.md`
+
+Verification:
+
+- Ran syntax checks for offline backup/runtime/status files and verify scripts.
+- Ran Sprint 1-5 verification scripts.
+
+Next:
+Sprint 6 should create the live POS order fallback wrapper in disabled/dry-run mode first, then enable fallback only after validating action payloads for open/add/change/close/cancel.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1208-pos-offline-backup-sprint-5.md`
+
+## 2026-06-01 12:03 - POS offline backup Sprint 4 non-invasive browser runtime
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added non-invasive browser runtime for the POS offline backup foundation. `index.html` now loads the offline backup foundation scripts, and `offlineRuntime.js` auto-installs `window.XekhoOfflineBackupRuntime` with sync disabled by default. This exposes queue status APIs without wrapping live order methods or writing Firestore.
+
+Files changed:
+
+- `index.html`
+- `offlineRuntime.js`
+- `scripts/verify-offline-runtime.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1203-pos-offline-backup-sprint-4.md`
+
+Verification:
+
+- Ran syntax checks for `offlineBackup.js`, `offlineSync.js`, `offlineFirestoreAdapter.js`, `offlineRuntime.js`, and verify scripts.
+- Ran Sprint 1-4 verification scripts.
+
+Next:
+Sprint 5 should add a small visible POS offline status badge/panel using `window.XekhoOfflineBackupRuntime.getSummary()`, still without wrapping live order methods.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1203-pos-offline-backup-sprint-4.md`
+
+## 2026-06-01 11:40 - POS offline backup Sprint 3 Firestore adapter foundation
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added the Firestore/POS adapter foundation for offline sync. The adapter bridges `offlineSync.js` actions to injected Firestore/POS operations, maps `close_order` actions to completed-history payloads, checks existing `history`/`orders`/`online_orders` by `clientOrderId`, and remains safe because verification uses memory operations only. No live Firestore writes or POS flow integration were added.
+
+Files changed:
+
+- `offlineFirestoreAdapter.js`
+- `scripts/verify-offline-firestore-adapter.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1140-pos-offline-backup-sprint-3.md`
+
+Verification:
+
+- Ran `node --check offlineBackup.js`.
+- Ran `node --check offlineSync.js`.
+- Ran `node --check offlineFirestoreAdapter.js`.
+- Ran `node --check scripts/verify-offline-backup.js`.
+- Ran `node --check scripts/verify-offline-sync.js`.
+- Ran `node --check scripts/verify-offline-firestore-adapter.js`.
+- Ran `node scripts/verify-offline-backup.js`.
+- Ran `node scripts/verify-offline-sync.js`.
+- Ran `node scripts/verify-offline-firestore-adapter.js`.
+
+Next:
+Sprint 4 should integrate the offline foundation into the browser safely: add script tags and initialize queue/sync in non-invasive mode, then add UI status before wrapping live order actions.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1140-pos-offline-backup-sprint-3.md`
+
+## 2026-06-01 11:35 - POS offline backup Sprint 2 sync engine foundation
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added the adapter-based offline sync engine foundation for POS offline backup. The sync engine processes pending/failed queue actions via an injected adapter, supports idempotency checks by `clientOrderId`, retry/backoff rules, offline skipping, and a single-flight lock. This sprint still does not write to Firestore or alter the live POS flow.
+
+Files changed:
+
+- `offlineSync.js`
+- `scripts/verify-offline-sync.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1135-pos-offline-backup-sprint-2.md`
+
+Verification:
+
+- Ran `node --check offlineBackup.js`.
+- Ran `node --check offlineSync.js`.
+- Ran `node --check scripts/verify-offline-backup.js`.
+- Ran `node --check scripts/verify-offline-sync.js`.
+- Ran `node scripts/verify-offline-backup.js`.
+- Ran `node scripts/verify-offline-sync.js`.
+
+Next:
+Build Sprint 3 Firestore sync adapter around `offlineSync.js`, then integrate with live POS order flow after adapter verification.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1135-pos-offline-backup-sprint-2.md`
+
+## 2026-06-01 11:30 - POS offline backup Sprint 1 foundation
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Added the safe foundation for POS offline backup: an IndexedDB-backed pending order action queue with in-memory storage for verification. This sprint does not change the live POS order flow and does not sync to Firestore yet.
+
+Files changed:
+
+- `offlineBackup.js`
+- `scripts/verify-offline-backup.js`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/TASK_LOGS/2026-06-01-1130-pos-offline-backup-sprint-1.md`
+
+Verification:
+
+- Ran `node --check offlineBackup.js`.
+- Ran `node --check scripts/verify-offline-backup.js`.
+- Ran `node scripts/verify-offline-backup.js`.
+- Ran `git status --short`.
+
+Next:
+Build Sprint 2 sync engine around this queue, then integrate with POS order flow only after queue/sync verification.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-06-01-1130-pos-offline-backup-sprint-1.md`
+
+## 2026-05-31 09:35 - Initialize AI code map
+
+Repo: `/home/longnick/projects/xekho`
+
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Agent: Hermes
+
+Summary:
+Created the initial AI-readable map under `docs/ai-map/` for faster future handoff between Hermes/Codex/Gemini/DeepSeek/MiMo. No source code was changed.
+
+Files changed:
+
+- `docs/ai-map/PROJECT_OVERVIEW.md`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/DECISIONS.md`
+- `docs/ai-map/TASK_LOGS/2026-05-31-0935-initialize-ai-code-map.md`
+
+Verification:
+
+- Ran `git branch --show-current`.
+- Ran `git status --short` before and after.
+- Ran `git diff --stat` before creation.
+- Read repo structure to depth 2.
+- Read root `package.json`, `functions/package.json`, and `README.md`.
+
+Next:
+Review existing dirty working tree before any code edits. Several pre-existing source/config/sensitive paths were already modified or untracked before this AI map was created.
+
+Task log:
+`docs/ai-map/TASK_LOGS/2026-05-31-0935-initialize-ai-code-map.md`

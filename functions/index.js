@@ -19,6 +19,10 @@ const {
   collectFunctionCalls,
   collectInlineImage,
 } = require('./vertexAi');
+const textUtils = require('./utils/text');
+const telegramSend = require('./telegram/send');
+const telegramKitchen = require('./telegram/kitchen');
+const telegramReports = require('./telegram/reports');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -38,11 +42,7 @@ function getAiDeps() {
   return cachedAiDeps;
 }
 
-function chunkArray(arr, size) {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
-  return chunks;
-}
+function chunkArray(arr, size) { return textUtils.chunkArray(arr, size); }
 
 async function buildRestockMapFromHistoryOrder(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
@@ -261,190 +261,39 @@ function kitchenNotifDocRef(docId) {
 }
 
 function buildKitchenNotifMessage(notif = {}, options = {}) {
-  const type = String(notif.type || '').toLowerCase();
-  const tableName = String(notif.tableName || notif.tableId || 'Ban');
-  const items = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const body = items.join(', ');
-  const prefix = String(options.prefix || '').trim();
-  const prefixText = prefix ? `${prefix}\n` : '';
-  const groupLabel = String(options.groupLabel || '').trim();
-  const groupLine = groupLabel ? `\nNhóm: ${groupLabel}` : '';
-  if (type === 'ready') {
-    return {
-      title: `🍽️ ${tableName} - Xong rồi!`,
-      body: body || 'Mang ra ngay.',
-      zaloText: `✅ [XE KHÔ POS]\n${tableName} xong rồi! Mang ra ngay!\n\nMón:\n• ${items.join('\n• ') || 'Không có chi tiết'}`,
-    };
-  }
-  if (type === 'accepted') {
-    return {
-      title: `BẾP ĐÃ NHẬN - ${tableName}`,
-      body: body || 'Nhân viên theo dõi để lấy món khi cần.',
-      zaloText: '',
-    };
-  }
-  if (type === 'delay') {
-    return {
-      title: `⚠️ ${tableName} - Đang chậm`,
-      body: body || 'Báo khách chờ thêm.',
-      zaloText: `⚠️ [XE KHÔ POS]\n${tableName} đang chậm - Báo khách chờ thêm${items.length ? `\n\nMón:\n• ${items.join('\n• ')}` : ''}`,
-    };
-  }
-  return {
-    title: `📣 ${tableName}`,
-    body: body || String(notif.message || 'Có cập nhật từ bếp'),
-    zaloText: '',
-  };
+  return telegramKitchen.buildKitchenNotifMessage(notif, options);
 }
 
 function parseKitchenItemSummary(itemText = '') {
-  const raw = String(itemText || '').trim();
-  if (!raw) return null;
-
-  const match = raw.match(/^(.*?)\s*x\s*(\d+(?:[.,]\d+)?)$/i);
-  if (!match) {
-    return {
-      name: raw,
-      qty: '',
-      summary: raw,
-    };
-  }
-
-  const name = String(match[1] || '').trim();
-  const qty = String(match[2] || '').replace(',', '.').trim();
-  return {
-    name: name || raw,
-    qty,
-    summary: `${name || raw} x${qty}`,
-  };
+  return telegramKitchen.parseKitchenItemSummary(itemText);
 }
 
 function buildTelegramFoodReadyMessage(notif = {}) {
-  const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const parsedItems = rawItems
-    .map(parseKitchenItemSummary)
-    .filter(Boolean);
-
-  const itemNames = parsedItems.length
-    ? parsedItems.map(item => item.name).join(', ')
-    : 'Khong co chi tiet';
-  const qtyText = parsedItems.length
-    ? parsedItems.map(item => item.qty ? `${item.name} x${item.qty}` : item.summary).join(', ')
-    : '';
-  const tableName = String(notif.tableName || notif.tableId || 'Khong ro');
-
-  return [
-    '🔔 MÓN ĐÃ XONG!',
-    '',
-    `Món: ${itemNames}`,
-    '',
-    `Bàn: ${tableName}`,
-    '',
-    `Số lượng: ${qtyText || 'Không rõ'}`,
-    '',
-    'Tiếp tục vui lòng lấy món!',
-  ].join('\n');
+  return telegramKitchen.buildTelegramFoodReadyMessage(notif);
 }
 
 function isKitchenOrderItemForTelegram(item = {}) {
-  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
-  const itemType = String(item?.itemType || '').trim().toLowerCase();
-  const routing = String(item?.kitchenRouting || '').trim().toLowerCase();
-  const saleMode = String(item?.saleMode || '').trim().toLowerCase();
-  const forceKitchen = item?.forceKitchen === true;
-  if (status !== 'pending') return false;
-  if (!forceKitchen && (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true)) return false;
-  if (!forceKitchen && routing === 'skip') return false;
-  return true;
+  return telegramKitchen.isKitchenOrderItemForTelegram(item);
 }
 
 function getKitchenOrderItemKey(item = {}, index = 0) {
-  return String(item?.lineItemId || `${item?.id || 'item'}:${item?.kitchenSentAt || 0}:${index}`);
+  return telegramKitchen.getKitchenOrderItemKey(item, index);
 }
 
 function getNewPendingKitchenItems(afterItems = [], beforeItems = []) {
-  const beforeKeys = new Set((Array.isArray(beforeItems) ? beforeItems : [])
-    .map((item, index) => {
-      const status = String(item?.kitchenStatus || '').trim().toLowerCase();
-      return status === 'pending' ? getKitchenOrderItemKey(item, index) : '';
-    })
-    .filter(Boolean));
-
-  return (Array.isArray(afterItems) ? afterItems : [])
-    .map((item, index) => ({ item, index, key: getKitchenOrderItemKey(item, index) }))
-    .filter(row => isKitchenOrderItemForTelegram(row.item) && !beforeKeys.has(row.key));
+  return telegramKitchen.getNewPendingKitchenItems(afterItems, beforeItems);
 }
 
 function buildTelegramNewKitchenOrderMessage(order = {}, rows = []) {
-  const tableName = String(order.tableName || order.tableId || 'Khong ro');
-  const itemLines = rows.length
-    ? rows.map(row => {
-      const item = row.item || {};
-      const qty = Number(item.qty || 0);
-      const note = String(item.note || '').trim();
-      return `• ${escapeTelegramHtml(item.name || 'Món')} x${escapeTelegramHtml(formatQtyVi(qty || 1))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-    }).join('\n')
-    : '• Không có chi tiết';
-
-  return [
-    '<b>🔔 CÓ MÓN MỚI</b>',
-    '',
-    `<b>Bàn/Đơn:</b> ${escapeTelegramHtml(tableName)}`,
-    `<b>Món mới:</b>`,
-    itemLines,
-    '',
-    '<i>Vui lòng kiểm tra màn hình bếp.</i>',
-  ].join('\n');
+  return telegramKitchen.buildTelegramNewKitchenOrderMessage(order, rows);
 }
 
 function buildTelegramFoodReadyMessageClean(notif = {}) {
-  const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const parsedItems = rawItems
-    .map(item => parseKitchenItemSummary(normalizeTelegramText(item)))
-    .filter(Boolean);
-
-  const itemNames = parsedItems.length
-    ? parsedItems.map(item => item.name).join(', ')
-    : 'Không có chi tiết';
-  const qtyText = parsedItems.length
-    ? parsedItems.map(item => item.qty ? `${item.name} x${item.qty}` : item.summary).join(', ')
-    : '';
-  const tableName = normalizeTelegramTableLabel(notif.tableName || notif.tableId || '');
-
-  return [
-    '🔔 MÓN ĐÃ XONG!',
-    '',
-    `Món: ${itemNames}`,
-    '',
-    `Bàn: ${tableName}`,
-    '',
-    `Số lượng: ${qtyText || 'Không rõ'}`,
-    '',
-    'Tiếp tục vui lòng lấy món!',
-  ].join('\n');
+  return telegramKitchen.buildTelegramFoodReadyMessageClean(notif);
 }
 
 function buildTelegramNewKitchenOrderMessageClean(order = {}, rows = []) {
-  const tableName = normalizeTelegramTableLabel(order.tableName || order.tableId || '');
-  const itemLines = rows.length
-    ? rows.map(row => {
-      const item = row.item || {};
-      const qty = Number(item.qty || 0);
-      const note = normalizeTelegramText(String(item.note || '').trim());
-      const itemName = normalizeTelegramText(item.name || item.productName || 'Món');
-      return `• ${escapeTelegramHtml(itemName)} x${escapeTelegramHtml(formatQtyVi(qty || 1))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-    }).join('\n')
-    : '• Không có chi tiết';
-
-  return [
-    '<b>🔔 CÓ MÓN MỚI</b>',
-    '',
-    `<b>Bàn/Đơn:</b> ${escapeTelegramHtml(tableName)}`,
-    '<b>Món mới:</b>',
-    itemLines,
-    '',
-    '<i>Vui lòng kiểm tra màn hình bếp.</i>',
-  ].join('\n');
+  return telegramKitchen.buildTelegramNewKitchenOrderMessageClean(order, rows);
 }
 
 async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
@@ -499,51 +348,19 @@ async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
   });
 }
 
-function escapeTelegramHtml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+function escapeTelegramHtml(text) { return textUtils.escapeTelegramHtml(text); }
 
-function scoreTelegramTextQuality(text = '') {
-  const value = String(text || '');
-  let score = 0;
-  score += (value.match(/\uFFFD/g) || []).length * 4;
-  score -= (value.match(/[À-ỹĐđ]/g) || []).length * 2;
-  return score;
-}
+function scoreTelegramTextQuality(text = '') { return textUtils.scoreTelegramTextQuality(text); }
 
-function fixTelegramMojibake(text = '') {
-  return String(text || '');
-}
+function fixTelegramMojibake(text = '') { return textUtils.fixTelegramMojibake(text); }
 
-function normalizeTelegramText(value = '') {
-  return fixTelegramMojibake(String(value || '')).replace(/\s+\n/g, '\n').trim();
-}
+function normalizeTelegramText(value = '') { return textUtils.normalizeTelegramText(value); }
 
-function normalizeTelegramTextPreserveLines(value = '') {
-  return fixTelegramMojibake(String(value || ''))
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/[ \t]+\n/g, '\n');
-}
+function normalizeTelegramTextPreserveLines(value = '') { return textUtils.normalizeTelegramTextPreserveLines(value); }
 
-function getTelegramProductDisplayName(product = {}, fallback = 'Món') {
-  return normalizeTelegramText(
-    String(product.display_name || product.name || fallback || 'Món').trim() || fallback,
-  );
-}
+function getTelegramProductDisplayName(product = {}, fallback = 'Món') { return textUtils.getTelegramProductDisplayName(product, fallback); }
 
-function shouldPreferTelegramCatalogName(currentName = '', product = {}) {
-  const candidate = String(currentName || '').trim();
-  const catalogName = String(product.display_name || product.name || '').trim();
-  if (!catalogName) return false;
-  if (!candidate) return true;
-  if (candidate.includes('\uFFFD')) return true;
-  if (!/[À-ỹĐđ]/.test(candidate) && /[À-ỹĐđ]/.test(catalogName)) return true;
-  return false;
-}
+function shouldPreferTelegramCatalogName(currentName = '', product = {}) { return textUtils.shouldPreferTelegramCatalogName(currentName, product); }
 
 async function enrichTelegramItemsWithCatalog(items = []) {
   const list = Array.isArray(items) ? items : [];
@@ -563,82 +380,24 @@ async function enrichTelegramItemsWithCatalog(items = []) {
   });
 }
 
-function formatCurrencyVi(amount) {
-  return `${Number(amount || 0).toLocaleString('vi-VN')}đ`;
-}
+function formatCurrencyVi(amount) { return textUtils.formatCurrencyVi(amount); }
 
-function formatQtyVi(amount) {
-  const value = Number(amount || 0);
-  if (!Number.isFinite(value)) return '0';
-  if (Math.abs(value - Math.round(value)) < 1e-9) return Math.round(value).toLocaleString('vi-VN');
-  return value.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
+function formatQtyVi(amount) { return textUtils.formatQtyVi(amount); }
 
 function normalizeTelegramSmartReportText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramReports.normalizeTelegramSmartReportText(value);
 }
 
 function normalizeTelegramWildcardText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/[^a-z0-9?\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramReports.normalizeTelegramWildcardText(value);
 }
 
 function buildTelegramWildcardRegex(value = '') {
-  const normalized = normalizeTelegramWildcardText(value);
-  if (!normalized || !normalized.includes('?')) return null;
-  const escaped = normalized.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
-  const pattern = escaped
-    .replace(/\s+/g, '\\s+')
-    .replace(/(?:\\\?)+/g, '[a-z0-9]{0,3}');
-  if (!pattern) return null;
-  return new RegExp(`^${pattern}$`, 'i');
+  return telegramReports.buildTelegramWildcardRegex(value);
 }
 
 function parseTelegramLooseDateTime(value = '', fallbackNow = new Date()) {
-  const raw = normalizeTelegramSmartReportText(value);
-  if (!raw) return null;
-  if (['bay gio', 'hien tai', 'luc nay', 'now'].includes(raw)) return fallbackNow;
-
-  const relativeMatch = raw.match(/^(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(hom nay|hom qua)$/i);
-  if (relativeMatch) {
-    const nowParts = getVietnamDateParts(fallbackNow);
-    const base = new Date(fallbackNow);
-    const hour = Number(relativeMatch[1] || relativeMatch[3] || 0);
-    const minute = Number(relativeMatch[2] || relativeMatch[4] || 0);
-    const dayOffset = String(relativeMatch[5] || '').trim() === 'hom qua' ? -1 : 0;
-    const localDate = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day + dayOffset, hour, minute, 0) - 7 * 60 * 60 * 1000);
-    return Number.isNaN(localDate.getTime()) ? null : localDate;
-  }
-
-  const match = raw.match(
-    /(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/i,
-  );
-  if (!match) return null;
-
-  const nowParts = getVietnamDateParts(fallbackNow);
-  const hour = Number(match[1] || match[3] || 0);
-  const minute = Number(match[2] || match[4] || 0);
-  const day = Number(match[5] || 0);
-  const month = Number(match[6] || 0);
-  let year = Number(match[7] || nowParts.year);
-  if (year > 0 && year < 100) year += 2000;
-  if (!day || !month || !year) return null;
-
-  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0) - 7 * 60 * 60 * 1000);
+  return telegramReports.parseTelegramLooseDateTime(value, fallbackNow);
 }
 
 function formatTelegramSmartRangeLabel(from, toExclusive) {
@@ -798,27 +557,7 @@ const DEFAULT_TELEGRAM_REPORT_SETTINGS = {
 };
 
 function getVietnamDateParts(date = new Date()) {
-  const dtf = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  });
-  const parts = dtf.formatToParts(date);
-  const map = {};
-  parts.forEach(part => {
-    if (part.type !== 'literal') map[part.type] = part.value;
-  });
-  return {
-    year: Number(map.year),
-    month: Number(map.month),
-    day: Number(map.day),
-    hour: Number(map.hour),
-    minute: Number(map.minute),
-  };
+  return telegramReports.getVietnamDateParts(date);
 }
 
 function getVietnamBusinessReportRange(now = new Date()) {
@@ -940,262 +679,49 @@ async function loadTelegramReportFinancialProfile() {
 }
 
 function getInclusiveVietnamDateCount(fromYmd, toYmd) {
-  const start = new Date(`${String(fromYmd || '').trim()}T00:00:00`);
-  const end = new Date(`${String(toYmd || '').trim()}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
-  return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+  return telegramReports.getInclusiveVietnamDateCount(fromYmd, toYmd);
 }
 
 function formatAchievementPercent(value = 0, target = 0) {
-  const safeTarget = Math.max(Number(target || 0) || 0, 1);
-  const percent = ((Number(value || 0) || 0) / safeTarget) * 100;
-  return `${percent.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`;
+  return telegramReports.formatAchievementPercent(value, target);
 }
 
 function buildMorningRevenueMood(report = {}) {
-  const target = Number(report.targetRevenueForRange || 0) || 0;
-  const revenue = Number(report.revenue || 0) || 0;
-  const percent = target > 0 ? (revenue / target) * 100 : 0;
-
-  if (target <= 0) {
-    return 'Hôm nay em chưa dám gáy vì Sprint 0 chưa cấu hình target doanh thu. Mình đặt target trước để bot tự soi cho chuẩn nhé.';
-  }
-  if (percent >= 120) {
-    return 'Hôm nay xin phép gáy thật to: quán đang vượt target rất đẹp, đội mình chạy bài và chốt đơn quá bén.';
-  }
-  if (percent >= 100) {
-    return 'Tin vui đầu ngày: đã chạm target doanh thu rồi, cứ giữ nhịp này là có quyền ngẩng cao đầu.';
-  }
-  if (percent >= 80) {
-    return 'Đang bám target khá sát rồi, chỉ cần rướn thêm một nhịp nữa là chạm mốc đẹp.';
-  }
-  if (percent >= 60) {
-    return 'Hôm nay hơi thiếu lửa một chút, chưa tệ nhưng cũng chưa đủ để gáy. Cần siết lại nội dung, offer và tốc độ chốt đơn.';
-  }
-  return 'Hôm nay em tự nhận là chưa làm tốt. Doanh thu còn dưới 60% target, lỗi tại em chưa kéo khách đủ mạnh. Em cần cố gắng hơn nữa để bù lại cho quán.';
+  return telegramReports.buildMorningRevenueMood(report);
 }
 
 async function sendTelegramHtmlMessage({ chatId, text, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(text).slice(0, 3900),
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramHtmlMessage({ chatId, text, botToken });
 }
 
 async function sendTelegramTextMessage({ chatId, text, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      disable_web_page_preview: true,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramTextMessage({ chatId, text, botToken });
 }
 
 async function sendTelegramActionConfirmation({ chatId, text, actionDocId, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  const docId = String(actionDocId || '').trim();
-  if (!finalBotToken || !finalChatId || !docId) {
-    throw new Error('Missing Telegram bot token, chat id or action doc id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '✅ Xác nhận', callback_data: `confirm_${docId}` },
-          { text: '❌ Hủy', callback_data: `cancel_${docId}` },
-        ]],
-      },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramActionConfirmation({ chatId, text, actionDocId, botToken });
 }
 
 async function sendTelegramInlineMessage({ chatId, text, buttons = [], botToken, parseMode = 'HTML' }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const inline_keyboard = Array.isArray(buttons)
-    ? buttons
-        .map(row => (Array.isArray(row)
-          ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-          : []))
-        .filter(row => row.length > 0)
-    : [];
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      parse_mode: parseMode,
-      disable_web_page_preview: true,
-      reply_markup: inline_keyboard.length ? { inline_keyboard } : undefined,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramInlineMessage({ chatId, text, buttons, botToken, parseMode });
 }
 
 async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken, parseMode = 'HTML', buttons = [] }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  const finalPhoto = String(photo || '').trim();
-  if (!finalBotToken || !finalChatId || !finalPhoto) {
-    throw new Error('Missing Telegram bot token, chat id or photo');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendPhoto`,
-    {
-      chat_id: finalChatId,
-      photo: finalPhoto,
-      caption: normalizeTelegramTextPreserveLines(String(caption || '')).slice(0, 1000),
-      parse_mode: parseMode,
-      reply_markup: Array.isArray(buttons) && buttons.length
-        ? {
-            inline_keyboard: buttons.map(row => (Array.isArray(row)
-              ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-              : [])),
-          }
-        : undefined,
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramPhotoMessage({ chatId, photo, caption, botToken, parseMode, buttons });
 }
 
-function escapeXml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+function escapeXml(text) { return textUtils.escapeXml(text); }
 
 async function answerTelegramCallback({ callbackQueryId, text, botToken }) {
-  if (!callbackQueryId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/answerCallbackQuery`,
-    {
-      callback_query_id: callbackQueryId,
-      text: normalizeTelegramText(String(text || '')).slice(0, 180),
-      show_alert: false,
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.answerTelegramCallback({ callbackQueryId, text, botToken });
 }
 
 async function editTelegramMessage({ chatId, messageId, text, botToken }) {
-  if (!chatId || !messageId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/editMessageText`,
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      reply_markup: { inline_keyboard: [] },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.editTelegramMessage({ chatId, messageId, text, botToken });
 }
 
 async function editTelegramInlineMessage({ chatId, messageId, text, buttons = [], botToken, parseMode = 'HTML' }) {
-  if (!chatId || !messageId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/editMessageText`,
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      parse_mode: parseMode,
-      disable_web_page_preview: true,
-      reply_markup: Array.isArray(buttons) && buttons.length
-        ? {
-            inline_keyboard: buttons.map(row => (Array.isArray(row)
-              ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-              : [])),
-          }
-        : { inline_keyboard: [] },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.editTelegramInlineMessage({ chatId, messageId, text, buttons, botToken, parseMode });
 }
 
 function extractPendingActionsFromToolResults(toolResults = []) {
@@ -1209,39 +735,7 @@ function extractPendingActionsFromToolResults(toolResults = []) {
 }
 
 async function getTelegramPhotoAsBase64({ botToken, photo }) {
-  const list = Array.isArray(photo) ? photo : [];
-  if (!list.length) throw new Error('Telegram photo is empty');
-  const best = list.slice().sort((a, b) => Number(b.file_size || 0) - Number(a.file_size || 0))[0];
-  const fileId = String(best.file_id || '').trim();
-  if (!fileId) throw new Error('Missing Telegram file_id');
-
-  const fileRes = await axios.get(
-    `https://api.telegram.org/bot${botToken}/getFile`,
-    { params: { file_id: fileId }, timeout: 15000 }
-  );
-  const filePath = String(fileRes?.data?.result?.file_path || '').trim();
-  if (!filePath) throw new Error('Telegram getFile did not return file_path');
-
-  const imageRes = await axios.get(
-    `https://api.telegram.org/file/bot${botToken}/${filePath}`,
-    { responseType: 'arraybuffer', timeout: 30000 }
-  );
-  const headerMimeType = String(imageRes.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
-  const normalizedPath = String(filePath || '').toLowerCase();
-  const inferredMimeType = normalizedPath.endsWith('.png')
-    ? 'image/png'
-    : normalizedPath.endsWith('.webp')
-      ? 'image/webp'
-      : normalizedPath.endsWith('.gif')
-        ? 'image/gif'
-        : 'image/jpeg';
-  const mimeType = headerMimeType && headerMimeType !== 'application/octet-stream'
-    ? headerMimeType
-    : inferredMimeType;
-  return {
-    base64: Buffer.from(imageRes.data).toString('base64'),
-    mimeType,
-  };
+  return telegramSend.getTelegramPhotoAsBase64({ botToken, photo });
 }
 
 function normalizeTelegramServiceMode(value = '') {
@@ -1925,14 +1419,7 @@ function isTelegramBankPayMethod(payMethod) {
 }
 
 function normalizeTelegramTableLabel(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eề])$/i.test(raw)) return 'Mang về';
-  const fullMatch = raw.match(/^ban\s*(.+)$/i);
-  if (fullMatch?.[1]) return `Bàn ${fullMatch[1].trim()}`;
-  const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
-  return raw;
+  return telegramKitchen.normalizeTelegramTableLabel(value);
 }
 
 function extractTelegramCashierName(value) {
