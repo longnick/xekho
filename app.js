@@ -4527,6 +4527,7 @@ function closeBillModal() {
 }
 
 function buildStandaloneBillPrintHtml(printableMarkup) {
+  if (window.XekhoApp?.utils?.print?.buildStandaloneBillPrintHtml) return window.XekhoApp.utils.print.buildStandaloneBillPrintHtml(printableMarkup);
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -10301,12 +10302,13 @@ async function submitSettings(e) {
 }
 
 function getLocalStorageUsageBytes() {
+  if (window.XekhoApp?.utils?.storage?.getLocalStorageUsageBytes) return window.XekhoApp.utils.storage.getLocalStorageUsageBytes();
   try {
     let total = 0;
     for(let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || '';
       const val = localStorage.getItem(key) || '';
-      total += (key.length + val.length) * 2; // UTF-16 (ước lượng)
+      total += (key.length + val.length) * 2;
     }
     return total;
   } catch(_) {
@@ -10315,6 +10317,7 @@ function getLocalStorageUsageBytes() {
 }
 
 function formatBytes(bytes) {
+  if (window.XekhoApp?.utils?.storage?.formatBytes) return window.XekhoApp.utils.storage.formatBytes(bytes);
   const mb = bytes / (1024 * 1024);
   if(mb < 1024) return `${mb.toFixed(1)} MB`;
   return `${(mb / 1024).toFixed(2)} GB`;
@@ -11481,6 +11484,7 @@ async function exportReportExcel(override = {}) {
 }
 
 async function blobToBase64(blob) {
+  if (window.XekhoApp?.utils?.storage?.blobToBase64) return window.XekhoApp.utils.storage.blobToBase64(blob);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -11494,6 +11498,7 @@ async function blobToBase64(blob) {
 }
 
 function normalizeGoogleScriptWebAppUrl(raw) {
+  if (window.XekhoApp?.utils?.storage?.normalizeGoogleScriptWebAppUrl) return window.XekhoApp.utils.storage.normalizeGoogleScriptWebAppUrl(raw);
   let u = String(raw || '').trim();
   if(!u) return '';
   u = u.replace(/\s+/g, '');
@@ -11504,6 +11509,7 @@ function normalizeGoogleScriptWebAppUrl(raw) {
 }
 
 function isGoogleAppsScriptWebAppUrl(u) {
+  if (window.XekhoApp?.utils?.storage?.isGoogleAppsScriptWebAppUrl) return window.XekhoApp.utils.storage.isGoogleAppsScriptWebAppUrl(u);
   if(!u) return false;
   return /script\.google\.com\/macros\/s\//i.test(u)
     || /script\.googleusercontent\.com\/macros\/exec/i.test(u);
