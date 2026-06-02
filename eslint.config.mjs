@@ -55,6 +55,8 @@ export default [
         TextEncoder: 'readonly',
         atob: 'readonly',
         btoa: 'readonly',
+        FileReader: 'readonly',
+        Blob: 'readonly',
       },
     },
     rules: {
