@@ -1009,13 +1009,13 @@
       <!-- ========== PAGE: SETTINGS ========== -->
       <div id="page-settings" class="page">
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchSettingsTab('store',this)">🏪 Cửa hàng</button>
-          <button class="tab-btn" onclick="switchSettingsTab('theme',this)">🎨 Giao diện</button>
-          <button class="tab-btn" onclick="switchSettingsTab('users',this)">👥 Nhân sự</button>
-          <button class="tab-btn" onclick="switchSettingsTab('attendance',this)">⏱️ Chấm công</button>
-          <button class="tab-btn" onclick="switchSettingsTab('payment',this)">💳 Thanh toán</button>
-          <button class="tab-btn" onclick="switchSettingsTab('ai',this)">🤖 Hệ thống AI</button>
-          <button class="tab-btn" onclick="switchSettingsTab('data',this)">💾 Dữ liệu</button>
+          <button class="tab-btn active" data-esm-settings-tab="store">🏪 Cửa hàng</button>
+          <button class="tab-btn" data-esm-settings-tab="theme">🎨 Giao diện</button>
+          <button class="tab-btn" data-esm-settings-tab="users">👥 Nhân sự</button>
+          <button class="tab-btn" data-esm-settings-tab="attendance">⏱️ Chấm công</button>
+          <button class="tab-btn" data-esm-settings-tab="payment">💳 Thanh toán</button>
+          <button class="tab-btn" data-esm-settings-tab="ai">🤖 Hệ thống AI</button>
+          <button class="tab-btn" data-esm-settings-tab="data">💾 Dữ liệu</button>
         </div>
 
         <div id="set-tab-theme" class="settings-tab-content" style="display:none;">
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-report-tabs"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-settings-tabs"></script>
   <script>
     // Extra helpers that reference DOM
 
