@@ -20,3 +20,8 @@ firebase-debug.log
 functions-list.json
 *.json.bak
 *.backup-*
+
+# Firebase generated
+.firebase/hosting..cache
+firebase-debug.log
+functions-list.json
