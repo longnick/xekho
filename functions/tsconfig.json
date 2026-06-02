@@ -4,6 +4,7 @@
     "allowJs": true,
     "noEmit": true,
     "target": "ES2020",
+    "ignoreDeprecations": "6.0",
     "module": "commonjs",
     "moduleResolution": "node",
     "strict": false,

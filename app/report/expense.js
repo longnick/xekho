@@ -101,6 +101,7 @@
     var purchases = ignoreMenuFilter ? filterPurchases(period, opts) : getFilteredReportPurchases();
     var expenses = ignoreMenuFilter ? filterExpenses(period, opts) : getFilteredReportExpenses();
 
+    /** @type {Array<any>} */
     var purchaseRows = purchases.map(function (p) {
       return {
         type: 'purchase',
@@ -116,6 +117,7 @@
       };
     }).filter(function (row) { return row.date && row.amount > 0; });
 
+    /** @type {Array<any>} */
     var expenseRows = expenses.map(function (e) {
       return {
         type: 'expense',
@@ -137,6 +139,7 @@
       ? (Number(fixedCostProfile.dailyManagementSalary || 0) || 0) * (Number(reportDays || 0) || 0)
       : 0;
     var otherFixedCostTotal = Math.max(0, fixedCostTotal - managementSalaryTotal);
+    /** @type {Array<any>} */
     var fixedCostRows = [];
     if (managementSalaryTotal > 0) {
       fixedCostRows.push({
@@ -161,8 +164,9 @@
       });
     }
 
+    /** @type {Array<any>} */
     var rows = purchaseRows.concat(expenseRows).concat(fixedCostRows)
-      .sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+      .sort(function (a, b) { return new Date(b.date).getTime() - new Date(a.date).getTime(); });
     var sums = rows.reduce(function (acc, row) {
       acc[row.category] = (acc[row.category] || 0) + (Number(row.amount) || 0);
       return acc;

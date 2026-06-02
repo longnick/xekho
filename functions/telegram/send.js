@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 
-const axios = require('axios');
+const axios = /** @type {any} */ (require('axios'));
 const { normalizeTelegramTextPreserveLines, normalizeTelegramText } = require('../utils/text');
 
 /**

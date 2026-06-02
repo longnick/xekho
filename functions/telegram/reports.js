@@ -100,7 +100,7 @@ function getInclusiveVietnamDateCount(fromYmd, toYmd) {
   var start = new Date(String(fromYmd || '').trim() + 'T00:00:00');
   var end = new Date(String(toYmd || '').trim() + 'T00:00:00');
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
-  return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+  return Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 }
 
 /**
