@@ -355,3 +355,12 @@ Related files:
   - depends on: browser `document` and existing global `setReportTransactionFilter(type, checked)`.
   - used by: `app/esm/main.js`, `index.html` report transaction filter inputs with `data-esm-report-transaction-filter`, `scripts/verify-esm-report-transaction-filters.js`.
   - notes: removes inline handlers from both duplicated report filter layouts; report filter state/rendering remains in the legacy global function.
+
+
+## ESM Phase E5.8 relations
+
+- `app/esm/ui/report-filter-controls.js`
+  - role: delegated change/click handler island for report menu filters and reset buttons.
+  - depends on: browser `document`, existing global `setReportMenuFilter(value)`, and existing global `resetReportFilters()`.
+  - used by: `app/esm/main.js`, `index.html` report menu selects with `data-esm-report-menu-filter`, reset buttons with `data-esm-report-filter-reset`, `scripts/verify-esm-report-filter-controls.js`.
+  - notes: report filter state/rendering remains in legacy global functions.
