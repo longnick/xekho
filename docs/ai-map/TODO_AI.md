@@ -70,3 +70,8 @@
 - [x] Sprint 7.1: ads revenue report HTML builder (buildAdsRevenueReportHtml)
 - [x] Sprint 7.2: fixed cost/payroll helpers (getFixedCostProfileForReports, _getPayrollProfile)
 - [x] Sprint 7.3: dish cost resolution + menu normalization (_resolveDishCostPerUnit, normalizeMenuItemModel)
+
+## Phase 8 — 2026-06-02
+- [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js
+- [x] Sprint 8.2: exportReportExcel (573 lines) → app/report/excel.js
+- [x] Sprint 8.3: buildOperationalExpenseBreakdown → app/report/expense.js
