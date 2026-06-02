@@ -293,12 +293,12 @@ Source: `index.html` — all scripts loaded in `<body>` at bottom, non-module (I
  8. app/ui/toast.js            — XekhoApp.ui.toast, repairVietnameseText
  9. app/ui/theme.js            — XekhoApp.ui.applyTheme
 10. app/ui/modal.js            — XekhoApp.ui.openModal, closeModal, isModalOpen
-11. app/auth/staff.js          — XekhoApp.auth.* (normalizeStaffRole, getStaffIdentity, etc.)
+11. app/auth/staff.js          — XekhoApp.auth.* (normalizeStaffRole, getStaffIdentity, buildCurrentUserFromStaff, validatePinFormat, getCurrentOrderActorMetaFromUser)
 12. app/order/helpers.js       — XekhoApp.order.* (22 helpers for orders, kitchen, online orders)
 13. app/utils/excel.js         — XekhoApp.utils.excel (Excel formatting helpers)
 14. app/utils/date.js          — XekhoApp.utils.date (formatLocalDateKey, resolvePeriodDateRangePure)
 15. app/utils/print.js         — XekhoApp.utils.print.buildStandaloneBillPrintHtml
-16. app/utils/storage.js       — XekhoApp.utils.storage (formatBytes, blobToBase64, uploadFileToGoogleDrive)
+16. app/utils/storage.js       — XekhoApp.utils.storage (formatBytes, blobToBase64, uploadFileToGoogleDriveByEndpoint, getTelegramReportTestUrl)
 17. app/utils/parser.js        — XekhoApp.utils.parser (parsePurchaseText, tokenSimilarity)
 18. app/utils/categorize.js    — XekhoApp.utils.categorize (normalizeExpenseCategoryLabel, etc.)
 19. app/report/helpers.js      — XekhoApp.report (getReportMenuIngredientKeys, doesOrderMatchReportMenuItem, etc.)

@@ -19,6 +19,7 @@ var required = [
   'XekhoApp.auth.getStaffIdentity',
   'XekhoApp.auth.buildCurrentUserFromStaff',
   'XekhoApp.auth.validatePinFormat',
+  'XekhoApp.auth.getCurrentOrderActorMetaFromUser',
 ];
 required.forEach(function (name) {
   if (!src.includes(name)) {
@@ -112,7 +113,20 @@ if (auth.buildCurrentUserFromStaff(null, '1234') !== null) {
   process.exit(1);
 }
 
-// 7. Test validatePinFormat.
+
+// 7. Test getCurrentOrderActorMetaFromUser.
+var actorMeta = auth.getCurrentOrderActorMetaFromUser({ name: 'Thu ngân A', role: 'staff' });
+if (!actorMeta || actorMeta.updatedBy !== 'Thu ngân A' || actorMeta.updatedByRole !== 'staff') {
+  console.error('FAIL: getCurrentOrderActorMetaFromUser returned unexpected:', JSON.stringify(actorMeta));
+  process.exit(1);
+}
+var emptyActorMeta = auth.getCurrentOrderActorMetaFromUser(null);
+if (!emptyActorMeta || emptyActorMeta.updatedBy !== null || emptyActorMeta.updatedByRole !== null) {
+  console.error('FAIL: getCurrentOrderActorMetaFromUser(null) returned unexpected:', JSON.stringify(emptyActorMeta));
+  process.exit(1);
+}
+
+// 8. Test validatePinFormat.
 if (!auth.validatePinFormat('1234')) {
   console.error('FAIL: validatePinFormat("1234") != true');
   process.exit(1);

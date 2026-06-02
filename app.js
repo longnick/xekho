@@ -1786,6 +1786,9 @@ function ensureTelegramReportTimeOptions() {
 }
 
 function getTelegramReportTestUrl() {
+  if (window.XekhoApp?.utils?.storage?.getTelegramReportTestUrl) {
+    return window.XekhoApp.utils.storage.getTelegramReportTestUrl();
+  }
   return 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram';
 }
 
@@ -3756,6 +3759,9 @@ function _getCloudOrderId(key) {
 
 function getCurrentOrderActorMeta() {
   const posUser = getCurrentPosUser();
+  if (window.XekhoApp?.auth?.getCurrentOrderActorMetaFromUser) {
+    return window.XekhoApp.auth.getCurrentOrderActorMetaFromUser(posUser);
+  }
   return {
     updatedBy: posUser?.name || null,
     updatedByRole: posUser?.role || null,
@@ -6909,28 +6915,6 @@ function getFinanceExpenseRows(period = financePeriod, opts = financeDateOpts) {
     includeFixedCost: true,
     ignoreMenuFilter: true,
   }).rows;
-  const expenses = filterExpenses(period, opts);
-  const purchases = filterPurchases(period, opts);
-  return [
-    ...expenses.map(e => ({
-      type: 'expense',
-      id: e.id || uid(),
-      name: e.name,
-      category: e.category || 'Chi phí khác',
-      date: e.date,
-      amount: Number(e.amount) || 0,
-    })),
-    ...purchases.map(p => ({
-      type: 'purchase',
-      id: p.id || uid(),
-      name: p.name,
-      category: 'Nhập hàng',
-      date: p.date,
-      amount: Number(p.price) || 0,
-      qty: Number(p.qty) || 0,
-      unit: p.unit || '',
-    })),
-  ].filter(r => r.date && r.amount > 0).sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 function renderExpenseList() {

@@ -50,6 +50,19 @@ Related files:
   - used by: future ESM conversion sprints.
   - notes: keep root `package.json` as `commonjs` until a later package-type strategy sprint.
 
+
+- `app/utils/storage.js`
+  - role: extracted browser storage/upload utility module.
+  - depends on: browser localStorage/FileReader/fetch only at call time.
+  - used by: `app.js` compatibility wrappers and report/upload flows.
+  - notes: now also owns `getTelegramReportTestUrl()` so the legacy global in `app.js` can delegate.
+
+- `app/auth/staff.js`
+  - role: extracted pure auth/staff helper module.
+  - depends on: no app state; wrappers pass state-derived values in from `app.js`.
+  - used by: login/session helpers and order actor metadata wrapper.
+  - notes: now exports `getCurrentOrderActorMetaFromUser(posUser)` while `app.js` remains responsible for reading `getCurrentPosUser()`.
+
 - `db.js`
   - role: Firestore/Firebase data access helper.
   - depends on: Firebase SDK/config.
