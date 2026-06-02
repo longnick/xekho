@@ -346,3 +346,12 @@ Related files:
   - depends on: browser `document` and existing global `setFinancePeriod(period)`.
   - used by: `app/esm/main.js`, `index.html` finance period buttons with `data-esm-finance-period`, `scripts/verify-esm-finance-period.js`.
   - notes: removes inline handlers only from the five finance period buttons; finance rendering logic remains in the legacy global function.
+
+
+## ESM Phase E5.7 relations
+
+- `app/esm/ui/report-transaction-filters.js`
+  - role: delegated change handler island for report transaction filter checkboxes.
+  - depends on: browser `document` and existing global `setReportTransactionFilter(type, checked)`.
+  - used by: `app/esm/main.js`, `index.html` report transaction filter inputs with `data-esm-report-transaction-filter`, `scripts/verify-esm-report-transaction-filters.js`.
+  - notes: removes inline handlers from both duplicated report filter layouts; report filter state/rendering remains in the legacy global function.

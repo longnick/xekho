@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 13:55 (ESM Phase E5.6 finance period complete)
+**Updated:** 2026-06-02 14:00 (ESM Phase E5.7 report transaction filters complete)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~79% complete**.
-- Core non-optional refactor/security/testing plan: **~85% complete**.
-- Near-term safe-execution track: **~99.995% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~80% complete**.
+- Core non-optional refactor/security/testing plan: **~86% complete**.
+- Near-term safe-execution track: **~99.997% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -45,7 +45,8 @@ These percentages are conservative because the repo is production-adjacent and s
 - ESM Phase E5.4 complete: added `app/esm/ui/report-date-controls.js`, converted 5 report period and 2 report date mode controls from inline handlers to delegated `data-esm-*`, wired the ESM entry, and verified deterministic dispatch.
 - ESM Phase E5.5 complete: added `app/esm/ui/inventory-tabs.js`, converted 5 inventory tabs from inline `onclick` to delegated `data-esm-inventory-tab`, wired the ESM entry, and verified deterministic dispatch.
 - ESM Phase E5.6 complete: added `app/esm/ui/finance-period.js`, converted 5 finance period controls from inline `onclick` to delegated `data-esm-finance-period`, wired the ESM entry, and verified deterministic dispatch.
-Current ESM readiness ~61%.
+- ESM Phase E5.7 complete: added `app/esm/ui/report-transaction-filters.js`, converted 6 report transaction filter controls from inline `onchange` to delegated `data-esm-report-transaction-filter`, wired the ESM entry, and verified deterministic dispatch.
+Current ESM readiness ~62%.
 - Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
@@ -151,9 +152,9 @@ Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cle
 - Overall ESM readiness: ~57%.
 - Tooling readiness: ~80% (Vite/build/scripts available and verified).
 - Frontend module boundary readiness: ~62% (five leaf helpers, three runtime adapters, and one UI island are importable; most report/order/admin UI modules remain IIFE/global).
-- Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 210 inline handlers, and classic script order still central).
+- Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 204 inline handlers, and classic script order still central).
 - Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
-- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 210 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
+- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 204 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)

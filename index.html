@@ -672,15 +672,15 @@
             </div>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Đơn bán</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" id="report-filter-sales" checked data-esm-report-transaction-filter="sales"><span class="toggle-slider"></span></label>
             </label>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Nhập hàng</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked data-esm-report-transaction-filter="purchases"><span class="toggle-slider"></span></label>
             </label>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Chi phí khác</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked data-esm-report-transaction-filter="expenses"><span class="toggle-slider"></span></label>
             </label>
           </div>
           <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
@@ -707,15 +707,15 @@
               </div>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Đơn bán</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" id="report-filter-sales" checked data-esm-report-transaction-filter="sales"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Nhập hàng</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked data-esm-report-transaction-filter="purchases"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Chi phí khác</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked data-esm-report-transaction-filter="expenses"><span class="toggle-slider"></span></label>
               </label>
             </div>
             <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-finance-period"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-report-transaction-filters"></script>
   <script>
     // Extra helpers that reference DOM
 
