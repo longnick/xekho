@@ -491,3 +491,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E4 UI Island
 
 - `app/esm/ui/image-zoom.js`: importable image zoom/pan controller. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.imageZoom`; classic `ImgZoom` in `app.js` delegates at call time and keeps fallback logic. Verified by `scripts/verify-esm-ui-image-zoom.js`.
+
+
+## ESM Phase E5.1 Header Actions
+
+- `app/esm/ui/header-actions.js`: importable delegated header action island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.headerActions`; replaces four static header inline `onclick` handlers with `data-esm-header-action`. Verified by `scripts/verify-esm-header-actions.js`.

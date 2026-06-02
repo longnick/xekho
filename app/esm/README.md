@@ -13,7 +13,7 @@ This directory is the first non-invasive bridge from the current classic-script/
 
 ## Current entry
 
-- `main.js`: loaded as `<script type="module">`; sets `window.XekhoApp.esm.harness`, imports the E2 leaf facades, E3 runtime adapters, plus the E4 image zoom UI island, installs compatibility globals/adapters, records `window.XekhoApp.esm.facades.*`, and dispatches `xekho:esm-ready` when browser event APIs exist.
+- `main.js`: loaded as `<script type="module">`; sets `window.XekhoApp.esm.harness`, imports the E2 leaf facades, E3 runtime adapters, plus the E4 image zoom UI island and E5 header action delegated handler island, installs compatibility globals/adapters, records `window.XekhoApp.esm.facades.*`, and dispatches `xekho:esm-ready` when browser event APIs exist.
 - `utils/dom.js`: exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()`.
 - `utils/format.js`: exports formatter helpers and `installGlobalFormatUtils()` while preserving `window.XekhoApp.utils.format.*` plus legacy globals (`fmt`, `fmtFull`, `fmtDate`, `fmtTime`, `fmtDateTime`, `today`).
 - `utils/date.js`: exports date helpers and `installGlobalDateUtils()` while preserving `window.XekhoApp.utils.date.*` plus legacy globals (`formatLocalDateKey`, `getWeekStartKey`).
@@ -23,6 +23,7 @@ This directory is the first non-invasive bridge from the current classic-script/
 - `adapters/store.js`: exports read-only `Store`/`appState` accessors and `installStoreAdapter()` under `window.XekhoApp.esm.adapters.store`.
 - `adapters/db.js`: exports async `window.DB` readiness helpers and `installDbAdapter()` under `window.XekhoApp.esm.adapters.db`.
 - `ui/image-zoom.js`: exports the importable image zoom/pan controller and `installGlobalImageZoom()` under `window.XekhoApp.esm.ui.imageZoom`.
+- `ui/header-actions.js`: exports delegated header action handling and `installHeaderActions()` under `window.XekhoApp.esm.ui.headerActions`.
 
 ## Completed ESM facade candidates
 
@@ -41,9 +42,10 @@ This directory is the first non-invasive bridge from the current classic-script/
 ## Completed ESM UI island candidates
 
 1. `app/esm/ui/image-zoom.js` (E4)
+2. `app/esm/ui/header-actions.js` (E5.1)
 
 ## Next candidates / blockers
 
-- Phase E5 inline handler cleanup is not safe as a one-shot change: current audit still shows 243 inline handlers and 31 local classic scripts. Replace handlers one island at a time only after a browser/mobile QA loop.
+- Phase E5 inline handler cleanup is not safe as a one-shot change: current audit still shows 238 inline handlers and 31 local classic scripts after E5.1. Replace handlers one island at a time only after a browser/mobile QA loop.
 - Phase E6 package strategy remains planning-only: keep root `commonjs`; do not flip to repo-wide `module` while backend/scripts remain CommonJS.
 - No Phase E7/E8 is currently defined in the ESM plan.
