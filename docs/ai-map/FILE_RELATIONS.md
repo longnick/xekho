@@ -319,3 +319,12 @@ Related files:
   - depends on: browser `document` and existing global `switchSettingsTab(tab, trigger)`.
   - used by: `app/esm/main.js`, `index.html` settings tab buttons with `data-esm-settings-tab`, `scripts/verify-esm-settings-tabs.js`.
   - notes: removes inline handlers only from the seven static settings tab buttons; settings forms/toggles/buttons remain delegated later because they touch config save/reset flows.
+
+
+## ESM Phase E5.4 relations
+
+- `app/esm/ui/report-date-controls.js`
+  - role: delegated click handler island for report period and report date mode buttons.
+  - depends on: browser `document`, existing global `setReportPeriod(period)`, and existing global `setDateMode(page, mode, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` report controls with `data-esm-report-period` / `data-esm-report-date-mode`, `scripts/verify-esm-report-date-controls.js`.
+  - notes: removes inline handlers only from low-risk report date navigation; date input changes and report export/action buttons remain delegated later.
