@@ -7,6 +7,7 @@ import { buildCurrentUserFromStaff, getStaffIdentity, installGlobalStaffAuth, no
 import { getDocument, installDomAdapter, off, on, qs, qsa } from './adapters/dom.js';
 import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu, getSettings, getStore, installStoreAdapter, isAppStateReady, readAppStateKey } from './adapters/store.js';
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
+import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 
 /**
@@ -33,6 +34,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
   var domAdapter = installDomAdapter(anyRoot);
   var storeAdapter = installStoreAdapter(anyRoot);
   var dbAdapter = installDbAdapter(anyRoot);
+  var headerActions = installHeaderActions(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
 
   XekhoApp.esm.facades.dom = {
@@ -79,6 +81,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
     db: dbAdapter,
   });
   XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
+    headerActions: headerActions,
     imageZoom: imageZoom,
   });
 
@@ -113,6 +116,11 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
 
   XekhoApp.esm.facades.uiIslands = {
     loaded: true,
+    headerActions: {
+      callHeaderActionPresent: headerActions.callHeaderAction === callHeaderAction,
+      installed: headerActions.installed === true,
+      selectorPresent: headerActions.selector === '[data-esm-header-action]',
+    },
     imageZoom: {
       createImageZoomControllerPresent: typeof createImageZoomController === 'function',
       attachPresent: typeof imageZoom.attach === 'function',
@@ -122,7 +130,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e4-ui-image-zoom',
+    version: '20260602-e5-header-actions',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),

@@ -36,7 +36,7 @@
         <div id="current-user-display"
           style="font-size: 13px; font-weight: 600; color: var(--primary); background: rgba(124, 58, 237, 0.1); padding: 4px 10px; border-radius: 12px; margin-right: 5px; display: flex; align-items: center;">
         </div>
-        <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI"
+        <button class="header-btn" id="ai-mic-btn" data-esm-header-action="ai" title="Trợ lý AI"
           style="position:relative; display:none;">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -48,7 +48,7 @@
           <span id="ai-active-dot"
             style="position:absolute;top:4px;right:4px;width:7px;height:7px;background:var(--success);border-radius:50%;display:none"></span>
         </button>
-        <button class="header-btn alert-dot" id="header-alert-btn" onclick="openStockAlertPopup()"
+        <button class="header-btn alert-dot" id="header-alert-btn" data-esm-header-action="stock-alert"
           title="Cảnh báo tồn kho">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -58,9 +58,9 @@
           <span id="alert-badge-header"
             style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
         </button>
-        <button class="header-btn header-btn-reload" id="header-reload-btn" onclick="hardReloadApp()" title="Tải bản mới"
+        <button class="header-btn header-btn-reload" id="header-reload-btn" data-esm-header-action="hard-reload" title="Tải bản mới"
           aria-label="Tải lại bản mới" style="display:none;">🔄</button>
-        <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
+        <button class="header-btn" id="header-logout-btn" data-esm-header-action="logout" title="Đăng xuất">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e4-ui-image-zoom"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-header-actions"></script>
   <script>
     // Extra helpers that reference DOM
 

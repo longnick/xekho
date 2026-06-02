@@ -292,3 +292,12 @@ Related files:
   - depends on: DOM-like wrapper/image elements passed to `attach()`; no Store/DB/Firebase dependency.
   - used by: `app/esm/main.js`, classic `ImgZoom` wrappers in `app.js`, `scripts/verify-esm-ui-image-zoom.js`.
   - notes: preserves classic fallback logic in `app.js`; only delegates at call time when `window.XekhoApp.esm.ui.imageZoom` is ready.
+
+
+## ESM Phase E5.1 relations
+
+- `app/esm/ui/header-actions.js`
+  - role: delegated click handler island for static header buttons.
+  - depends on: browser `document` and existing global handlers (`openAIAssistant`, `openStockAlertPopup`, `hardReloadApp`, `handleLogout`).
+  - used by: `app/esm/main.js`, `index.html` header buttons with `data-esm-header-action`, `scripts/verify-esm-header-actions.js`.
+  - notes: removes inline handlers only from the four static header buttons; other inline handlers remain for later E5 islands.
