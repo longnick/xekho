@@ -1,13 +1,13 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 (Phase 14)
+**Updated:** 2026-06-02 10:22 (safe dirty tree cleanup)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
--- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~65% complete**.
-- Core non-optional refactor/security/testing plan: **~72% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~67% complete**.
+- Core non-optional refactor/security/testing plan: **~73% complete**.
 - Near-term safe-execution track: **~99% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
@@ -33,6 +33,10 @@ These percentages are conservative because the repo is production-adjacent and s
 - Phase 14 Sprint 14.3 completed: `CODE_MAP.md` expanded (210→474 lines) — all 34 Cloud Functions documented, all 27 modules mapped, data flows added.
 - Phase 14 Sprint 14.4 completed: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections documented with field schemas, indexes, and security rules.
 - Phase 14 COMPLETE: backend typed, CI type checking active, CODE_MAP fully expanded, DATA_SCHEMA created.
+- Tooling cleanup completed after audit: local ESLint dependency added, TypeScript 6 deprecation guard added, frontend/backend `@ts-check` errors fixed, ads data dependency injection made explicit, and lint/tsc/check/test/verify commands now pass.
+- ESM conversion audit completed: Vite config/build pass, but current frontend remains classic-script/IIFE-first with 31 local classic scripts, one module script (`db.js`), and inline handlers. Documented staged ESM plan in `ESM_AUDIT.md`; current ESM readiness ~35%.
+- ESM Phase E1 completed: added `app/esm/main.js` browser module harness, documented `app/esm/README.md`, loaded the module after the existing classic runtime in `index.html`, and added `scripts/verify-esm-entry.js`. Current ESM readiness ~38%.
+- Safe dirty tree cleanup completed: current tooling cleanup, ESM audit, ESM E1 harness, and AI map docs were classified into explicit commit groups without `git add -A` or secret access.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
 - Fifth compatibility extraction completed in Sprint 7: `app/ui/modal.js` (openModal/closeModal/isModalOpen as IIFE), 6 compatibility wrappers in `app.js`.
@@ -131,7 +135,15 @@ These percentages are conservative because the repo is production-adjacent and s
 
 ## Recommended next sprint
 
-Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, and Phase 14 complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. All modules have `@ts-check` + JSDoc. CI includes `tsc --noEmit`. `CODE_MAP.md` fully expanded (474 lines, 34 Cloud Functions, 27 modules). `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). functions/index.js at 5702 lines (-1578 from original). Vite spike merged — dev server available. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline. Next: targeted commit staging of all extracted modules, ES module conversion planning for proper Vite tree-shaking, or deeper frontend extraction (remaining state-dependent POS functions in app.js).
+Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cleanup, and ESM audit complete. 8 backend modules + 20 frontend modules active, 150+ exports across 28 modules. All modules have `@ts-check` + JSDoc. CI includes `tsc --noEmit`, and local TypeScript 6 deprecation handling has been restored. `CODE_MAP.md` fully expanded (474 lines, 34 Cloud Functions, 27 modules). `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). functions/index.js at 5702 lines (-1578 from original). Vite spike merged and build verified, but ESM audit says no one-shot conversion: keep root `commonjs`, keep IIFE compatibility globals, and start with Phase E1 ESM compatibility harness if moving forward. Remaining ~30 functions in functions/index.js depend on db/admin/config and should stay inline.
+
+### ESM readiness — 2026-06-02
+- Overall ESM readiness: ~35%.
+- Tooling readiness: ~80% (Vite/build/scripts available and verified).
+- Frontend module boundary readiness: ~45% (many extracted IIFE modules, no ESM exports yet).
+- Runtime entry readiness: ~20% (`app.js`, inline handlers, `window.DB`, and classic script order still central).
+- Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
+- Recommended next sprint: Phase E1 — add non-invasive `app/esm/main.js` compatibility harness + `scripts/verify-esm-entry.js`.
 
 ### Phase 8 — 2026-06-02
 - [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)

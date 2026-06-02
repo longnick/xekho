@@ -1,5 +1,68 @@
 # AI Changelog
 
+## 2026-06-02 10:22 - Safe dirty tree cleanup
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Cleaned the dirty tree using explicit safe commit groups:
+
+- Group 1: tooling/typecheck cleanup and backend ads dependency injection fix.
+- Group 2: ESM audit + E1 compatibility harness + AI map documentation.
+- Added `docs/ai-map/STAGING_REVIEW.md` and `docs/ai-map/TASK_LOGS/2026-06-02-1022-safe-dirty-cleanup.md`.
+
+Safety: no `git add -A`, no secrets read/staged, no deploy, no production DB/POS/payment/customer data touched.
+
+## 2026-06-02 10:08 - ESM Phase E1 compatibility harness
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Implemented the first non-invasive ESM bridge:
+
+- Added `app/esm/main.js` as a type-checked browser module harness.
+- Added `app/esm/README.md` with migration rules and next dual-export candidates.
+- Loaded `<script type="module" src="app/esm/main.js?v=20260602-e1"></script>` after existing classic runtime scripts and before inline DOM helper scripts.
+- Added `scripts/verify-esm-entry.js` to assert script order, readiness marker, and `xekho:esm-ready` event behavior in a VM sandbox.
+- Verification passed: ESM verify script, `npm run check`, frontend/backend `tsc`, Vite build, and `npm run lint` with existing warnings only.
+
+This keeps `package.json` as `commonjs` and does not convert or remove any `window.XekhoApp.*` compatibility globals.
+
+## 2026-06-02 09:31 - ESM conversion audit
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Audited ESM/Vite conversion readiness against the current refactor state and `REFACTOR_PLAN.md`:
+
+- Verified Vite config loads and `npx vite build` succeeds while preserving classic scripts as expected.
+- Scanned JS files, script tags, ESM/CommonJS usage, and global coupling hotspots.
+- Documented why the repo is not safe for one-shot ESM conversion yet: `app.js` remains a global runtime host, `index.html` still loads 31 local classic scripts, `db.js` is the only module script but still exposes `window.DB`, and backend/scripts remain CommonJS.
+- Created a staged frontend-first ESM plan: E0 audit, E1 ESM compatibility harness, E2 dual-export leaf utilities, E3 runtime adapters, E4 UI islands, E5 inline-handler removal, E6 package type strategy.
+
+New doc: `docs/ai-map/ESM_AUDIT.md`.
+
+## 2026-06-02 09:07 - Tooling cleanup: restore lint and TypeScript checks
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the actionable tooling regressions found during the refactor audit:
+
+- Added local `eslint` devDependency so `npm run lint` no longer depends on an implicit/global binary.
+- Added `ignoreDeprecations: "6.0"` to frontend/backend TypeScript configs to unblock TypeScript 6 deprecation handling.
+- Fixed frontend `@ts-check` issues in extracted modules:
+  - `app/report/excel.js`: DOM input casts, `ExcelJS` global access through typed root, date arithmetic via `getTime()`.
+  - `app/report/expense.js`: typed row arrays and date arithmetic via `getTime()`.
+  - `app/modules/media-refinery/index.js`: typed `window` export assignment.
+- Fixed backend `@ts-check` issues in extracted modules:
+  - `functions/telegram/send.js`: typed axios CommonJS import as `any` for `.post()` / `.get()`.
+  - `functions/telegram/reports.js`: date arithmetic via `getTime()`.
+  - `functions/telegram/ads.js`: added explicit dependency injection for stateful ads data loaders (`setAdsRevenueDataDependencies`) and wired it from `functions/index.js`.
+- Verification now passes: syntax checks, Jest 6/6, frontend/backend `tsc`, `npm run lint`, backend module ESLint via `npx`, 33 verification scripts, and an ads dependency-injection smoke test.
+
+Remaining warnings are non-blocking ESLint warnings in existing code: 5 frontend warnings from `npm run lint`; 3 backend warnings from `npx eslint functions/utils/ functions/telegram/`.
+
 ## 2026-06-02 - Phase 14 Complete: Backend @ts-check, CI type checking, CODE_MAP expansion, DATA_SCHEMA
 
 Repo: `/home/longnick/projects/xekho`

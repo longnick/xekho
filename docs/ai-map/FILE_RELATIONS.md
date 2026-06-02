@@ -20,6 +20,18 @@ Related files:
   - used by: POS page.
   - notes: currently modified before AI map initialization; inspect diff before editing.
 
+- `app/esm/main.js`
+  - role: Phase E1 browser-module compatibility harness for future ESM migration.
+  - depends on: existing classic runtime being loaded first; reads/creates `window.XekhoApp.esm` only.
+  - used by: `index.html` as `<script type="module">` after offline/classic scripts and before inline DOM helpers.
+  - notes: does not import legacy modules, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
+
+- `app/esm/README.md`
+  - role: ESM migration guardrails and next safe dual-export candidates.
+  - depends on: ESM audit plan in `docs/ai-map/ESM_AUDIT.md`.
+  - used by: future ESM conversion sprints.
+  - notes: keep root `package.json` as `commonjs` until a later package-type strategy sprint.
+
 - `db.js`
   - role: Firestore/Firebase data access helper.
   - depends on: Firebase SDK/config.
@@ -146,7 +158,19 @@ Related files:
   - role: Firebase Functions entry point.
   - depends on: Firebase Admin, functions SDK, helper modules, environment/secrets.
   - used by: deployed Cloud Functions.
-  - notes: currently modified before AI map initialization; do not deploy without review.
+  - notes: currently modified before AI map initialization; do not deploy without review. After tooling cleanup it explicitly injects ads report data-loader dependencies into `functions/telegram/ads.js`.
+
+- `functions/telegram/ads.js`
+  - role: extracted Telegram ads/date/report helper module.
+  - depends on: `functions/telegram/reports.js`, `functions/utils/text.js`, and injected stateful data loaders from `functions/index.js` via `setAdsRevenueDataDependencies()`.
+  - used by: ads report endpoints/webhook flows through thin wrappers in `functions/index.js`.
+  - notes: keep Firestore/API access outside the extracted module; inject loaders rather than relying on implicit globals so backend `@ts-check` remains green.
+
+- `functions/telegram/send.js`
+  - role: Telegram send/edit/photo HTTP helper module.
+  - depends on: axios and `functions/utils/text.js`.
+  - used by: Telegram webhook/report/notification flows through `functions/index.js` wrappers.
+  - notes: axios CommonJS import is typed as `any` to avoid false-positive TypeScript CJS namespace diagnostics.
 
 - `functions/firestoreMegaTools.js`
   - role: Firestore utility/tool layer.

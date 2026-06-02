@@ -6,6 +6,9 @@
 
 - `index.html`: main POS page.
 - `app.js`: main POS application logic and UI orchestration.
+- `app/esm/main.js`: ESM Phase E1 compatibility harness. Loaded as a browser module after the existing classic runtime; sets `window.XekhoApp.esm.harness` and dispatches `xekho:esm-ready` without importing legacy modules.
+- `app/esm/README.md`: ESM migration guardrails and next dual-export candidates.
+- `scripts/verify-esm-entry.js`: Node VM verification for ESM harness load order, readiness marker, and event dispatch behavior.
 - `db.js`: Firebase/Firestore wrapper and data access helper.
 - `offlineBackup.js`: Sprint 1 POS offline backup queue foundation. Provides IndexedDB-backed pending order action storage plus in-memory storage for verification; Sprint 11 also accepts explicit `remove_item` actions.
 - `offlineSync.js`: Sprint 2 adapter-based offline sync engine foundation. Syncs pending/failed queue actions through an injected adapter with idempotency by `clientOrderId`, retry/backoff, and single-flight lock.
@@ -189,7 +192,7 @@ Source: `functions/index.js` (~5,702 lines, 34 exports). Phase 2 extracted 38+ f
 
 ## Extracted Module Inventory
 
-All extracted modules use an IIFE/global namespace pattern (frontend: `window.XekhoApp.*`) or CommonJS `module.exports` (backend).
+All extracted modules use an IIFE/global namespace pattern (frontend: `window.XekhoApp.*`) or CommonJS `module.exports` (backend). Stateful backend dependencies stay wired from `functions/index.js`; for example `functions/telegram/ads.js` receives Firestore/API loaders through `setAdsRevenueDataDependencies()` rather than reading implicit globals.
 
 ### Frontend Modules (19 files)
 
@@ -260,7 +263,7 @@ All extracted modules use an IIFE/global namespace pattern (frontend: `window.Xe
 | `reports.js` | 18 | `getVietnamDateParts`, `normalizeTelegramSmartReportText`, `normalizeTelegramWildcardText`, `buildTelegramWildcardRegex`, `parseTelegramLooseDateTime`, `getInclusiveVietnamDateCount`, `formatAchievementPercent`, `buildMorningRevenueMood`, `coerceHistoryDate`, `formatTelegramDateTimeVi`, `getTelegramPayMethodLabel`, `isTelegramBankPayMethod`, `formatTelegramSmartRangeLabel`, `parseTelegramSmartReportIntent`, `DEFAULT_TELEGRAM_REPORT_SETTINGS`, `getVietnamBusinessReportRange`, `getTelegramReportSettings`, `getTelegramReportRangeKey`, `shouldSendTelegramReportNow` |
 | `orders.js` | 11 | `getHistoryBusinessId`, `getHistoryVersionDate`, `getHistoryVersionTime`, `isCompletedHistoryOrderForReports`, `isVisibleHistoryOrderForReports`, `extractTelegramCashierName`, `pickFirstPresentValue`, `toTelegramMoneyNumber`, `normalizeCompletedOrderItems`, `calculateCompletedOrderSubtotal`, `normalizeCompletedOrderForTelegram` |
 | `online-orders.js` | 9 | `formatTelegramBillItemsClean`, `buildPosItemFromRequest`, `aggregateRequestStatusFromItems`, `buildPosItemFromOnlineOrder`, `buildOnlineOrderTelegramStatusLabel`, `buildOnlineOrderTelegramSummary`, `buildOnlineOrderTelegramStatusLabelClean`, `buildOnlineOrderTelegramSummaryClean`, `mapOnlineOrderStatusFromPosItems` |
-| `ads.js` | 22 | `getVietnamDayRange`, `normalizeVi`, `uniqueTokens`, `parseTimeEntity`, `buildDateRange`, `formatPercentVi`, `formatMultipleVi`, `getVietnamDateYmd`, `formatVietnamDateDisplayFromYmd`, `buildVietnamAbsoluteDayRangeFromYmd`, `buildVietnamAbsoluteRangeFromYmds`, `parseExplicitDateInput`, `getVietnamYesterdayYmd`, `buildAdsDateRangeFromText`, `buildAdsChannelMetrics`, `sumAdsChannels`, `formatIntVi`, `buildAdsChannelLines`, `buildAdsInsightLines`, `buildAdsRevenueDetailedMessage`, `buildAdsRevenueTelegramMessage`, `buildAdsRevenueTelegramData` |
+| `ads.js` | 23 | `getVietnamDayRange`, `normalizeVi`, `uniqueTokens`, `parseTimeEntity`, `buildDateRange`, `formatPercentVi`, `formatMultipleVi`, `getVietnamDateYmd`, `formatVietnamDateDisplayFromYmd`, `buildVietnamAbsoluteDayRangeFromYmd`, `buildVietnamAbsoluteRangeFromYmds`, `parseExplicitDateInput`, `getVietnamYesterdayYmd`, `buildAdsDateRangeFromText`, `buildAdsChannelMetrics`, `sumAdsChannels`, `formatIntVi`, `buildAdsChannelLines`, `buildAdsInsightLines`, `buildAdsRevenueDetailedMessage`, `buildAdsRevenueTelegramMessage`, `buildAdsRevenueTelegramData`, `setAdsRevenueDataDependencies` |
 
 ---
 
