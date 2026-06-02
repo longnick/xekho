@@ -19,6 +19,7 @@ const dbAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'db.js');
 const headerActionsPath = path.join(root, 'app', 'esm', 'ui', 'header-actions.js');
 const imageZoomPath = path.join(root, 'app', 'esm', 'ui', 'image-zoom.js');
 const reportTabsPath = path.join(root, 'app', 'esm', 'ui', 'report-tabs.js');
+const settingsTabsPath = path.join(root, 'app', 'esm', 'ui', 'settings-tabs.js');
 
 function assert(condition, message) {
   if (!condition) {
@@ -39,7 +40,8 @@ const dbAdapterSource = fs.readFileSync(dbAdapterPath, 'utf8');
 const headerActionsSource = fs.readFileSync(headerActionsPath, 'utf8');
 const imageZoomSource = fs.readFileSync(imageZoomPath, 'utf8');
 const reportTabsSource = fs.readFileSync(reportTabsPath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-report-tabs"></script>';
+const settingsTabsSource = fs.readFileSync(settingsTabsPath, 'utf8');
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-settings-tabs"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -56,6 +58,7 @@ assert(entrySource.includes("from './adapters/db.js';"), 'ESM entry must import 
 assert(entrySource.includes("from './ui/header-actions.js';"), 'ESM entry must import header actions UI island');
 assert(entrySource.includes("from './ui/image-zoom.js';"), 'ESM entry must import image zoom UI island');
 assert(entrySource.includes("from './ui/report-tabs.js';"), 'ESM entry must import report tabs UI island');
+assert(entrySource.includes("from './ui/settings-tabs.js';"), 'ESM entry must import settings tabs UI island');
 assert(entrySource.includes('XekhoApp.esm.harness'), 'ESM entry must set XekhoApp.esm.harness');
 assert(entrySource.includes('XekhoApp.esm.facades.dom'), 'ESM entry must record dom facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.format'), 'ESM entry must record format facade readiness');
@@ -77,6 +80,7 @@ assert(dbAdapterSource.includes('export function installDbAdapter'), 'db adapter
 assert(headerActionsSource.includes('export function installHeaderActions'), 'header actions island must export installer');
 assert(imageZoomSource.includes('export function installGlobalImageZoom'), 'image zoom island must export installer');
 assert(reportTabsSource.includes('export function installReportTabs'), 'report tabs island must export installer');
+assert(settingsTabsSource.includes('export function installSettingsTabs'), 'settings tabs island must export installer');
 
 // VM smoke test the harness body by stripping its static import and injecting the imported functions.
 const classicDomSource = fs.readFileSync(path.join(root, 'app', 'utils', 'dom.js'), 'utf8');
@@ -292,6 +296,19 @@ const sandbox = {
     return rootScope.XekhoApp.esm.ui.reportTabs;
   },
 
+  callSettingsTab: function callSettingsTab() {},
+  installSettingsTabs: function installSettingsTabs(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.settingsTabs = {
+      selector: '[data-esm-settings-tab]',
+      installed: true,
+      uninstall: function uninstall() {},
+      callSettingsTab: sandbox.callSettingsTab,
+    };
+    return rootScope.XekhoApp.esm.ui.settingsTabs;
+  },
+
   createImageZoomController: function createImageZoomController() {
     return {
       attach: function attach() {},
@@ -314,7 +331,7 @@ vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e5-report-tabs', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-settings-tabs', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -331,9 +348,12 @@ assert(win.XekhoApp.esm.facades.uiIslands.headerActions.installed === true, 'hea
 assert(win.XekhoApp.esm.facades.uiIslands.headerActions.selectorPresent === true, 'header actions selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.installed === true, 'report tabs marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.selectorPresent === true, 'report tabs selector marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.installed === true, 'settings tabs marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.selectorPresent === true, 'settings tabs selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.imageZoom.attachPresent === true, 'image zoom marker mismatch');
 assert(typeof win.XekhoApp.esm.ui.headerActions.callHeaderAction === 'function', 'header actions island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.reportTabs.callReportTab === 'function', 'report tabs island should install under XekhoApp.esm.ui');
+assert(typeof win.XekhoApp.esm.ui.settingsTabs.callSettingsTab === 'function', 'settings tabs island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.imageZoom.attach === 'function', 'image zoom island should install under XekhoApp.esm.ui');
 assert(win.XekhoApp.utils.dom.escapeHtml('<b>&"\'') === '&lt;b&gt;&amp;&quot;&#39;', 'global escapeHtml should escape HTML');
 assert(win.fmt(1000) === '1K', 'legacy fmt should be installed by format facade');

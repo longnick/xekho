@@ -10,6 +10,7 @@ import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitFor
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
+import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
 /**
  * XE KHO ESM compatibility harness.
@@ -38,6 +39,7 @@ import { callReportTab, installReportTabs } from './ui/report-tabs.js';
   var headerActions = installHeaderActions(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
+  var settingsTabs = installSettingsTabs(anyRoot);
 
   XekhoApp.esm.facades.dom = {
     loaded: true,
@@ -86,6 +88,7 @@ import { callReportTab, installReportTabs } from './ui/report-tabs.js';
     headerActions: headerActions,
     imageZoom: imageZoom,
     reportTabs: reportTabs,
+    settingsTabs: settingsTabs,
   });
 
   XekhoApp.esm.facades.runtimeAdapters = {
@@ -129,6 +132,11 @@ import { callReportTab, installReportTabs } from './ui/report-tabs.js';
       installed: reportTabs.installed === true,
       selectorPresent: reportTabs.selector === '[data-esm-report-tab]',
     },
+    settingsTabs: {
+      callSettingsTabPresent: settingsTabs.callSettingsTab === callSettingsTab,
+      installed: settingsTabs.installed === true,
+      selectorPresent: settingsTabs.selector === '[data-esm-settings-tab]',
+    },
     imageZoom: {
       createImageZoomControllerPresent: typeof createImageZoomController === 'function',
       attachPresent: typeof imageZoom.attach === 'function',
@@ -138,7 +146,7 @@ import { callReportTab, installReportTabs } from './ui/report-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-report-tabs',
+    version: '20260602-e5-settings-tabs',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
