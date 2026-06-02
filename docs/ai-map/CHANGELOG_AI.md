@@ -963,3 +963,9 @@ Task log:
 - Sprint 6.3: `app/report/helpers.js` — 6 pure functions (getReportMenuIngredientKeys, doesOrderMatchReportMenuItem, doesPurchaseMatchReportMenuItem, doesExpenseMatchReportMenuItem, getIngredientMergeSuggestions, getDailyRevenueSnapshotsInRange)
 - All use lazy dependency resolution for cross-module deps
 - Commit: 73081b8
+
+## Phase 7 — 2026-06-02 — ads report, fixed cost, dish cost normalization
+- Sprint 7.1: `app/report/ads.js` — `buildAdsRevenueReportHtml` (96-line pure HTML builder, string concatenation)
+- Sprint 7.2: `app/utils/fixedcost.js` — `getFixedCostProfileForReports` + `_getPayrollProfile` (reads global.appState)
+- Sprint 7.3: extend `app/order/helpers.js` — `_resolveDishCostPerUnit` + `normalizeMenuItemModel` (23 total exports)
+- Commit: 6c8df9f

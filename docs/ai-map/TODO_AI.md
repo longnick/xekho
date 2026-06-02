@@ -65,3 +65,8 @@
 - [x] Sprint 6.1: parser utilities (parsePurchaseText, parsePurchaseJson, getKitchenRoutingLabel, tokenSimilarity, getMenuItemImageUrl)
 - [x] Sprint 6.2: categorize utilities (normalizeExpenseCategoryLabel, detectAdsExpensePlatform, isAdsExpenseEntry, mediaRefineryStatusClass, countInclusiveReportDays)
 - [x] Sprint 6.3: report filter/query helpers (getReportMenuIngredientKeys, doesOrderMatch*, getIngredientMergeSuggestions, getDailyRevenueSnapshotsInRange)
+
+## Phase 7 — 2026-06-02
+- [x] Sprint 7.1: ads revenue report HTML builder (buildAdsRevenueReportHtml)
+- [x] Sprint 7.2: fixed cost/payroll helpers (getFixedCostProfileForReports, _getPayrollProfile)
+- [x] Sprint 7.3: dish cost resolution + menu normalization (_resolveDishCostPerUnit, normalizeMenuItemModel)
