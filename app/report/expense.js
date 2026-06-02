@@ -5,61 +5,81 @@
   var XekhoApp = global.XekhoApp = global.XekhoApp || {};
   XekhoApp.report = XekhoApp.report || {};
 
+  /** @returns {function(number): string} */
   function _resolveFmt() {
     if (typeof global.fmt === 'function') return global.fmt;
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.format && typeof global.XekhoApp.utils.format.compactNumber === 'function') return global.XekhoApp.utils.format.compactNumber;
     return function (n) { return String(n); };
   }
+  /** @returns {function(string): string} */
   function _resolveRepairVietnameseText() {
     if (global.XekhoApp && global.XekhoApp.ui && typeof global.XekhoApp.ui.repairVietnameseText === 'function') return global.XekhoApp.ui.repairVietnameseText;
     if (typeof global.repairVietnameseText === 'function') return global.repairVietnameseText;
     return function (t) { return String(t || ''); };
   }
+  /** @returns {function(string): string} */
   function _resolveNormalizeExpenseCategoryLabel() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.categorize && typeof global.XekhoApp.utils.categorize.normalizeExpenseCategoryLabel === 'function') return global.XekhoApp.utils.categorize.normalizeExpenseCategoryLabel;
     if (typeof global.normalizeExpenseCategoryLabel === 'function') return global.normalizeExpenseCategoryLabel;
     return function (t) { return String(t || ''); };
   }
+  /** @returns {function(string, Object): {fromDate: string, toDate: string}} */
   function _resolveResolvePeriodDateRange() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.date && typeof global.XekhoApp.utils.date.resolvePeriodDateRangePure === 'function') return global.XekhoApp.utils.date.resolvePeriodDateRangePure;
     if (typeof global.resolvePeriodDateRange === 'function') return global.resolvePeriodDateRange;
     return function () { return { fromDate: '', toDate: '' }; };
   }
+  /** @returns {function(): Object} */
   function _resolveGetFixedCostProfileForReports() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.fixedcost && typeof global.XekhoApp.utils.fixedcost.getFixedCostProfileForReports === 'function') return global.XekhoApp.utils.fixedcost.getFixedCostProfileForReports;
     if (typeof global.getFixedCostProfileForReports === 'function') return global.getFixedCostProfileForReports;
     return function () { return {}; };
   }
+  /** @returns {function(string, string): number} */
   function _resolveCountInclusiveReportDays() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.categorize && typeof global.XekhoApp.utils.categorize.countInclusiveReportDays === 'function') return global.XekhoApp.utils.categorize.countInclusiveReportDays;
     if (typeof global.countInclusiveReportDays === 'function') return global.countInclusiveReportDays;
     return function () { return 0; };
   }
+  /** @returns {function(string, Object): Array} */
   function _resolveFilterPurchases() {
     if (typeof global.filterPurchases === 'function') return global.filterPurchases;
     return function () { return []; };
   }
+  /** @returns {function(string, Object): Array} */
   function _resolveFilterExpenses() {
     if (typeof global.filterExpenses === 'function') return global.filterExpenses;
     return function () { return []; };
   }
+  /** @returns {function(): Array} */
   function _resolveGetFilteredReportPurchases() {
     if (typeof global.getFilteredReportPurchases === 'function') return global.getFilteredReportPurchases;
     return function () { return []; };
   }
+  /** @returns {function(): Array} */
   function _resolveGetFilteredReportExpenses() {
     if (typeof global.getFilteredReportExpenses === 'function') return global.getFilteredReportExpenses;
     return function () { return []; };
   }
+  /** @returns {function(number): number} */
   function _resolveNormalizePositiveAmount() {
     if (typeof global.normalizePositiveAmount === 'function') return global.normalizePositiveAmount;
     return function (n) { return Math.max(0, Number(n) || 0); };
   }
+  /** @returns {function(): string} */
   function _resolveUid() {
     if (typeof global.uid === 'function') return global.uid;
     return function () { return 'uid_' + Math.random().toString(36).slice(2, 10); };
   }
 
+  /**
+   * @param {string} period
+   * @param {Object} [opts]
+   * @param {Object} [options]
+   * @param {boolean} [options.includeFixedCost]
+   * @param {boolean} [options.ignoreMenuFilter]
+   * @returns {Object}
+   */
   function buildOperationalExpenseBreakdown(period, opts, options) {
     if (!opts) opts = {};
     if (!options) options = {};

@@ -6,54 +6,73 @@
   XekhoApp.report = XekhoApp.report || {};
 
   // Lazy resolvers for dependencies
+  /** @returns {function(number): string} */
   function _resolveExcelFmtVnInt() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.excel && typeof global.XekhoApp.utils.excel.excelFmtVnInt === 'function') return global.XekhoApp.utils.excel.excelFmtVnInt;
     if (typeof global.excelFmtVnInt === 'function') return global.excelFmtVnInt;
     return function (n) { return String(n); };
   }
+  /** @returns {function(Object, Object): void} */
   function _resolveApplyReportTitleBlock() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.excel && typeof global.XekhoApp.utils.excel.applyReportTitleBlock === 'function') return global.XekhoApp.utils.excel.applyReportTitleBlock;
     if (typeof global.applyReportTitleBlock === 'function') return global.applyReportTitleBlock;
     return function () {};
   }
+  /** @returns {function(Object, number, number): void} */
   function _resolvePaintExcelHeaderRow() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.excel && typeof global.XekhoApp.utils.excel.paintExcelHeaderRow === 'function') return global.XekhoApp.utils.excel.paintExcelHeaderRow;
     if (typeof global.paintExcelHeaderRow === 'function') return global.paintExcelHeaderRow;
     return function () {};
   }
+  /** @returns {function(Object, number, number): void} */
   function _resolvePaintExcelTotalRow() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.excel && typeof global.XekhoApp.utils.excel.paintExcelTotalRow === 'function') return global.XekhoApp.utils.excel.paintExcelTotalRow;
     if (typeof global.paintExcelTotalRow === 'function') return global.paintExcelTotalRow;
     return function () {};
   }
+  /** @returns {function(Object, number, number): void} */
   function _resolveSetRowBorders() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.excel && typeof global.XekhoApp.utils.excel.setRowBorders === 'function') return global.XekhoApp.utils.excel.setRowBorders;
     if (typeof global.setRowBorders === 'function') return global.setRowBorders;
     return function () {};
   }
+  /** @returns {function(string, Object): Array} */
   function _resolveFilterHistory() {
     if (typeof global.filterHistory === 'function') return global.filterHistory;
     return function () { return []; };
   }
+  /** @returns {function(string, Object): Array} */
   function _resolveFilterExpenses() {
     if (typeof global.filterExpenses === 'function') return global.filterExpenses;
     return function () { return []; };
   }
+  /** @returns {function(string, string): void} */
   function _resolveShowToast() {
     if (global.XekhoApp && global.XekhoApp.ui && typeof global.XekhoApp.ui.toast === 'function') return global.XekhoApp.ui.toast;
     if (typeof global.showToast === 'function') return global.showToast;
     return function () {};
   }
+  /** @returns {function(Object): Promise<Object>|null} */
   function _resolveUploadToDrive() {
     if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.storage && typeof global.XekhoApp.utils.storage.uploadFileToGoogleDriveByEndpoint === 'function') return global.XekhoApp.utils.storage.uploadFileToGoogleDriveByEndpoint;
     if (typeof global.uploadFileToGoogleDriveByEndpoint === 'function') return global.uploadFileToGoogleDriveByEndpoint;
     return null;
   }
+  /** @returns {function(): {uploadUrl: string, folderId: string}} */
   function _resolveGetGoogleDriveConfig() {
     if (typeof global.getGoogleDriveConfigFromUi === 'function') return global.getGoogleDriveConfigFromUi;
     return function () { return { uploadUrl: '', folderId: '' }; };
   }
 
+  /**
+   * @param {Object} [override]
+   * @param {string} [override.type]
+   * @param {string} [override.period]
+   * @param {string} [override.date]
+   * @param {boolean} [override.skipLocalDownload]
+   * @param {boolean} [override.uploadToDrive]
+   * @returns {Promise<boolean>}
+   */
   async function exportReportExcel(override) {
     if (override === undefined) override = {};
     var excelFmtVnInt = _resolveExcelFmtVnInt();
