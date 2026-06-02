@@ -13,6 +13,9 @@ const formatFacadePath = path.join(root, 'app', 'esm', 'utils', 'format.js');
 const dateFacadePath = path.join(root, 'app', 'esm', 'utils', 'date.js');
 const excelFacadePath = path.join(root, 'app', 'esm', 'utils', 'excel.js');
 const staffFacadePath = path.join(root, 'app', 'esm', 'auth', 'staff.js');
+const domAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'dom.js');
+const storeAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'store.js');
+const dbAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'db.js');
 
 function assert(condition, message) {
   if (!condition) {
@@ -27,7 +30,10 @@ const formatFacadeSource = fs.readFileSync(formatFacadePath, 'utf8');
 const dateFacadeSource = fs.readFileSync(dateFacadePath, 'utf8');
 const excelFacadeSource = fs.readFileSync(excelFacadePath, 'utf8');
 const staffFacadeSource = fs.readFileSync(staffFacadePath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e2-leaf-facades"></script>';
+const domAdapterSource = fs.readFileSync(domAdapterPath, 'utf8');
+const storeAdapterSource = fs.readFileSync(storeAdapterPath, 'utf8');
+const dbAdapterSource = fs.readFileSync(dbAdapterPath, 'utf8');
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e3-runtime-adapters"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -38,12 +44,16 @@ assert(entrySource.includes("from './utils/format.js';"), 'ESM entry must import
 assert(entrySource.includes("from './utils/date.js';"), 'ESM entry must import date facade');
 assert(entrySource.includes("from './utils/excel.js';"), 'ESM entry must import excel facade');
 assert(entrySource.includes("from './auth/staff.js';"), 'ESM entry must import staff auth facade');
+assert(entrySource.includes("from './adapters/dom.js';"), 'ESM entry must import dom adapter');
+assert(entrySource.includes("from './adapters/store.js';"), 'ESM entry must import store adapter');
+assert(entrySource.includes("from './adapters/db.js';"), 'ESM entry must import db adapter');
 assert(entrySource.includes('XekhoApp.esm.harness'), 'ESM entry must set XekhoApp.esm.harness');
 assert(entrySource.includes('XekhoApp.esm.facades.dom'), 'ESM entry must record dom facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.format'), 'ESM entry must record format facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.date'), 'ESM entry must record date facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.excel'), 'ESM entry must record excel facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.authStaff'), 'ESM entry must record auth staff facade readiness');
+assert(entrySource.includes('XekhoApp.esm.facades.runtimeAdapters'), 'ESM entry must record runtime adapter readiness');
 assert(entrySource.includes('xekho:esm-ready'), 'ESM entry must dispatch xekho:esm-ready when possible');
 assert(domFacadeSource.includes('export function escapeHtml'), 'dom facade must export escapeHtml');
 assert(domFacadeSource.includes('export function installGlobalDomUtils'), 'dom facade must export installer');
@@ -51,6 +61,9 @@ assert(formatFacadeSource.includes('export function installGlobalFormatUtils'), 
 assert(dateFacadeSource.includes('export function installGlobalDateUtils'), 'date facade must export installer');
 assert(excelFacadeSource.includes('export function installGlobalExcelUtils'), 'excel facade must export installer');
 assert(staffFacadeSource.includes('export function installGlobalStaffAuth'), 'staff facade must export installer');
+assert(domAdapterSource.includes('export function installDomAdapter'), 'dom adapter must export installer');
+assert(storeAdapterSource.includes('export function installStoreAdapter'), 'store adapter must export installer');
+assert(dbAdapterSource.includes('export function installDbAdapter'), 'db adapter must export installer');
 
 // VM smoke test the harness body by stripping its static import and injecting the imported functions.
 const classicDomSource = fs.readFileSync(path.join(root, 'app', 'utils', 'dom.js'), 'utf8');
@@ -176,13 +189,76 @@ const sandbox = {
     };
     return rootScope.XekhoApp.auth;
   },
+
+  getDocument: function getDocument() { return win.document || null; },
+  qs: function qs() { return null; },
+  qsa: function qsa() { return []; },
+  on: function on() { return function noopOff() {}; },
+  off: function off() {},
+  installDomAdapter: function installDomAdapter(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.adapters = rootScope.XekhoApp.esm.adapters || {};
+    rootScope.XekhoApp.esm.adapters.dom = {
+      getDocument: sandbox.getDocument,
+      qs: sandbox.qs,
+      qsa: sandbox.qsa,
+      on: sandbox.on,
+      off: sandbox.off,
+    };
+    return rootScope.XekhoApp.esm.adapters.dom;
+  },
+  getStore: function getStore(globalScope) { return (globalScope || win).Store || null; },
+  getAppState: function getAppState(globalScope) { return (globalScope || win).appState || null; },
+  isAppStateReady: function isAppStateReady(globalScope) { return Boolean((globalScope || win).appState?.ready); },
+  readAppStateKey: function readAppStateKey(key, fallback, globalScope) {
+    var state = (globalScope || win).appState || {};
+    return Object.prototype.hasOwnProperty.call(state, key) ? state[key] : fallback;
+  },
+  getMenu: function getMenu() { return []; },
+  getInventory: function getInventory() { return []; },
+  getSettings: function getSettings() { return {}; },
+  getCurrentUser: function getCurrentUser() { return null; },
+  createStateSnapshot: function createStateSnapshot() { return { ready: true }; },
+  installStoreAdapter: function installStoreAdapter(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.adapters = rootScope.XekhoApp.esm.adapters || {};
+    rootScope.XekhoApp.esm.adapters.store = {
+      getStore: sandbox.getStore,
+      getAppState: sandbox.getAppState,
+      isAppStateReady: sandbox.isAppStateReady,
+      readAppStateKey: sandbox.readAppStateKey,
+      getMenu: sandbox.getMenu,
+      getInventory: sandbox.getInventory,
+      getSettings: sandbox.getSettings,
+      getCurrentUser: sandbox.getCurrentUser,
+      createStateSnapshot: sandbox.createStateSnapshot,
+    };
+    return rootScope.XekhoApp.esm.adapters.store;
+  },
+  getDB: function getDB(globalScope) { return (globalScope || win).DB || null; },
+  isDBReady: function isDBReady(globalScope) { return Boolean((globalScope || win).DB); },
+  waitForDB: function waitForDB(globalScope) { return Promise.resolve((globalScope || win).DB); },
+  getDBSection: function getDBSection(name, globalScope) { return ((globalScope || win).DB || {})[name] || null; },
+  callDBMethod: async function callDBMethod() { return null; },
+  installDbAdapter: function installDbAdapter(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.adapters = rootScope.XekhoApp.esm.adapters || {};
+    rootScope.XekhoApp.esm.adapters.db = {
+      getDB: sandbox.getDB,
+      isDBReady: sandbox.isDBReady,
+      waitForDB: sandbox.waitForDB,
+      getDBSection: sandbox.getDBSection,
+      callDBMethod: sandbox.callDBMethod,
+    };
+    return rootScope.XekhoApp.esm.adapters.db;
+  },
 };
 vm.createContext(sandbox);
 vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e2-leaf-facades', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e3-runtime-adapters', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -190,6 +266,10 @@ assert(win.XekhoApp.esm.facades.format.loaded === true, 'format facade marker sh
 assert(win.XekhoApp.esm.facades.date.loaded === true, 'date facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.excel.loaded === true, 'excel facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.authStaff.loaded === true, 'auth staff facade marker should be loaded');
+assert(win.XekhoApp.esm.facades.runtimeAdapters.loaded === true, 'runtime adapter marker should be loaded');
+assert(win.XekhoApp.esm.facades.runtimeAdapters.dom.qsPresent === true, 'dom adapter marker mismatch');
+assert(win.XekhoApp.esm.facades.runtimeAdapters.store.getAppStatePresent === true, 'store adapter marker mismatch');
+assert(win.XekhoApp.esm.facades.runtimeAdapters.db.waitForDBPresent === true, 'db adapter marker mismatch');
 assert(win.XekhoApp.utils.dom.escapeHtml('<b>&"\'') === '&lt;b&gt;&amp;&quot;&#39;', 'global escapeHtml should escape HTML');
 assert(win.fmt(1000) === '1K', 'legacy fmt should be installed by format facade');
 assert(win.XekhoApp.auth.getStaffIdentity() === 's1', 'auth staff facade should install auth namespace');

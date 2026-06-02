@@ -7,7 +7,7 @@ Branch: `test/xe-kho-repo-implementer-skill`
 
 The repo is **not ready for one-shot ESM conversion**. Vite is installed and verified, and Phase E1 now provides a safe module-script bridge, but the app still mostly runs as classic-script/IIFE/global code. The safe path remains a staged frontend-only ESM migration that starts with leaf helpers and keeps compatibility globals until all inline handlers and global call sites are removed.
 
-Current ESM readiness estimate: **~43%**.
+Current ESM readiness estimate: **~50%**.
 
 E1/E2 status:
 
@@ -17,10 +17,12 @@ E1/E2 status:
 - `scripts/verify-esm-entry.js` verifies load order, readiness marker, all E2 facade markers, and event behavior.
 - `app/esm/utils/dom.js`, `format.js`, `date.js`, `excel.js`, and `app/esm/auth/staff.js` are ESM leaf facades with installers that preserve classic globals/namespaces.
 - `scripts/verify-esm-dom-utils.js` and `scripts/verify-esm-leaf-facades.js` verify native dynamic imports plus global installers.
+- `app/esm/adapters/dom.js`, `store.js`, and `db.js` provide Phase E3 importable runtime adapters without importing `app.js` or Firebase directly.
+- `scripts/verify-esm-runtime-adapters.js` verifies DOM querying/events, read-only Store/appState access, and async DB readiness behavior.
 
 - Build tooling readiness: **~80%** — Vite config, npm scripts, TypeScript checks, and build command are present and working.
-- Frontend module boundary readiness: **~50%** — 19 extracted `app/` IIFE modules exist, and 5 low-risk leaf helpers now have importable ESM facades.
-- Runtime entry readiness: **~20%** — `app.js`, `store.js`, AI/offline scripts, and inline handlers still depend heavily on global script order.
+- Frontend module boundary readiness: **~56%** — 19 extracted `app/` IIFE modules exist, 5 low-risk leaf helpers have importable ESM facades, and 3 runtime adapters are importable.
+- Runtime entry readiness: **~32%** — ESM can now access DOM/Store/appState/DB through adapters, but `app.js`, AI/offline scripts, and inline handlers still depend heavily on global script order.
 - Backend ESM readiness: **~10%** — package is `commonjs`; Cloud Functions and Node scripts are CommonJS. Backend should stay CommonJS until frontend migration is stable.
 
 ## Evidence from audit
@@ -145,19 +147,19 @@ Pattern:
 Risk: low to medium.
 Expected time: 2–4 hours for first 5 modules.
 
-### Phase E3 — Extract runtime adapters before importing app state
+### Phase E3 — Extract runtime adapters before importing app state — COMPLETE
 
 Goal: avoid importing `app.js` monolith into ESM.
 
-Actions:
+Completed:
 
-1. Create `app/esm/adapters/dom.js` for DOM query/event helpers.
-2. Create `app/esm/adapters/store.js` that wraps `window.Store` and `window.appState` read-only access.
-3. Create `app/esm/adapters/db.js` that waits for `window.DB` and exposes promise-based access.
-4. Add verification scripts for async `window.DB` readiness behavior.
+1. Created `app/esm/adapters/dom.js` for DOM query/event helpers.
+2. Created `app/esm/adapters/store.js` that wraps `window.Store` and `window.appState` read-only access.
+3. Created `app/esm/adapters/db.js` that waits for `window.DB` and exposes promise-based access.
+4. Added `scripts/verify-esm-runtime-adapters.js` for DOM, Store/appState, and async `window.DB` readiness behavior.
+5. Updated `app/esm/main.js` to install adapters under `window.XekhoApp.esm.adapters.*` and mark `runtimeAdapters` readiness.
 
-Risk: medium.
-Expected time: 1 day.
+Risk: medium; verified without POS/backend/data mutations.
 
 ### Phase E4 — Convert leaf UI components only after adapter exists
 
@@ -200,12 +202,11 @@ Expected time: separate planning sprint.
 
 ## Recommended immediate next sprint
 
-Move to **Phase E3 runtime adapters** before importing any stateful code:
+Move to **Phase E4 first isolated UI island** only after reviewing handler/global coupling:
 
-- Add `app/esm/adapters/dom.js` for query/event helpers that do not depend on `app.js`.
-- Add `app/esm/adapters/store.js` as a read-only wrapper around `window.Store`/`window.appState`.
-- Add `app/esm/adapters/db.js` that waits for `window.DB` readiness without importing Firebase/Cloud Functions directly.
-- Keep root `package.json` as `commonjs`, keep classic scripts, and verify with ESM smoke tests plus check/tsc/test/lint/build.
+- Candidate: image zoom/touch helper cluster or another low-risk UI component that can keep global wrappers.
+- Use the E3 DOM/Store/DB adapters instead of importing `app.js`.
+- Keep root `package.json` as `commonjs`, keep classic scripts and inline/global handlers until each island is migrated safely, and verify with ESM smoke tests plus check/tsc/test/lint/build.
 
 ## Do not do now
 
