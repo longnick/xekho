@@ -9,6 +9,7 @@ import { createStateSnapshot, getAppState, getCurrentUser, getInventory, getMenu
 import { callDBMethod, getDB, getDBSection, installDbAdapter, isDBReady, waitForDB } from './adapters/db.js';
 import { callHeaderAction, installHeaderActions } from './ui/header-actions.js';
 import { createImageZoomController, installGlobalImageZoom } from './ui/image-zoom.js';
+import { callReportTab, installReportTabs } from './ui/report-tabs.js';
 
 /**
  * XE KHO ESM compatibility harness.
@@ -36,6 +37,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
   var dbAdapter = installDbAdapter(anyRoot);
   var headerActions = installHeaderActions(anyRoot);
   var imageZoom = installGlobalImageZoom(anyRoot);
+  var reportTabs = installReportTabs(anyRoot);
 
   XekhoApp.esm.facades.dom = {
     loaded: true,
@@ -83,6 +85,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
   XekhoApp.esm.ui = Object.assign({}, XekhoApp.esm.ui, {
     headerActions: headerActions,
     imageZoom: imageZoom,
+    reportTabs: reportTabs,
   });
 
   XekhoApp.esm.facades.runtimeAdapters = {
@@ -121,6 +124,11 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
       installed: headerActions.installed === true,
       selectorPresent: headerActions.selector === '[data-esm-header-action]',
     },
+    reportTabs: {
+      callReportTabPresent: reportTabs.callReportTab === callReportTab,
+      installed: reportTabs.installed === true,
+      selectorPresent: reportTabs.selector === '[data-esm-report-tab]',
+    },
     imageZoom: {
       createImageZoomControllerPresent: typeof createImageZoomController === 'function',
       attachPresent: typeof imageZoom.attach === 'function',
@@ -130,7 +138,7 @@ import { createImageZoomController, installGlobalImageZoom } from './ui/image-zo
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-header-actions',
+    version: '20260602-e5-report-tabs',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),

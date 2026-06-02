@@ -301,3 +301,12 @@ Related files:
   - depends on: browser `document` and existing global handlers (`openAIAssistant`, `openStockAlertPopup`, `hardReloadApp`, `handleLogout`).
   - used by: `app/esm/main.js`, `index.html` header buttons with `data-esm-header-action`, `scripts/verify-esm-header-actions.js`.
   - notes: removes inline handlers only from the four static header buttons; other inline handlers remain for later E5 islands.
+
+
+## ESM Phase E5.2 relations
+
+- `app/esm/ui/report-tabs.js`
+  - role: delegated click handler island for static report tab buttons.
+  - depends on: browser `document` and existing global `switchReportTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` report buttons with `data-esm-report-tab`, `scripts/verify-esm-report-tabs.js`.
+  - notes: removes inline handlers only from the four static report tab buttons; report filters and other report actions remain for later E5 islands.

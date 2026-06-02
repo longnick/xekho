@@ -84,7 +84,7 @@ async function main() {
   const main = fs.readFileSync(mainPath, 'utf8');
   assert(main.includes("./ui/header-actions.js"), 'main.js should import header-actions');
   assert(main.includes('installHeaderActions(anyRoot)'), 'main.js should install header actions');
-  assert(main.includes('20260602-e5-header-actions'), 'main.js version not bumped for E5');
+  assert(main.includes('20260602-e5-'), 'main.js version not bumped for E5');
 
   console.log('verify-esm-header-actions passed', {
     exports: Object.keys(mod).sort(),
