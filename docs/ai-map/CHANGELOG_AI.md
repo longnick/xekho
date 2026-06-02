@@ -1,5 +1,31 @@
 # AI Changelog
 
+## 2026-06-02 - Phase 14 Complete: Backend @ts-check, CI type checking, CODE_MAP expansion, DATA_SCHEMA
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Phase 14 completed four sprints: backend `@ts-check` + JSDoc for all 8 Cloud Functions modules, `tsc --noEmit` added to CI pipeline, `CODE_MAP.md` expanded from 210→474 lines covering all 34 Cloud Functions and 27 modules with data flows, and `DATA_SCHEMA.md` created (855 lines) documenting 33+ Firestore collections.
+
+- Sprint 14.1: Backend `@ts-check` + JSDoc annotations for all 8 backend modules (`functions/utils/text.js`, `functions/utils/general.js`, `functions/telegram/send.js`, `functions/telegram/kitchen.js`, `functions/telegram/reports.js`, `functions/telegram/ads.js`, `functions/telegram/orders.js`, `functions/telegram/online-orders.js`)
+- Sprint 14.2: `tsc --noEmit` added to CI pipeline for both frontend and backend type checking
+- Sprint 14.3: `CODE_MAP.md` expanded (210→474 lines) — all 34 Cloud Functions documented, all 27 modules mapped, data flow diagrams added
+- Sprint 14.4: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections documented with field schemas, indexes, and security rules
+
+Current state after Phase 14:
+- `app.js`: 11,895 lines (397 functions, 73 with delegation wrappers)
+- `functions/index.js`: 5,702 lines (200 functions, 100 with delegation wrappers)
+- 28 extracted modules (8 backend + 20 frontend)
+- ~150+ exported functions with JSDoc annotations (frontend + backend)
+- 34 Cloud Functions documented in CODE_MAP.md
+- 33+ Firestore collections documented in DATA_SCHEMA.md
+- `tsc --noEmit` passes with 0 type errors (frontend + backend)
+- CI pipeline includes type checking
+- 33+ verification scripts — all pass
+- Jest 6/6 pass
+
+Progress: ~65% total / ~72% core / ~99% near-term.
+
 ## 2026-06-02 - Phase 13 Complete: TypeScript JSDoc migration (@ts-check + JSDoc annotations)
 
 Repo: `/home/longnick/projects/xekho`

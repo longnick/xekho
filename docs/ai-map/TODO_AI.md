@@ -3,11 +3,11 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 13 COMPLETE: TypeScript JSDoc migration. All 18 frontend modules have @ts-check + JSDoc annotations on ~150+ exported functions. jsconfig.json created. tsc --noEmit passes with 0 type errors. All 33 verification scripts pass, Jest 6/6.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections).
 - Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~58% complete.
- - Core non-optional refactor/security/testing plan: ~65% complete.
- - Near-term safe-execution track: ~97% complete.
+ - Total long-term plan including optional TypeScript/CI/build tooling: ~65% complete.
+ - Core non-optional refactor/security/testing plan: ~72% complete.
+ - Near-term safe-execution track: ~99% complete.
 
 ## Next
 
@@ -28,12 +28,14 @@
   - `git diff --stat`
   - `git diff -- <file>` for files to be edited.
 - Update this AI map after each future coding/refactor task.
-- Expand `CODE_MAP.md` Cloud Functions endpoint/API section after a dedicated read of `functions/index.js`.
-- Expand data schema notes after a dedicated read of `README.md`, `db.js`, and relevant Firestore helpers.
 - Consider targeted commit staging of all 28 extracted modules and verification scripts.
 - Remaining ~30 functions in `functions/index.js` depend on db/admin/config and should stay inline for now.
-- Consider adding `@ts-check` + JSDoc to backend modules (`functions/`) if Firebase Admin types can be resolved.
-- Consider adding `tsc --noEmit` to CI/pre-commit hooks.
+- ~~Consider adding `@ts-check` + JSDoc to backend modules~~ — Done in Phase 14.1.
+- ~~Consider adding `tsc --noEmit` to CI/pre-commit hooks~~ — Done in Phase 14.2.
+- Expand `CODE_MAP.md` — Done in Phase 14.3 (210→474 lines, 34 Cloud Functions, 27 modules).
+- Expand data schema notes — Done in Phase 14.4 (`DATA_SCHEMA.md` created, 855 lines, 33+ Firestore collections).
+- Consider ES module conversion planning for proper Vite tree-shaking.
+- Consider deeper frontend extraction (remaining state-dependent POS functions in app.js).
 
 ## Blocked
 
@@ -51,9 +53,10 @@
 - Import/backfill scripts may mutate database/POS history; do not run casually.
 - Immediate ES modules/Vite migration may break global script order and browser runtime assumptions; use compatibility-first extraction.
 - Vite spike merged but IIFE→ESM conversion not yet started; dev server serves IIFE files as static assets.
-- TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules not yet annotated.
+- TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14.
 
 ## Done recently
+- 2026-06-02: Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, tsc --noEmit in CI, CODE_MAP.md expanded (210→474 lines, 34 Cloud Functions, 27 modules, data flows), DATA_SCHEMA.md created (855 lines, 33+ Firestore collections). Progress: ~65% total / ~72% core / ~99% near-term.
 - 2026-06-02: Phase 13 COMPLETE: TypeScript JSDoc migration. Created jsconfig.json, added @ts-check to all 18 frontend modules, added JSDoc annotations to ~150+ exported functions. tsc --noEmit passes with 0 type errors. 33 verification scripts pass, Jest 6/6. Progress: ~58% total / ~65% core / ~97% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase13-typescript-jsdoc.md`
 
 - 2026-06-02: Phase 12 COMPLETE: Rebased and merged `spike/vite-build-tooling` into `test/xe-kho-repo-implementer-skill`. Vite build verified (dist/ with index.html, main.js 103KB, main.css 57KB, manifest). All 33 verification scripts pass, Jest 6/6, git tree clean. Progress: ~52% total / ~60% core / ~95% near-term. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-phase12-vite-spike-merged.md`
@@ -102,3 +105,9 @@
 - [x] Sprint 13.1: Created jsconfig.json, added @ts-check to all 18 frontend modules
 - [x] Sprint 13.2: Added JSDoc annotations to 3 complex modules (order/helpers.js, report/excel.js, report/expense.js)
 - [x] tsc --noEmit passes with 0 type errors
+
+## Phase 14 — 2026-06-02
+- [x] Sprint 14.1: Backend `@ts-check` + JSDoc annotations for all 8 backend modules
+- [x] Sprint 14.2: `tsc --noEmit` added to CI pipeline (frontend + backend)
+- [x] Sprint 14.3: `CODE_MAP.md` expanded (210→474 lines) — 34 Cloud Functions, 27 modules, data flows
+- [x] Sprint 14.4: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections, field schemas, indexes
