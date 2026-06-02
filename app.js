@@ -6795,6 +6795,7 @@ function resolvePeriodDateRange(period, opts = {}) {
 }
 
 function buildOperationalExpenseBreakdown(period, opts = {}, options = {}) {
+  if (window.XekhoApp?.report?.buildOperationalExpenseBreakdown) return window.XekhoApp.report.buildOperationalExpenseBreakdown(period, opts, options);
   const includeFixedCost = options.includeFixedCost !== false;
   const ignoreMenuFilter = options.ignoreMenuFilter !== false;
   const purchases = ignoreMenuFilter ? filterPurchases(period, opts) : getFilteredReportPurchases();
@@ -10739,6 +10740,7 @@ function setRowBorders(ws, rowIndex, colCount) {
 }
 
 async function exportReportExcel(override = {}) {
+  if (window.XekhoApp?.report?.exportReportExcel) return window.XekhoApp.report.exportReportExcel(override);
   const typeEl   = document.getElementById('set-reportExportType');
   const periodEl = document.getElementById('set-reportExportPeriod');
   const dateEl   = document.getElementById('set-reportExportDate');
@@ -11350,6 +11352,7 @@ function isGoogleAppsScriptWebAppUrl(u) {
  * Nếu vẫn Failed to fetch: thử mode no-cors (không đọc được phản hđi, coi như đã gửi).
  */
 async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
+  if (window.XekhoApp?.utils?.storage?.uploadFileToGoogleDriveByEndpoint) return window.XekhoApp.utils.storage.uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob });
   const url = normalizeGoogleScriptWebAppUrl(uploadUrl);
   if(!url) {
     throw new Error('Thiếu URL Web App.');

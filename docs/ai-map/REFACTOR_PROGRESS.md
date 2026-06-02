@@ -6,9 +6,9 @@
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~32% complete**.
-- Core non-optional refactor/security/testing plan: **~37% complete**.
-- Near-term safe-execution track: **~76% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~35% complete**.
+- Core non-optional refactor/security/testing plan: **~40% complete**.
+- Near-term safe-execution track: **~80% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -124,3 +124,8 @@ These percentages are conservative because the repo is production-adjacent and s
 ## Recommended next sprint
 
 Sprints 1.7 and 3.3 complete. Remaining: POS state-dependent functions (order sync, online order CRUD) stay in `app.js`. Next: deeper extraction or commit staging. once baseline tests/smoke are available. Remaining ~30 functions in `functions/index.js` that depend on db/admin/config should stay inline. — extract domain handler groups (Telegram message sending infrastructure, kitchen notifications, or Telegram report helpers). Each group should be a separate small sprint following the same require/delegate pattern. Alternatively, start Phase 3 Sprint 3.3 (targeted ESLint) for code quality.
+
+### Phase 8 — 2026-06-02
+- [x] Sprint 8.1: uploadFileToGoogleDriveByEndpoint → app/utils/storage.js (pure HTTP utility, 94 lines)
+- [x] Sprint 8.2: exportReportExcel → app/report/excel.js (573 lines, largest function in app.js, 5 sheet builders)
+- [x] Sprint 8.3: buildOperationalExpenseBreakdown → app/report/expense.js (86 lines, mixed-purity report builder)
