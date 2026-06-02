@@ -105,7 +105,7 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">🪑 Sơ đồ bàn</div>
-            <button class="btn btn-sm btn-secondary" onclick="renderTables()">🔄 Làm mới</button>
+            <button class="btn btn-sm btn-secondary" data-esm-admin-render="renderTables">🔄 Làm mới</button>
           </div>
           <div class="table-grid" id="table-grid"></div>
         </div>
@@ -151,7 +151,7 @@
             <div class="search-wrap" style="margin-bottom:10px">
               <span class="search-icon">🔍</span>
               <input class="input" id="order-search" placeholder="Tìm món..."
-                oninput="menuSearch=this.value;renderMenuItems()">
+                data-esm-menu-items-search>
             </div>
             <div class="cat-tabs" id="cat-tabs"></div>
             <div class="menu-grid" id="menu-grid"></div>
@@ -251,9 +251,9 @@
           <div class="search-wrap" style="display:flex;gap:8px">
             <div style="flex:1;position:relative">
               <span class="search-icon">🔍</span>
-              <input class="input" id="inv-search" placeholder="Tìm nguyên liệu..." oninput="renderStockList()">
+              <input class="input" id="inv-search" placeholder="Tìm nguyên liệu..." data-esm-admin-render="renderStockList">
             </div>
-            <select class="select" id="inv-type-filter" style="flex:0 0 180px;max-width:180px" onchange="renderStockList()">
+            <select class="select" id="inv-type-filter" style="flex:0 0 180px;max-width:180px" data-esm-admin-render="renderStockList">
               <option value="all">Tất cả</option>
               <option value="raw_material">Nguyên liệu</option>
               <option value="retail_item">Hàng bán thẳng</option>
@@ -469,7 +469,7 @@
             <button class="btn btn-sm btn-primary" onclick="openAddMenuModal()">+ Thêm món</button>
           </div>
           <div class="search-wrap" style="margin-bottom:12px">
-            <input class="input" id="menu-search" placeholder="Tìm tên món..." oninput="renderMenuAdmin()">
+            <input class="input" id="menu-search" placeholder="Tìm tên món..." data-esm-admin-render="renderMenuAdmin">
           </div>
           <div id="menu-admin-list"></div>
         </div>
@@ -1001,7 +1001,7 @@
         </div>
         <div class="search-wrap">
           <span class="search-icon">🔍</span>
-          <input class="input" id="menu-admin-search" placeholder="Tìm món..." oninput="renderMenuAdmin()">
+          <input class="input" id="menu-admin-search" placeholder="Tìm món..." data-esm-admin-render="renderMenuAdmin">
         </div>
         <div id="menu-admin-list"></div>
       </div>
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-render-refresh-controls"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-admin-render-controls"></script>
   <script>
     // Extra helpers that reference DOM
 
