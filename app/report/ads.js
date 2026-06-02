@@ -1,13 +1,47 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
 
+  /** @returns {function(*): string} */
   function _resolveFmt() {
-    if (typeof global.fmt === 'function') return global.fmt;
-    if (global.XekhoApp && global.XekhoApp.utils && global.XekhoApp.utils.format && typeof global.XekhoApp.utils.format.compactNumber === 'function') return global.XekhoApp.utils.format.compactNumber;
+    if (typeof _global.fmt === 'function') return _global.fmt;
+    if (_global.XekhoApp && _global.XekhoApp.utils && _global.XekhoApp.utils.format && typeof _global.XekhoApp.utils.format.compactNumber === 'function') return _global.XekhoApp.utils.format.compactNumber;
     return function (v) { return String(v || 0); };
   }
 
+  /**
+   * @param {Object} summary
+   * @param {number} [summary.posRevenue]
+   * @param {number} [summary.grossProfit]
+   * @param {number} [summary.orderCount]
+   * @param {number} [summary.cogsTotal]
+   * @param {number} [summary.adsSpendTotal]
+   * @param {number} [summary.roas]
+   * @param {number} [summary.itemQty]
+   * @param {string} [summary.fromDate]
+   * @param {string} [summary.toDate]
+   * @param {number} [summary.fixedCostDaily]
+   * @param {number} [summary.reportDays]
+   * @param {number} [summary.facebookAdsSpend]
+   * @param {number} [summary.tiktokAdsSpend]
+   * @param {number} [summary.otherAdsSpend]
+   * @param {number} [summary.purchaseSpend]
+   * @param {number} [summary.otherExpenseSpend]
+   * @param {number} [summary.managementSalaryTotal]
+   * @param {number} [summary.otherFixedCostTotal]
+   * @param {number} [summary.netAfterAdsAndExpenses]
+   * @param {number} [summary.dailyManagementSalary]
+   * @param {boolean} [summary.fixedCostConfigured]
+   * @param {number} [summary.snapshotAdsDays]
+   * @param {number} [summary.expenseAdsDays]
+   * @param {number} [summary.adsEntriesCount]
+   * @param {string} [summary.dataSourceNote]
+   * @returns {string}
+   */
   function buildAdsRevenueReportHtml(summary) {
     summary = summary || {};
     var fmt = _resolveFmt();

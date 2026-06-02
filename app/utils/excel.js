@@ -1,8 +1,13 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @returns {{ top: Object, left: Object, bottom: Object, right: Object }} */
   function excelThinBorder() {
     var color = { argb: 'FFAAAAAA' };
     return {
@@ -13,6 +18,7 @@
     };
   }
 
+  /** @param {number} n @returns {string} */
   function excelColLetter(n) {
     var s = '';
     var x = n;
@@ -24,10 +30,12 @@
     return s;
   }
 
+  /** @param {*} n @returns {string} */
   function excelFmtVnInt(n) {
     return (Math.round(Number(n) || 0)).toLocaleString('vi-VN');
   }
 
+  /** @param {Object} ws @param {{ title?: string, periodLabel?: string, exportDateStr?: string, lastCol?: number }} [opts] @returns {void} */
   function applyReportTitleBlock(ws, opts) {
     opts = opts || {};
     var title = opts.title || '';
@@ -59,6 +67,7 @@
     ws.getRow(4).height = 6;
   }
 
+  /** @param {Object} ws @param {number} rowIndex @param {number} colCount @returns {void} */
   function paintExcelHeaderRow(ws, rowIndex, colCount) {
     var row = ws.getRow(rowIndex);
     for (var c = 1; c <= colCount; c++) {
@@ -70,6 +79,7 @@
     row.height = 22;
   }
 
+  /** @param {Object} ws @param {number} rowIndex @param {number} colCount @returns {void} */
   function paintExcelTotalRow(ws, rowIndex, colCount) {
     var row = ws.getRow(rowIndex);
     for (var c = 1; c <= colCount; c++) {
@@ -79,6 +89,7 @@
     }
   }
 
+  /** @param {Object} ws @param {number} rowIndex @param {number} colCount @returns {void} */
   function setRowBorders(ws, rowIndex, colCount) {
     for (var c = 1; c <= colCount; c++) {
       ws.getRow(rowIndex).getCell(c).border = excelThinBorder();

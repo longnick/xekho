@@ -1,8 +1,13 @@
+// @ts-check
 (function (global) {
   'use strict';
-  var XekhoApp = global.XekhoApp = global.XekhoApp || {};
+  /** @type {any} */
+  var _global = global;
+  /** @type {any} */
+  var XekhoApp = _global.XekhoApp = _global.XekhoApp || {};
   XekhoApp.utils = XekhoApp.utils || {};
 
+  /** @param {string} printableMarkup @returns {string} */
   function buildStandaloneBillPrintHtml(printableMarkup) {
     return '<!DOCTYPE html>\n' +
       '<html lang="vi">\n' +
