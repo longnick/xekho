@@ -10,7 +10,7 @@ const MEDIA_REFINERY_ALLOWED_STATUSES = [
 ];
 
 if (typeof window !== 'undefined') {
-  window.MEDIA_REFINERY_ALLOWED_STATUSES = MEDIA_REFINERY_ALLOWED_STATUSES;
+  /** @type {any} */ (window).MEDIA_REFINERY_ALLOWED_STATUSES = MEDIA_REFINERY_ALLOWED_STATUSES;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
