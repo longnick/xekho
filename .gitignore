@@ -25,3 +25,5 @@ functions-list.json
 .firebase/hosting..cache
 firebase-debug.log
 functions-list.json
+dist
+node_modules/.vite
