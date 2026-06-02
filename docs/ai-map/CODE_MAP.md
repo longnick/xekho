@@ -516,3 +516,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.5 Inventory Tabs
 
 - `app/esm/ui/inventory-tabs.js`: importable delegated inventory tab island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.inventoryTabs`; replaces five inventory tab inline handlers with `data-esm-inventory-tab`. Verified by `scripts/verify-esm-inventory-tabs.js`.
+
+
+## ESM Phase E5.6 Finance Period Controls
+
+- `app/esm/ui/finance-period.js`: importable delegated finance period island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.financePeriod`; replaces five finance period inline handlers with `data-esm-finance-period`. Verified by `scripts/verify-esm-finance-period.js`.
