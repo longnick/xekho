@@ -3,11 +3,11 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Sprint 9 completed Phase 2 Sprint 2.1+2.2: mapped all 35 exports in `functions/index.js`, extracted 11 pure text/formatting utilities into `functions/utils/text.js`.
+- Phase 10 Sprint 10.1 completed: extracted 11 pure Telegram report helpers into `functions/telegram/reports.js`, reduced `functions/index.js` by 115 lines.
 - Current conservative progress estimate:
-  - Total long-term plan including optional TypeScript/CI/build tooling: ~21% complete.
-  - Core non-optional refactor/security/testing plan: ~25% complete.
-  - Near-term safe-execution track: ~52% complete.
+  - Total long-term plan including optional TypeScript/CI/build tooling: ~37% complete.
+  - Core non-optional refactor/security/testing plan: ~42% complete.
+  - Near-term safe-execution track: ~85% complete.
 
 ## Next
 
