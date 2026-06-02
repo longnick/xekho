@@ -1,62 +1,89 @@
-# Staging Review - Safe Refactor Sprint 4
+# Staging Review — 2026-06-02 10:22
 
-**Time:** 2026-06-02 00:44
-**Repo:** `/home/longnick/projects/xekho`
-**Branch:** `test/xe-kho-repo-implementer-skill`
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+Purpose: clear the current dirty tree safely after the tooling cleanup, ESM audit, and ESM Phase E1 harness work.
 
-## Purpose
+## Safety rules followed
 
-Sprint 4 direction 1: split the large dirty tree into explicit reviewed staging groups without using `git add -A` and without reading secret contents.
+- No `git add -A`.
+- No destructive commands.
+- No secret files read or staged.
+- No deploy, no production database, no migration, no POS/payment/customer data mutation.
+- Staged only explicit path groups.
 
-## Staged groups
+## Dirty tree classification before cleanup
 
-### Security untracking already staged
+### Group 1 — tooling/typecheck cleanup
 
-These are staged as Git deletions only, preserving local files where they exist. Contents were not read or pasted.
+Runtime/tooling files from the post-audit cleanup sprint:
 
-- `functions/.env.gcloud-completed-order.yaml`
-- `functions/.env.pos-v2-909ff`
-- `pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json`
-- `project-724ee6ef-5290-41f4-892-a47703f4859e.json`
+- `package.json`
+- `package-lock.json`
+- `jsconfig.json`
+- `functions/tsconfig.json`
+- `app/modules/media-refinery/index.js`
+- `app/report/excel.js`
+- `app/report/expense.js`
+- `functions/index.js`
+- `functions/telegram/ads.js`
+- `functions/telegram/reports.js`
+- `functions/telegram/send.js`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0907-tooling-cleanup.md`
 
-### Secret/generated ignore rules
+Intent:
 
-- `.gitignore`
+- Restore local `npm run lint` availability with explicit local ESLint dependency.
+- Unblock TypeScript 6 checks via `ignoreDeprecations`.
+- Fix frontend/backend `@ts-check` issues.
+- Make ads revenue data dependencies explicit via dependency injection.
 
-### Refactor planning and AI map
+### Group 2 — ESM audit + E1 harness + AI map docs
 
-- `REFACTOR_PLAN.md`
-- `docs/ai-map/`
+ESM and documentation files:
 
-### Safe compatibility refactor files
+- `app/esm/main.js`
+- `app/esm/README.md`
+- `index.html`
+- `scripts/verify-esm-entry.js`
+- `docs/ai-map/ESM_AUDIT.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-0931-esm-audit.md`
+- `docs/ai-map/TASK_LOGS/2026-06-02-1008-esm-e1-compat-harness.md`
+- `docs/ai-map/CHANGELOG_AI.md`
+- `docs/ai-map/TODO_AI.md`
+- `docs/ai-map/REFACTOR_PROGRESS.md`
+- `docs/ai-map/CODE_MAP.md`
+- `docs/ai-map/FILE_RELATIONS.md`
+- `docs/ai-map/STAGING_REVIEW.md`
 
-- `app/utils/dom.js`
-- `app/utils/format.js`
-- `store.js`
-- partial staged hunk in `app.js`: `_escapeHtml()` delegation only
-- partial staged hunk in `index.html`: script-load seam for `app/utils/format.js`, `app/utils/dom.js`, and POS offline Sprint 19 scripts only
+Intent:
 
-### Verification scripts
+- Document ESM readiness and blockers.
+- Add the safe ESM compatibility harness.
+- Record script/load-order relation changes.
 
-- `scripts/verify-dom-utils.js`
-- `scripts/verify-format-utils.js`
-- `scripts/verify-offline-runtime.js`
+## Intentionally unstaged groups
 
-## Explicitly left unstaged
+None expected after both commits. If any files remain dirty after cleanup, inspect before staging.
 
-Left unstaged because these are unrelated, generated, high-impact, data-adjacent, or mixed with pre-existing work:
+## Verification plan
 
-- generated/cache/log artifacts such as `.firebase/hosting..cache`, `firebase-debug.log`, `functions-list.json`
-- high-impact runtime/backend files with broad pre-existing changes: `functions/index.js`, `db.js`, `firestore.rules`, `server.js`, `style.css`, `ai-actions.js`, `DeepSeekRouter.js`
-- import/backfill/data scripts: `audit_cleanup_firebase.js`, `import_master.js`, `import_migrated_history_purchases.js`, `sync_master_to_app.js`, `backfill_history_costs.js`, `loadServiceAccount.js`
-- unrelated planning/report docs at repo root
-- `app/modules/`, `functions/media-refinery.js`, `functions/scripts/`, `brand/`, `prompts/`
-- offline runtime source files and extra verification scripts not part of this staged refactor set
-- remaining unstaged hunks in `app.js` and `index.html`
+Before/around commits:
 
-## Notes
+```bash
+git diff --cached --check
+git diff --cached --stat
+git diff --cached --name-status
+```
 
-- No commit was created.
-- No deploy was run.
-- No production database, migration, POS/payment/customer data, or raw media was touched.
-- Credential rotation and Git history cleanup remain owner/manual follow-up tasks.
+After cleanup:
+
+```bash
+node scripts/verify-esm-entry.js
+npm run check
+npx tsc --noEmit -p jsconfig.json
+npx tsc --noEmit -p functions/tsconfig.json
+npm run lint -- --max-warnings=9999
+node -e "const {execSync}=require('child_process'); console.log(execSync('npx vite build 2>&1',{timeout:60000,encoding:'utf8'}))"
+git status --short
+```
