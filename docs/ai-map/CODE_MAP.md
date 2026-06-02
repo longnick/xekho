@@ -511,3 +511,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.4 Report Date Controls
 
 - `app/esm/ui/report-date-controls.js`: importable delegated report period/date mode island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.reportDateControls`; replaces seven report date inline handlers with `data-esm-report-period` / `data-esm-report-date-mode`. Verified by `scripts/verify-esm-report-date-controls.js`.
+
+
+## ESM Phase E5.5 Inventory Tabs
+
+- `app/esm/ui/inventory-tabs.js`: importable delegated inventory tab island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.inventoryTabs`; replaces five inventory tab inline handlers with `data-esm-inventory-tab`. Verified by `scripts/verify-esm-inventory-tabs.js`.

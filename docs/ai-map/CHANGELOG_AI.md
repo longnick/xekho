@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-06-02 13:45 - ESM Phase E5.5 inventory tab delegated handlers
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the fifth safe Phase E5 inline-handler island:
+
+- Added `app/esm/ui/inventory-tabs.js` with delegated click handling for inventory tab controls.
+- Converted five inventory tab buttons from inline `onclick="switchInvTab(..., this)"` to `data-esm-inventory-tab`: stock, menu, purchase, ledger, stocktake.
+- Updated `app/esm/main.js` to import/install `inventoryTabs` under `window.XekhoApp.esm.ui.inventoryTabs`.
+- Bumped ESM entry cache/version to `20260602-e5-inventory-tabs`.
+- Added `scripts/verify-esm-inventory-tabs.js` and expanded `scripts/verify-esm-entry.js`.
+- Kept legacy `switchInvTab` and the inventory more modal handler untouched; the ESM island delegates to `switchInvTab` at click time.
+
+Current E5 evidence: inline handler count reduced from 220 to 215; 31 local classic scripts remain. Continue E5 one small UI island at a time with mobile/browser QA for riskier flows.
+
+Verification passed: ESM syntax checks, inventory-tabs/report-date-controls/settings-tabs/report-tabs/header-actions/image-zoom/runtime/leaf/dom/entry verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 13:35 - ESM Phase E5.4 report date controls delegated handlers
 
 Repo: `/home/longnick/projects/xekho`
