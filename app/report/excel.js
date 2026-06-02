@@ -86,10 +86,12 @@
     var uploadFileToGoogleDriveByEndpoint = _resolveUploadToDrive();
     var getGoogleDriveConfigFromUi = _resolveGetGoogleDriveConfig();
     var Store = global.Store || {};
+    /** @type {any} */
+    var root = global;
 
-  const typeEl   = document.getElementById('set-reportExportType');
-  const periodEl = document.getElementById('set-reportExportPeriod');
-  const dateEl   = document.getElementById('set-reportExportDate');
+  const typeEl   = /** @type {HTMLInputElement|null} */ (document.getElementById('set-reportExportType'));
+  const periodEl = /** @type {HTMLInputElement|null} */ (document.getElementById('set-reportExportPeriod'));
+  const dateEl   = /** @type {HTMLInputElement|null} */ (document.getElementById('set-reportExportDate'));
 
   const typeRaw = override.type || (typeEl ? typeEl.value : 'revenue');
   const type = String(typeRaw || 'revenue').trim().toLowerCase();
@@ -99,7 +101,7 @@
   const skipLocalDownload = !!override.skipLocalDownload;
   const forceUploadToDrive = override.uploadToDrive === true;
 
-  const ExcelJSLib = typeof ExcelJS !== 'undefined' ? ExcelJS : (typeof window !== 'undefined' ? window.ExcelJS : undefined);
+  const ExcelJSLib = root.ExcelJS;
   if(!ExcelJSLib) {
     showToast('Không tải được thư viđơ Excel. Vui lòng tải lại trang.', 'danger');
     return false;
@@ -136,7 +138,7 @@
       if(Number.isNaN(d.getTime())) return false;
       if(period === 'today') return d.toDateString() === now.toDateString();
       if(period === 'day' && date) return d.toDateString() === new Date(date).toDateString();
-      if(period === 'week') return (now - d) / 86400000 <= 7;
+      if(period === 'week') return (now.getTime() - d.getTime()) / 86400000 <= 7;
       if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       return true;
     });

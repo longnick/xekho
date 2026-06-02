@@ -33,6 +33,12 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
+telegramAds.setAdsRevenueDataDependencies({
+  queryHistoryRevenue,
+  queryManualAdsDailyStats,
+  fetchMetaAdsInsights,
+  loadTelegramReportFinancialProfile,
+});
 let cachedAiDeps = null;
 
 function getAiDeps() {

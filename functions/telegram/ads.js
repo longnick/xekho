@@ -6,6 +6,18 @@ const textUtils = require('../utils/text');
 const { getVietnamDateParts, getInclusiveVietnamDateCount, formatAchievementPercent, buildMorningRevenueMood } = telegramReports;
 const { escapeTelegramHtml, formatCurrencyVi } = textUtils;
 
+/** @type {Record<string, any>} */
+let adsRevenueDataDeps = {};
+
+/**
+ * Injects stateful Firestore/API data loaders from functions/index.js while keeping this module testable.
+ * @param {Record<string, any>} deps
+ * @returns {void}
+ */
+function setAdsRevenueDataDependencies(deps = {}) {
+  adsRevenueDataDeps = deps || {};
+}
+
 // --- Date/Time helpers ---
 
 /**
@@ -454,8 +466,14 @@ function buildAdsRevenueTelegramMessage(report, options = {}) {
  * @param {Object} range
  * @returns {Promise<Object>}
  */
-/* eslint-disable no-undef */
 async function buildAdsRevenueTelegramData(range) {
+  const queryHistoryRevenue = adsRevenueDataDeps.queryHistoryRevenue;
+  const queryManualAdsDailyStats = adsRevenueDataDeps.queryManualAdsDailyStats;
+  const fetchMetaAdsInsights = adsRevenueDataDeps.fetchMetaAdsInsights;
+  const loadTelegramReportFinancialProfile = adsRevenueDataDeps.loadTelegramReportFinancialProfile;
+  if (typeof queryHistoryRevenue !== 'function' || typeof queryManualAdsDailyStats !== 'function' || typeof fetchMetaAdsInsights !== 'function' || typeof loadTelegramReportFinancialProfile !== 'function') {
+    throw new Error('Missing ads revenue data dependencies');
+  }
   const [posSummary, manualAds, metaAds, financialProfile] = await Promise.all([
     queryHistoryRevenue({ from: range.from, to: new Date(range.toExclusive.getTime() - 1) }),
     queryManualAdsDailyStats(range),
@@ -583,4 +601,5 @@ module.exports = {
   buildAdsRevenueDetailedMessage,
   buildAdsRevenueTelegramMessage,
   buildAdsRevenueTelegramData,
+  setAdsRevenueDataDependencies,
 };
