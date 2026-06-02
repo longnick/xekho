@@ -1,14 +1,14 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 03:09
+**Updated:** 2026-06-02 03:38
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~30% complete**.
-- Core non-optional refactor/security/testing plan: **~35% complete**.
-- Near-term safe-execution track: **~72% complete**.
+- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~32% complete**.
+- Core non-optional refactor/security/testing plan: **~37% complete**.
+- Near-term safe-execution track: **~76% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -38,7 +38,9 @@ These percentages are conservative because the repo is production-adjacent and s
 - Sprint 1.7 completed: extracted 21 pure POS order/kitchen/online-order helpers into `app/order/helpers.js` (IIFE, `XekhoApp.order.*`). 20 thin wrappers in `app.js`.
 - Sprint 3.3 completed: created `eslint.config.mjs`
 - Phase 4 Sprint 4.1 completed: extracted 7 pure Excel formatting helpers into `app/utils/excel.js` (IIFE, `XekhoApp.utils.excel.*`).
-- Phase 4 Sprint 4.2 completed: extracted 3 pure date utilities into `app/utils/date.js` (IIFE, `XekhoApp.utils.date.*`). (ESLint v10 flat config) targeting all extracted modules. 0 errors, 2 warnings. from `functions/index.js`, reduced from ~7280 to ~6816 lines (-464 lines). (`chunkArray`, `escapeTelegramHtml`, `escapeXml`, `scoreTelegramTextQuality`, `fixTelegramMojibake`, `normalizeTelegramText`, `normalizeTelegramTextPreserveLines`, `formatCurrencyVi`, `formatQtyVi`, `getTelegramProductDisplayName`, `shouldPreferTelegramCatalogName`) into `functions/utils/text.js`. `functions/index.js` requires the module and delegates through thin wrappers.
+- Phase 4 Sprint 4.2 completed: extracted 3 pure date utilities
+- Phase 5 Sprint 5.1 completed: extracted `buildStandaloneBillPrintHtml` into `app/utils/print.js` (105-line pure HTML builder).
+- Phase 5 Sprint 5.2 completed: extracted 5 utilities into `app/utils/storage.js` (formatBytes, getLocalStorageUsageBytes, blobToBase64, normalizeGoogleScriptWebAppUrl, isGoogleAppsScriptWebAppUrl). into `app/utils/date.js` (IIFE, `XekhoApp.utils.date.*`). (ESLint v10 flat config) targeting all extracted modules. 0 errors, 2 warnings. from `functions/index.js`, reduced from ~7280 to ~6816 lines (-464 lines). (`chunkArray`, `escapeTelegramHtml`, `escapeXml`, `scoreTelegramTextQuality`, `fixTelegramMojibake`, `normalizeTelegramText`, `normalizeTelegramTextPreserveLines`, `formatCurrencyVi`, `formatQtyVi`, `getTelegramProductDisplayName`, `shouldPreferTelegramCatalogName`) into `functions/utils/text.js`. `functions/index.js` requires the module and delegates through thin wrappers.
 
 ## Dirty tree classification (path-only)
 
