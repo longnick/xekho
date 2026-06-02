@@ -97,8 +97,23 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /attendance_daily/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /attendance_shifts/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /config/{docId} {
       allow read, write: if signedIn();
+    }
+
+    match /settings/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /users/{userId} {
@@ -158,6 +173,31 @@ service cloud.firestore {
 
     match /aiHistory/{docId} {
       allow read, write: if signedIn();
+    }
+
+    match /media_assets/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_asset_tags/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_asset_scores/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /refined_media_assets/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_embeddings/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
     }
 
     match /unitConversions/{docId} {

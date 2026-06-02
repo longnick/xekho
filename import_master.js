@@ -1,22 +1,12 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
-const path = require('path');
+const { loadServiceAccount } = require('./loadServiceAccount');
 
-// 1. Kết nối Firebase
-function loadServiceAccount() {
-    const directPath = path.join(__dirname, 'serviceAccountKey.json');
-    if (fs.existsSync(directPath)) return require(directPath);
-
-    const fallback = fs.readdirSync(__dirname).find(name =>
-        /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
-    );
-    if (!fallback) {
-        throw new Error('Không tìm thấy file service account trong thư mục project.');
-    }
-    return require(path.join(__dirname, fallback));
+// 1. K???t n???i Firebase
+const serviceAccount = loadServiceAccount(__dirname);
+if (!serviceAccount) {
+    throw new Error('Kh??ng t??m th???y file service account trong th?? m???c project.');
 }
-
-const serviceAccount = loadServiceAccount();
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
@@ -26,47 +16,47 @@ const db = admin.firestore();
 
 async function importMasterData() {
     try {
-        // 2. Đọc file Master Data
-        console.log("Đang đọc file GanhKho_MasterData.json...");
+        // 2. Äá»c file Master Data
+        console.log("Äang Ä‘á»c file GanhKho_MasterData.json...");
         const rawData = fs.readFileSync('GanhKho_MasterData.json', 'utf8');
         const masterData = JSON.parse(rawData);
 
         const batch = db.batch();
         let count = 0;
 
-        // 3. Nạp bảng Product_Catalog (Thực đơn)
-        console.log("Đang xử lý Product_Catalog...");
+        // 3. Náº¡p báº£ng Product_Catalog (Thá»±c Ä‘Æ¡n)
+        console.log("Äang xá»­ lÃ½ Product_Catalog...");
         for (const item of masterData.Product_Catalog) {
             const docRef = db.collection('Product_Catalog').doc(item.item_id);
             batch.set(docRef, item);
             count++;
         }
 
-        // 4. Nạp bảng Inventory_Items (Kho nguyên liệu)
-        console.log("Đang xử lý Inventory_Items...");
+        // 4. Náº¡p báº£ng Inventory_Items (Kho nguyÃªn liá»‡u)
+        console.log("Äang xá»­ lÃ½ Inventory_Items...");
         for (const inv of masterData.Inventory_Items) {
             const docRef = db.collection('Inventory_Items').doc(inv.inv_id);
             batch.set(docRef, inv);
             count++;
         }
 
-        // 5. Nạp bảng Recipes_BOM (Công thức định mức)
-        console.log("Đang xử lý Recipes_BOM...");
+        // 5. Náº¡p báº£ng Recipes_BOM (CÃ´ng thá»©c Ä‘á»‹nh má»©c)
+        console.log("Äang xá»­ lÃ½ Recipes_BOM...");
         for (const bom of masterData.Recipes_BOM) {
-            // Tạo ID ghép để không bị trùng (Ví dụ: combo_1_inv_ca_moi)
+            // Táº¡o ID ghÃ©p Ä‘á»ƒ khÃ´ng bá»‹ trÃ¹ng (VÃ­ dá»¥: combo_1_inv_ca_moi)
             const bomId = `${bom.parent_item_id}_${bom.ingredient_inv_id}`;
             const docRef = db.collection('Recipes_BOM').doc(bomId);
             batch.set(docRef, bom);
             count++;
         }
 
-        // 6. Gửi toàn bộ lên Firebase
-        console.log(`Đang đẩy ${count} dữ liệu lên Firestore. Vui lòng đợi...`);
+        // 6. Gá»­i toÃ n bá»™ lÃªn Firebase
+        console.log(`Äang Ä‘áº©y ${count} dá»¯ liá»‡u lÃªn Firestore. Vui lÃ²ng Ä‘á»£i...`);
         await batch.commit();
         
-        console.log("✅ XONG! Đã nạp thành công bộ Master Data vào Firebase.");
+        console.log("âœ… XONG! ÄÃ£ náº¡p thÃ nh cÃ´ng bá»™ Master Data vÃ o Firebase.");
     } catch (error) {
-        console.error("❌ Xảy ra lỗi:", error);
+        console.error("âŒ Xáº£y ra lá»—i:", error);
     }
 }
 

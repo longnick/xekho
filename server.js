@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
+const { loadServiceAccount } = require('./loadServiceAccount');
 const { NLPEngine, normalizeVi } = require('./NLPEngine');
 const { DeepSeekRouter } = require('./DeepSeekRouter');
 
@@ -42,17 +43,7 @@ const PORT = 3123;
 // Keep track of connected POS clients
 let clients = [];
 
-function loadServiceAccount() {
-  const directPath = path.join(__dirname, 'serviceAccountKey.json');
-  if (fs.existsSync(directPath)) return require(directPath);
-  const fallback = fs.readdirSync(__dirname).find(name =>
-    /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
-  );
-  if (!fallback) return null;
-  return require(path.join(__dirname, fallback));
-}
-
-const serviceAccount = loadServiceAccount();
+const serviceAccount = loadServiceAccount(__dirname);
 if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
@@ -476,6 +467,28 @@ app.get('/api/ai/status', (req, res) => {
     provider: AI_PROVIDER,
     model: AI_MODEL,
   });
+});
+
+app.use('/api/media-refinery', async (req, res) => {
+  try {
+    const targetPath = String(req.originalUrl || req.url || '')
+      .replace(/^\/api\/media-refinery/i, '') || '/';
+    const response = await fetch(`${CLOUD_FUNCTIONS_BASE_URL}/mediaRefineryApi${targetPath}`, {
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+      },
+      body: ['GET', 'HEAD'].includes(String(req.method).toUpperCase())
+        ? undefined
+        : JSON.stringify(req.body || {}),
+    });
+    const text = await response.text();
+    res.status(response.status).set('Content-Type', response.headers.get('content-type') || 'application/json; charset=utf-8').send(text);
+  } catch (error) {
+    console.error('[api/media-refinery] proxy error:', error);
+    res.status(502).json({ ok: false, error: error?.message || 'Media refinery proxy failed.' });
+  }
 });
 
 server.listen(PORT, '0.0.0.0', () => {

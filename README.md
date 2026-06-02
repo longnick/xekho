@@ -1,5 +1,9 @@
 # Xe Khô Chữa Lành - POS & Kitchen Display System
 
+> Warning
+> `xekho` functions are currently aligned with cloud, but this repo still overlaps with `webapp-menu` in some feature areas.
+> Read `TECH_AUDIT.md` before changing deploy ownership or consolidating features across repos.
+
 Hệ thống quản lý bán hàng (POS) và màn hình bếp (KDS) cho quán ăn Xe Khô Chữa Lành, được xây dựng trên nền tảng Firebase.
 
 ## 🎯 Tính năng chính
@@ -7,7 +11,7 @@ Hệ thống quản lý bán hàng (POS) và màn hình bếp (KDS) cho quán ă
 ### POS (Point of Sale)
 - ✅ Quản lý bàn và đơn hàng realtime
 - ✅ Gọi món, chỉnh sửa, thanh toán
-- ✅ Tích hợp AI chatbot (Vertex AI/Gemini)
+- ✅ Tích hợp AI chatbot (Vertex AI)
 - ✅ Quản lý kho, nhập hàng, báo cáo doanh thu
 - ✅ Hỗ trợ nhiều role: admin, staff, kitchen
 - ✅ Notification realtime từ bếp
@@ -34,7 +38,7 @@ Hệ thống quản lý bán hàng (POS) và màn hình bếp (KDS) cho quán ă
 - **Firebase Auth** - User authentication
 
 ### AI & Integrations
-- **Vertex AI (Gemini)** - AI chatbot, OCR, image generation
+- **Vertex AI** - AI chatbot, OCR, image generation
 - **Telegram Bot API** - Kitchen notifications
 - **FCM (Firebase Cloud Messaging)** - Web push notifications
 - **Zalo OA** - (Planned) Zalo Official Account integration
