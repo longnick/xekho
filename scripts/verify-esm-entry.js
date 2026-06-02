@@ -16,6 +16,7 @@ const staffFacadePath = path.join(root, 'app', 'esm', 'auth', 'staff.js');
 const domAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'dom.js');
 const storeAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'store.js');
 const dbAdapterPath = path.join(root, 'app', 'esm', 'adapters', 'db.js');
+const headerActionsPath = path.join(root, 'app', 'esm', 'ui', 'header-actions.js');
 const imageZoomPath = path.join(root, 'app', 'esm', 'ui', 'image-zoom.js');
 
 function assert(condition, message) {
@@ -34,8 +35,9 @@ const staffFacadeSource = fs.readFileSync(staffFacadePath, 'utf8');
 const domAdapterSource = fs.readFileSync(domAdapterPath, 'utf8');
 const storeAdapterSource = fs.readFileSync(storeAdapterPath, 'utf8');
 const dbAdapterSource = fs.readFileSync(dbAdapterPath, 'utf8');
+const headerActionsSource = fs.readFileSync(headerActionsPath, 'utf8');
 const imageZoomSource = fs.readFileSync(imageZoomPath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e4-ui-image-zoom"></script>';
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-header-actions"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -49,6 +51,7 @@ assert(entrySource.includes("from './auth/staff.js';"), 'ESM entry must import s
 assert(entrySource.includes("from './adapters/dom.js';"), 'ESM entry must import dom adapter');
 assert(entrySource.includes("from './adapters/store.js';"), 'ESM entry must import store adapter');
 assert(entrySource.includes("from './adapters/db.js';"), 'ESM entry must import db adapter');
+assert(entrySource.includes("from './ui/header-actions.js';"), 'ESM entry must import header actions UI island');
 assert(entrySource.includes("from './ui/image-zoom.js';"), 'ESM entry must import image zoom UI island');
 assert(entrySource.includes('XekhoApp.esm.harness'), 'ESM entry must set XekhoApp.esm.harness');
 assert(entrySource.includes('XekhoApp.esm.facades.dom'), 'ESM entry must record dom facade readiness');
@@ -68,6 +71,7 @@ assert(staffFacadeSource.includes('export function installGlobalStaffAuth'), 'st
 assert(domAdapterSource.includes('export function installDomAdapter'), 'dom adapter must export installer');
 assert(storeAdapterSource.includes('export function installStoreAdapter'), 'store adapter must export installer');
 assert(dbAdapterSource.includes('export function installDbAdapter'), 'db adapter must export installer');
+assert(headerActionsSource.includes('export function installHeaderActions'), 'header actions island must export installer');
 assert(imageZoomSource.includes('export function installGlobalImageZoom'), 'image zoom island must export installer');
 
 // VM smoke test the harness body by stripping its static import and injecting the imported functions.
@@ -258,6 +262,19 @@ const sandbox = {
     return rootScope.XekhoApp.esm.adapters.db;
   },
 
+  callHeaderAction: function callHeaderAction() {},
+  installHeaderActions: function installHeaderActions(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.headerActions = {
+      selector: '[data-esm-header-action]',
+      installed: true,
+      uninstall: function uninstall() {},
+      callHeaderAction: sandbox.callHeaderAction,
+    };
+    return rootScope.XekhoApp.esm.ui.headerActions;
+  },
+
   createImageZoomController: function createImageZoomController() {
     return {
       attach: function attach() {},
@@ -280,7 +297,7 @@ vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e4-ui-image-zoom', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-header-actions', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -293,7 +310,10 @@ assert(win.XekhoApp.esm.facades.runtimeAdapters.dom.qsPresent === true, 'dom ada
 assert(win.XekhoApp.esm.facades.runtimeAdapters.store.getAppStatePresent === true, 'store adapter marker mismatch');
 assert(win.XekhoApp.esm.facades.runtimeAdapters.db.waitForDBPresent === true, 'db adapter marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.loaded === true, 'ui island marker should be loaded');
+assert(win.XekhoApp.esm.facades.uiIslands.headerActions.installed === true, 'header actions marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.headerActions.selectorPresent === true, 'header actions selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.imageZoom.attachPresent === true, 'image zoom marker mismatch');
+assert(typeof win.XekhoApp.esm.ui.headerActions.callHeaderAction === 'function', 'header actions island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.imageZoom.attach === 'function', 'image zoom island should install under XekhoApp.esm.ui');
 assert(win.XekhoApp.utils.dom.escapeHtml('<b>&"\'') === '&lt;b&gt;&amp;&quot;&#39;', 'global escapeHtml should escape HTML');
 assert(win.fmt(1000) === '1K', 'legacy fmt should be installed by format facade');
