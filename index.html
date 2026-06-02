@@ -296,7 +296,7 @@
             <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;align-items:end">
               <div class="input-group" style="margin:0">
                 <label class="input-label">Thời gian</label>
-                <select class="select" id="stocktake-history-period" onchange="applyStocktakeHistoryFilter()">
+                <select class="select" id="stocktake-history-period" data-esm-render-refresh="applyStocktakeHistoryFilter">
                   <option value="today">Hôm nay</option>
                   <option value="week">7 ngày gần nhất</option>
                   <option value="month" selected>Tháng này</option>
@@ -306,11 +306,11 @@
               </div>
               <div class="input-group" style="margin:0">
                 <label class="input-label">Từ ngày</label>
-                <input class="input" id="stocktake-history-from" type="date" onchange="applyStocktakeHistoryFilter()">
+                <input class="input" id="stocktake-history-from" type="date" data-esm-render-refresh="applyStocktakeHistoryFilter">
               </div>
               <div class="input-group" style="margin:0">
                 <label class="input-label">Đến ngày</label>
-                <input class="input" id="stocktake-history-to" type="date" onchange="applyStocktakeHistoryFilter()">
+                <input class="input" id="stocktake-history-to" type="date" data-esm-render-refresh="applyStocktakeHistoryFilter">
               </div>
             </div>
             <div class="stat-card" style="padding:12px;margin-top:10px">
@@ -444,9 +444,9 @@
             <button class="btn btn-sm btn-primary" onclick="openAddInvItemModal()">+ Tạo nguyên liệu</button>
           </div>
           <div class="date-filter mb-2" style="margin-bottom:12px; display:flex; gap:8px;">
-            <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1" onchange="renderLedger()">
-            <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1" onchange="renderLedger()">
-            <select id="ledger-item-select" class="select select-sm" style="flex:2" onchange="renderLedger()">
+            <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1" data-esm-render-refresh="renderLedger">
+            <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1" data-esm-render-refresh="renderLedger">
+            <select id="ledger-item-select" class="select select-sm" style="flex:2" data-esm-render-refresh="renderLedger">
               <option value="">-- Chọn Nguyên Liệu --</option>
             </select>
           </div>
@@ -949,7 +949,7 @@
             <div class="section-title">Media Refinery</div>
             <div class="section-sub">Kho ảnh/video đã lọc cho automation nội dung</div>
           </div>
-          <button class="btn btn-sm btn-secondary" onclick="renderMediaRefinery()">Làm mới</button>
+          <button class="btn btn-sm btn-secondary" data-esm-render-refresh="renderMediaRefinery">Làm mới</button>
         </div>
 
         <div class="media-refinery-toolbar">
@@ -961,8 +961,8 @@
             </select>
           </div>
           <div class="media-refinery-search">
-            <input class="input input-sm" id="media-refinery-query" placeholder="Tìm món/mood/format..." oninput="renderMediaRefinery()">
-            <select class="input input-sm" id="media-refinery-status" onchange="renderMediaRefinery()">
+            <input class="input input-sm" id="media-refinery-query" placeholder="Tìm món/mood/format..." data-esm-render-refresh="renderMediaRefinery">
+            <select class="input input-sm" id="media-refinery-status" data-esm-render-refresh="renderMediaRefinery">
               <option value="">Tất cả trạng thái</option>
               <option value="REFINE_READY">REFINE_READY</option>
               <option value="PUBLISH_READY">PUBLISH_READY</option>
@@ -1126,16 +1126,16 @@
                 <div class="card-title">⏱️ Bảng chấm công</div>
                 <div style="font-size:11px;color:var(--text2);margin-top:2px">Check in/out qua Telegram, tự ghi lương vào chi phí</div>
               </div>
-              <button type="button" class="btn btn-sm btn-secondary" onclick="renderAttendanceManagement()">Làm mới</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-esm-render-refresh="renderAttendanceManagement">Làm mới</button>
             </div>
             <div class="form-row" style="margin-bottom:12px">
               <div class="input-group">
                 <label class="input-label">Từ ngày</label>
-                <input class="input" id="attendance-from-date" type="date" onchange="renderAttendanceManagement()">
+                <input class="input" id="attendance-from-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
               </div>
               <div class="input-group">
                 <label class="input-label">Đến ngày</label>
-                <input class="input" id="attendance-to-date" type="date" onchange="renderAttendanceManagement()">
+                <input class="input" id="attendance-to-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
               </div>
             </div>
             <div id="attendance-summary" class="stats-grid" style="margin-bottom:12px"></div>
@@ -2380,7 +2380,7 @@
   <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
   <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
   <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
-  <script type="module" src="app/esm/main.js?v=20260602-e5-report-filter-controls"></script>
+  <script type="module" src="app/esm/main.js?v=20260602-e5-render-refresh-controls"></script>
   <script>
     // Extra helpers that reference DOM
 

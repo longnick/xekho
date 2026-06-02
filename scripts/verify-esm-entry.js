@@ -25,6 +25,7 @@ const reportDateControlsPath = path.join(root, 'app', 'esm', 'ui', 'report-date-
 const reportFilterControlsPath = path.join(root, 'app', 'esm', 'ui', 'report-filter-controls.js');
 const reportTransactionFiltersPath = path.join(root, 'app', 'esm', 'ui', 'report-transaction-filters.js');
 const reportTabsPath = path.join(root, 'app', 'esm', 'ui', 'report-tabs.js');
+const renderRefreshControlsPath = path.join(root, 'app', 'esm', 'ui', 'render-refresh-controls.js');
 const settingsTabsPath = path.join(root, 'app', 'esm', 'ui', 'settings-tabs.js');
 
 function assert(condition, message) {
@@ -47,12 +48,14 @@ const financePeriodSource = fs.readFileSync(financePeriodPath, 'utf8');
 const headerActionsSource = fs.readFileSync(headerActionsPath, 'utf8');
 const inventoryTabsSource = fs.readFileSync(inventoryTabsPath, 'utf8');
 const imageZoomSource = fs.readFileSync(imageZoomPath, 'utf8');
+const modalOverlayControlsSource = fs.readFileSync(modalOverlayControlsPath, 'utf8');
 const reportDateControlsSource = fs.readFileSync(reportDateControlsPath, 'utf8');
 const reportFilterControlsSource = fs.readFileSync(reportFilterControlsPath, 'utf8');
 const reportTransactionFiltersSource = fs.readFileSync(reportTransactionFiltersPath, 'utf8');
 const reportTabsSource = fs.readFileSync(reportTabsPath, 'utf8');
+const renderRefreshControlsSource = fs.readFileSync(renderRefreshControlsPath, 'utf8');
 const settingsTabsSource = fs.readFileSync(settingsTabsPath, 'utf8');
-const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-report-filter-controls"></script>';
+const entryTag = '<script type="module" src="app/esm/main.js?v=20260602-e5-render-refresh-controls"></script>';
 
 assert(indexHtml.includes(entryTag), 'index.html must load app/esm/main.js as a module script');
 assert(indexHtml.includes('offlineOrderFallbackDevTools.js'), 'expected offline devtools script marker');
@@ -71,6 +74,7 @@ assert(entrySource.includes("from './ui/image-zoom.js';"), 'ESM entry must impor
 assert(entrySource.includes("from './ui/report-date-controls.js';"), 'ESM entry must import report date controls UI island');
 assert(entrySource.includes("from './ui/report-tabs.js';"), 'ESM entry must import report tabs UI island');
 assert(entrySource.includes("from './ui/settings-tabs.js';"), 'ESM entry must import settings tabs UI island');
+assert(entrySource.includes("from './ui/render-refresh-controls.js';"), 'ESM entry must import render refresh controls UI island');
 assert(entrySource.includes('XekhoApp.esm.harness'), 'ESM entry must set XekhoApp.esm.harness');
 assert(entrySource.includes('XekhoApp.esm.facades.dom'), 'ESM entry must record dom facade readiness');
 assert(entrySource.includes('XekhoApp.esm.facades.format'), 'ESM entry must record format facade readiness');
@@ -96,6 +100,8 @@ assert(imageZoomSource.includes('export function installGlobalImageZoom'), 'imag
 assert(reportDateControlsSource.includes('export function installReportDateControls'), 'report date controls island must export installer');
 assert(reportFilterControlsSource.includes('export function installReportFilterControls'), 'report filter controls island must export installer');
 assert(reportTransactionFiltersSource.includes('export function installReportTransactionFilters'), 'report transaction filters island must export installer');
+assert(modalOverlayControlsSource.includes('export function installModalOverlayControls'), 'modal overlay controls island must export installer');
+assert(renderRefreshControlsSource.includes('export function installRenderRefreshControls'), 'render refresh controls island must export installer');
 assert(reportTabsSource.includes('export function installReportTabs'), 'report tabs island must export installer');
 assert(settingsTabsSource.includes('export function installSettingsTabs'), 'settings tabs island must export installer');
 
@@ -365,6 +371,19 @@ const sandbox = {
     };
     return rootScope.XekhoApp.esm.ui.reportTransactionFilters;
   },
+  callRenderRefresh: function callRenderRefresh() {},
+  installRenderRefreshControls: function installRenderRefreshControls(globalScope) {
+    var rootScope = globalScope || win;
+    rootScope.XekhoApp.esm.ui = rootScope.XekhoApp.esm.ui || {};
+    rootScope.XekhoApp.esm.ui.renderRefreshControls = {
+      selector: '[data-esm-render-refresh]',
+      installed: true,
+      detach: function detach() {},
+      callRenderRefresh: sandbox.callRenderRefresh,
+    };
+    return rootScope.XekhoApp.esm.ui.renderRefreshControls;
+  },
+
   callReportTab: function callReportTab() {},
   installReportTabs: function installReportTabs(globalScope) {
     var rootScope = globalScope || win;
@@ -433,7 +452,7 @@ vm.runInContext(classicDomSource, sandbox, { filename: 'app/utils/dom.js' });
 vm.runInContext(executableEntrySource, sandbox, { filename: 'app/esm/main.js' });
 
 assert(win.XekhoApp.esm.harness.loaded === true, 'harness.loaded should be true');
-assert(win.XekhoApp.esm.harness.version === '20260602-e5-modal-close-controls', 'harness version mismatch');
+assert(win.XekhoApp.esm.harness.version === '20260602-e5-render-refresh-controls', 'harness version mismatch');
 assert(win.XekhoApp.esm.harness.classicRuntimePresent === true, 'classic runtime marker should be detected');
 assert(win.XekhoApp.esm.facades.dom.loaded === true, 'dom facade marker should be loaded');
 assert(win.XekhoApp.esm.facades.dom.escapeHtmlMatchesGlobal === true, 'dom facade should install matching global escapeHtml');
@@ -458,6 +477,8 @@ assert(win.XekhoApp.esm.facades.uiIslands.reportFilterControls.installed === tru
 assert(win.XekhoApp.esm.facades.uiIslands.reportFilterControls.selectorPresent === true, 'report filter controls selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTransactionFilters.installed === true, 'report transaction filters marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTransactionFilters.selectorPresent === true, 'report transaction filters selector marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.renderRefreshControls.installed === true, 'render refresh controls marker mismatch');
+assert(win.XekhoApp.esm.facades.uiIslands.renderRefreshControls.selectorPresent === true, 'render refresh controls selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.installed === true, 'report tabs marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.reportTabs.selectorPresent === true, 'report tabs selector marker mismatch');
 assert(win.XekhoApp.esm.facades.uiIslands.settingsTabs.installed === true, 'settings tabs marker mismatch');
@@ -470,6 +491,7 @@ assert(typeof win.XekhoApp.esm.ui.reportDateControls.callReportPeriod === 'funct
 assert(typeof win.XekhoApp.esm.ui.reportFilterControls.callReportMenuFilter === 'function', 'report filter controls island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.reportFilterControls.callReportFilterReset === 'function', 'report filter controls reset should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.reportTransactionFilters.callReportTransactionFilter === 'function', 'report transaction filters island should install under XekhoApp.esm.ui');
+assert(typeof win.XekhoApp.esm.ui.renderRefreshControls.callRenderRefresh === 'function', 'render refresh controls island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.reportTabs.callReportTab === 'function', 'report tabs island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.settingsTabs.callSettingsTab === 'function', 'settings tabs island should install under XekhoApp.esm.ui');
 assert(typeof win.XekhoApp.esm.ui.imageZoom.attach === 'function', 'image zoom island should install under XekhoApp.esm.ui');
