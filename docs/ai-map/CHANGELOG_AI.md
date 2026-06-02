@@ -1,5 +1,31 @@
 # AI Changelog
 
+## 2026-06-02 - Phase 13 Complete: TypeScript JSDoc migration (@ts-check + JSDoc annotations)
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Phase 13 added TypeScript type checking via JSDoc + `@ts-check` annotation pattern — no code rewrite to `.ts` files. Created `jsconfig.json`, added `// @ts-check` to all 18 frontend modules, added JSDoc annotations to ~150+ exported functions across all modules. `tsc --noEmit` passes with 0 type errors.
+
+- Sprint 13.1: Created `jsconfig.json`, added `@ts-check` to all 18 frontend modules
+- Sprint 13.2: Added JSDoc annotations to 3 complex modules (`app/order/helpers.js`, `app/report/excel.js`, `app/report/expense.js`)
+- All 18 frontend modules have `@ts-check` + JSDoc annotations on exports
+- `tsc --noEmit` — 0 type errors
+- 33 verification scripts — all pass
+- Jest 6/6 pass
+
+Current state after Phase 13:
+- `app.js`: 11,895 lines (397 functions, 73 with delegation wrappers)
+- `functions/index.js`: 5,702 lines (200 functions, 100 with delegation wrappers)
+- 28 extracted modules (8 backend + 20 frontend)
+- ~150+ exported functions with JSDoc annotations
+- 33 verification scripts — all pass
+- `jsconfig.json` for type checking
+- Vite dev server available
+- Jest 6/6 pass
+
+Progress: ~58% total / ~65% core / ~97% near-term.
+
 ## 2026-06-02 - Phase 12 Complete: Vite spike merged into working branch
 
 Repo: `/home/longnick/projects/xekho`

@@ -6,9 +6,9 @@
 
 ## Progress estimate
 
-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~52% complete**.
-- Core non-optional refactor/security/testing plan: **~60% complete**.
-- Near-term safe-execution track: **~95% complete**.
+-- Total long-term `REFACTOR_PLAN.md` including optional TypeScript/CI/build-tooling: **~58% complete**.
+- Core non-optional refactor/security/testing plan: **~65% complete**.
+- Near-term safe-execution track: **~97% complete**.
 
 These percentages are conservative because the repo is production-adjacent and still has a large pre-existing dirty tree. The plan should continue sprint-by-sprint, not as a single broad rewrite.
 
@@ -25,6 +25,9 @@ These percentages are conservative because the repo is production-adjacent and s
 - Offline runtime verification aligned to Sprint 19 marker.
 - Dirty-tree classification completed in Sprint 2.
 - Safe staging review completed in Sprint 4: explicit security/docs/refactor paths staged; mixed/high-impact unrelated paths left unstaged.
+- Phase 13 Sprint 13.1 completed: created `jsconfig.json`, added `@ts-check` to all 18 frontend modules.
+- Phase 13 Sprint 13.2 completed: added JSDoc annotations to 3 complex modules (`app/order/helpers.js`, `app/report/excel.js`, `app/report/expense.js`).
+- Phase 13 COMPLETE: all 18 frontend modules have `@ts-check` + JSDoc annotations on ~150+ exported functions. `tsc --noEmit` passes with 0 type errors. jsconfig.json created for editor type checking.
 - Third compatibility extraction completed in Sprint 5: `app/ui/toast.js` (showToast + repairVietnameseText as IIFE), compatibility wrappers in `app.js`.
 - Fourth compatibility extraction completed in Sprint 6: `app/ui/theme.js` (applyTheme as IIFE), compatibility wrapper in `app.js`.
 - Fifth compatibility extraction completed in Sprint 7: `app/ui/modal.js` (openModal/closeModal/isModalOpen as IIFE), 6 compatibility wrappers in `app.js`.
