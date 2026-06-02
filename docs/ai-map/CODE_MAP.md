@@ -6,16 +6,20 @@
 
 - `index.html`: main POS page.
 - `app.js`: main POS application logic and UI orchestration.
-- `app/esm/main.js`: ESM Phase E1/E2 compatibility harness. Loaded as a browser module after the existing classic runtime; imports DOM/format/date/Excel/staff leaf facades, sets `window.XekhoApp.esm.harness`, marks `window.XekhoApp.esm.facades.*`, and dispatches `xekho:esm-ready` without importing the `app.js` monolith.
+- `app/esm/main.js`: ESM Phase E1/E2/E3 compatibility harness. Loaded as a browser module after the existing classic runtime; imports DOM/format/date/Excel/staff leaf facades plus DOM/Store/DB runtime adapters, sets `window.XekhoApp.esm.harness`, marks `window.XekhoApp.esm.facades.*`, installs `window.XekhoApp.esm.adapters.*`, and dispatches `xekho:esm-ready` without importing the `app.js` monolith.
 - `app/esm/utils/dom.js`: ESM Phase E2 DOM facade. Exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()` compatibility.
 - `app/esm/utils/format.js`: ESM Phase E2 formatter facade. Exports formatter helpers and `installGlobalFormatUtils()` while preserving `window.XekhoApp.utils.format.*` and legacy globals.
 - `app/esm/utils/date.js`: ESM Phase E2 date facade. Exports date helpers and `installGlobalDateUtils()` while preserving `window.XekhoApp.utils.date.*` and legacy date globals.
 - `app/esm/utils/excel.js`: ESM Phase E2 Excel facade. Exports worksheet formatting helpers and `installGlobalExcelUtils()` while preserving `window.XekhoApp.utils.excel.*` and legacy Excel globals.
 - `app/esm/auth/staff.js`: ESM Phase E2 staff/auth facade. Exports pure staff helpers and `installGlobalStaffAuth()` while preserving `window.XekhoApp.auth.*`.
-- `app/esm/README.md`: ESM migration guardrails, completed facade list, and next runtime-adapter candidates.
-- `scripts/verify-esm-entry.js`: Node VM verification for ESM harness load order, readiness marker, all E2 facade markers, and event dispatch behavior.
+- `app/esm/adapters/dom.js`: ESM Phase E3 DOM runtime adapter. Exports query/event helpers and installs `window.XekhoApp.esm.adapters.dom`.
+- `app/esm/adapters/store.js`: ESM Phase E3 Store/appState runtime adapter. Exports read-only accessors and state snapshot helpers; installs `window.XekhoApp.esm.adapters.store`.
+- `app/esm/adapters/db.js`: ESM Phase E3 DB readiness adapter. Exports `waitForDB()`, `isDBReady()`, `getDBSection()`, and `callDBMethod()` without importing Firebase directly; installs `window.XekhoApp.esm.adapters.db`.
+- `app/esm/README.md`: ESM migration guardrails, completed facade/adapter list, and next UI-island candidates.
+- `scripts/verify-esm-entry.js`: Node VM verification for ESM harness load order, readiness marker, all E2/E3 markers, and event dispatch behavior.
 - `scripts/verify-esm-dom-utils.js`: Native dynamic-import smoke test for the DOM ESM facade and global installer.
 - `scripts/verify-esm-leaf-facades.js`: Native dynamic-import smoke test for format/date/Excel/staff ESM facades and installers.
+- `scripts/verify-esm-runtime-adapters.js`: Native dynamic-import smoke test for DOM/Store/DB ESM runtime adapters.
 - `db.js`: Firebase/Firestore wrapper and data access helper.
 - `offlineBackup.js`: Sprint 1 POS offline backup queue foundation. Provides IndexedDB-backed pending order action storage plus in-memory storage for verification; Sprint 11 also accepts explicit `remove_item` actions.
 - `offlineSync.js`: Sprint 2 adapter-based offline sync engine foundation. Syncs pending/failed queue actions through an injected adapter with idempotency by `clientOrderId`, retry/backoff, and single-flight lock.

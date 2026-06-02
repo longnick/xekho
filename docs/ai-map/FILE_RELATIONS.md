@@ -21,8 +21,8 @@ Related files:
   - notes: currently modified before AI map initialization; inspect diff before editing.
 
 - `app/esm/main.js`
-  - role: Phase E1/E2 browser-module compatibility harness for future ESM migration.
-  - depends on: existing classic runtime being loaded first; imports DOM/format/date/Excel/staff ESM facades; reads/creates `window.XekhoApp.esm` and installs compatibility globals.
+  - role: Phase E1/E2/E3 browser-module compatibility harness for future ESM migration.
+  - depends on: existing classic runtime being loaded first; imports DOM/format/date/Excel/staff ESM facades plus DOM/Store/DB runtime adapters; reads/creates `window.XekhoApp.esm` and installs compatibility globals/adapters.
   - used by: `index.html` as `<script type="module">` after offline/classic scripts and before inline DOM helpers.
   - notes: does not import `app.js`, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
 
@@ -37,6 +37,12 @@ Related files:
   - depends on: no app state; installer functions write only compatibility namespaces/globals.
   - used by: `app/esm/main.js`, `scripts/verify-esm-leaf-facades.js`, and future ESM consumers.
   - notes: preserves current IIFE/global API while allowing direct ESM imports for format/date/Excel/staff helpers.
+
+- `app/esm/adapters/dom.js`, `app/esm/adapters/store.js`, `app/esm/adapters/db.js`
+  - role: Phase E3 runtime adapters for future UI islands and state/data readiness without importing `app.js`.
+  - depends on: existing browser globals (`document`, `window.Store`, `window.appState`, `window.DB`) only at call/install time.
+  - used by: `app/esm/main.js`, `scripts/verify-esm-runtime-adapters.js`, and future ESM UI islands.
+  - notes: adapters are non-mutating except for installing `window.XekhoApp.esm.adapters.*`; DB adapter observes `db:ready` and does not import Firebase directly.
 
 - `app/esm/README.md`
   - role: ESM migration guardrails, completed facade inventory, and next safe dual-export candidates.

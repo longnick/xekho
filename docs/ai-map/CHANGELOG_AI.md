@@ -1,5 +1,21 @@
 # AI Changelog
 
+## 2026-06-02 11:39 - ESM Phase E3 runtime adapters complete
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed the next safe ESM phase without converting `app.js`, changing root `package.json`, or touching POS/backend/data flows:
+
+- Added `app/esm/adapters/dom.js` for importable DOM query/event helpers.
+- Added `app/esm/adapters/store.js` for read-only access to classic `window.Store` and `window.appState`.
+- Added `app/esm/adapters/db.js` for promise-based `window.DB` readiness and safe method access wrappers.
+- Updated `app/esm/main.js` to install adapters under `window.XekhoApp.esm.adapters.*` and mark `window.XekhoApp.esm.facades.runtimeAdapters`.
+- Updated `index.html` cache key to `20260602-e3-runtime-adapters`.
+- Added `scripts/verify-esm-runtime-adapters.js` and expanded `scripts/verify-esm-entry.js`.
+
+Verification passed: adapter/leaf/entry ESM scripts, `npm run check`, frontend/backend `tsc`, Jest, lint with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-02 11:26 - ESM Phase E2 leaf facades complete
 
 Repo: `/home/longnick/projects/xekho`
