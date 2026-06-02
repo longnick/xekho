@@ -536,3 +536,8 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.9 Modal Overlay Controls
 
 - `app/esm/ui/modal-overlay-controls.js`: importable delegated modal overlay/close/image-zoom control island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.modalOverlayControls`; replaces 41 low-risk inline modal/image-zoom handlers with delegated data attributes. Verified by `scripts/verify-esm-modal-overlay-controls.js`.
+
+
+## ESM Phase E5.10 Render Refresh Controls
+
+- `app/esm/ui/render-refresh-controls.js`: importable delegated render/filter refresh island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.renderRefreshControls`; replaces 12 low-risk inline handlers with `data-esm-render-refresh`. Allowlist: `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, `applyStocktakeHistoryFilter`. Verified by `scripts/verify-esm-render-refresh-controls.js`.

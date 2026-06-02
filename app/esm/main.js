@@ -15,6 +15,7 @@ import { dismissImageZoomModal, dismissModal, closeModalById, closeImageZoomModa
 import { callReportPeriod, callReportDateMode, installReportDateControls } from './ui/report-date-controls.js';
 import { callReportMenuFilter, callReportFilterReset, installReportFilterControls } from './ui/report-filter-controls.js';
 import { callReportTransactionFilter, installReportTransactionFilters } from './ui/report-transaction-filters.js';
+import { callRenderRefresh, installRenderRefreshControls } from './ui/render-refresh-controls.js';
 import { callReportTab, installReportTabs } from './ui/report-tabs.js';
 import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
 
@@ -50,6 +51,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   var reportDateControls = installReportDateControls(anyRoot);
   var reportFilterControls = installReportFilterControls(anyRoot);
   var reportTransactionFilters = installReportTransactionFilters(anyRoot);
+  var renderRefreshControls = installRenderRefreshControls(anyRoot);
   var reportTabs = installReportTabs(anyRoot);
   var settingsTabs = installSettingsTabs(anyRoot);
 
@@ -105,6 +107,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
     reportDateControls: reportDateControls,
     reportFilterControls: reportFilterControls,
     reportTransactionFilters: reportTransactionFilters,
+    renderRefreshControls: renderRefreshControls,
     reportTabs: reportTabs,
     settingsTabs: settingsTabs,
   });
@@ -172,6 +175,11 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
       installed: reportTransactionFilters.installed === true,
       selectorPresent: reportTransactionFilters.selector === '[data-esm-report-transaction-filter]',
     },
+    renderRefreshControls: {
+      callRenderRefreshPresent: renderRefreshControls.callRenderRefresh === callRenderRefresh,
+      installed: renderRefreshControls.installed === true,
+      selectorPresent: renderRefreshControls.selector === '[data-esm-render-refresh]',
+    },
     reportTabs: {
       callReportTabPresent: reportTabs.callReportTab === callReportTab,
       installed: reportTabs.installed === true,
@@ -200,7 +208,7 @@ import { callSettingsTab, installSettingsTabs } from './ui/settings-tabs.js';
   };
 
   XekhoApp.esm.harness = {
-    version: '20260602-e5-modal-close-controls',
+    version: '20260602-e5-render-refresh-controls',
     loaded: true,
     loadedAt: new Date().toISOString(),
     classicRuntimePresent: Boolean(XekhoApp.utils || XekhoApp.ui || anyRoot.Store || anyRoot.appState),
