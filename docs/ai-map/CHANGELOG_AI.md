@@ -1,5 +1,20 @@
 # AI Changelog
 
+## 2026-06-03 20:36 - Fix order menu search and completed-order Telegram payload
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed two production UI/notification regressions reported after deploy:
+
+- Restored the POS order menu search field (`#order-search`) by making `renderMenuItems()` read the live input value directly and sync the legacy `menuSearch` variable before filtering. This avoids the ESM delegated handler writing only to `window.menuSearch` while `app.js` keeps `menuSearch` as a top-level lexical variable.
+- Fixed completed-order Telegram normalization wrappers in `functions/index.js`; the wrappers now pass the real `order` / `items` arguments to `functions/telegram/orders.js` instead of resetting them to `{}` / `[]`. This prevents messages like `Bàn/Kênh: Không rõ`, `Món: Không có chi tiết`, and `TỔNG CỘNG: 0đ` for real completed orders.
+- Expanded deterministic verifiers:
+  - `scripts/verify-esm-admin-render-controls.js` now asserts `app.js` reads `#order-search` and uses `activeMenuSearch`.
+  - `scripts/verify-telegram-orders.js` now asserts the compatibility wrappers pass real arguments and no longer contain the argument-reset bug.
+
+Verification passed: `node --check app.js`, `node --check functions/index.js`, targeted ESM/admin + Telegram order verifiers, all `scripts/verify-*.js`, `npm run check`, frontend/backend `tsc`, Jest `6/6`, `npm run lint` with 5 existing warnings, Vite build with expected classic-script warnings, and `git diff --check`.
+
 ## 2026-06-03 20:02 - Remove unused admin tabs before deploy
 
 Repo: `/home/longnick/projects/xekho`

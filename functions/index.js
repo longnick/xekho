@@ -1347,15 +1347,15 @@ function toTelegramMoneyNumber(...values) {
 }
 
 function normalizeCompletedOrderItems(order = {}) {
-  return telegramOrders.normalizeCompletedOrderItems(order = {});
+  return telegramOrders.normalizeCompletedOrderItems(order);
 }
 
 function calculateCompletedOrderSubtotal(items = []) {
-  return telegramOrders.calculateCompletedOrderSubtotal(items = []);
+  return telegramOrders.calculateCompletedOrderSubtotal(items);
 }
 
 function normalizeCompletedOrderForTelegram(historyId, order = {}) {
-  return telegramOrders.normalizeCompletedOrderForTelegram(historyId, order = {});
+  return telegramOrders.normalizeCompletedOrderForTelegram(historyId, order);
 }
 
 // Override formatter with clean UTF-8 text to avoid mojibake in completed-order Telegram reports.
