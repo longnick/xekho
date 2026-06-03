@@ -56,6 +56,8 @@
 
 ## Done recently
 
+- 2026-06-03 23:12: Fixed bill unit-price display for fractional-thousand menu prices; bill `Đ.Giá` now shows `17,5K` for `17.500đ` instead of rounded `18K`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2312-fix-bill-unit-price-display.md`
+
 - 2026-06-03 22:55: Fixed Vietnamese thousands price input in `Kho` → `Quản lý món`; `17.500đ` now parses/saves as `17500` instead of decimal `17.5`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2255-fix-menu-price-thousands.md`
 
 - 2026-06-03 22:49: Fixed `Kho` → `Quản lý món` price-save regression. Existing finished-good items with empty recipes can now save price edits, while new finished items still require a recipe. `db.js` mirrors price to `sell_price` + `price`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2249-fix-menu-price-save.md`

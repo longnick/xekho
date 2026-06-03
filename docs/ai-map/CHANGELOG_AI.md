@@ -1,6 +1,19 @@
 # AI Changelog
 
 
+## 2026-06-03 23:12 - Fix bill unit-price display for fractional K prices
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the payment/print bill `Đ.Giá` column so true fractional-thousand menu prices remain visible to customers:
+
+- Added `formatBillUnitPrice()` for exact bill unit-price display.
+- Replaced bill unit-price `fmt(i.price)` with `formatBillUnitPrice(i.price)` so `17.500đ` displays as `17,5K`, not rounded to `18K`.
+- Added `scripts/verify-bill-unit-price.js` to assert exact unit price formatting and prevent the bill from using rounding compact formatting again.
+
+Verification target: syntax checks, targeted bill verifier, full repo check/test/lint/build gate, all verify scripts, and `git diff --check`.
+
 ## 2026-06-03 22:55 - Fix Vietnamese thousands menu price input
 
 Repo: `/home/longnick/projects/xekho`
