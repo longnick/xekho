@@ -408,3 +408,8 @@ Related files:
 
 - POS order search: `index.html` `#order-search[data-esm-menu-items-search]` → `app/esm/ui/admin-render-controls.js` input delegation → `app.js#renderMenuItems()`, which now reads the live input value directly before filtering menu cards.
 - Completed-order Telegram: Firestore/history payload → `functions/index.js#sendCompletedOrderTelegram()` → wrapper `normalizeCompletedOrderForTelegram(historyId, order)` → `functions/telegram/orders.js` normalization helpers → `buildTelegramCompletedOrderMessage()`. Wrappers must pass real arguments; resetting to `{}`/`[]` drops table/payment/items/totals.
+## 2026-06-03 - Mobile table screen overflow/takeaway fix
+
+- `app.js#renderTables()` owns the table-screen markup. It now excludes persisted `takeaway` table records from the physical table grid while preserving the dedicated `#table-card-takeaway` summary card and `openTakeaway()` flow.
+- `style.css` owns `.table-grid`, `.table-card-wide`, and `.table-summary-*` mobile layout constraints. The grid uses `minmax(0, 1fr)` and summary rows use `min-width: 0` + ellipsis to prevent long labels/totals from overflowing the mobile viewport.
+- `scripts/verify-mobile-table-grid.js` protects this relationship with deterministic source assertions.

@@ -545,3 +545,6 @@ node import_migrated_history_purchases.js
 ## ESM Phase E5.11 Admin Render Controls
 
 - `app/esm/ui/admin-render-controls.js`: importable delegated admin render/search island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.adminRenderControls`; now covers 4 low-risk inline handlers with `data-esm-admin-render` / `data-esm-menu-items-search` after the obsolete top-level Menu page was removed. Allowlist: `renderTables`, `renderStockList`, plus menu-search assignment followed by `renderMenuItems` where the shared admin modal remains. Verified by `scripts/verify-esm-admin-render-controls.js`.
+### Mobile table grid verifier — 2026-06-03
+
+- `scripts/verify-mobile-table-grid.js`: source-level guard for the mobile table screen. Verifies that `renderTables()` filters persisted `takeaway` table records out of the physical table grid, keeps the dedicated `table-card-takeaway` card, uses shared `table-card-wide` summary rows, and keeps CSS shrink/ellipsis rules that prevent mobile horizontal overflow.
