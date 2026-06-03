@@ -7,13 +7,13 @@
 - Current conservative progress estimate:
  - Total long-term plan including optional TypeScript/CI/build tooling: ~85% complete.
  - Core non-optional refactor/security/testing plan: ~90% complete.
- - Near-term safe-execution track: ~99.998% complete.
+ - Near-term safe-execution track: ~99.999% complete.
 
 ## Next
 
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
 - ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
-- E5/E6 status: not safe to complete as one-shot work. Current scan shows 141 inline handlers and 31 local classic scripts after E5.8. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
+- E5/E6 status: not safe to complete as one-shot work. Current scan shows 129 inline handlers, 34 script src tags, and 2 module script tags after removing obsolete Menu/AI Insights/Media pages. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
 - For every next refactor sprint:
   - create backup under `/home/longnick/backups/`
   - write or update deterministic verification first when practical
@@ -55,6 +55,7 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+- 2026-06-03 20:02: Removed obsolete top-level admin pages/tabs for Menu, AI Insights, and Media before deploy. `index.html` removed page/menu/navigation blocks, `app.js` now explicitly denies stale `menu`/`insights`/`media` navigation, Media Refinery page rendering/styles were removed, and ESM verifier counts were adjusted. Marker scan: removed page/navigation markers = 0, inline handlers = 129. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2002-remove-unused-admin-tabs-deploy.md`
 - 2026-06-02 15:29: Deep Extraction D4 small-utility cleanup completed outside E phase. Added `getTelegramReportTestUrl()` to `app/utils/storage.js`, added `getCurrentOrderActorMetaFromUser()` to `app/auth/staff.js`, delegated both legacy `app.js` functions, removed unreachable `getFinanceExpenseRows()` fallback code, and expanded storage/auth verifiers. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1529-deep-d4-small-utils.md`
 - 2026-06-02 14:58: ESM Phase E5.11 admin render controls completed. Added `app/esm/ui/admin-render-controls.js`, converted 6 low-risk admin render/search inline handlers to delegated data attributes, wired `app/esm/main.js`, added `scripts/verify-esm-admin-render-controls.js`, and reduced inline handlers to 141. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1458-esm-e5-admin-render-controls.md`
 - 2026-06-02 14:50: ESM Phase E5.10 render/filter refresh controls completed. Added `app/esm/ui/render-refresh-controls.js`, converted 12 low-risk render/filter refresh inline handlers to delegated `data-esm-render-refresh`, wired `app/esm/main.js`, added `scripts/verify-esm-render-refresh-controls.js`, and reduced inline handlers to 147. Task log: `docs/ai-map/TASK_LOGS/2026-06-02-1450-esm-e5-render-refresh-controls.md`

@@ -5,7 +5,6 @@ const RENDER_REFRESH_SELECTOR = '[data-esm-render-refresh]';
 const ALLOWED_RENDER_REFRESH_CALLS = new Set([
   'applyStocktakeHistoryFilter',
   'renderLedger',
-  'renderMediaRefinery',
   'renderAttendanceManagement',
 ]);
 

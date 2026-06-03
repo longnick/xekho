@@ -1,6 +1,6 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-03 19:15 (obsolete Telegram daily report test endpoint removed)
+**Updated:** 2026-06-03 20:02 (unused admin tabs removed before deploy)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
@@ -71,6 +71,8 @@ Current ESM readiness ~67%. Non-ESM deep extraction readiness: D1 complete via E
 - Phase 5 Sprint 5.2 completed: extracted 5 utilities into `app/utils/storage.js` (formatBytes, getLocalStorageUsageBytes, blobToBase64, normalizeGoogleScriptWebAppUrl, isGoogleAppsScriptWebAppUrl). into `app/utils/date.js` (IIFE, `XekhoApp.utils.date.*`). (ESLint v10 flat config) targeting all extracted modules. 0 errors, 2 warnings. from `functions/index.js`, reduced from ~7280 to ~6816 lines (-464 lines). (`chunkArray`, `escapeTelegramHtml`, `escapeXml`, `scoreTelegramTextQuality`, `fixTelegramMojibake`, `normalizeTelegramText`, `normalizeTelegramTextPreserveLines`, `formatCurrencyVi`, `formatQtyVi`, `getTelegramProductDisplayName`, `shouldPreferTelegramCatalogName`) into `functions/utils/text.js`. `functions/index.js` requires the module and delegates through thin wrappers.
 
 - Deploy cleanup: removed obsolete `testDailyReportTelegram` test-only endpoint and frontend test button; production `scheduledTelegramReport` remains the daily Telegram report owner.
+
+- Deploy-bound UI cleanup completed: obsolete top-level Menu, AI Insights, and Media pages/navigation entries removed; stale `menu`/`insights`/`media` access is explicitly denied; marker scan for removed pages/navigation is 0; inline handlers now 129.
 
 ## Dirty tree classification (path-only)
 
@@ -159,9 +161,9 @@ Sprints 1.7, 3.3, Phase 10, Phase 12, Phase 13, Phase 14, post-audit tooling cle
 - Overall ESM readiness: ~57%.
 - Tooling readiness: ~80% (Vite/build/scripts available and verified).
 - Frontend module boundary readiness: ~62% (five leaf helpers, three runtime adapters, and one UI island are importable; most report/order/admin UI modules remain IIFE/global).
-- Runtime entry readiness: ~39% (ESM adapters plus one UI island exist, but `app.js`, 141 inline handlers, and classic script order still central).
+- Runtime entry readiness: ~42% (ESM adapters plus UI islands exist, but `app.js`, 129 inline handlers, and classic script order still central).
 - Backend ESM readiness: ~10% (Cloud Functions and scripts are CommonJS and should stay that way for now).
-- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after E5.1: 141 inline handlers, 31 local classic scripts, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
+- ESM Phase E5/E6 assessment: E5 inline handler cleanup and E6 package-type strategy are BLOCKED for one-shot execution. Current scan after deploy-bound tab cleanup: 129 inline handlers, 34 script src tags, 2 module scripts. Next safe sprint is a single handler island with mobile/browser QA, not repo-wide inline cleanup; keep root `commonjs`. No E7/E8 phase is defined in the current ESM plan.
 
 ### Deep extraction outside E — 2026-06-02
 - [x] D1: image zoom behavior moved into importable UI island (`app/esm/ui/image-zoom.js`) with classic delegation.
