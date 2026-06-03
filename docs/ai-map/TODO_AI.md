@@ -56,6 +56,8 @@
 
 ## Done recently
 
+- 2026-06-03 22:55: Fixed Vietnamese thousands price input in `Kho` → `Quản lý món`; `17.500đ` now parses/saves as `17500` instead of decimal `17.5`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2255-fix-menu-price-thousands.md`
+
 - 2026-06-03 22:49: Fixed `Kho` → `Quản lý món` price-save regression. Existing finished-good items with empty recipes can now save price edits, while new finished items still require a recipe. `db.js` mirrors price to `sell_price` + `price`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2249-fix-menu-price-save.md`
 - 2026-06-03 21:38: Fixed mobile table-screen overflow and removed the duplicate `takeaway` physical-grid tile while preserving the dedicated `Khách mang về` card. Added `scripts/verify-mobile-table-grid.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2138-fix-mobile-table-overflow-takeaway.md`
 - 2026-06-03 20:36: Fixed POS order menu search after ESM delegation by reading `#order-search` directly in `renderMenuItems()`, and fixed completed-order Telegram wrapper argument reset so real items/table/payment/totals flow into notifications. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2036-fix-menu-search-completed-telegram.md`

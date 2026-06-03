@@ -32,7 +32,7 @@
 - `app/utils/format.js`: Safe refactor Sprint 3 compatibility formatter module. Exposes `window.XekhoApp.utils.format` helpers (`compactNumber`, `currency`, `date`, `time`, `dateTime`, `todayKey`) while `store.js` keeps the legacy global `fmt`/`fmtFull`/date wrappers and delegates when the utility is loaded.
 - `scripts/verify-dom-utils.js`: Node VM verification for `app/utils/dom.js`; checks UTF-8-safe Vietnamese text passthrough, nullish inputs, numeric inputs, and escaping for `&`, `<`, `>`, double quotes, and apostrophes.
 - `scripts/verify-format-utils.js`: Node VM verification for `app/utils/format.js`; checks compact/currency/date helper behavior and confirms `store.js` contains compatibility delegation markers.
-- `scripts/verify-menu-price-save.js`: Regression verifier for `Kho` → `Quản lý món` price saves; checks existing-item recipe gating and DB `sell_price`/`price` mapping.
+- `scripts/verify-menu-price-save.js`: Regression verifier for `Kho` → `Quản lý món` price saves; checks Vietnamese thousands parsing (`17.500` → `17500`), existing-item recipe gating, and DB `sell_price`/`price` mapping.
 - `scripts/verify-offline-runtime.js`: Sprint 19-aligned runtime verification; checks current `offlineRuntime.js` version marker plus disabled-sync and enabled-sync memory-flow behavior.
 - `scripts/verify-offline-backup.js`: Node verification script for `offlineBackup.js` using in-memory storage.
 - `scripts/verify-offline-sync.js`: Node verification script for `offlineSync.js` using memory backup + memory sync adapter.
