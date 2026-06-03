@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-03 20:02 - Remove unused admin tabs before deploy
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Completed deploy-bound UI cleanup after user confirmed the missing AI-map/task-log step:
+
+- Removed obsolete top-level admin UI pages for Menu, AI Insights, and Media from `index.html`.
+- Removed direct More-modal navigation entries for `menu`, `insights`, and `media`; post-edit marker scan shows all removed page/navigation markers at 0.
+- Removed obsolete Media Refinery page rendering functions/styles from `app.js` and `style.css` while preserving shared backend/data helpers and production-safe modules.
+- Added explicit `canAccessPage()` denial for `menu`, `insights`, and `media` so stale direct navigation cannot open deleted pages.
+- Updated ESM verifier expectations after removing the Media refresh controls and one deleted admin Menu render control.
+
+Evidence: `app.js` is now 11,565 lines / 366 function declarations, `index.html` has 129 inline handlers, `data-esm-render-refresh` count is now 9, and `data-esm-admin-render` count is now 4.
+
+Verification target: full deploy readiness gate before Firebase deploy — syntax checks, all verification scripts, `npm run check`, frontend/backend `tsc`, Jest, lint, Vite build, and `git diff --check`.
+
 ## 2026-06-03 — Remove obsolete Telegram daily report test endpoint
 
 - Removed `exports.testDailyReportTelegram` from `functions/index.js`; scheduled production flow remains `scheduledTelegramReport`.

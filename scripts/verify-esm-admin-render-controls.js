@@ -100,7 +100,7 @@ async function importEsm(filePath) {
   assert.strictEqual(root2.XekhoApp.esm.ui.adminRenderControls, published);
 
   const html = fs.readFileSync(path.join(repo, 'index.html'), 'utf8');
-  assert.strictEqual((html.match(/data-esm-admin-render=/g) || []).length, 5);
+  assert.strictEqual((html.match(/data-esm-admin-render=/g) || []).length, 4);
   assert.strictEqual((html.match(/data-esm-menu-items-search/g) || []).length, 1);
   assert(!html.includes('onclick="renderTables()"'));
   assert(!html.includes('oninput="menuSearch=this.value;renderMenuItems()"'));

@@ -861,151 +861,6 @@
         </div>
       </div>
 
-      <!-- ========== PAGE: INSIGHTS ========== -->
-      <div id="page-insights" class="page">
-        <div class="section-header">
-          <div>
-            <div class="section-title">🧠 AI Điều Hành</div>
-            <div class="section-sub">Phân tích doanh thu, món bán, hàng bán thẳng, nguyên liệu và Ads</div>
-          </div>
-          <button class="btn btn-sm btn-outline" onclick="renderInsights()">🔄 Làm mới</button>
-        </div>
-
-        <div id="ai-ops-kpis" class="ai-ops-kpi-grid"></div>
-
-        <div id="revenue-warning"></div>
-
-        <div class="ai-ops-grid">
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🥤 Hàng bán thẳng</div>
-                <div class="ai-ops-section-sub">Độ tin cậy cao vì có kiểm kê tồn kho thực tế.</div>
-              </div>
-              <span class="ai-ops-pill ai-ops-pill-high">Tin cậy cao</span>
-            </div>
-            <div id="ai-ops-retail-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🧄 Nguyên liệu chế biến</div>
-                <div class="ai-ops-section-sub">Chỉ cảnh báo mềm theo nhập hàng, tồn thấp và chi phí. Không kết luận hao hụt.</div>
-              </div>
-              <span class="ai-ops-pill ai-ops-pill-soft">Tham khảo</span>
-            </div>
-            <div id="ai-ops-raw-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🍽️ Món ăn & combo</div>
-                <div class="ai-ops-section-sub">Dựa trên bill đã chốt, không dựa vào xuất kho nguyên liệu.</div>
-              </div>
-              <span class="ai-ops-pill">Theo doanh số</span>
-            </div>
-            <div id="ai-ops-menu-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">📣 Ads + Doanh thu</div>
-                <div class="ai-ops-section-sub">Mở báo cáo ROAS, chi phí Ads và doanh thu theo ngày/khoảng ngày.</div>
-              </div>
-              <span class="ai-ops-pill">Marketing</span>
-            </div>
-            <div id="ai-ops-ads-list"></div>
-          </div>
-        </div>
-
-        <div class="ai-ops-section">
-          <div class="ai-ops-section-head">
-            <div>
-              <div class="ai-ops-section-title">✅ Việc nên làm hôm nay</div>
-              <div class="ai-ops-section-sub">Các hành động ưu tiên do AI tổng hợp từ dữ liệu POS.</div>
-            </div>
-          </div>
-          <div id="insights-list"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title" style="margin-bottom:10px">⚡ Thao tác nhanh</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <button class="btn btn-secondary btn-block" onclick="navigate('inventory')">📦 Mở kho</button>
-            <button class="btn btn-secondary btn-block" onclick="navigate('finance')">💰 Xem tài chính</button>
-            <button class="btn btn-secondary btn-block" onclick="navigate('reports')">📊 Báo cáo</button>
-            <button class="btn btn-secondary btn-block" onclick="openPurchaseModal()">🚚 Nhập hàng</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ========== PAGE: MEDIA REFINERY ========== -->
-      <div id="page-media" class="page">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Media Refinery</div>
-            <div class="section-sub">Kho ảnh/video đã lọc cho automation nội dung</div>
-          </div>
-          <button class="btn btn-sm btn-secondary" data-esm-render-refresh="renderMediaRefinery">Làm mới</button>
-        </div>
-
-        <div class="media-refinery-toolbar">
-          <div class="media-refinery-upload">
-            <input type="file" id="media-refinery-file" accept="image/*" style="display:none" onchange="handleMediaRefineryUpload(event)">
-            <button class="btn btn-primary" onclick="triggerMediaRefineryUpload()">Upload raw</button>
-            <select class="input input-sm" id="media-refinery-product">
-              <option value="">Gắn món sau</option>
-            </select>
-          </div>
-          <div class="media-refinery-search">
-            <input class="input input-sm" id="media-refinery-query" placeholder="Tìm món/mood/format..." data-esm-render-refresh="renderMediaRefinery">
-            <select class="input input-sm" id="media-refinery-status" data-esm-render-refresh="renderMediaRefinery">
-              <option value="">Tất cả trạng thái</option>
-              <option value="REFINE_READY">REFINE_READY</option>
-              <option value="PUBLISH_READY">PUBLISH_READY</option>
-              <option value="HERO_ASSET">HERO_ASSET</option>
-              <option value="NEEDS_MANUAL_REVIEW">NEEDS_MANUAL_REVIEW</option>
-              <option value="REJECTED">REJECTED</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="media-refinery-gate">
-          <select class="input input-sm" id="media-refinery-brief-product">
-            <option value="">Chọn món để kiểm tra publish-ready</option>
-          </select>
-          <select class="input input-sm" id="media-refinery-brief-format">
-            <option value="4:5">4:5 Facebook</option>
-            <option value="1:1">1:1 Square</option>
-            <option value="9:16">9:16 Story/Reel</option>
-          </select>
-          <button class="btn btn-secondary" onclick="createMediaRefineryBrief()">Tạo brief</button>
-        </div>
-        <div id="media-refinery-brief-result"></div>
-
-        <div id="media-refinery-kpis" class="media-refinery-kpis"></div>
-        <div id="media-refinery-list" class="media-refinery-list"></div>
-      </div>
-
-      <!-- ========== PAGE: MENU ADMIN ========== -->
-      <div id="page-menu" class="page">
-        <div class="section-header">
-          <div>
-            <div class="section-title">📝 Quản lý Menu</div>
-            <div class="section-sub">Thêm, sửa, xoá món ăn</div>
-          </div>
-          <button class="btn btn-sm btn-primary" onclick="openAddMenuModal()">+ Thêm</button>
-        </div>
-        <div class="search-wrap">
-          <span class="search-icon">🔍</span>
-          <input class="input" id="menu-admin-search" placeholder="Tìm món..." data-esm-admin-render="renderMenuAdmin">
-        </div>
-        <div id="menu-admin-list"></div>
-      </div>
-
       <!-- ========== PAGE: SETTINGS ========== -->
       <div id="page-settings" class="page">
         <div class="tab-bar">
@@ -2481,7 +2336,6 @@
         else openPurchaseModal();
       }
       else if (currentPage === 'finance') openExpenseModal();
-      else if (currentPage === 'menu') openAddMenuModal();
       else navigate('tables');
     }
 
@@ -2782,12 +2636,6 @@
       </div>
       <div class="modal-body">
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-top: 8px;">
-          <div onclick="navigateMore('menu')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
-            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            </div>
-            <div style="font-size:12px; font-weight:500; color:var(--text2)">Menu</div>
-          </div>
           
           <div onclick="navigateMore('users')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
             <div style="width:50px; height:50px; background:rgba(0,149,255,0.1); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--primary)">
@@ -2801,20 +2649,6 @@
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </div>
             <div style="font-size:12px; font-weight:500; color:var(--text2)">Cài đặt</div>
-          </div>
-          
-          <div onclick="navigateMore('insights')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
-            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="20" y1="9" x2="23" y2="9"></line></svg>
-            </div>
-            <div style="font-size:12px; font-weight:500; color:var(--text2)">AI Insights</div>
-          </div>
-
-          <div onclick="navigateMore('media')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
-            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="8.5" cy="10.5" r="1.5"></circle><path d="M21 15l-5-5L5 19"></path></svg>
-            </div>
-            <div style="font-size:12px; font-weight:500; color:var(--text2)">Media</div>
           </div>
         </div>
       </div>

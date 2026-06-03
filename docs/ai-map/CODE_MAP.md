@@ -4,8 +4,8 @@
 
 ### POS frontend
 
-- `index.html`: main POS page.
-- `app.js`: main POS application logic and UI orchestration.
+- `index.html`: main POS page. Obsolete top-level Menu, AI Insights, and Media pages/navigation entries were removed in the 2026-06-03 deploy cleanup; stale markers for those pages now scan to 0.
+- `app.js`: main POS application logic and UI orchestration. It now explicitly denies stale navigation to removed `menu`, `insights`, and `media` pages while preserving shared menu CRUD/backend helpers.
 - `app/esm/main.js`: ESM Phase E1/E2/E3 compatibility harness. Loaded as a browser module after the existing classic runtime; imports DOM/format/date/Excel/staff leaf facades plus DOM/Store/DB runtime adapters, sets `window.XekhoApp.esm.harness`, marks `window.XekhoApp.esm.facades.*`, installs `window.XekhoApp.esm.adapters.*`, and dispatches `xekho:esm-ready` without importing the `app.js` monolith.
 - `app/esm/utils/dom.js`: ESM Phase E2 DOM facade. Exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()` compatibility.
 - `app/esm/utils/format.js`: ESM Phase E2 formatter facade. Exports formatter helpers and `installGlobalFormatUtils()` while preserving `window.XekhoApp.utils.format.*` and legacy globals.
@@ -539,9 +539,9 @@ node import_migrated_history_purchases.js
 
 ## ESM Phase E5.10 Render Refresh Controls
 
-- `app/esm/ui/render-refresh-controls.js`: importable delegated render/filter refresh island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.renderRefreshControls`; replaces 12 low-risk inline handlers with `data-esm-render-refresh`. Allowlist: `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, `applyStocktakeHistoryFilter`. Verified by `scripts/verify-esm-render-refresh-controls.js`.
+- `app/esm/ui/render-refresh-controls.js`: importable delegated render/filter refresh island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.renderRefreshControls`; now covers 9 low-risk inline handlers with `data-esm-render-refresh` after the obsolete Media page was removed. Allowlist: `renderLedger`, `renderAttendanceManagement`, `applyStocktakeHistoryFilter`. Verified by `scripts/verify-esm-render-refresh-controls.js`.
 
 
 ## ESM Phase E5.11 Admin Render Controls
 
-- `app/esm/ui/admin-render-controls.js`: importable delegated admin render/search island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.adminRenderControls`; replaces 6 low-risk inline handlers with `data-esm-admin-render` / `data-esm-menu-items-search`. Allowlist: `renderTables`, `renderStockList`, `renderMenuAdmin`, plus menu-search assignment followed by `renderMenuItems`. Verified by `scripts/verify-esm-admin-render-controls.js`.
+- `app/esm/ui/admin-render-controls.js`: importable delegated admin render/search island. Installed by `app/esm/main.js` under `window.XekhoApp.esm.ui.adminRenderControls`; now covers 4 low-risk inline handlers with `data-esm-admin-render` / `data-esm-menu-items-search` after the obsolete top-level Menu page was removed. Allowlist: `renderTables`, `renderStockList`, plus menu-search assignment followed by `renderMenuItems` where the shared admin modal remains. Verified by `scripts/verify-esm-admin-render-controls.js`.
