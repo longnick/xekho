@@ -12,13 +12,13 @@ Related files:
   - role: main POS document / UI shell.
   - depends on: root JS/CSS assets such as `app.js`, `db.js`, `style.css`.
   - used by: Firebase Hosting / local server users.
-  - notes: verify script tags before changing frontend module names.
+  - notes: verify script tags before changing frontend module names; obsolete top-level Menu, AI Insights, and Media pages/navigation entries were removed in the 2026-06-03 deploy cleanup.
 
 - `app.js`
   - role: main POS client-side application logic.
   - depends on: Firebase wrapper/data helpers and DOM structure in `index.html`.
   - used by: POS page.
-  - notes: currently modified before AI map initialization; inspect diff before editing.
+  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; inspect diff before editing.
 
 - `app/esm/main.js`
   - role: Phase E1/E2/E3 browser-module compatibility harness for future ESM migration.

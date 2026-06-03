@@ -54,7 +54,6 @@ function count(re, text) {
     XekhoApp: {},
     applyStocktakeHistoryFilter() { calls.push('applyStocktakeHistoryFilter'); },
     renderLedger() { calls.push('renderLedger'); },
-    renderMediaRefinery() { calls.push('renderMediaRefinery'); },
     renderAttendanceManagement() { calls.push('renderAttendanceManagement'); },
     resetAllData() { calls.push('resetAllData'); },
   };
@@ -75,7 +74,6 @@ function count(re, text) {
   assert.strictEqual(doc.listeners.click.length, 1);
 
   doc.listeners.change[0]({ target: makeElement('applyStocktakeHistoryFilter') });
-  doc.listeners.input[0]({ target: makeElement('renderMediaRefinery') });
   let prevented = false;
   doc.listeners.click[0]({ target: makeElement('renderAttendanceManagement', 'button'), preventDefault() { prevented = true; } });
   doc.listeners.click[0]({ target: makeElement('renderLedger', 'input'), preventDefault() { calls.push('unexpected-prevent'); } });
@@ -83,7 +81,6 @@ function count(re, text) {
   assert.deepStrictEqual(calls, [
     'renderLedger',
     'applyStocktakeHistoryFilter',
-    'renderMediaRefinery',
     'renderAttendanceManagement',
   ]);
 
@@ -98,7 +95,7 @@ function count(re, text) {
   assert.strictEqual(count(/on(?:click|change)="renderAttendanceManagement\(\)"/g, html), 0);
   assert.strictEqual(count(/onchange="applyStocktakeHistoryFilter\(\)"/g, html), 0);
   assert.strictEqual(count(/data-esm-render-refresh="renderLedger"/g, html), 3);
-  assert.strictEqual(count(/data-esm-render-refresh="renderMediaRefinery"/g, html), 3);
+  assert.strictEqual(count(/data-esm-render-refresh="renderMediaRefinery"/g, html), 0);
   assert.strictEqual(count(/data-esm-render-refresh="renderAttendanceManagement"/g, html), 3);
   assert.strictEqual(count(/data-esm-render-refresh="applyStocktakeHistoryFilter"/g, html), 3);
 
@@ -106,7 +103,6 @@ function count(re, text) {
     exports: Object.keys(mod).sort(),
     listenersDetached: true,
     renderLedger: count(/data-esm-render-refresh="renderLedger"/g, html),
-    renderMediaRefinery: count(/data-esm-render-refresh="renderMediaRefinery"/g, html),
     renderAttendanceManagement: count(/data-esm-render-refresh="renderAttendanceManagement"/g, html),
     applyStocktakeHistoryFilter: count(/data-esm-render-refresh="applyStocktakeHistoryFilter"/g, html),
   });
