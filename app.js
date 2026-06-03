@@ -722,6 +722,7 @@ function handleLogout() {
 
 function canAccessPage(page) {
   const target = String(page || '').trim().toLowerCase();
+  if (['menu', 'insights', 'media'].includes(target)) return false;
   if (!currentUser) return target === 'tables';
   if (isAdminUser()) return true;
   return STAFF_ALLOWED_PAGES.has(target);
@@ -2128,7 +2129,7 @@ function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more') {
-      n.classList.toggle('active', ['menu', 'settings', 'insights', 'media'].includes(page));
+      n.classList.toggle('active', ['settings'].includes(page));
     } else {
       n.classList.toggle('active', n.dataset.page === page);
     }
@@ -2162,7 +2163,8 @@ function navigateMore(page) {
       if (btn) btn.click();
     }, 50);
   } else {
-    navigate(page);
+    showToast('Mục này đã được gỡ khỏi menu quản trị.', 'info');
+    navigate('settings');
   }
 }
 
@@ -2191,9 +2193,6 @@ function renderPage(page) {
     case 'inventory':renderInventory(); break;
     case 'finance':  renderFinance(); break;
     case 'reports':  renderReports(); break;
-    case 'insights': renderInsights(); break;
-    case 'media':    renderMediaRefinery(); break;
-    case 'menu':     renderMenuAdmin(); break;
     case 'settings': renderSettings(); break;
   }
 }
@@ -8596,271 +8595,6 @@ function openOrderDetailPhotoFull(idx) {
   modal.classList.add('active');
   img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
   if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
-}
-
-// ============================================================
-// PAGE: INSIGHTS (AI)
-// ============================================================
-function renderInsights() {
-  const insights = getMarketingInsights();
-  document.getElementById('insights-list').innerHTML = insights.map(ins =>
-    `<div class="insight-card">
-      <div class="insight-header">
-        <span style="font-size:24px">${ins.icon}</span>
-        <span class="insight-title">${ins.title}</span>
-        <span class="badge badge-${ins.type === 'danger' ? 'danger' : ins.type === 'success' ? 'success' : ins.type === 'warning' ? 'warning' : 'info'}">${ins.type === 'danger' ? 'Khẩn' : ins.type === 'success' ? 'Tốt' : ins.type === 'warning' ? 'Chú ý' : 'Gợi ý'}</span>
-      </div>
-      <div class="insight-body">${ins.body}</div>
-      <div class="insight-actions">${(ins.actions||[]).map(a=>`<button class="btn btn-sm btn-outline">${a}</button>`).join('')}</div>
-    </div>`
-  ).join('');
-
-  // Revenue warning
-  const today = getRevenueSummary('today');
-  const week = getRevenueSummary('week');
-  const avgWeekly = week.revenue / 7;
-  const warnHtml = today.revenue < avgWeekly * 0.6 && avgWeekly > 0
-    ? `<div class="alert-card danger"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cảnh báo doanh thu</div><div class="alert-desc">Hôm nay thấp hơn ${((1-today.revenue/avgWeekly)*100).toFixed(0)}% so với trung bình tuần (${fmt(avgWeekly)}đ/ngày)</div></div></div>`
-    : `<div class="alert-card success"><div class="alert-icon">✅</div><div class="alert-content"><div class="alert-title">Doanh thu ổn định</div><div class="alert-desc">Hôm nay: ${fmtFull(today.revenue)} - trong mức bình thường</div></div></div>`;
-  document.getElementById('revenue-warning').innerHTML = warnHtml;
-}
-
-// ============================================================
-// PAGE: MEDIA REFINERY
-// ============================================================
-let mediaRefineryAssetsCache = [];
-let mediaRefineryBusy = false;
-
-function getMediaRefineryProductOptions(selectedId = '', placeholder = 'Gắn món sau') {
-  const menu = Store.getMenu() || [];
-  return [`<option value="">${_escapeHtml(placeholder)}</option>`].concat(menu.map(item => {
-    const id = _escapeHtml(item.id || '');
-    const selected = String(item.id || '') === String(selectedId || '') ? ' selected' : '';
-    return `<option value="${id}"${selected}>${_escapeHtml(item.name || item.id || '')}</option>`;
-  })).join('');
-}
-
-function syncMediaRefineryProductSelects() {
-  const uploadSelect = document.getElementById('media-refinery-product');
-  if (uploadSelect && uploadSelect.options.length <= 1) {
-    uploadSelect.innerHTML = getMediaRefineryProductOptions(uploadSelect.value || '', 'Gắn món sau');
-  }
-  const briefSelect = document.getElementById('media-refinery-brief-product');
-  if (briefSelect && briefSelect.options.length <= 1) {
-    briefSelect.innerHTML = getMediaRefineryProductOptions(briefSelect.value || '', 'Chọn món để kiểm tra publish-ready');
-  }
-}
-
-function mediaRefineryStatusClass(status = '') {
-    if (window.XekhoApp?.utils?.categorize?.mediaRefineryStatusClass) return window.XekhoApp.utils.categorize.mediaRefineryStatusClass(status);
-    const s = String(status || '').toUpperCase();
-    if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(s)) return 'success';
-    if (s === 'REJECTED') return 'danger';
-    if (s === 'NEEDS_MANUAL_REVIEW') return 'warning';
-    return 'info';
-  }
-
-function renderMediaRefineryKpis(assets = []) {
-  const el = document.getElementById('media-refinery-kpis');
-  if (!el) return;
-  const counts = assets.reduce((acc, asset) => {
-    const status = String(asset.status || 'UNKNOWN').toUpperCase();
-    acc.total += 1;
-    acc[status] = (acc[status] || 0) + 1;
-    if (['PUBLISH_READY', 'HERO_ASSET', 'TAGGED', 'REFINED'].includes(status)) acc.ready += 1;
-    return acc;
-  }, { total: 0, ready: 0 });
-  el.innerHTML = [
-    ['Tổng asset', counts.total],
-    ['Publish-ready', counts.ready],
-    ['Chờ refine', counts.REFINE_READY || 0],
-    ['Cần duyệt', counts.NEEDS_MANUAL_REVIEW || 0],
-  ].map(([label, value]) => `
-    <div class="media-refinery-kpi">
-      <div class="media-refinery-kpi-value">${_escapeHtml(value)}</div>
-      <div class="media-refinery-kpi-label">${_escapeHtml(label)}</div>
-    </div>
-  `).join('');
-}
-
-function filterMediaRefineryAssets(assets = []) {
-  const qRaw = document.getElementById('media-refinery-query')?.value || '';
-  const q = normalizeViKey(qRaw);
-  if (!q) return assets;
-  return assets.filter(asset => {
-    const haystack = [
-      asset.detected_product_name,
-      asset.scene_type,
-      asset.orientation,
-      asset.status,
-      asset.qa_notes,
-    ].join(' ');
-    return normalizeViKey(haystack).includes(q);
-  });
-}
-
-function renderMediaRefineryList(assets = []) {
-  const el = document.getElementById('media-refinery-list');
-  if (!el) return;
-  const filtered = filterMediaRefineryAssets(assets);
-  if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state">Chưa có asset phù hợp. Upload raw ảnh món rồi bấm Refine để đưa vào publish-ready.</div>';
-    return;
-  }
-  el.innerHTML = filtered.map(asset => {
-    const id = _escapeHtml(asset.id || '');
-    const imageUrl = _escapeHtml(asset.thumbnail_url || asset.refined_file_url || asset.original_file_url || '');
-    const status = _escapeHtml(asset.status || 'UNKNOWN');
-    const product = _escapeHtml(asset.detected_product_name || 'Chưa gắn món');
-    const score = Math.round(Number(asset.publish_score || 0));
-    const scene = _escapeHtml(asset.scene_type || 'unknown');
-    const orientation = _escapeHtml(asset.orientation || '');
-    return `
-      <div class="media-refinery-item">
-        <div class="media-refinery-thumb">${imageUrl ? `<img src="${imageUrl}" alt="">` : '<span>No image</span>'}</div>
-        <div class="media-refinery-main">
-          <div class="media-refinery-title">${product}</div>
-          <div class="media-refinery-meta">${scene}${orientation ? ` · ${orientation}` : ''} · Score ${score}</div>
-          <div class="media-refinery-meta">${_escapeHtml(asset.qa_notes || '')}</div>
-          <span class="badge badge-${mediaRefineryStatusClass(status)}">${status}</span>
-        </div>
-        <div class="media-refinery-actions">
-          <button class="btn btn-xs btn-secondary" onclick="scoreMediaRefineryAsset('${id}')">Score</button>
-          <button class="btn btn-xs btn-secondary" onclick="refineMediaRefineryAsset('${id}')">Refine</button>
-          <button class="btn btn-xs btn-success" onclick="qaMediaRefineryAsset('${id}','PUBLISH_READY')">Approve</button>
-          <button class="btn btn-xs btn-danger" onclick="qaMediaRefineryAsset('${id}','REJECTED')">Reject</button>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-async function renderMediaRefinery() {
-  const page = document.getElementById('page-media');
-  if (!page) return;
-  syncMediaRefineryProductSelects();
-  const listEl = document.getElementById('media-refinery-list');
-  if (listEl) listEl.innerHTML = '<div class="empty-state">Đang tải media...</div>';
-  try {
-    const status = String(document.getElementById('media-refinery-status')?.value || '').trim();
-    const result = await window.DB?.MediaRefinery?.list({ status, limit: 80 });
-    mediaRefineryAssetsCache = Array.isArray(result?.assets) ? result.assets : [];
-    renderMediaRefineryKpis(mediaRefineryAssetsCache);
-    renderMediaRefineryList(mediaRefineryAssetsCache);
-  } catch (err) {
-    console.error('[MediaRefinery] render failed', err);
-    if (listEl) listEl.innerHTML = `<div class="empty-state">${_escapeHtml(err?.message || 'Không tải được media-refinery.')}</div>`;
-  }
-}
-
-function triggerMediaRefineryUpload() {
-  document.getElementById('media-refinery-file')?.click();
-}
-
-async function handleMediaRefineryUpload(event) {
-  const file = event?.target?.files?.[0];
-  if (!file) return;
-  if (!window.DB?.MediaRefinery?.ingest) {
-    showToast('MediaRefinery chưa sẵn sàng.', 'danger');
-    return;
-  }
-  if (mediaRefineryBusy) return;
-  mediaRefineryBusy = true;
-  try {
-    const productId = String(document.getElementById('media-refinery-product')?.value || '').trim();
-    const product = (Store.getMenu() || []).find(item => String(item.id) === productId);
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => resolve(String(e.target?.result || ''));
-      reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
-      reader.readAsDataURL(file);
-    });
-    await window.DB.MediaRefinery.ingest({
-      dataUrl,
-      fileName: file.name,
-      mimeType: file.type || 'image/jpeg',
-      source: 'staff_upload',
-      productId: productId || '',
-      productName: product?.name || '',
-      autoScore: true,
-    });
-    showToast('Đã ingest raw asset. Bấm Refine để tạo bản publish-ready.', 'success');
-    await renderMediaRefinery();
-  } catch (err) {
-    console.error('[MediaRefinery] upload failed', err);
-    showToast(err?.message || 'Upload media thất bại.', 'danger');
-  } finally {
-    mediaRefineryBusy = false;
-    if (event?.target) event.target.value = '';
-  }
-}
-
-async function scoreMediaRefineryAsset(assetId) {
-  try {
-    await window.DB.MediaRefinery.score(assetId, { useVision: true });
-    showToast('Đã score asset.', 'success');
-    await renderMediaRefinery();
-  } catch (err) {
-    console.error('[MediaRefinery] score failed', err);
-    showToast(err?.message || 'Score thất bại.', 'danger');
-  }
-}
-
-async function refineMediaRefineryAsset(assetId) {
-  try {
-    await window.DB.MediaRefinery.refine(assetId);
-    showToast('Đã tạo refined assets.', 'success');
-    await renderMediaRefinery();
-  } catch (err) {
-    console.error('[MediaRefinery] refine failed', err);
-    showToast(err?.message || 'Refine thất bại.', 'danger');
-  }
-}
-
-async function qaMediaRefineryAsset(assetId, status) {
-  try {
-    await window.DB.MediaRefinery.qa(assetId, { status, qa_notes: `QA ${status} từ POS UI` });
-    showToast('Đã cập nhật QA.', 'success');
-    await renderMediaRefinery();
-  } catch (err) {
-    console.error('[MediaRefinery] qa failed', err);
-    showToast(err?.message || 'QA thất bại.', 'danger');
-  }
-}
-
-async function createMediaRefineryBrief() {
-  const resultEl = document.getElementById('media-refinery-brief-result');
-  try {
-    const productId = String(document.getElementById('media-refinery-brief-product')?.value || '').trim();
-    const format = String(document.getElementById('media-refinery-brief-format')?.value || '4:5').trim();
-    if (!productId) {
-      showToast('Chọn món trước khi tạo brief.', 'warning');
-      return;
-    }
-    const product = (Store.getMenu() || []).find(item => String(item.id) === productId);
-    const result = await window.DB.MediaRefinery.createBrief({
-      productId,
-      productName: product?.name || '',
-      format,
-      content_angle: 'healing_after_work',
-    });
-    if (!resultEl) return;
-    if (!result.can_generate_post) {
-      resultEl.innerHTML = `<div class="media-refinery-brief media-refinery-brief-blocked"><strong>Chưa thể tạo bài.</strong><br>${_escapeHtml(result.reason || '')}<br>${_escapeHtml(result.recommended_action || '')}</div>`;
-      return;
-    }
-    resultEl.innerHTML = `
-      <div class="media-refinery-brief">
-        <strong>Brief OK</strong><br>
-        Asset: ${_escapeHtml(result.selected_refined_asset?.asset_id || '')}<br>
-        Format: ${_escapeHtml(result.target_format || format)}<br>
-        Direction: ${_escapeHtml(result.creative_direction || '')}
-      </div>
-    `;
-  } catch (err) {
-    console.error('[MediaRefinery] brief failed', err);
-    if (resultEl) resultEl.innerHTML = `<div class="media-refinery-brief media-refinery-brief-blocked">${_escapeHtml(err?.message || 'Tạo brief thất bại.')}</div>`;
-  }
 }
 
 // ============================================================
