@@ -8858,6 +8858,25 @@ function applyMenuItemOptimisticState(savedId, payload) {
   }
 }
 
+function parseVietnameseMoneyInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return NaN;
+  const cleaned = raw.replace(/\s+/g, '').replace(/đ|vnd/g, '');
+  if (/^\d{1,3}([.,]\d{3})+$/.test(cleaned)) {
+    return Number(cleaned.replace(/[.,]/g, ''));
+  }
+  if (/^\d+[.,]\d{1,2}$/.test(cleaned)) {
+    const normalized = cleaned.replace(',', '.');
+    const asNumber = Number(normalized);
+    if (Number.isFinite(asNumber) && asNumber > 0 && asNumber < 1000) {
+      return Math.round(asNumber * 1000);
+    }
+  }
+  const digitsOnly = cleaned.replace(/[^\d-]/g, '');
+  return digitsOnly ? Number(digitsOnly) : NaN;
+}
+
 function shouldRequireMenuRecipe(itemType, id, ingredients) {
   return itemType === ITEM_TYPES.FINISHED && !String(id || '').trim() && (!Array.isArray(ingredients) || ingredients.length === 0);
 }
@@ -8874,7 +8893,7 @@ async function submitMenuItem(e) {
   };
   const id = document.getElementById('menu-item-id').value;
   const name = document.getElementById('menu-item-name').value.trim();
-  const price = parseFloat(document.getElementById('menu-item-price').value);
+  const price = parseVietnameseMoneyInput(document.getElementById('menu-item-price').value);
   const category = document.getElementById('menu-item-category').value;
   const unit = document.getElementById('menu-item-unit').value.trim() || 'phần';
   const itemType = document.getElementById('menu-item-type').value || ITEM_TYPES.FINISHED;
@@ -8884,7 +8903,7 @@ async function submitMenuItem(e) {
   const cost = parseFloat(document.getElementById('menu-item-cost')?.value || '0') || 0;
   const imageUrl = String(document.getElementById('menu-item-image-url')?.value || '').trim();
   const hidden = !!document.getElementById('menu-item-hidden')?.checked;
-  if(!name || isNaN(price)) return;
+  if(!name || isNaN(price) || price < 0) return;
 
   const ingredients = [];
   const inv = _getInventory();
