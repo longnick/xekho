@@ -3082,7 +3082,7 @@ function initiateManualMerge() {
 
 function renderTables() {
   const allTables = _getTables();
-  const tables = allTables.filter(t => !t.hiddenInTableGrid);
+  const tables = allTables.filter(t => String(t.id).toLowerCase() !== 'takeaway' && !t.hiddenInTableGrid);
   const orders = _getOrders();
   const grid = document.getElementById('table-grid');
   const now = Date.now();
@@ -3101,26 +3101,26 @@ function renderTables() {
   // Takeaway order
   const takeawayOrder = orders['takeaway'];
   const takeawayTotal = takeawayOrder ? takeawayOrder.reduce((s,i) => s+i.price*i.qty, 0) : 0;
-  const takeawayHtml = `<div class="table-card takeaway ${takeawayOrder && takeawayOrder.length > 0 ? 'occupied' : 'empty'}" onclick="openTakeaway()" id="table-card-takeaway" style="grid-column:1/-1;aspect-ratio:auto;padding:12px;flex-direction:row;justify-content:flex-start;gap:12px">
-    <div style="font-size:28px">🛍️</div>
-    <div style="flex:1;text-align:left">
-      <div style="font-size:13px;font-weight:800">Khách mang về</div>
-      <div style="font-size:11px;color:var(--text2)">Takeaway</div>
+  const takeawayHtml = `<div class="table-card table-card-wide takeaway ${takeawayOrder && takeawayOrder.length > 0 ? 'occupied' : 'empty'}" onclick="openTakeaway()" id="table-card-takeaway">
+    <div class="table-summary-icon">🛍️</div>
+    <div class="table-summary-body">
+      <div class="table-summary-title">Khách mang về</div>
+      <div class="table-summary-sub">Takeaway</div>
     </div>
-    ${takeawayTotal > 0 ? `<div style="font-size:14px;font-weight:800;color:var(--primary)">${fmt(takeawayTotal)}đ</div>` : '<div style="font-size:11px;color:var(--text3)">Trống</div>'}
+    ${takeawayTotal > 0 ? `<div class="table-summary-meta">${fmt(takeawayTotal)}đ</div>` : '<div class="table-summary-sub">Trống</div>'}
   </div>`;
 
   const onlineOrders = window.appState?.onlineOrders || [];
   const onlineOrderCount = onlineOrders.length;
   const onlineTotal = onlineOrders.reduce((sum, o) => sum + _calculateOnlineOrderTotal(o), 0);
   const onlineHtml = onlineOrderCount > 0 ? `
-    <div class="table-card occupied" style="grid-column:1/-1;aspect-ratio:auto;padding:12px;flex-direction:row;justify-content:flex-start;gap:12px" onclick="openOnlineOrdersPanel()">
-      <div style="font-size:28px">🌐</div>
-      <div style="flex:1;text-align:left">
-        <div style="font-size:13px;font-weight:800">Bàn online</div>
-        <div style="font-size:11px;color:var(--text2)">${onlineOrderCount} đơn | ${onlineOrders.filter(o => o.status === 'pending').length} chờ duyệt | ${onlineOrders.filter(o => o.status === 'approved' || o.status === 'pos_sync').length} đã vào POS</div>
+    <div class="table-card table-card-wide occupied" onclick="openOnlineOrdersPanel()">
+      <div class="table-summary-icon">🌐</div>
+      <div class="table-summary-body">
+        <div class="table-summary-title">Bàn online</div>
+        <div class="table-summary-sub">${onlineOrderCount} đơn | ${onlineOrders.filter(o => o.status === 'pending').length} chờ duyệt | ${onlineOrders.filter(o => o.status === 'approved' || o.status === 'pos_sync').length} đã vào POS</div>
       </div>
-      <div style="font-size:14px;font-weight:800;color:var(--primary)">${fmt(onlineTotal)}đ</div>
+      <div class="table-summary-meta">${fmt(onlineTotal)}đ</div>
     </div>
   ` : '';
 

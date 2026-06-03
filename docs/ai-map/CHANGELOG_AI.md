@@ -1,5 +1,19 @@
 # AI Changelog
 
+
+## 2026-06-03 21:38 - Fix mobile table overflow and duplicate takeaway tile
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed two mobile table-screen regressions reported from iPhone screenshot:
+
+- Removed the duplicate physical-grid `takeaway` tile by filtering persisted `takeaway` table records out of `renderTables()` while keeping the dedicated full-width `Khách mang về` card and `openTakeaway()` flow intact.
+- Reworked the dedicated `Khách mang về` and `Bàn online` rows to use shared `table-card-wide` / `table-summary-*` classes instead of wide inline flex styles.
+- Hardened `.table-grid` with `repeat(..., minmax(0, 1fr))`, `max-width: 100%`, and shrink/ellipsis rules on table cards and summary rows so long labels/totals no longer push cards past the mobile viewport.
+- Added `scripts/verify-mobile-table-grid.js` to assert the source-level layout guardrails and prevent the duplicate takeaway tile regression from returning.
+
+Verification passed: `node --check app.js`, `node --check scripts/verify-mobile-table-grid.js`, `node scripts/verify-mobile-table-grid.js`, `npm run check`, frontend/backend `tsc`, Jest `6/6`, `npm run lint` with 5 existing warnings, Vite build with expected classic-script warnings, all `scripts/verify-*.js` (`50/50`), and `git diff --check`.
 ## 2026-06-03 20:36 - Fix order menu search and completed-order Telegram payload
 
 Repo: `/home/longnick/projects/xekho`
