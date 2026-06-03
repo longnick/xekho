@@ -5,7 +5,7 @@
 ### POS frontend
 
 - `index.html`: main POS page. Obsolete top-level Menu, AI Insights, and Media pages/navigation entries were removed in the 2026-06-03 deploy cleanup; stale markers for those pages now scan to 0.
-- `app.js`: main POS application logic and UI orchestration. It now explicitly denies stale navigation to removed `menu`, `insights`, and `media` pages while preserving shared menu CRUD/backend helpers.
+- `app.js`: main POS application logic and UI orchestration. It now explicitly denies stale navigation to removed `menu`, `insights`, and `media` pages while preserving shared menu CRUD/backend helpers. `renderMenuItems()` reads `#order-search` directly so the POS chọn món search stays in sync with ESM delegated input events.
 - `app/esm/main.js`: ESM Phase E1/E2/E3 compatibility harness. Loaded as a browser module after the existing classic runtime; imports DOM/format/date/Excel/staff leaf facades plus DOM/Store/DB runtime adapters, sets `window.XekhoApp.esm.harness`, marks `window.XekhoApp.esm.facades.*`, installs `window.XekhoApp.esm.adapters.*`, and dispatches `xekho:esm-ready` without importing the `app.js` monolith.
 - `app/esm/utils/dom.js`: ESM Phase E2 DOM facade. Exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()` compatibility.
 - `app/esm/utils/format.js`: ESM Phase E2 formatter facade. Exports formatter helpers and `installGlobalFormatUtils()` while preserving `window.XekhoApp.utils.format.*` and legacy globals.
@@ -61,7 +61,7 @@
 
 ### Backend / Firebase Functions
 
-- `functions/index.js`: main Firebase Cloud Functions entry point.
+- `functions/index.js`: main Firebase Cloud Functions entry point. Completed-order Telegram wrappers delegate to `functions/telegram/orders.js` while preserving real `order`/`items` arguments for table/payment/item/total normalization.
 - `functions/firestoreMegaTools.js`: Firestore utility/tool functions.
 - `functions/createAdminUser.js`: admin user utility.
 - `firestore.rules`: Firestore security rules.

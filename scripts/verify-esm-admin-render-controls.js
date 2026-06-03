@@ -108,6 +108,10 @@ async function importEsm(filePath) {
   assert(!html.includes('onchange="renderStockList()"'));
   assert(!html.includes('oninput="renderMenuAdmin()"'));
 
+  const appSource = fs.readFileSync(path.join(repo, 'app.js'), 'utf8');
+  assert(appSource.includes("document.getElementById('order-search')"));
+  assert(appSource.includes('activeMenuSearch'));
+
   console.log('verify-esm-admin-render-controls passed', {
     exports: Object.keys(mod).sort(),
     listenersDetached: true,
