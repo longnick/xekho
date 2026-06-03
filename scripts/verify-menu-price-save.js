@@ -8,6 +8,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const dbSource = fs.readFileSync(path.join(root, 'db.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 function extractFunction(source, name) {
   const marker = `function ${name}`;
@@ -27,10 +28,18 @@ function extractFunction(source, name) {
   throw new Error(`${name} body end not found`);
 }
 
+const moneyParserSource = extractFunction(appSource, 'parseVietnameseMoneyInput');
 const helperSource = extractFunction(appSource, 'shouldRequireMenuRecipe');
 const sandbox = { ITEM_TYPES: { FINISHED: 'finished_good', RETAIL: 'retail_item' } };
 vm.createContext(sandbox);
-vm.runInContext(`${helperSource}; this.shouldRequireMenuRecipe = shouldRequireMenuRecipe;`, sandbox);
+vm.runInContext(`${moneyParserSource}; ${helperSource}; this.parseVietnameseMoneyInput = parseVietnameseMoneyInput; this.shouldRequireMenuRecipe = shouldRequireMenuRecipe;`, sandbox);
+
+
+assert.strictEqual(sandbox.parseVietnameseMoneyInput('17.500'), 17500, 'Vietnamese thousands dot parses to 17500');
+assert.strictEqual(sandbox.parseVietnameseMoneyInput('17.500đ'), 17500, 'Vietnamese currency suffix parses to 17500');
+assert.strictEqual(sandbox.parseVietnameseMoneyInput('17,500'), 17500, 'Vietnamese comma thousands parses to 17500');
+assert.strictEqual(sandbox.parseVietnameseMoneyInput('17.5'), 17500, 'colloquial decimal-k entry parses to 17500');
+assert.strictEqual(sandbox.parseVietnameseMoneyInput('17500'), 17500, 'plain integer price stays unchanged');
 
 assert.strictEqual(
   sandbox.shouldRequireMenuRecipe('finished_good', '', []),
@@ -54,12 +63,24 @@ assert.strictEqual(
 );
 
 assert(
+  appSource.includes("const price = parseVietnameseMoneyInput(document.getElementById('menu-item-price').value);"),
+  'submitMenuItem uses Vietnamese money parser for menu item price'
+);
+assert(
+  appSource.includes('price < 0'),
+  'submitMenuItem still rejects negative menu prices'
+);
+assert(
   appSource.includes('if (shouldRequireMenuRecipe(itemType, id, ingredients))'),
   'submitMenuItem uses recipe gate helper with id-aware edit behavior'
 );
 assert(
   appSource.includes("? (await window.DB.Menu.update(id, payload), id)"),
   'existing menu items still use DB.Menu.update for price payload'
+);
+assert(
+  indexSource.includes('id="menu-item-price" type="text" inputmode="numeric"'),
+  'menu price input allows Vietnamese thousands separators instead of browser number decimals'
 );
 assert(
   dbSource.includes('payload.sell_price = nextPrice;') && dbSource.includes('payload.price = nextPrice;'),

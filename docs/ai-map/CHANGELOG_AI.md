@@ -1,6 +1,20 @@
 # AI Changelog
 
 
+## 2026-06-03 22:55 - Fix Vietnamese thousands menu price input
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the clarified `Kho` → `Quản lý món` price-input regression where entering `17.500đ` for `Bia Tiger bạc` was interpreted as decimal `17.5` and then displayed/charged around `18k`:
+
+- Changed `#menu-item-price` from `type="number"` to text + `inputmode="numeric"` so Vietnamese thousand separators are accepted.
+- Added `parseVietnameseMoneyInput()` and wired `submitMenuItem()` to parse `17.500`, `17.500đ`, `17,500`, `17.5`, and `17500` as `17500`.
+- Expanded `scripts/verify-menu-price-save.js` to lock the regression.
+
+Verification target: syntax checks, targeted menu price verifier, full repo check/test/lint/build gate, all verify scripts, and `git diff --check`.
+
+
 ## 2026-06-03 22:49 - Fix Inventory Menu Manager price save
 
 Repo: `/home/longnick/projects/xekho`
