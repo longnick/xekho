@@ -4022,8 +4022,11 @@ function selectCat(cat) {
 function renderMenuItems() {
   const menu  = _getMenu(); // đđ Cloud-first vđi LocalStorage fallback
   const items = orderItems[currentTable] || [];
+  const orderSearchInput = document.getElementById('order-search');
+  const activeMenuSearch = String((orderSearchInput && orderSearchInput.value) || menuSearch || '').trim();
+  menuSearch = activeMenuSearch;
   let filtered = currentCat === 'Tất cả' ? menu : menu.filter(m => m.category === currentCat);
-  if(menuSearch) filtered = filtered.filter(m => m.name.toLowerCase().includes(menuSearch.toLowerCase()));
+  if(activeMenuSearch) filtered = filtered.filter(m => String(m.name || '').toLowerCase().includes(activeMenuSearch.toLowerCase()));
 
   document.getElementById('menu-grid').innerHTML = filtered.map(m => {
     const activeQty = items

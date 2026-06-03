@@ -111,6 +111,18 @@ assert(Array.isArray(norm.items), 'has items');
 assert(typeof norm.total === 'number', 'has numeric total');
 assert(norm.id || norm.billNo, 'has id or billNo');
 
+// Test functions/index.js compatibility wrappers keep real arguments.
+console.log('\nfunctions/index.js compatibility wrappers:');
+const fs = require('fs');
+const path = require('path');
+const indexSource = fs.readFileSync(path.join(__dirname, '../functions/index.js'), 'utf8');
+assert(indexSource.includes('return telegramOrders.normalizeCompletedOrderItems(order);'), 'normalizeCompletedOrderItems wrapper passes order');
+assert(indexSource.includes('return telegramOrders.calculateCompletedOrderSubtotal(items);'), 'calculateCompletedOrderSubtotal wrapper passes items');
+assert(indexSource.includes('return telegramOrders.normalizeCompletedOrderForTelegram(historyId, order);'), 'normalizeCompletedOrderForTelegram wrapper passes order');
+assert(!indexSource.includes('telegramOrders.normalizeCompletedOrderItems(order = {})'), 'normalizeCompletedOrderItems wrapper does not reset argument');
+assert(!indexSource.includes('telegramOrders.calculateCompletedOrderSubtotal(items = [])'), 'calculateCompletedOrderSubtotal wrapper does not reset argument');
+assert(!indexSource.includes('telegramOrders.normalizeCompletedOrderForTelegram(historyId, order = {})'), 'normalizeCompletedOrderForTelegram wrapper does not reset argument');
+
 // Summary
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed > 0 ? 1 : 0);
