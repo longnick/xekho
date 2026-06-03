@@ -165,11 +165,6 @@
     return tryNoCorsPlain();
   }
 
-  /** @returns {string} */
-  function getTelegramReportTestUrl() {
-    return 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram';
-  }
-
   XekhoApp.utils.storage = {
     formatBytes: formatBytes,
     getLocalStorageUsageBytes: getLocalStorageUsageBytes,
@@ -177,7 +172,6 @@
     normalizeGoogleScriptWebAppUrl: normalizeGoogleScriptWebAppUrl,
     isGoogleAppsScriptWebAppUrl: isGoogleAppsScriptWebAppUrl,
     uploadFileToGoogleDriveByEndpoint: uploadFileToGoogleDriveByEndpoint,
-    getTelegramReportTestUrl: getTelegramReportTestUrl,
   };
 
   if (typeof global.formatBytes !== 'function') global.formatBytes = formatBytes;
@@ -186,6 +180,5 @@
   if (typeof global.normalizeGoogleScriptWebAppUrl !== 'function') global.normalizeGoogleScriptWebAppUrl = normalizeGoogleScriptWebAppUrl;
   if (typeof global.isGoogleAppsScriptWebAppUrl !== 'function') global.isGoogleAppsScriptWebAppUrl = isGoogleAppsScriptWebAppUrl;
   if (typeof global.uploadFileToGoogleDriveByEndpoint !== 'function') global.uploadFileToGoogleDriveByEndpoint = uploadFileToGoogleDriveByEndpoint;
-  if (typeof global.getTelegramReportTestUrl !== 'function') global.getTelegramReportTestUrl = getTelegramReportTestUrl;
 
 })(typeof window !== 'undefined' ? window : globalThis);
