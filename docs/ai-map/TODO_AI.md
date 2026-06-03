@@ -56,6 +56,7 @@
 
 ## Done recently
 
+- 2026-06-03 23:28: Deployed bill unit-price fix and bumped `app.js` cache key to `20260603-bill-unit-price` so mobile clients fetch the fixed `17,5K` bill formatter immediately. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2328-deploy-bill-price-cachebust.md`
 - 2026-06-03 23:12: Fixed bill unit-price display for fractional-thousand menu prices; bill `Đ.Giá` now shows `17,5K` for `17.500đ` instead of rounded `18K`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2312-fix-bill-unit-price-display.md`
 
 - 2026-06-03 22:55: Fixed Vietnamese thousands price input in `Kho` → `Quản lý món`; `17.500đ` now parses/saves as `17500` instead of decimal `17.5`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2255-fix-menu-price-thousands.md`

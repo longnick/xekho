@@ -1,6 +1,17 @@
 # AI Changelog
 
 
+## 2026-06-03 23:28 - Deploy bill unit-price fix with app.js cache bust
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Deployed the bill unit-price fix to Firebase and bumped the production `app.js` cache key from `20260509-online-complete` to `20260603-bill-unit-price` so mobile browsers fetch the fixed formatter immediately.
+
+Verification: full deploy-readiness gate passed before deploy; hosting returned HTTP 200 after deploy.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2328-deploy-bill-price-cachebust.md`
+
 ## 2026-06-03 23:12 - Fix bill unit-price display for fractional K prices
 
 Repo: `/home/longnick/projects/xekho`
