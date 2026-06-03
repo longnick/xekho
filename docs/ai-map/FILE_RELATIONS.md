@@ -18,7 +18,7 @@ Related files:
   - role: main POS client-side application logic.
   - depends on: Firebase wrapper/data helpers and DOM structure in `index.html`.
   - used by: POS page.
-  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; inspect diff before editing.
+  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; `submitMenuItem()` uses an id-aware recipe gate so existing menu items can save price edits even if they currently have no recipe rows; inspect diff before editing.
 
 - `app/esm/main.js`
   - role: Phase E1/E2/E3 browser-module compatibility harness for future ESM migration.
@@ -67,7 +67,7 @@ Related files:
   - role: Firestore/Firebase data access helper.
   - depends on: Firebase SDK/config.
   - used by: POS/KDS/AI modules.
-  - notes: do not hardcode secrets; treat Firestore schema changes carefully.
+  - notes: do not hardcode secrets; treat Firestore schema changes carefully; Menu add/update mirrors selling price into both `sell_price` and `price`.
 
 - `offlineBackup.js`
   - role: POS offline backup queue foundation for pending order actions.
