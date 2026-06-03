@@ -55,7 +55,7 @@ Related files:
   - role: extracted browser storage/upload utility module.
   - depends on: browser localStorage/FileReader/fetch only at call time.
   - used by: `app.js` compatibility wrappers and report/upload flows.
-  - notes: now also owns `getTelegramReportTestUrl()` so the legacy global in `app.js` can delegate.
+  - notes: owns storage/Drive helpers; the old Telegram daily report test URL helper was removed with the deleted test endpoint.
 
 - `app/auth/staff.js`
   - role: extracted pure auth/staff helper module.

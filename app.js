@@ -1785,13 +1785,6 @@ function ensureTelegramReportTimeOptions() {
   }
 }
 
-function getTelegramReportTestUrl() {
-  if (window.XekhoApp?.utils?.storage?.getTelegramReportTestUrl) {
-    return window.XekhoApp.utils.storage.getTelegramReportTestUrl();
-  }
-  return 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram';
-}
-
 function getGoogleDriveConfigFromUi() {
   const urlEl = document.getElementById('set-googleDriveUploadUrl');
   const folderEl = document.getElementById('set-googleDriveFolderId');
@@ -10052,54 +10045,6 @@ function updateStorageQuotaInfo() {
   const BROWSER_LIMIT_NOTE = 'ℹ️ Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
   infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
   infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
-}
-
-async function testTelegramReportSettings() {
-  if (!isAdminUser()) {
-    showToast('Chỉ admin mới được test báo cáo Telegram.', 'danger');
-    return;
-  }
-
-  const btn = document.getElementById('telegram-report-test-btn');
-  const originalText = btn ? btn.textContent : '';
-
-  try {
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Đang gửi test...';
-    }
-
-    await submitSettings();
-
-    const authUser = window.DB?.currentUser;
-    if (!authUser?.getIdToken) {
-      throw new Error('Chưa có phiên đăng nhập Firebase để xác thực.');
-    }
-
-    const token = await authUser.getIdToken();
-    const response = await fetch(getTelegramReportTestUrl(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ source: 'settings-ui' }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.ok !== true) {
-      throw new Error(data?.error || 'Không gửi được báo cáo test Telegram.');
-    }
-
-    showToast('Đã gửi báo cáo test Telegram thành công.', 'success');
-  } catch (err) {
-    console.error('[TelegramReportTest] error', err);
-    showToast(err?.message || 'Không gửi được báo cáo test Telegram.', 'danger');
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = originalText || '🧪 Test báo cáo Telegram';
-    }
-  }
 }
 
 function handleLogoUpload(e) {

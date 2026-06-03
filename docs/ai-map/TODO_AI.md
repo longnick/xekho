@@ -3,7 +3,7 @@
 ## Doing
 
 - `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded (210→474 lines, 34 Cloud Functions, 27 modules), `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1→E5.11 are complete. Non-ESM Deep Extraction D4 small-utility cleanup is complete: `getTelegramReportTestUrl()` moved to storage utils, `getCurrentOrderActorMetaFromUser()` moved to auth/staff helpers, and unreachable `getFinanceExpenseRows()` fallback code removed.
+- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded and now tracks 33 Cloud Functions after removing obsolete `testDailyReportTelegram`; `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1→E5.11 are complete. Non-ESM Deep Extraction D4 small-utility cleanup is complete; the old `getTelegramReportTestUrl()` helper was removed with the deleted manual test endpoint, `getCurrentOrderActorMetaFromUser()` remains in auth/staff helpers, and unreachable `getFinanceExpenseRows()` fallback code was removed.
 - Current conservative progress estimate:
  - Total long-term plan including optional TypeScript/CI/build tooling: ~85% complete.
  - Core non-optional refactor/security/testing plan: ~90% complete.
@@ -128,3 +128,6 @@
 - [x] Sprint 14.2: `tsc --noEmit` added to CI pipeline (frontend + backend)
 - [x] Sprint 14.3: `CODE_MAP.md` expanded (210→474 lines) — 34 Cloud Functions, 27 modules, data flows
 - [x] Sprint 14.4: `DATA_SCHEMA.md` created (855 lines) — 33+ Firestore collections, field schemas, indexes
+
+
+- 2026-06-03 19:15: Removed obsolete `testDailyReportTelegram` endpoint and frontend test button. Production Telegram daily reports continue through `scheduledTelegramReport`; manual test endpoint is no longer a deploy target. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-1915-remove-test-daily-report.md`

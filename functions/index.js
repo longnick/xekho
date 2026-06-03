@@ -3262,42 +3262,6 @@ function json(res, code, data) {
   return generalUtils.json(res, code, data);
 }
 
-exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
-  cors(req, res, async () => {
-    if (req.method === 'OPTIONS') return res.status(204).send('');
-    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-
-    try {
-      const actor = await verifyAdminRequest(req);
-      const debugNow = req.body?.debugNow ? String(req.body.debugNow) : null;
-      const result = await runDailyTelegramReport({
-        scheduleTime: new Date().toISOString(),
-        force: true,
-        isTest: true,
-        debugNow,
-      });
-
-      return json(res, 200, {
-        ok: true,
-        actor,
-        chatId: result.chatId,
-        revenue: result.report?.revenue || 0,
-        invoiceCount: result.report?.invoiceCount || 0,
-        rangeLabel: result.report?.rangeLabel || '',
-        debugNow,
-      });
-    } catch (err) {
-      const message = String(err?.message || err || '');
-      const status = /permission/i.test(message) ? 403 : (/token/i.test(message) ? 401 : 500);
-      logger.error('testDailyReportTelegram failed', {
-        error: message,
-        responseData: err?.response?.data || null,
-      });
-      return json(res, status, { ok: false, error: message || 'Request failed' });
-    }
-  });
-});
-
 exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
