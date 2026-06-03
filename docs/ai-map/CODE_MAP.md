@@ -20,7 +20,7 @@
 - `scripts/verify-esm-dom-utils.js`: Native dynamic-import smoke test for the DOM ESM facade and global installer.
 - `scripts/verify-esm-leaf-facades.js`: Native dynamic-import smoke test for format/date/Excel/staff ESM facades and installers.
 - `scripts/verify-esm-runtime-adapters.js`: Native dynamic-import smoke test for DOM/Store/DB ESM runtime adapters.
-- `db.js`: Firebase/Firestore wrapper and data access helper.
+- `db.js`: Firebase/Firestore wrapper and data access helper; Menu add/update maps selling prices to `sell_price` and legacy `price`.
 - `offlineBackup.js`: Sprint 1 POS offline backup queue foundation. Provides IndexedDB-backed pending order action storage plus in-memory storage for verification; Sprint 11 also accepts explicit `remove_item` actions.
 - `offlineSync.js`: Sprint 2 adapter-based offline sync engine foundation. Syncs pending/failed queue actions through an injected adapter with idempotency by `clientOrderId`, retry/backoff, and single-flight lock.
 - `offlineFirestoreAdapter.js`: Sprint 3 Firestore/POS adapter foundation. Bridges `offlineSync.js` actions to injected Firestore/POS operations, maps `close_order` to completed-history payloads, applies explicit `remove_item` actions through `removeItem`, and checks existing `history`/`orders`/`online_orders` by `clientOrderId`; no production writes by itself.
@@ -32,6 +32,7 @@
 - `app/utils/format.js`: Safe refactor Sprint 3 compatibility formatter module. Exposes `window.XekhoApp.utils.format` helpers (`compactNumber`, `currency`, `date`, `time`, `dateTime`, `todayKey`) while `store.js` keeps the legacy global `fmt`/`fmtFull`/date wrappers and delegates when the utility is loaded.
 - `scripts/verify-dom-utils.js`: Node VM verification for `app/utils/dom.js`; checks UTF-8-safe Vietnamese text passthrough, nullish inputs, numeric inputs, and escaping for `&`, `<`, `>`, double quotes, and apostrophes.
 - `scripts/verify-format-utils.js`: Node VM verification for `app/utils/format.js`; checks compact/currency/date helper behavior and confirms `store.js` contains compatibility delegation markers.
+- `scripts/verify-menu-price-save.js`: Regression verifier for `Kho` → `Quản lý món` price saves; checks existing-item recipe gating and DB `sell_price`/`price` mapping.
 - `scripts/verify-offline-runtime.js`: Sprint 19-aligned runtime verification; checks current `offlineRuntime.js` version marker plus disabled-sync and enabled-sync memory-flow behavior.
 - `scripts/verify-offline-backup.js`: Node verification script for `offlineBackup.js` using in-memory storage.
 - `scripts/verify-offline-sync.js`: Node verification script for `offlineSync.js` using memory backup + memory sync adapter.
