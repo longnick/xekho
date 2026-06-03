@@ -8858,6 +8858,10 @@ function applyMenuItemOptimisticState(savedId, payload) {
   }
 }
 
+function shouldRequireMenuRecipe(itemType, id, ingredients) {
+  return itemType === ITEM_TYPES.FINISHED && !String(id || '').trim() && (!Array.isArray(ingredients) || ingredients.length === 0);
+}
+
 async function submitMenuItem(e) {
   e.preventDefault();
   const form = e.target;
@@ -8894,8 +8898,8 @@ async function submitMenuItem(e) {
     }
   });
 
-  if (itemType === ITEM_TYPES.FINISHED && ingredients.length === 0) {
-    showToast('Thành phẩm / món ăn bắt buộc phải có công thức.', 'warning');
+  if (shouldRequireMenuRecipe(itemType, id, ingredients)) {
+    showToast('Thành phẩm / món ăn mới bắt buộc phải có công thức. Món cũ vẫn được phép sửa giá.', 'warning');
     return;
   }
   if (itemType === ITEM_TYPES.RETAIL && !linkedInventoryId) {

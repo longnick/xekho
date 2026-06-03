@@ -1753,6 +1753,7 @@ const Menu = {
       display_name: item.name || ref.id,
       category: item.category || 'Khac',
       sell_price: Number(item.price || 0),
+      price: Number(item.price || 0),
       image_url: item.image_url || '',
       item_type: _appMenuTypeToMaster(item.itemType),
       aliases: item.aliases || '',
@@ -1774,7 +1775,11 @@ const Menu = {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(data, 'name')) payload.display_name = data.name;
     if (Object.prototype.hasOwnProperty.call(data, 'category')) payload.category = data.category;
-    if (Object.prototype.hasOwnProperty.call(data, 'price')) payload.sell_price = Number(data.price || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'price')) {
+      const nextPrice = Number(data.price || 0);
+      payload.sell_price = nextPrice;
+      payload.price = nextPrice;
+    }
     if (Object.prototype.hasOwnProperty.call(data, 'image_url')) payload.image_url = data.image_url;
     if (Object.prototype.hasOwnProperty.call(data, 'hidden')) payload.hidden = !!data.hidden;
     if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.item_type = _appMenuTypeToMaster(data.itemType);

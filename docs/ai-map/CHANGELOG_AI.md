@@ -1,6 +1,20 @@
 # AI Changelog
 
 
+## 2026-06-03 22:49 - Fix Inventory Menu Manager price save
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the `Kho` → `Quản lý món` price-save regression:
+
+- `submitMenuItem()` now uses an id-aware recipe gate: new finished-good items still require a recipe, but existing items can save selling-price edits even if their recipe list is currently empty.
+- `db.js` now mirrors menu selling price to both `sell_price` and `price` on add/update so canonical and legacy consumers stay aligned.
+- Added `scripts/verify-menu-price-save.js` to guard the regression.
+
+Verification target: syntax checks, menu price verifier, repo check/test/lint/build gate, and `git diff --check`.
+
+
 ## 2026-06-03 21:38 - Fix mobile table overflow and duplicate takeaway tile
 
 Repo: `/home/longnick/projects/xekho`

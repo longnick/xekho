@@ -55,6 +55,8 @@
 - TypeScript migration complete via JSDoc + @ts-check (no .ts files); backend modules annotated in Phase 14. Post-audit tooling cleanup restored frontend/backend `tsc` with TypeScript 6 deprecation handling.
 
 ## Done recently
+
+- 2026-06-03 22:49: Fixed `Kho` → `Quản lý món` price-save regression. Existing finished-good items with empty recipes can now save price edits, while new finished items still require a recipe. `db.js` mirrors price to `sell_price` + `price`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2249-fix-menu-price-save.md`
 - 2026-06-03 21:38: Fixed mobile table-screen overflow and removed the duplicate `takeaway` physical-grid tile while preserving the dedicated `Khách mang về` card. Added `scripts/verify-mobile-table-grid.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2138-fix-mobile-table-overflow-takeaway.md`
 - 2026-06-03 20:36: Fixed POS order menu search after ESM delegation by reading `#order-search` directly in `renderMenuItems()`, and fixed completed-order Telegram wrapper argument reset so real items/table/payment/totals flow into notifications. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2036-fix-menu-search-completed-telegram.md`
 - 2026-06-03 20:02: Removed obsolete top-level admin pages/tabs for Menu, AI Insights, and Media before deploy. `index.html` removed page/menu/navigation blocks, `app.js` now explicitly denies stale `menu`/`insights`/`media` navigation, Media Refinery page rendering/styles were removed, and ESM verifier counts were adjusted. Marker scan: removed page/navigation markers = 0, inline handlers = 129. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2002-remove-unused-admin-tabs-deploy.md`
