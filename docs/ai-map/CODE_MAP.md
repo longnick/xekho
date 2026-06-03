@@ -93,9 +93,9 @@
 
 ## API routes / Cloud Functions
 
-Source: `functions/index.js` (~5,702 lines, 34 exports). Phase 2 extracted 38+ functions into backend modules.
+Source: `functions/index.js` (~5,670 lines, 33 exports). Phase 2 extracted 38+ functions into backend modules.
 
-### Exported Cloud Functions (34)
+### Exported Cloud Functions (33)
 
 #### Orders & Payments (2)
 - `approveOnlineOrder` (onCall, L2655) — approve pending online order from POS or Telegram
@@ -109,8 +109,7 @@ Source: `functions/index.js` (~5,702 lines, 34 exports). Phase 2 extracted 38+ f
   - **Text messages**: smart report Q&A (`tryAnswerTelegramSmartReportQuestion`), then AI tool loop (`askGeminiWithFirestoreTools`)
   - **Commands**: `/fix` for order draft editing
 
-#### Telegram Reports & Notifications (5)
-- `testDailyReportTelegram` (onRequest, L3259) — test daily report
+#### Telegram Reports & Notifications (4)
 - `testAdsReportTelegram` (onRequest, L3295) — test ads report
 - `adsRevenueReportApi` (onRequest, L3331) — ads revenue API
 - `testPaymentBillTelegram` (onRequest, L3352) — test payment bill
@@ -298,7 +297,7 @@ Source: `index.html` — all scripts loaded in `<body>` at bottom, non-module (I
 13. app/utils/excel.js         — XekhoApp.utils.excel (Excel formatting helpers)
 14. app/utils/date.js          — XekhoApp.utils.date (formatLocalDateKey, resolvePeriodDateRangePure)
 15. app/utils/print.js         — XekhoApp.utils.print.buildStandaloneBillPrintHtml
-16. app/utils/storage.js       — XekhoApp.utils.storage (formatBytes, blobToBase64, uploadFileToGoogleDriveByEndpoint, getTelegramReportTestUrl)
+16. app/utils/storage.js       — XekhoApp.utils.storage (formatBytes, blobToBase64, uploadFileToGoogleDriveByEndpoint)
 17. app/utils/parser.js        — XekhoApp.utils.parser (parsePurchaseText, tokenSimilarity)
 18. app/utils/categorize.js    — XekhoApp.utils.categorize (normalizeExpenseCategoryLabel, etc.)
 19. app/report/helpers.js      — XekhoApp.report (getReportMenuIngredientKeys, doesOrderMatchReportMenuItem, etc.)

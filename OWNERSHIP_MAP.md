@@ -24,7 +24,7 @@ Phạm vi tài liệu này:
 | AI assistant / AI router | `xekho` | `functions/index.js`: `aiRouter`, `aiStatus`, `apiVoice`; `ai-core.js`; `ai-ui.js` | Live trong cloud codebase `xekho` | Medium-High | Xem `xekho` là production owner cho AI assistant nội bộ | Không dùng docs/patch cũ ở `webapp-menu` làm bằng chứng move | Test AI bubble, `aiStatus`, `aiRouter`, voice flow |
 | Purchase OCR | `xekho` | `functions/index.js`: `purchaseOcr`; `functions/vertexAi.js`; `app.js` | Live trong cloud codebase `xekho` | High | Giữ OCR nhập hàng ở `xekho` | Không coi integration patch hay artifact là source-of-truth | Upload ảnh hóa đơn nhập hàng và đối chiếu parse |
 | Telegram kitchen notification | `xekho` | `telegramWebhook`, `telegramOnKitchenOrderCreated`, `telegramOnKitchenOrderUpdated`, `telegramOnCompletedOrderCreated` | Live trong cloud codebase `xekho` | Medium | Giữ Telegram vận hành bếp ở `xekho` | Không dời ownership chỉ vì `webapp-menu` có Telegram-related code khác | Tạo order, cập nhật bếp, hoàn tất order, kiểm tra Telegram |
-| Telegram scheduled daily report | `xekho` | `scheduledTelegramReport`, `testDailyReportTelegram` | Live scheduler job đang trỏ `xekho:scheduledTelegramReport` | High | Xem `xekho` là production owner hiện tại | Không coi `webapp-menu:dailyReportTelegram` là production evidence | Gọi `testDailyReportTelegram`, đối chiếu scheduler `firebase-schedule-scheduledTelegramReport-asia-southeast1` |
+| Telegram scheduled daily report | `xekho` | `scheduledTelegramReport` | Live scheduler job đang trỏ `xekho:scheduledTelegramReport` | High | Xem `xekho` là production owner hiện tại | Không coi `webapp-menu:dailyReportTelegram` là production evidence | Đối chiếu scheduler `firebase-schedule-scheduledTelegramReport-asia-southeast1` |
 | Public menu sync | `xekho` | `syncPublicMenuOnCatalogCreate`, `syncPublicMenuOnCatalogUpdate`, `syncPublicMenuOnCatalogDelete` | Live trong cloud codebase `xekho` | Medium-High | Giữ trigger sync catalog ở `xekho` cho tới khi có migration plan rõ | Không xoá chỉ vì public ordering UI nằm ở `webapp-menu` | Sửa `Product_Catalog`, quan sát dữ liệu public sync |
 | Online order intake | `webapp-menu` | `createOnlineOrder`, `syncOnlineOrderToPosOnWrite`, `updateOnlineOrderStatusFromPos`, admin/commerce service files trong `src/` | Live trong cloud codebase `webapp-menu` | High | Xem `webapp-menu` là owner của intake/ordering web | Không lẫn với approve/reject callable của `xekho` | Tạo đơn online từ web menu, theo dõi sync sang POS |
 | Online order approve/reject | `xekho` | `approveOnlineOrder`, `rejectOnlineOrder`, `app.js`, `db.js` | Live trong cloud codebase `xekho` | Medium | Giữ approve/reject staff-side ở `xekho` theo evidence hiện có | Không tự kết luận đã move sang `webapp-menu` vì domain gần nhau | Thử approve/reject từ staff UI |
@@ -42,7 +42,7 @@ Các function dưới đây có trong source `webapp-menu/functions/index.js` nh
 | `scanWorkflowRunsNow` | `SOURCE_ONLY_NOT_LIVE` | Không được dùng làm production evidence |
 | `onDineInOrderRequestCreated` | `SOURCE_ONLY_NOT_LIVE` | Không được dùng làm production evidence |
 | `dailyReportTelegram` | `SOURCE_ONLY_NOT_LIVE` | Không được dùng để kết luận Telegram daily report đã thuộc `webapp-menu` |
-| `testDailyReportTelegram` | `SOURCE_ONLY_NOT_LIVE` | Không được dùng làm production evidence |
+| `testDailyReportTelegram` | `REMOVED_TEST_ONLY` | Đã gỡ khỏi `xekho`; không dùng làm production evidence |
 
 Nguyên tắc áp dụng:
 

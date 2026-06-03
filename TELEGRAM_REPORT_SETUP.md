@@ -99,21 +99,9 @@ firebase functions:log
 
 ## 🧪 TEST THỬ
 
-### Test Qua API Endpoint
+### Test qua scheduler/log
 
-```bash
-# Test với giờ hiện tại
-curl -X POST https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram \
-  -H "Authorization: Bearer YOUR_FIREBASE_ID_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# Test với giờ cụ thể
-curl -X POST https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/testDailyReportTelegram \
-  -H "Authorization: Bearer YOUR_FIREBASE_ID_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"debugNow": "2026-05-15T07:00:00+07:00"}'
-```
+Endpoint test thủ công `testDailyReportTelegram` đã được gỡ vì chỉ là function test cũ. Kiểm tra luồng báo cáo bằng `scheduledTelegramReport`, cấu hình `settings/telegram_report`, và Firebase logs.
 
 ### Test Trong Code
 
@@ -297,7 +285,7 @@ Hệ thống có deduplication tự động qua `telegramReportLastSentRangeKey`
 Nếu gặp vấn đề:
 
 1. Kiểm tra logs: `firebase functions:log`
-2. Test thủ công: `/testDailyReportTelegram`
+2. Test thủ công endpoint cũ đã gỡ; kiểm tra qua `scheduledTelegramReport` và log Firebase
 3. Xem document này: `TELEGRAM_REPORT_SETUP.md`
 
 ---

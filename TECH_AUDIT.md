@@ -61,7 +61,6 @@ Important reading rule for this report:
 - `scanWorkflowRunsNow`
 - `onDineInOrderRequestCreated`
 - `dailyReportTelegram`
-- `testDailyReportTelegram`
 
 No cloud-only functions were found outside current source for either codebase.
 
@@ -74,7 +73,7 @@ No cloud-only functions were found outside current source for either codebase.
 | Voice recognition / speech flows | `xekho/ai-ui.js`, `xekho/server.js`, `xekho/functions/index.js` | Active but mixed local/cloud path | Medium | Browser mic flow + `/apiVoice` + Telegram voice flow | Audit end-to-end after text cleanup |
 | Purchase OCR / import OCR | `xekho/app.js`, `xekho/functions/index.js`, `xekho/functions/vertexAi.js` | Active and deployed in `xekho` | High | OCR purchase image and confirm parsed items | Keep feature; remove stale Gemini UI wording |
 | Telegram webhook + kitchen/completed-order notifications | `xekho/functions/index.js` | Active and deployed in `xekho` | Medium | Create order, update kitchen status, complete order | Keep in `xekho`; fix remaining mojibake in message templates |
-| Telegram scheduled daily report | `xekho/functions/index.js`, `webapp-menu/functions/index.js` | Overlapping source, but live scheduler belongs to `xekho` | High | Test `scheduledTelegramReport` + `/testDailyReportTelegram` | Declare single owner; do not keep two schedule implementations indefinitely |
+| Telegram scheduled daily report | `xekho/functions/index.js`, `webapp-menu/functions/index.js` | Overlapping source, but live scheduler belongs to `xekho` | High | Test `scheduledTelegramReport` | Declare single owner; do not keep two schedule implementations indefinitely |
 | Public menu sync from POS catalog | `xekho/functions/index.js` | Active and deployed in `xekho` | Medium-High | Update `Product_Catalog`, inspect public site data | Clarify if `xekho` remains source-of-truth while web ordering lives in `webapp-menu` |
 | Online order approve/reject admin callables | `xekho/functions/index.js`, `xekho/app.js`, `xekho/db.js` | Active and deployed in `xekho` | Medium | Approve/reject from staff UI | Verify business boundary against `webapp-menu` online order flows |
 | Online order creation / POS sync / payment webhooks | `webapp-menu/functions/index.js`, `webapp-menu/src/features/admin/services/onlineAdminService.ts` | Active and deployed in `webapp-menu` | High | Create online order, PayOS/SePay webhook sandbox, POS sync | Keep in `webapp-menu`; document that this is separate from `xekho` callables |
@@ -88,7 +87,7 @@ No cloud-only functions were found outside current source for either codebase.
 | Area | Current owner in cloud | Source status | Conclusion |
 |---|---|---|---|
 | Telegram scheduled report | `xekho:scheduledTelegramReport` | `xekho` and `webapp-menu` both contain report logic | `xekho` is current production owner |
-| Telegram test daily report | `xekho:testDailyReportTelegram` | `webapp-menu` also has source copy, not deployed | Keep `xekho` as live owner unless intentionally migrated |
+| Telegram test daily report | `xekho:testDailyReportTelegram` (removed 2026-06-03) | `webapp-menu` also has source copy, not deployed | Keep `xekho` as live owner unless intentionally migrated |
 | Online order admin approve/reject | `xekho` | Separate online-order pipeline exists in `webapp-menu` | Two adjacent domains exist; do not delete either side yet |
 | Public menu sync triggers | `xekho` | Public ordering UX lives in `webapp-menu` | Ownership needs explicit documentation, but current trigger owner is `xekho` |
 | Online order intake / payment webhooks | `webapp-menu` | Source and cloud both present in `webapp-menu` | `webapp-menu` is current production owner |

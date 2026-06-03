@@ -1,6 +1,6 @@
 # Refactor Progress and Dirty Tree Classification
 
-**Updated:** 2026-06-02 15:29 (Deep Extraction D4 small utility cleanup complete)
+**Updated:** 2026-06-03 19:15 (obsolete Telegram daily report test endpoint removed)
 **Repo:** `/home/longnick/projects/xekho`
 **Branch:** `test/xe-kho-repo-implementer-skill`
 
@@ -69,6 +69,8 @@ Current ESM readiness ~67%. Non-ESM deep extraction readiness: D1 complete via E
 - Phase 4 Sprint 4.2 completed: extracted 3 pure date utilities
 - Phase 5 Sprint 5.1 completed: extracted `buildStandaloneBillPrintHtml` into `app/utils/print.js` (105-line pure HTML builder).
 - Phase 5 Sprint 5.2 completed: extracted 5 utilities into `app/utils/storage.js` (formatBytes, getLocalStorageUsageBytes, blobToBase64, normalizeGoogleScriptWebAppUrl, isGoogleAppsScriptWebAppUrl). into `app/utils/date.js` (IIFE, `XekhoApp.utils.date.*`). (ESLint v10 flat config) targeting all extracted modules. 0 errors, 2 warnings. from `functions/index.js`, reduced from ~7280 to ~6816 lines (-464 lines). (`chunkArray`, `escapeTelegramHtml`, `escapeXml`, `scoreTelegramTextQuality`, `fixTelegramMojibake`, `normalizeTelegramText`, `normalizeTelegramTextPreserveLines`, `formatCurrencyVi`, `formatQtyVi`, `getTelegramProductDisplayName`, `shouldPreferTelegramCatalogName`) into `functions/utils/text.js`. `functions/index.js` requires the module and delegates through thin wrappers.
+
+- Deploy cleanup: removed obsolete `testDailyReportTelegram` test-only endpoint and frontend test button; production `scheduledTelegramReport` remains the daily Telegram report owner.
 
 ## Dirty tree classification (path-only)
 

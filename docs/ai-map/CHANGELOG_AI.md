@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-03 — Remove obsolete Telegram daily report test endpoint
+
+- Removed `exports.testDailyReportTelegram` from `functions/index.js`; scheduled production flow remains `scheduledTelegramReport`.
+- Removed the Settings UI test button and legacy frontend URL helper that called the deleted endpoint.
+- Updated storage utility verification and AI map docs so deploy no longer attempts the obsolete test-only function.
+
 ## 2026-06-02 15:29 - Deep extraction D4 small utility cleanup outside E phase
 
 Repo: `/home/longnick/projects/xekho`
