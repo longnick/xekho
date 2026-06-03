@@ -4333,6 +4333,19 @@ function closeCartSheet() {
   renderCart(); // Re-render to ensure it shows correctly in the host
 }
 
+function formatBillUnitPrice(value) {
+  const number = Number(value || 0) || 0;
+  if (number >= 1000) {
+    const thousands = number / 1000;
+    const fractionDigits = Number.isInteger(thousands) ? 0 : 3;
+    return thousands.toLocaleString('vi-VN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: fractionDigits,
+    }) + 'K';
+  }
+  return number.toLocaleString('vi-VN');
+}
+
 function openBillModal() {
   try { closeCartSheet(); } catch(_) {}
   const items = orderItems[currentTable] || [];
@@ -4406,7 +4419,7 @@ function openBillModal() {
         <thead><tr><th>Món</th><th style="text-align:center">SL</th><th style="text-align:right">Đ.Giá</th><th style="text-align:right">T.Tiền</th></tr></thead>
         <tbody>${items.map(i=>`<tr>
           <td>${i.name}${i.note ? `<br><small style="font-size:9px;color:#666;line-height:1">(Note: ${i.note})</small>` : ''}</td><td style="text-align:center">${i.qty}</td>
-          <td style="text-align:right">${fmt(i.price)}</td>
+          <td style="text-align:right">${formatBillUnitPrice(i.price)}</td>
           <td class="amount">${fmt(i.price*i.qty)}</td></tr>`).join('')}
         </tbody>
       </table>

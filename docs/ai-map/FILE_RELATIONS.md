@@ -18,7 +18,7 @@ Related files:
   - role: main POS client-side application logic.
   - depends on: Firebase wrapper/data helpers and DOM structure in `index.html`.
   - used by: POS page.
-  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; `submitMenuItem()` uses Vietnamese money parsing for menu prices and an id-aware recipe gate so existing menu items can save price edits even if they currently have no recipe rows; inspect diff before editing.
+  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; `submitMenuItem()` uses Vietnamese money parsing for menu prices and an id-aware recipe gate so existing menu items can save price edits even if they currently have no recipe rows; `openBillModal()` uses `formatBillUnitPrice()` for the bill `Đ.Giá` column so fractional-thousand prices such as `17.500đ` display as `17,5K` instead of rounded `18K`; inspect diff before editing.
 
 - `app/esm/main.js`
   - role: Phase E1/E2/E3 browser-module compatibility harness for future ESM migration.
