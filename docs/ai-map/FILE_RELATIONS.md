@@ -404,3 +404,7 @@ Related files:
   - depends on: browser `document`, existing legacy globals `renderTables`, `renderStockList`, `renderMenuAdmin`, `renderMenuItems`, and legacy `menuSearch`.
   - used by: `app/esm/main.js`, `index.html` elements with `data-esm-admin-render` / `data-esm-menu-items-search`, `scripts/verify-esm-admin-render-controls.js`, and `scripts/verify-esm-entry.js`.
   - notes: allowlisted only; it does not expose submit/save/delete/reset/import/export/POS/payment/media flows.
+## 2026-06-03 bugfix relations
+
+- POS order search: `index.html` `#order-search[data-esm-menu-items-search]` → `app/esm/ui/admin-render-controls.js` input delegation → `app.js#renderMenuItems()`, which now reads the live input value directly before filtering menu cards.
+- Completed-order Telegram: Firestore/history payload → `functions/index.js#sendCompletedOrderTelegram()` → wrapper `normalizeCompletedOrderForTelegram(historyId, order)` → `functions/telegram/orders.js` normalization helpers → `buildTelegramCompletedOrderMessage()`. Wrappers must pass real arguments; resetting to `{}`/`[]` drops table/payment/items/totals.
