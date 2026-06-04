@@ -109,11 +109,8 @@ const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
 const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
-const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
 const TELEGRAM_OWNER_CHAT_ID = defineString('TELEGRAM_OWNER_CHAT_ID', { default: '' });
 const TELEGRAM_COMPLETED_ORDER_CHAT_ID = defineString('TELEGRAM_COMPLETED_ORDER_CHAT_ID', { default: '' });
-const TELEGRAM_KITCHEN_READY_CHAT_ID = defineString('TELEGRAM_KITCHEN_READY_CHAT_ID', { default: '' });
-const TELEGRAM_KITCHEN_READY_BOT_TOKEN = defineString('TELEGRAM_KITCHEN_READY_BOT_TOKEN', { default: '' });
 const META_AD_ACCOUNT_ID = defineString('META_AD_ACCOUNT_ID', { default: '' });
 const META_ACCESS_TOKEN = defineString('META_ACCESS_TOKEN', { default: '' });
 const KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID = defineString('KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID', { default: '' });
@@ -447,7 +444,7 @@ function buildTelegramNewKitchenOrderMessageClean(order = {}, rows = []) {
 }
 
 async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
-  const botToken = getTelegramReportBotToken();
+  const botToken = String(TELEGRAM_BOT_TOKEN.value() || '').trim();
   const chatId = String(KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID.value() || TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
   if (!botToken || !chatId || !rows.length) {
     logger.warn('Skipping kitchen new-order Telegram: missing token/chat/items', {
@@ -589,218 +586,6 @@ function formatQtyVi(amount) {
   return value.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-function normalizeTelegramSmartReportText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeTelegramWildcardText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/[^a-z0-9?\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function buildTelegramWildcardRegex(value = '') {
-  const normalized = normalizeTelegramWildcardText(value);
-  if (!normalized || !normalized.includes('?')) return null;
-  const escaped = normalized.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
-  const pattern = escaped
-    .replace(/\s+/g, '\\s+')
-    .replace(/(?:\\\?)+/g, '[a-z0-9]{0,3}');
-  if (!pattern) return null;
-  return new RegExp(`^${pattern}$`, 'i');
-}
-
-function parseTelegramLooseDateTime(value = '', fallbackNow = new Date()) {
-  const raw = normalizeTelegramSmartReportText(value);
-  if (!raw) return null;
-  if (['bay gio', 'hien tai', 'luc nay', 'now'].includes(raw)) return fallbackNow;
-
-  const relativeMatch = raw.match(/^(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(hom nay|hom qua)$/i);
-  if (relativeMatch) {
-    const nowParts = getVietnamDateParts(fallbackNow);
-    const base = new Date(fallbackNow);
-    const hour = Number(relativeMatch[1] || relativeMatch[3] || 0);
-    const minute = Number(relativeMatch[2] || relativeMatch[4] || 0);
-    const dayOffset = String(relativeMatch[5] || '').trim() === 'hom qua' ? -1 : 0;
-    const localDate = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day + dayOffset, hour, minute, 0) - 7 * 60 * 60 * 1000);
-    return Number.isNaN(localDate.getTime()) ? null : localDate;
-  }
-
-  const match = raw.match(
-    /(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/i,
-  );
-  if (!match) return null;
-
-  const nowParts = getVietnamDateParts(fallbackNow);
-  const hour = Number(match[1] || match[3] || 0);
-  const minute = Number(match[2] || match[4] || 0);
-  const day = Number(match[5] || 0);
-  const month = Number(match[6] || 0);
-  let year = Number(match[7] || nowParts.year);
-  if (year > 0 && year < 100) year += 2000;
-  if (!day || !month || !year) return null;
-
-  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0) - 7 * 60 * 60 * 1000);
-}
-
-function formatTelegramSmartRangeLabel(from, toExclusive) {
-  return `từ ${formatTelegramDateTimeVi(from)} đến ${formatTelegramDateTimeVi(toExclusive)}`;
-}
-
-function parseTelegramSmartReportIntent(userText = '') {
-  const normalized = normalizeTelegramSmartReportText(userText);
-  if (!normalized) return null;
-
-  const metric = normalized.includes('doanh thu')
-    ? 'revenue'
-    : (
-      normalized.includes('loi nhuan')
-      || normalized.includes('lai gop')
-      || normalized.includes('lai bao nhieu')
-      || normalized.includes('lai ')
-    )
-      ? 'profit'
-      : (
-        normalized.includes('ban duoc bao nhieu')
-        || normalized.includes('duoc bao nhieu')
-        || normalized.includes('ban duoc may')
-        || normalized.includes('co bao nhieu don')
-      )
-        ? 'summary'
-        : '';
-  if (!metric) return null;
-
-  const rangeMatch = normalized.match(/\btu\s+(.+?)\s+\bden\s+(bay gio|hien tai|luc nay|now)\b/i);
-  if (!rangeMatch) return null;
-
-  const itemMatch = normalized.match(/(?:doanh thu|loi nhuan|lai gop|lai)\s+(.+?)(?=\s+\btu\b|\s+\bhom nay\b|\s+\bngay\b|$)/i);
-  const itemName = String(itemMatch?.[1] || '').trim();
-  const from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
-  if (!from) return null;
-  const toExclusive = new Date();
-  const rangeLabel = formatTelegramSmartRangeLabel(from, toExclusive);
-
-  return {
-    metric,
-    itemName: itemName || '',
-    rangeLabel,
-    from,
-    toExclusive,
-  };
-}
-
-async function tryAnswerTelegramSmartReportQuestion(userText = '') {
-  const intent = parseTelegramSmartReportIntent(userText);
-  if (!intent) return null;
-
-  const { executeReportQuery } = getAiDeps();
-  const report = await executeReportQuery({
-    loai_bao_cao: intent.metric === 'profit' ? 'loi_nhuan' : 'doanh_thu',
-    ...(intent.itemName ? { ten_mon: intent.itemName } : {}),
-    tu_thoi_diem: intent.from.toISOString(),
-    den_thoi_diem: intent.toExclusive.toISOString(),
-  }, { db });
-
-  if (!report?.ok) {
-    return {
-      intent,
-      report,
-      text: intent.itemName
-        ? `Em chưa tìm thấy dữ liệu phù hợp cho ${intent.itemName} ${intent.rangeLabel}.`
-        : `Em chưa tìm thấy dữ liệu phù hợp cho khoảng ${intent.rangeLabel}.`,
-    };
-  }
-
-  const itemSummary = report.itemSummary || {};
-  const summary = report.summary || {};
-  const profit = report.profit || {};
-  if (intent.metric === 'profit') {
-    if (!intent.itemName) {
-      return {
-        intent,
-        report,
-        text: [
-          `Lãi gộp ${intent.rangeLabel} là ${formatCurrencyVi(profit.grossProfit)}.`,
-          `Doanh thu: ${formatCurrencyVi(profit.revenue)}.`,
-          `Giá vốn: ${formatCurrencyVi(profit.cost)}.`,
-          `Số đơn: ${formatQtyVi(summary.invoiceCount || 0)}.`,
-        ].join(' '),
-      };
-    }
-    if (!report?.itemSummary) {
-      return {
-        intent,
-        report,
-        text: `Em chưa tìm thấy dữ liệu phù hợp cho ${intent.itemName} ${intent.rangeLabel}.`,
-      };
-    }
-    return {
-      intent,
-      report,
-      text: [
-        `Lãi gộp ${intent.itemName} ${intent.rangeLabel} là ${formatCurrencyVi(profit.grossProfit)}.`,
-        `Doanh thu: ${formatCurrencyVi(itemSummary.revenue)}.`,
-        `Giá vốn: ${formatCurrencyVi(itemSummary.cost)}.`,
-        `Số lượng đã bán: ${formatQtyVi(itemSummary.totalQty)}.`,
-      ].join(' '),
-    };
-  }
-
-  if (intent.metric === 'summary') {
-    return {
-      intent,
-      report,
-      text: [
-        `Trong khoảng ${intent.rangeLabel}, quán bán được ${formatQtyVi(summary.invoiceCount || 0)} đơn.`,
-        `Doanh thu: ${formatCurrencyVi(summary.revenue || 0)}.`,
-        `Lãi gộp: ${formatCurrencyVi(summary.grossProfit || 0)}.`,
-      ].join(' '),
-    };
-  }
-
-  if (!intent.itemName) {
-    return {
-      intent,
-      report,
-      text: [
-        `Doanh thu ${intent.rangeLabel} là ${formatCurrencyVi(summary.revenue || 0)}.`,
-        `Số đơn: ${formatQtyVi(summary.invoiceCount || 0)}.`,
-        `Lãi gộp: ${formatCurrencyVi(summary.grossProfit || 0)}.`,
-      ].join(' '),
-    };
-  }
-
-  if (!report?.itemSummary) {
-    return {
-      intent,
-      report,
-      text: `Em chưa tìm thấy dữ liệu phù hợp cho ${intent.itemName} ${intent.rangeLabel}.`,
-    };
-  }
-
-  return {
-    intent,
-    report,
-    text: [
-      `Doanh thu ${intent.itemName} ${intent.rangeLabel} là ${formatCurrencyVi(itemSummary.revenue)}.`,
-      `Số lượng đã bán: ${formatQtyVi(itemSummary.totalQty)}.`,
-    ].join(' '),
-  };
-}
-
 const DEFAULT_TELEGRAM_REPORT_SETTINGS = {
   enabled: true,
   sendHour: 7,
@@ -915,22 +700,11 @@ function getTelegramReportTargetChatIds() {
 }
 
 function getCompletedOrderTelegramTargetChatIds() {
-  const completedChatId = String(TELEGRAM_COMPLETED_ORDER_CHAT_ID.value() || '').trim();
   return uniqueTokens([
-    completedChatId,
-    TELEGRAM_REPORT_CHAT_ID.value(),
-    TELEGRAM_OWNER_CHAT_ID.value(),
+    TELEGRAM_COMPLETED_ORDER_CHAT_ID.value(),
     TELEGRAM_GROUP_CHAT_ID.value(),
+    TELEGRAM_OWNER_CHAT_ID.value(),
   ]);
-}
-
-function getTelegramReportBotToken() {
-  return String(
-    TELEGRAM_REPORT_BOT_TOKEN.value()
-    || TELEGRAM_KITCHEN_READY_BOT_TOKEN.value()
-    || TELEGRAM_BOT_TOKEN.value()
-    || ''
-  ).trim();
 }
 
 async function loadTelegramReportFinancialProfile() {
@@ -1954,14 +1728,14 @@ function extractTelegramCashierName(value) {
 // Override table normalization so customer-request flows do not render labels like duplicated "BAN".
 function normalizeTelegramTableLabel(value) {
   const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang về';
+  if (!raw) return 'KhÃ´ng rÃµ';
+  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang vá»';
 
   const repeatedPrefixMatch = raw.match(/^(?:b[aà]n?\s*)?(?:ban|b[aà]n)\s*(.+)$/i);
-  if (repeatedPrefixMatch?.[1]) return `Bàn ${repeatedPrefixMatch[1].trim()}`;
+  if (repeatedPrefixMatch?.[1]) return `BÃ n ${repeatedPrefixMatch[1].trim()}`;
 
   const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
+  if (shortMatch?.[1]) return `BÃ n ${shortMatch[1].trim()}`;
 
   return raw;
 }
@@ -1996,8 +1770,7 @@ function getVietnamDayRange(date = new Date()) {
 }
 
 async function buildTelegramCompletedOrderShiftSummary(order = {}) {
-  const normalizedOrder = normalizeCompletedOrderForTelegram(order.historyId || order.id || order.docId || '', order);
-  const orderDate = coerceHistoryDate(normalizedOrder.paidAt || normalizedOrder.updatedAt || normalizedOrder.timestamp) || new Date();
+  const orderDate = coerceHistoryDate(order.paidAt || order.updatedAt || order.timestamp) || new Date();
   const range = getVietnamDayRange(orderDate);
   const historySnap = await db.collection('history').get();
   const orders = historySnap.docs
@@ -2015,105 +1788,14 @@ async function buildTelegramCompletedOrderShiftSummary(order = {}) {
   let bankAmount = 0;
 
   orders.forEach(row => {
-    const normalizedRow = normalizeCompletedOrderForTelegram(row.historyId || row.id || row.docId || '', row);
-    const total = Number(normalizedRow.total || 0);
+    const total = Number(row.total || 0);
     totalOrders += 1;
     totalAmount += total;
-    if (isTelegramBankPayMethod(normalizedRow.payMethod)) bankAmount += total;
+    if (isTelegramBankPayMethod(row.payMethod)) bankAmount += total;
     else cashAmount += total;
   });
 
   return { totalOrders, totalAmount, cashAmount, bankAmount };
-}
-
-function pickFirstPresentValue(...values) {
-  for (const value of values) {
-    if (value === undefined || value === null) continue;
-    if (typeof value === 'string' && !value.trim()) continue;
-    return value;
-  }
-  return null;
-}
-
-function toTelegramMoneyNumber(...values) {
-  for (const value of values) {
-    const num = Number(value);
-    if (Number.isFinite(num)) return num;
-  }
-  return 0;
-}
-
-function normalizeCompletedOrderItems(order = {}) {
-  const rawItems = pickFirstPresentValue(
-    Array.isArray(order.items) ? order.items : null,
-    Array.isArray(order.billItems) ? order.billItems : null,
-    Array.isArray(order.lineItems) ? order.lineItems : null,
-    Array.isArray(order.cartItems) ? order.cartItems : null,
-    Array.isArray(order.products) ? order.products : null
-  );
-
-  if (!Array.isArray(rawItems)) return [];
-
-  return rawItems.map(item => {
-    if (!item || typeof item !== 'object') return null;
-    const qty = toTelegramMoneyNumber(item.qty, item.quantity, item.count, 1) || 1;
-    const price = toTelegramMoneyNumber(item.price, item.unitPrice, item.sellPrice, item.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const cost = toTelegramMoneyNumber(item.cost, item.unitCost, item.baseCost, 0);
-    return {
-      ...item,
-      name: String(pickFirstPresentValue(item.name, item.itemName, item.productName, item.title, item.label, 'Món')).trim(),
-      qty,
-      price,
-      cost,
-      note: String(pickFirstPresentValue(item.note, item.notes, item.description, '') || '').trim(),
-    };
-  }).filter(Boolean);
-}
-
-function calculateCompletedOrderSubtotal(items = []) {
-  return items.reduce((sum, item) => {
-    const qty = toTelegramMoneyNumber(item?.qty, 0);
-    const price = toTelegramMoneyNumber(item?.price, item?.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const lineTotal = qty > 0 ? qty * price : toTelegramMoneyNumber(item?.subtotal, item?.total, 0);
-    return sum + lineTotal;
-  }, 0);
-}
-
-function normalizeCompletedOrderForTelegram(historyId, order = {}) {
-  const items = normalizeCompletedOrderItems(order);
-  const subtotalFromItems = calculateCompletedOrderSubtotal(items);
-  const discount = toTelegramMoneyNumber(order.discount, order.discountAmount, order.extras?.discount, 0);
-  const shipping = toTelegramMoneyNumber(order.shipping, order.shippingFee, order.deliveryFee, order.extras?.shipping, 0);
-  const vatAmount = toTelegramMoneyNumber(order.vatAmount, order.taxAmount, order.extras?.vatAmount, 0);
-  const subtotal = toTelegramMoneyNumber(order.subtotal, order.itemsTotal, order.amountBeforeTax, subtotalFromItems);
-  const total = toTelegramMoneyNumber(order.total, order.finalBillTotal, order.grandTotal, order.amount, order.totalAmount, subtotal - discount + shipping + vatAmount);
-  const cost = toTelegramMoneyNumber(
-    order.cost,
-    order.totalCost,
-    items.reduce((sum, item) => sum + (toTelegramMoneyNumber(item.cost, 0) * toTelegramMoneyNumber(item.qty, 0)), 0)
-  );
-
-  return {
-    ...order,
-    historyId: String(pickFirstPresentValue(order.historyId, order.docId, historyId, '') || '').trim(),
-    id: String(pickFirstPresentValue(order.id, order.billNo, order.orderId, historyId, '') || '').trim(),
-    billNo: String(pickFirstPresentValue(order.billNo, order.id, order.orderCode, order.historyId, historyId, '') || '').trim(),
-    tableId: String(pickFirstPresentValue(order.tableId, order.tableNumber, order.table, order.ban, '') || '').trim(),
-    tableName: String(pickFirstPresentValue(order.tableName, order.tableLabel, order.posTableName, order.channelName, order.tableId, order.tableNumber, '') || '').trim(),
-    payMethod: String(pickFirstPresentValue(order.payMethod, order.paymentMethod, order.payment?.method, '') || '').trim(),
-    paidAt: pickFirstPresentValue(order.paidAt, order.completedAt, order.closedAt, order.updatedAt, order.timestamp, order.createdAt),
-    note: String(pickFirstPresentValue(order.note, order.notes, order.message, '') || '').trim(),
-    discountNote: String(pickFirstPresentValue(order.discountNote, order.promotionName, order.discountReason, '') || '').trim(),
-    createdByName: pickFirstPresentValue(order.createdByName, order.cashierName, order.staffName, order.staff?.name, order.createdByName),
-    paidByName: pickFirstPresentValue(order.paidByName, order.cashierName, order.staffName, order.payment?.collectedByName, order.paidByName),
-    items,
-    subtotal,
-    discount,
-    shipping,
-    vatAmount,
-    total,
-    cost,
-  };
 }
 
 function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
@@ -2258,7 +1940,7 @@ function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary 
 }
 
 async function sendCompletedOrderTelegram(historyId, order = {}) {
-  const botToken = getTelegramReportBotToken();
+  const botToken = String(TELEGRAM_BOT_TOKEN.value() || '').trim();
   const targetChatIds = getCompletedOrderTelegramTargetChatIds();
   if (!botToken || !targetChatIds.length) {
     logger.warn('Skipping completed-order Telegram: missing token/chat', {
@@ -2331,155 +2013,6 @@ async function sendCompletedOrderTelegram(historyId, order = {}) {
     historyId,
     chatId: sentChatId,
     total: Number(order.total || 0),
-  });
-}
-
-// Final override: normalize completed-order payloads before formatting/sending.
-function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
-  const normalizedOrder = normalizeCompletedOrderForTelegram(historyId, order);
-  const items = normalizedOrder.items;
-  const tableName = normalizeTelegramTableLabel(normalizedOrder.tableName || normalizedOrder.tableId || '');
-  const billNo = String(normalizedOrder.billNo || normalizedOrder.id || normalizedOrder.historyId || historyId || '').trim() || 'Không rõ';
-  const paidAt = normalizedOrder.paidAt || normalizedOrder.updatedAt || normalizedOrder.timestamp || null;
-  const subtotal = Number(normalizedOrder.subtotal || 0);
-  const discount = Number(normalizedOrder.discount || 0);
-  const shipping = Number(normalizedOrder.shipping || 0);
-  const vatAmount = Number(normalizedOrder.vatAmount || 0);
-  const total = Number(normalizedOrder.total || 0);
-  const note = String(normalizedOrder.note || '').trim();
-  const discountNote = String(normalizedOrder.discountNote || '').trim();
-  const cashier = extractTelegramCashierName(
-    normalizedOrder.createdByName
-    || normalizedOrder.paidByName
-    || normalizedOrder.paidBy
-    || normalizedOrder.createdBy
-    || normalizedOrder.updatedBy
-  );
-
-  const itemLines = items.length
-    ? items.map(item => {
-      const name = String(item?.name || 'Món').trim();
-      const qty = Number(item?.qty || 0) || 1;
-      const price = Number(item?.price || 0);
-      const lineTotal = price * qty;
-      const itemNote = String(item?.note || '').trim();
-      const noteText = itemNote ? ` (${escapeTelegramHtml(itemNote)})` : '';
-      return `• ${escapeTelegramHtml(name)} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${noteText}`;
-    }).join('\n')
-    : '• Không có chi tiết';
-
-  const lines = [
-    '<b>✅ HOÀN TẤT ĐƠN HÀNG</b>',
-    '',
-    `<b>Hóa đơn:</b> ${escapeTelegramHtml(billNo)}`,
-    `<b>Bàn/Kênh:</b> ${escapeTelegramHtml(tableName)}`,
-    `<b>Thời gian:</b> ${escapeTelegramHtml(formatTelegramDateTimeVi(paidAt))}`,
-    `<b>Thanh toán:</b> ${escapeTelegramHtml(getTelegramPayMethodLabel(normalizedOrder.payMethod))}`,
-  ];
-
-  if (cashier) lines.push(`<b>Nhân viên:</b> ${escapeTelegramHtml(cashier)}`);
-  if (note) lines.push(`<b>Ghi chú:</b> ${escapeTelegramHtml(note)}`);
-
-  lines.push(
-    '',
-    '<b>Món:</b>',
-    itemLines,
-    '',
-    `<b>Tiền hàng:</b> ${escapeTelegramHtml(formatCurrencyVi(subtotal))}`
-  );
-
-  if (discount > 0) {
-    lines.push(`<b>Giảm giá${discountNote ? ` (${escapeTelegramHtml(discountNote)})` : ''}:</b> -${escapeTelegramHtml(formatCurrencyVi(discount))}`);
-  }
-  if (shipping > 0) lines.push(`<b>Phí giao hàng:</b> +${escapeTelegramHtml(formatCurrencyVi(shipping))}`);
-  if (vatAmount > 0) lines.push(`<b>VAT${normalizedOrder.taxRate ? ` (${escapeTelegramHtml(normalizedOrder.taxRate)}%)` : ''}:</b> +${escapeTelegramHtml(formatCurrencyVi(vatAmount))}`);
-
-  lines.push(`<b>TỔNG CỘNG:</b> ${escapeTelegramHtml(formatCurrencyVi(total))}`);
-  if (shiftSummary) {
-    lines.push(
-      `<i>Tổng đơn trong ca: ${escapeTelegramHtml(String(shiftSummary.totalOrders || 0))} · Tổng tiền trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.totalAmount || 0))}</i>`,
-      `<i>Tiền mặt trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.cashAmount || 0))} · Chuyển khoản trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.bankAmount || 0))}</i>`
-    );
-  }
-
-  return lines.join('\n');
-}
-
-async function sendCompletedOrderTelegram(historyId, order = {}) {
-  const botToken = getTelegramReportBotToken();
-  const targetChatIds = getCompletedOrderTelegramTargetChatIds();
-  if (!botToken || !targetChatIds.length) {
-    logger.warn('Skipping completed-order Telegram: missing token/chat', {
-      historyId,
-      hasBotToken: !!botToken,
-      targetChatIds,
-    });
-    return;
-  }
-
-  const normalizedOrder = normalizeCompletedOrderForTelegram(historyId, order);
-  const dedupeId = String(historyId || normalizedOrder.historyId || normalizedOrder.id || normalizedOrder.billNo || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 1400);
-  const ref = db.collection('telegram_completed_order_sent').doc(dedupeId || db.collection('telegram_completed_order_sent').doc().id);
-  const created = await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    if (snap.exists) return false;
-    tx.set(ref, {
-      historyId: String(historyId || ''),
-      billNo: String(normalizedOrder.billNo || normalizedOrder.id || ''),
-      tableId: String(normalizedOrder.tableId || ''),
-      tableName: String(normalizedOrder.tableName || ''),
-      total: Number(normalizedOrder.total || 0),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
-
-  if (!created) {
-    logger.info('Skipping completed-order Telegram: already sent', { historyId });
-    return;
-  }
-
-  let shiftSummary = null;
-  try {
-    shiftSummary = await buildTelegramCompletedOrderShiftSummary(normalizedOrder);
-  } catch (error) {
-    logger.warn('Completed-order Telegram shift summary failed', {
-      historyId,
-      message: error?.message || String(error),
-    });
-  }
-
-  const enrichedItems = await enrichTelegramItemsWithCatalog(normalizedOrder.items || []);
-  const text = buildTelegramCompletedOrderMessage(historyId, {
-    ...normalizedOrder,
-    items: enrichedItems,
-  }, shiftSummary);
-  let lastError = null;
-  let sentChatId = '';
-  for (const chatId of targetChatIds) {
-    try {
-      await sendTelegramHtmlMessage({ chatId, text, botToken });
-      sentChatId = chatId;
-      break;
-    } catch (error) {
-      lastError = error;
-      logger.warn('Completed-order Telegram send failed for chat', {
-        historyId,
-        chatId,
-        error: error?.message || String(error),
-        responseData: error?.response?.data || null,
-      });
-    }
-  }
-
-  if (!sentChatId) {
-    throw lastError || new Error('No Telegram chat accepted completed-order notification');
-  }
-
-  logger.info('Completed-order Telegram sent', {
-    historyId,
-    chatId: sentChatId,
-    total: Number(normalizedOrder.total || 0),
   });
 }
 
@@ -3714,18 +3247,15 @@ function formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes
 // Override table normalization for customer-request Telegram flows.
 function normalizeTelegramTableLabel(value) {
   const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  const normalized = normalizeVi(raw);
-  if (!normalized) return 'Không rõ';
-  if (normalized === 'takeaway' || normalized.includes('mang ve')) return 'Mang về';
+  if (!raw) return 'KhÃ´ng rÃµ';
+  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang vá»';
 
-  const shortMatch = normalized.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
+  const repeatedPrefixMatch = raw.match(/^(?:b[aà]n?\s*)?(?:ban|b[aà]n)\s*(.+)$/i);
+  if (repeatedPrefixMatch?.[1]) return `BÃ n ${repeatedPrefixMatch[1].trim()}`;
 
-  if (normalized.startsWith('ban ')) {
-    const suffix = raw.replace(/^\s*(?:ban|bàn)\s*/i, '').trim();
-    if (suffix) return `Bàn ${suffix}`;
-  }
+  const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
+  if (shortMatch?.[1]) return `BÃ n ${shortMatch[1].trim()}`;
+
   return raw;
 }
 
@@ -4042,7 +3572,6 @@ async function cancelCustomerPaymentTelegram(requestId) {
 
 exports.approveOnlineOrder = onCall({
   region: 'asia-southeast1',
-  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
     const orderId = String(request.data?.orderId || '').trim();
@@ -4066,7 +3595,6 @@ exports.approveOnlineOrder = onCall({
 
 exports.rejectOnlineOrder = onCall({
   region: 'asia-southeast1',
-  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
     const orderId = String(request.data?.orderId || '').trim();
@@ -4255,11 +3783,9 @@ async function enrichTelegramKitchenSummaryItems(rawItems = []) {
   const lookup = await buildTelegramCatalogNameLookup();
   return parsedItems.map(item => {
     const normalizedName = normalizeVi(item.name);
-    const wildcardRegex = buildTelegramWildcardRegex(item.name);
     const resolvedName =
       lookup.get(normalizedName)
       || [...lookup.entries()].find(([key]) => key === normalizedName || key.includes(normalizedName) || normalizedName.includes(key))?.[1]
-      || (wildcardRegex ? [...lookup.entries()].find(([key]) => wildcardRegex.test(key))?.[1] : '')
       || item.name;
     return item.qty ? `${resolvedName} x${item.qty}` : resolvedName;
   });
@@ -4797,7 +4323,7 @@ function json(res, code, data) {
   res.status(code).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(data));
 }
 
-exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
@@ -4833,7 +4359,7 @@ exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HE
   });
 });
 
-exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
@@ -4869,7 +4395,7 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
   });
 });
 
-exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
@@ -4890,7 +4416,7 @@ exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_
   });
 });
 
-exports.testPaymentBillTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.testPaymentBillTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
@@ -4977,7 +4503,7 @@ exports.telegramWebhook = onRequest({
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
 
-    const botToken = getTelegramReportBotToken();
+    const botToken = String(TELEGRAM_BOT_TOKEN.value() || '').trim();
     const callbackQuery = req.body?.callback_query || null;
     const message = req.body?.message || req.body?.edited_message || null;
     const callbackData = String(callbackQuery?.data || '').trim();
@@ -5000,17 +4526,6 @@ exports.telegramWebhook = onRequest({
 
     try {
       if (!botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
-      logger.info('telegramWebhook incoming update', {
-        chatId,
-        chatType: String(callbackQuery?.message?.chat?.type || message?.chat?.type || ''),
-        userId: userContext.userId,
-        username: userContext.username,
-        hasCallback: !!callbackQuery,
-        hasText: !!userText,
-        hasPhoto: Array.isArray(message?.photo) && message.photo.length > 0,
-        hasVoice: !!(message?.voice || message?.audio),
-        textPreview: userText.slice(0, 160),
-      });
 
       if (callbackQuery) {
         const onlineOrderApproveMatch = callbackData.match(/^onl_order_ok_(.+)$/);
@@ -5046,7 +4561,7 @@ exports.telegramWebhook = onRequest({
             : await rejectOnlineOrderInternal(targetId, actor);
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'ÄÃ£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
             botToken,
           });
 
@@ -5060,8 +4575,8 @@ exports.telegramWebhook = onRequest({
             });
           } else {
             editText = onlineOrderApproveMatch
-              ? `âš ï¸  KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`
-              : `âš ï¸  KhÃ´ng há»§y Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âš ï¸ KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`
+              : `âš ï¸ KhÃ´ng há»§y Ä‘Æ°á»£c Ä‘Æ¡n online.\n${result?.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           }
 
           await editTelegramMessage({
@@ -5165,24 +4680,24 @@ exports.telegramWebhook = onRequest({
             notifyText = result.ok
               ? (result.alreadyFinalized
                 ? `âœ… Bill ${result.billNo} Ä‘Ã£ Ä‘Æ°á»£c chá»‘t trÆ°á»›c Ä‘Ã³ cho ${result.tableLabel}.`
-                : `âœ… Ä Ã£ nháº­n thanh toÃ¡n tiá» n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `âš ï¸  KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+                : `âœ… ÄÃ£ nháº­n thanh toÃ¡n tiá»n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
+              : `âš ï¸ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá»n máº·t.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerPaymentBankMatch) {
             result = await closePosOrderFromTelegram(targetId, 'bank');
             notifyText = result.ok
               ? (result.alreadyFinalized
                 ? `âœ… Bill ${result.billNo} Ä‘Ã£ Ä‘Æ°á»£c chá»‘t trÆ°á»›c Ä‘Ã³ cho ${result.tableLabel}.`
-                : `âœ… Ä Ã£ nháº­n thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `âš ï¸  KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+                : `âœ… ÄÃ£ nháº­n thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
+              : `âš ï¸ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else {
             result = await cancelCustomerPaymentTelegram(targetId);
             notifyText = result.ok
-              ? `ðŸ›‘ Ä Ã£ há»§y yÃªu cáº§u tÃ­nh tiá» n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng há»§y Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `ðŸ›‘ ÄÃ£ há»§y yÃªu cáº§u tÃ­nh tiá»n.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng há»§y Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá»n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           }
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'ÄÃ£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
             botToken,
           });
           await sendTelegramTextMessage({
@@ -5209,38 +4724,38 @@ exports.telegramWebhook = onRequest({
           if (customerOrderApproveMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'approved');
             editText = result.ok
-              ? `âœ… Ä Ã£ duyá»‡t yÃªu cáº§u gá» i mÃ³n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng duyá»‡t Ä‘Æ°á»£c yÃªu cáº§u gá» i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âœ… ÄÃ£ duyá»‡t yÃªu cáº§u gá»i mÃ³n.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng duyá»‡t Ä‘Æ°á»£c yÃªu cáº§u gá»i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerOrderRejectMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'rejected');
             editText = result.ok
-              ? `â Œ Ä Ã£ tá»« chá»‘i yÃªu cáº§u gá» i mÃ³n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng tá»« chá»‘i Ä‘Æ°á»£c yÃªu cáº§u gá» i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âŒ ÄÃ£ tá»« chá»‘i yÃªu cáº§u gá»i mÃ³n.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng tá»« chá»‘i Ä‘Æ°á»£c yÃªu cáº§u gá»i mÃ³n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerServiceAckMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `âœ… Ä Ã£ nháº­n yÃªu cáº§u há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âœ… ÄÃ£ nháº­n yÃªu cáº§u há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerServiceDoneMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'resolved');
             editText = result.ok
-              ? `âœ… Ä Ã£ hoÃ n táº¥t há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng Ä‘Ã³ng Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âœ… ÄÃ£ hoÃ n táº¥t há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng Ä‘Ã³ng Ä‘Æ°á»£c yÃªu cáº§u há»— trá»£.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerPaymentConfirmMatch) {
             result = await confirmCustomerPaymentBillTelegram(targetId);
             editText = result.ok
-              ? `âœ… Ä Ã£ xÃ¡c nháº­n bill tÃ­nh tiá» n.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
-              : `âš ï¸  KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c bill.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âœ… ÄÃ£ xÃ¡c nháº­n bill tÃ­nh tiá»n.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
+              : `âš ï¸ KhÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c bill.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           } else if (customerPaymentAckMatch) {
             result = await resolveCustomerPaymentRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `âœ… Ä Ã£ nháº­n yÃªu cáº§u tÃ­nh tiá» n.\nMÃ£: ${targetId}`
-              : `âš ï¸  KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
+              ? `âœ… ÄÃ£ nháº­n yÃªu cáº§u tÃ­nh tiá»n.\nMÃ£: ${targetId}`
+              : `âš ï¸ KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá»n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`;
           }
 
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Ä Ã£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
+            text: result?.ok ? 'ÄÃ£ cáº­p nháº­t.' : 'KhÃ´ng cáº­p nháº­t Ä‘Æ°á»£c.',
             botToken,
           });
           await editTelegramMessage({
@@ -5261,26 +4776,26 @@ exports.telegramWebhook = onRequest({
         if (confirmMatch) {
           const { executePendingAction } = getAiDeps();
           const result = await executePendingAction(actionDocId, { db });
-          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'Ä Ã£ thá»±c thi.' : 'KhÃ´ng thá»±c thi Ä‘Æ°á»£c.', botToken });
+          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'ÄÃ£ thá»±c thi.' : 'KhÃ´ng thá»±c thi Ä‘Æ°á»£c.', botToken });
           await editTelegramMessage({
             chatId: callbackChatId,
             messageId: callbackMessageId,
             botToken,
             text: result.ok
-              ? `âœ… Ä Ã£ thá»±c thi.\nMÃ£: ${actionDocId}`
-              : `âš ï¸  KhÃ´ng thá»±c thi Ä‘Æ°á»£c.\n${result.error || 'HÃ nh Ä‘á»™ng khÃ´ng cÃ²n há»£p lá»‡.'}`,
+              ? `âœ… ÄÃ£ thá»±c thi.\nMÃ£: ${actionDocId}`
+              : `âš ï¸ KhÃ´ng thá»±c thi Ä‘Æ°á»£c.\n${result.error || 'HÃ nh Ä‘á»™ng khÃ´ng cÃ²n há»£p lá»‡.'}`,
           });
           return json(res, 200, { ok: true, callback: 'confirm', result });
         }
 
         const { cancelPendingAction } = getAiDeps();
         const result = await cancelPendingAction(actionDocId, { db });
-        await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'Ä Ã£ há»§y.', botToken });
+        await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: 'ÄÃ£ há»§y.', botToken });
         await editTelegramMessage({
           chatId: callbackChatId,
           messageId: callbackMessageId,
           botToken,
-          text: `â Œ Ä Ã£ há»§y.\nMÃ£: ${actionDocId}`,
+          text: `âŒ ÄÃ£ há»§y.\nMÃ£: ${actionDocId}`,
         });
         return json(res, 200, { ok: true, callback: 'cancel', result });
       }
@@ -5295,10 +4810,10 @@ exports.telegramWebhook = onRequest({
           chatId,
           botToken,
           text: [
-            '<b>Telegram chat id hiện tại</b>',
+            '<b>Telegram chat id hiá»‡n táº¡i</b>',
             `<code>${escapeTelegramHtml(chatId)}</code>`,
             '',
-            'Dùng chat id này để cấu hình bot gửi báo cáo riêng cho bạn.',
+            'DÃ¹ng chat id nÃ y Ä‘á»ƒ cáº¥u hÃ¬nh bot gá»­i bÃ¡o cÃ¡o riÃªng cho báº¡n.',
           ].join('\n'),
         });
         return json(res, 200, { ok: true, chatId, command: 'chatid' });
@@ -5326,9 +4841,9 @@ exports.telegramWebhook = onRequest({
           botToken,
           text: result.ok
             ? (result.reused
-              ? `âœ… Ä Ã£ gá»­i láº¡i bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
-              : `âœ… Ä Ã£ táº¡o yÃªu cáº§u tÃ­nh tiá» n cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
-            : `âš ï¸  KhÃ´ng táº¡o Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá» n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`,
+              ? `âœ… ÄÃ£ gá»­i láº¡i bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
+              : `âœ… ÄÃ£ táº¡o yÃªu cáº§u tÃ­nh tiá»n cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
+            : `âš ï¸ KhÃ´ng táº¡o Ä‘Æ°á»£c yÃªu cáº§u tÃ­nh tiá»n.\n${result.error || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n.'}`,
         });
         return json(res, 200, { ok: result.ok, command: 'telegram-table-payment', result });
       }
@@ -5447,16 +4962,7 @@ exports.telegramWebhook = onRequest({
           return json(res, 200, { ok: true, skipped: 'voice-processing-error' });
         }
       } else if (userText) {
-        const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
-        if (smartReportReply?.text) {
-          geminiResult = {
-            text: smartReportReply.text,
-            pendingActions: [],
-            toolResults: smartReportReply.report ? [smartReportReply.report] : [],
-          };
-        } else {
-          geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
-        }
+        geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
       } else {
         await sendTelegramTextMessage({
           chatId,
@@ -5515,7 +5021,7 @@ exports.telegramWebhook = onRequest({
   });
 });
 
-exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeoutSeconds: 540, memory: '1GiB', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeoutSeconds: 540, memory: '1GiB' }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
@@ -5592,7 +5098,7 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
   });
 });
 
-exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
 
@@ -5617,8 +5123,8 @@ exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_ME
       const items = detected.map(it => ({ ...it, qty: qty || 1 }));
 
       if (intent === 'pos_order') {
-        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n gá» i mÃ³n cho bÃ n nÃ o áº¡? VÃ­ dá»¥: "BÃ n 5 gá» i 3 tiger báº¡c"' });
-        if (!items.length) return json(res, 200, { reply: `Dáº¡ em chÆ°a nghe rÃµ tÃªn mÃ³n. Má» i anh chá»‹ nÃ³i láº¡i tÃªn mÃ³n cho bÃ n ${table} áº¡!` });
+        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n gá»i mÃ³n cho bÃ n nÃ o áº¡? VÃ­ dá»¥: "BÃ n 5 gá»i 3 tiger báº¡c"' });
+        if (!items.length) return json(res, 200, { reply: `Dáº¡ em chÆ°a nghe rÃµ tÃªn mÃ³n. Má»i anh chá»‹ nÃ³i láº¡i tÃªn mÃ³n cho bÃ n ${table} áº¡!` });
 
         const { orderId } = await ensureOpenOrder(table);
         await addItemsToOrder(orderId, items.map(it => ({ id: it.id, name: it.name, price: it.price, qty: it.qty, note: '' })));
@@ -5627,8 +5133,8 @@ exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_ME
       }
 
       if (intent === 'pos_checkout') {
-        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n tÃ­nh tiá» n bÃ n nÃ o áº¡? VÃ­ dá»¥: "TÃ­nh tiá» n bÃ n 5"' });
-        return json(res, 200, { reply: `Dáº¡ em Ä‘Ã£ nháº­n lá»‡nh tÃ­nh tiá» n bÃ n ${table}.`, intent, score });
+        if (!table) return json(res, 200, { reply: 'Báº¡n muá»‘n tÃ­nh tiá»n bÃ n nÃ o áº¡? VÃ­ dá»¥: "TÃ­nh tiá»n bÃ n 5"' });
+        return json(res, 200, { reply: `Dáº¡ em Ä‘Ã£ nháº­n lá»‡nh tÃ­nh tiá»n bÃ n ${table}.`, intent, score });
       }
 
       if (intent === 'query_inventory') {
@@ -5664,7 +5170,7 @@ exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_ME
 });
 
 exports.syncPublicMenuOnCatalogCreate = onDocumentCreated(
-  { document: 'Product_Catalog/{productId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'Product_Catalog/{productId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY },
   async event => {
     const data = event.data?.data() || null;
     const productId = event.params?.productId;
@@ -5674,7 +5180,7 @@ exports.syncPublicMenuOnCatalogCreate = onDocumentCreated(
 );
 
 exports.syncPublicMenuOnCatalogUpdate = onDocumentUpdated(
-  { document: 'Product_Catalog/{productId}', region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'Product_Catalog/{productId}', region: 'asia-southeast1' },
   async event => {
     const data = event.data?.after?.data() || null;
     const productId = event.params?.productId;
@@ -5684,7 +5190,7 @@ exports.syncPublicMenuOnCatalogUpdate = onDocumentUpdated(
 );
 
 exports.syncPublicMenuOnCatalogDelete = onDocumentDeleted(
-  { document: 'Product_Catalog/{productId}', region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'Product_Catalog/{productId}', region: 'asia-southeast1' },
   async event => {
     const productId = event.params?.productId;
     if (!productId) return;
@@ -5708,7 +5214,7 @@ exports.onOrderRequestCreated = onDocumentCreated(
       requestId,
       tableNumber: request.tableNumber,
       status: request.status || 'pending_approval',
-      message: `YÃªu cáº§u gá» i mÃ³n má»›i tá»« bÃ n ${request.tableNumber || '?'}`,
+      message: `YÃªu cáº§u gá»i mÃ³n má»›i tá»« bÃ n ${request.tableNumber || '?'}`,
     }));
 
     try {
@@ -5724,7 +5230,7 @@ exports.onOrderRequestCreated = onDocumentCreated(
 );
 
 exports.onOrderRequestApproved = onDocumentUpdated(
-  { document: 'order_requests/{requestId}', region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'order_requests/{requestId}', region: 'asia-southeast1' },
   async event => {
     const before = event.data?.before?.data() || null;
     const after = event.data?.after?.data() || null;
@@ -5762,13 +5268,13 @@ exports.onOrderRequestApproved = onDocumentUpdated(
       requestId,
       tableNumber: after.tableNumber,
       status: 'approved',
-      message: `Ä Ã£ duyá»‡t yÃªu cáº§u gá» i mÃ³n bÃ n ${after.tableNumber || '?'}`,
+      message: `ÄÃ£ duyá»‡t yÃªu cáº§u gá»i mÃ³n bÃ n ${after.tableNumber || '?'}`,
     }));
   }
 );
 
 exports.syncOrderRequestStatusFromPosOrder = onDocumentUpdated(
-  { document: 'orders/{orderId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'orders/{orderId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY },
   async event => {
     const after = event.data?.after?.data() || null;
     const orderId = event.params?.orderId;
@@ -5859,7 +5365,7 @@ exports.onPaymentRequestCreated = onDocumentCreated(
       requestId: payload.orderRequestId || payload.orderId || null,
       tableNumber: payload.tableNumber,
       status: payload.status || 'requested',
-      message: `KhÃ¡ch gá» i tÃ­nh tiá» n táº¡i bÃ n ${payload.tableNumber || '?'}`,
+      message: `KhÃ¡ch gá»i tÃ­nh tiá»n táº¡i bÃ n ${payload.tableNumber || '?'}`,
     }));
 
     const orderRequestId = String(payload.orderRequestId || payload.orderId || '').trim();
@@ -5897,7 +5403,7 @@ exports.onServiceRequestCreated = onDocumentCreated(
       serviceRequestId: requestId,
       tableNumber: payload.tableNumber,
       status: payload.status || 'pending',
-      message: payload.message || `KhÃ¡ch gá» i nhÃ¢n viÃªn táº¡i bÃ n ${payload.tableNumber || '?'}`,
+      message: payload.message || `KhÃ¡ch gá»i nhÃ¢n viÃªn táº¡i bÃ n ${payload.tableNumber || '?'}`,
     }));
 
     try {
@@ -5913,7 +5419,7 @@ exports.onServiceRequestCreated = onDocumentCreated(
 );
 
 exports.onHistoryFinalizeCustomerOrderRequests = onDocumentCreated(
-  { document: 'history/{historyId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'history/{historyId}', region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY },
   async event => {
     const historyDoc = event.data?.data() || null;
     if (!historyDoc) return;
@@ -5925,7 +5431,7 @@ exports.onHistoryFinalizeCustomerOrderRequests = onDocumentCreated(
 );
 
 exports.onHistoryOrderCancelled = onDocumentUpdated(
-  { document: 'history/{historyId}', region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  { document: 'history/{historyId}', region: 'asia-southeast1' },
   async event => {
     const before = event.data?.before?.data() || null;
     const after = event.data?.after?.data() || null;
@@ -5951,10 +5457,6 @@ exports.onHistoryOrderCancelled = onDocumentUpdated(
 
       tx.update(orderRef, {
         inventoryRestockedAt: admin.firestore.FieldValue.serverTimestamp(),
-        hiddenFromReports: true,
-        hiddenFromHistory: true,
-        reportExclusionReason: 'cancelled_after_completion',
-        reportExcludedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     });
 
@@ -5972,7 +5474,6 @@ exports.onKitchenNotificationCreated = onDocumentCreated(
     document: 'kitchen_notifications/{docId}',
     region: DEFAULT_REGION,
     memory: HEAVY_FUNCTION_MEMORY,
-    serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
   },
   async event => {
     const notif = event.data?.data() || null;
@@ -6142,21 +5643,13 @@ exports.sendPushOnKitchenNotif = onDocumentCreated(
     if (String(notif.type || '').toLowerCase() !== 'ready') return;
     if (notif.telegramSent === true) return;
 
-    const telegramBotToken = String(
-      TELEGRAM_KITCHEN_READY_BOT_TOKEN.value()
-      || TELEGRAM_BOT_TOKEN.value()
-      || '',
-    ).trim();
-    const telegramKitchenReadyChatId = String(
-      TELEGRAM_KITCHEN_READY_CHAT_ID.value()
-      || TELEGRAM_GROUP_CHAT_ID.value()
-      || '',
-    ).trim();
-    if (!telegramBotToken || !telegramKitchenReadyChatId) {
+    const telegramBotToken = TELEGRAM_BOT_TOKEN.value();
+    const telegramGroupChatId = String(TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
+    if (!telegramBotToken || !telegramGroupChatId) {
       logger.warn('Skipping Telegram send: missing config', {
         docId,
         hasBotToken: !!telegramBotToken,
-        hasGroupChatId: !!telegramKitchenReadyChatId,
+        hasGroupChatId: !!telegramGroupChatId,
       });
       return;
     }
@@ -6168,7 +5661,7 @@ exports.sendPushOnKitchenNotif = onDocumentCreated(
       };
       const telegramText = buildTelegramFoodReadyMessageClean(enrichedNotif);
       await sendTelegramTextMessage({
-        chatId: telegramKitchenReadyChatId,
+        chatId: telegramGroupChatId,
         text: telegramText,
         botToken: telegramBotToken,
       });
@@ -6180,7 +5673,7 @@ exports.sendPushOnKitchenNotif = onDocumentCreated(
 
       logger.info('Telegram ready notification sent', {
         docId,
-        chatId: telegramKitchenReadyChatId,
+        chatId: telegramGroupChatId,
       });
     } catch (err) {
       logger.error('Telegram send exception', {
@@ -6313,7 +5806,6 @@ exports.adminProbeVertex = onRequest({
   region: 'asia-southeast1',
   memory: '512MiB',
   invoker: 'public',
-  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
   secrets: [VERTEX_SERVICE_ACCOUNT_JSON],
 }, (req, res) => {
   cors(req, res, async () => {
@@ -6331,7 +5823,7 @@ exports.adminProbeVertex = onRequest({
       const authStrategy = ['adc_only', 'secret_only', 'secret_first', 'adc_first'].includes(rawAuthStrategy)
         ? rawAuthStrategy
         : 'adc_first';
-      const prompt = String(requestBody.prompt || query.prompt || 'Tráº£ vá»  Ä‘Ãºng 1 dÃ²ng xÃ¡c nháº­n ráº±ng Vertex Gemini Ä‘ang hoáº¡t Ä‘á»™ng.').trim();
+      const prompt = String(requestBody.prompt || query.prompt || 'Tráº£ vá» Ä‘Ãºng 1 dÃ²ng xÃ¡c nháº­n ráº±ng Vertex Gemini Ä‘ang hoáº¡t Ä‘á»™ng.').trim();
 
       const authContexts = await getVertexAuthContexts({
         secretJson: vertexConfig.secretJson,
@@ -6496,7 +5988,7 @@ async function buildPaymentBillImageAsset(context) {
   const itemsHeight = Math.max(180, itemRowsHeight + 12);
   const summaryStartY = itemStartY + itemsHeight + 34;
   const summaryLines = [
-    { label: 'Tiá» n hÃ ng', value: formatCurrencyVi(context.subtotal || 0) },
+    { label: 'Tiá»n hÃ ng', value: formatCurrencyVi(context.subtotal || 0) },
     ...(context.discount ? [{ label: 'Giáº£m giÃ¡', value: `-${formatCurrencyVi(context.discount || 0)}` }] : []),
     ...(context.shipping ? [{ label: 'Phá»¥ thu', value: formatCurrencyVi(context.shipping || 0) }] : []),
     ...(context.vatAmount ? [{ label: 'VAT', value: formatCurrencyVi(context.vatAmount || 0) }] : []),
@@ -6537,14 +6029,14 @@ async function buildPaymentBillImageAsset(context) {
     <rect width="100%" height="100%" fill="#fffdf8" />
     <text x="450" y="56" text-anchor="middle" font-size="34" font-weight="800" fill="#111111" font-family="${fontFamily}">${escapeXml(settings.storeName)}</text>
     ${settings.storeSlogan ? `<text x="450" y="92" text-anchor="middle" font-size="18" fill="#7a6a45" font-family="${fontFamily}">${escapeXml(settings.storeSlogan)}</text>` : ''}
-    ${settings.storePhone ? `<text x="450" y="122" text-anchor="middle" font-size="18" fill="#555555" font-family="${fontFamily}">Ä T: ${escapeXml(settings.storePhone)}</text>` : ''}
+    ${settings.storePhone ? `<text x="450" y="122" text-anchor="middle" font-size="18" fill="#555555" font-family="${fontFamily}">ÄT: ${escapeXml(settings.storePhone)}</text>` : ''}
     ${settings.storeAddress ? `<text x="450" y="150" text-anchor="middle" font-size="18" fill="#555555" font-family="${fontFamily}">${escapeXml(settings.storeAddress)}</text>` : ''}
     <line x1="36" x2="864" y1="178" y2="178" stroke="#d7c28a" stroke-width="2" />
 
     <rect x="36" y="204" width="828" height="118" rx="16" fill="#ffffff" stroke="#efe2bc" />
     <text x="56" y="238" font-size="18" fill="#666666" font-family="${fontFamily}">Bill</text>
     <text x="56" y="266" font-size="24" font-weight="700" fill="#111111" font-family="${fontFamily}">${escapeXml(context.billNo)}</text>
-    <text x="56" y="296" font-size="18" fill="#555555" font-family="${fontFamily}">Thá» i gian: ${escapeXml(formatTelegramDateTimeVi(new Date()))}</text>
+    <text x="56" y="296" font-size="18" fill="#555555" font-family="${fontFamily}">Thá»i gian: ${escapeXml(formatTelegramDateTimeVi(new Date()))}</text>
     ${notePreview ? `<text x="56" y="320" font-size="17" fill="#666666" font-family="${fontFamily}">${escapeXml(notePreview)}</text>` : ''}
     <text x="844" y="238" text-anchor="end" font-size="18" fill="#666666" font-family="${fontFamily}">BÃ n</text>
     <text x="844" y="272" text-anchor="end" font-size="26" font-weight="700" fill="#111111" font-family="${fontFamily}">${escapeXml(context.tableLabel)}</text>
@@ -6588,7 +6080,7 @@ async function buildPaymentBillImageAsset(context) {
 }
 
 async function runDailyTelegramReport({ scheduleTime = null, force = false, isTest = false, debugNow = null } = {}) {
-  const telegramBotToken = getTelegramReportBotToken();
+  const telegramBotToken = String(TELEGRAM_BOT_TOKEN.value() || '').trim();
   const telegramReportTargets = getTelegramReportTargetChatIds();
   if (!telegramBotToken || !telegramReportTargets.length) {
     logger.warn('Skipping dailyReportTelegram: missing Telegram config', {
@@ -6674,7 +6166,7 @@ async function runDailyTelegramReport({ scheduleTime = null, force = false, isTe
 // NOTE: exports.dailyReportTelegram (cron v1) da bi xoa de tranh gui 2 bao cao trung lap moi ngay.
 // Su dung exports.scheduledTelegramReport (cuoi file) thay the — phong phu hon, co AI mood va financial profile.
 
-exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
@@ -6834,7 +6326,7 @@ function pickProvider() {
 async function callGemini(userText) {
   const vertexConfig = getVertexRuntimeConfig();
   const system = [
-    'BÃ¡ÂºÂ¡n lÃƒÂ  NLU cho POS quÃƒÂ¡n Ã„Æ’n. HÃƒÂ£y trÃ¡ÂºÂ£ vÃ¡Â»Â  1 JSON duy nhÃ¡ÂºÂ¥t KHÃƒâ€ NG kÃƒÂ¨m giÃ¡ÂºÂ£i thÃƒÂ­ch.',
+    'BÃ¡ÂºÂ¡n lÃƒÂ  NLU cho POS quÃƒÂ¡n Ã„Æ’n. HÃƒÂ£y trÃ¡ÂºÂ£ vÃ¡Â»Â 1 JSON duy nhÃ¡ÂºÂ¥t KHÃƒâ€NG kÃƒÂ¨m giÃ¡ÂºÂ£i thÃƒÂ­ch.',
     'Schema:',
     '{ "intent":"query_import|query_sales|query_inventory|pos_order|pos_checkout|unknown", "time_scope":"today|yesterday|this_week|this_month|this_year|null", "table_id":"<so ban>|null", "line_items":[{"name":"<ten mon>", "qty":1}], "reply":"<cau tra loi>" }',
   ].join('\n');
@@ -6863,13 +6355,7 @@ async function callGemini(userText) {
 async function askGeminiWithFirestoreTools(userText, options = {}) {
   const result = await runVertexToolLoop({
     userParts: [{ text: String(userText || '').trim() }],
-    systemInstruction: [
-      'Ban la tro ly AI thong minh cua quan Xe Kho Chua Lanh.',
-      'Nhiem vu cua ban la tra loi cac cau hoi ve doanh thu, loi nhuan, ton kho, lich su nhap hang va van hanh POS.',
-      'Neu nguoi dung hoi mot mon cu the, vi du bia Heineken, hay co gang trich ten_mon va tra loi theo chinh mon do.',
-      'Neu nguoi dung noi moc gio nhu "tu 17h ngay 10/5 den bay gio", hay uu tien goi tool truy_van_bao_cao voi tu_thoi_diem va den_thoi_diem hoac den_bay_gio.',
-      'Tra loi ngan gon, ro rang, than thien. Su dung tools khi can thiet.',
-    ].join(' '),
+    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI thÃƒÂ´ng minh cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. NhiÃ¡Â»â€¡m vÃ¡Â»Â¥ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n lÃƒÂ  hÃ¡Â»â€” trÃ¡Â»Â£ quÃ¡ÂºÂ£n lÃƒÂ½ trÃ¡ÂºÂ£ lÃ¡Â»Âi cÃƒÂ¡c cÃƒÂ¢u hÃ¡Â»Âi vÃ¡Â»Â doanh thu, tÃ¡Â»â€œn kho, lÃ¡Â»â€¹ch sÃ¡Â»Â­ nhÃ¡ÂºÂ­p hÃƒÂ ng. TrÃ¡ÂºÂ£ lÃ¡Â»Âi ngÃ¡ÂºÂ¯n gÃ¡Â»Ân, sÃƒÂºc tÃƒÂ­ch, thÃƒÂ¢n thiÃ¡Â»â€¡n. SÃ¡Â»Â­ dÃ¡Â»Â¥ng tools khi cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t.',
     source: options.source || 'telegram_text',
     chatId: options.chatId,
     userId: options.userId,
@@ -6878,7 +6364,7 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
     previewOnly: options.previewOnly === true,
   });
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Â i phÃƒÂ¹ hÃ¡Â»Â£p.',
+    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Âi phÃƒÂ¹ hÃ¡Â»Â£p.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6886,9 +6372,9 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
 
 async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId, userId, username }) {
   const prompt = [
-    'Ã„Â ÃƒÂ¢y lÃƒÂ  hÃƒÂ³a Ã„â€˜Ã†Â¡n nhÃ¡ÂºÂ­p hÃƒÂ ng. HÃƒÂ£y trÃƒÂ­ch xuÃ¡ÂºÂ¥t tÃƒÂªn mÃƒÂ³n, sÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng, Ã„â€˜Ã†Â¡n giÃƒÂ¡, tÃ¡Â»Â•ng tiÃ¡Â»Â n vÃƒÂ  gÃ¡Â»Â i Tool nhap_hang_thu_cong.',
-    'NÃ¡ÂºÂ¿u thiÃ¡ÂºÂ¿u Ã„â€˜Ã†Â¡n giÃƒÂ¡ hoÃ¡ÂºÂ·c tÃ¡Â»Â•ng tiÃ¡Â»Â n thÃƒÂ¬ vÃ¡ÂºÂ«n gÃ¡Â»Â i tool vÃ¡Â»â€ºi dÃ¡Â»Â¯ liÃ¡Â»â€¡u Ã„â€˜Ã¡Â»Â c Ã„â€˜Ã†Â°Ã¡Â»Â c.',
-    caption ? `Ghi chÃƒÂº tÃ¡Â»Â« ngÃ†Â°Ã¡Â»Â i gÃ¡Â»Â­i: ${caption}` : '',
+    'Ã„ÂÃƒÂ¢y lÃƒÂ  hÃƒÂ³a Ã„â€˜Ã†Â¡n nhÃ¡ÂºÂ­p hÃƒÂ ng. HÃƒÂ£y trÃƒÂ­ch xuÃ¡ÂºÂ¥t tÃƒÂªn mÃƒÂ³n, sÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng, Ã„â€˜Ã†Â¡n giÃƒÂ¡, tÃ¡Â»â€¢ng tiÃ¡Â»Ân vÃƒÂ  gÃ¡Â»Âi Tool nhap_hang_thu_cong.',
+    'NÃ¡ÂºÂ¿u thiÃ¡ÂºÂ¿u Ã„â€˜Ã†Â¡n giÃƒÂ¡ hoÃ¡ÂºÂ·c tÃ¡Â»â€¢ng tiÃ¡Â»Ân thÃƒÂ¬ vÃ¡ÂºÂ«n gÃ¡Â»Âi tool vÃ¡Â»â€ºi dÃ¡Â»Â¯ liÃ¡Â»â€¡u Ã„â€˜Ã¡Â»Âc Ã„â€˜Ã†Â°Ã¡Â»Â£c.',
+    caption ? `Ghi chÃƒÂº tÃ¡Â»Â« ngÃ†Â°Ã¡Â»Âi gÃ¡Â»Â­i: ${caption}` : '',
   ].filter(Boolean).join('\n');
 
   const result = await runVertexToolLoop({
@@ -6896,7 +6382,7 @@ async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId
       { text: prompt },
       { inlineData: { data: String(imageBase64 || '').trim(), mimeType: mimeType || 'image/jpeg' } },
     ],
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p kho cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. ChÃ¡Â»â€° tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng, khÃƒÂ´ng tÃ¡Â»Â± xÃƒÂ¡c nhÃ¡ÂºÂ­n.',
+    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p kho cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. ChÃ¡Â»â€° tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng, khÃƒÂ´ng tÃ¡Â»Â± xÃƒÂ¡c nhÃ¡ÂºÂ­n.',
     source: 'telegram_photo',
     chatId,
     userId,
@@ -6904,7 +6390,7 @@ async function askGeminiVisionForImport({ caption, imageBase64, mimeType, chatId
   });
 
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em Ã„â€˜ÃƒÂ£ Ã„â€˜Ã¡Â»Â c hÃƒÂ³a Ã„â€˜Ã†Â¡n vÃƒÂ  tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â  xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng.',
+    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em Ã„â€˜ÃƒÂ£ Ã„â€˜Ã¡Â»Âc hÃƒÂ³a Ã„â€˜Ã†Â¡n vÃƒÂ  tÃ¡ÂºÂ¡o Ã„â€˜Ã¡Â»Â xuÃ¡ÂºÂ¥t nhÃ¡ÂºÂ­p hÃƒÂ ng.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6930,9 +6416,9 @@ async function askGeminiWithVoice({ voiceFileId, mimeType, botToken, chatId, use
   const result = await runVertexToolLoop({
     userParts: [
       { inlineData: { data: base64Data, mimeType: 'audio/mp3' } },
-      { text: 'HÃƒÂ£y nghe Ã„â€˜oÃ¡ÂºÂ¡n ghi ÃƒÂ¢m nÃƒÂ y, phÃƒÂ¢n tÃƒÂ­ch ÃƒÂ½ Ã„â€˜Ã¡Â»â€¹nh cÃ¡Â»Â§a ngÃ†Â°Ã¡Â»Â i dÃƒÂ¹ng vÃƒÂ  gÃ¡Â»Â i cÃƒÂ¡c tools tÃ†Â°Ã†Â¡ng Ã¡Â»Â©ng nÃ¡ÂºÂ¿u cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t. TrÃ¡ÂºÂ£ lÃ¡Â»Â i bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.' },
+      { text: 'HÃƒÂ£y nghe Ã„â€˜oÃ¡ÂºÂ¡n ghi ÃƒÂ¢m nÃƒÂ y, phÃƒÂ¢n tÃƒÂ­ch ÃƒÂ½ Ã„â€˜Ã¡Â»â€¹nh cÃ¡Â»Â§a ngÃ†Â°Ã¡Â»Âi dÃƒÂ¹ng vÃƒÂ  gÃ¡Â»Âi cÃƒÂ¡c tools tÃ†Â°Ã†Â¡ng Ã¡Â»Â©ng nÃ¡ÂºÂ¿u cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t. TrÃ¡ÂºÂ£ lÃ¡Â»Âi bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.' },
     ],
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI thÃƒÂ´ng minh cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. NhiÃ¡Â»â€¡m vÃ¡Â»Â¥ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n lÃƒÂ  hÃ¡Â»â€” trÃ¡Â»Â£ quÃ¡ÂºÂ£n lÃƒÂ½ trÃ¡ÂºÂ£ lÃ¡Â»Â i cÃƒÂ¡c cÃƒÂ¢u hÃ¡Â»Â i vÃ¡Â»Â  doanh thu, tÃ¡Â»â€œn kho, lÃ¡Â»â€¹ch sÃ¡Â»Â­ nhÃ¡ÂºÂ­p hÃƒÂ ng. TrÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n, sÃƒÂºc tÃƒÂ­ch, thÃƒÂ¢n thiÃ¡Â»â€¡n. SÃ¡Â»Â­ dÃ¡Â»Â¥ng tools khi cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t.',
+    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI thÃƒÂ´ng minh cÃ¡Â»Â§a quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. NhiÃ¡Â»â€¡m vÃ¡Â»Â¥ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n lÃƒÂ  hÃ¡Â»â€” trÃ¡Â»Â£ quÃ¡ÂºÂ£n lÃƒÂ½ trÃ¡ÂºÂ£ lÃ¡Â»Âi cÃƒÂ¡c cÃƒÂ¢u hÃ¡Â»Âi vÃ¡Â»Â doanh thu, tÃ¡Â»â€œn kho, lÃ¡Â»â€¹ch sÃ¡Â»Â­ nhÃ¡ÂºÂ­p hÃƒÂ ng. TrÃ¡ÂºÂ£ lÃ¡Â»Âi ngÃ¡ÂºÂ¯n gÃ¡Â»Ân, sÃƒÂºc tÃƒÂ­ch, thÃƒÂ¢n thiÃ¡Â»â€¡n. SÃ¡Â»Â­ dÃ¡Â»Â¥ng tools khi cÃ¡ÂºÂ§n thiÃ¡ÂºÂ¿t.',
     source: 'telegram_voice',
     chatId,
     userId,
@@ -6940,7 +6426,7 @@ async function askGeminiWithVoice({ voiceFileId, mimeType, botToken, chatId, use
   });
 
   return {
-    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Â i phÃƒÂ¹ hÃ¡Â»Â£p.',
+    text: String(result?.text || '').trim() || 'DÃ¡ÂºÂ¡ em chÃ†Â°a cÃƒÂ³ cÃƒÂ¢u trÃ¡ÂºÂ£ lÃ¡Â»Âi phÃƒÂ¹ hÃ¡Â»Â£p.',
     pendingActions: Array.isArray(result?.pendingActions) ? result.pendingActions : [],
     toolResults: Array.isArray(result?.toolResults) ? result.toolResults : [],
   };
@@ -6964,7 +6450,7 @@ async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } =
 
   const result = await runVertexToolLoop({
     userParts,
-    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI cho POS quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. Khi cÃ¡ÂºÂ§n thao tÃƒÂ¡c, hÃƒÂ£y gÃ¡Â»Â i tool phÃƒÂ¹ hÃ¡Â»Â£p. Khi chÃ¡Â»â€° cÃ¡ÂºÂ§n trÃ¡ÂºÂ£ lÃ¡Â»Â i, hÃƒÂ£y trÃ¡ÂºÂ£ lÃ¡Â»Â i ngÃ¡ÂºÂ¯n gÃ¡Â»Â n bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.',
+    systemInstruction: 'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ AI cho POS quÃƒÂ¡n Xe KhÃƒÂ´ ChÃ¡Â»Â¯a LÃƒÂ nh. Khi cÃ¡ÂºÂ§n thao tÃƒÂ¡c, hÃƒÂ£y gÃ¡Â»Âi tool phÃƒÂ¹ hÃ¡Â»Â£p. Khi chÃ¡Â»â€° cÃ¡ÂºÂ§n trÃ¡ÂºÂ£ lÃ¡Â»Âi, hÃƒÂ£y trÃ¡ÂºÂ£ lÃ¡Â»Âi ngÃ¡ÂºÂ¯n gÃ¡Â»Ân bÃ¡ÂºÂ±ng tiÃ¡ÂºÂ¿ng ViÃ¡Â»â€¡t.',
     source: 'pos_app',
     noPersist: true,
     previewOnly: false,
@@ -6972,7 +6458,7 @@ async function askGeminiForPosApp({ text, imageBase64, audioBase64, mimeType } =
 
   const routedIntent = resolveIntentFromToolResults(result?.toolResults || []) || 'unknown';
   return {
-    reply: String(result?.text || '').trim() || 'AI chÃ†Â°a trÃ¡ÂºÂ£ vÃ¡Â»Â  nÃ¡Â»â„¢i dung.',
+    reply: String(result?.text || '').trim() || 'AI chÃ†Â°a trÃ¡ÂºÂ£ vÃ¡Â»Â nÃ¡Â»â„¢i dung.',
     intent: routedIntent,
     engine: 'vertex-server',
     pending: Array.isArray(result?.toolResults) ? result.toolResults.find(item => item?.pending) || null : null,
@@ -6985,11 +6471,11 @@ async function runVertexPurchaseOcr({ dataUrl = '' } = {}) {
   if (!base64Data) throw new Error('Thiáº¿u áº£nh OCR.');
   const vertexConfig = getVertexRuntimeConfig();
   const prompt = [
-    'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p hÃƒÂ ng cho quÃƒÂ¡n Ã„Æ’n XE KHÃƒâ€  CHÃ¡Â»Â®A LÃƒâ‚¬NH.',
-    'HÃƒÂ£y Ã„â€˜Ã¡Â»Â c Ã¡ÂºÂ£nh hÃƒÂ³a Ã„â€˜Ã†Â¡n / phiÃ¡ÂºÂ¿u nhÃ¡ÂºÂ­p nguyÃƒÂªn liÃ¡Â»â€¡u vÃƒÂ  trÃ¡ÂºÂ£ vÃ¡Â»Â  Ã„â€˜ÃƒÂºng 1 JSON.',
+    'BÃ¡ÂºÂ¡n lÃƒÂ  trÃ¡Â»Â£ lÃƒÂ½ nhÃ¡ÂºÂ­p hÃƒÂ ng cho quÃƒÂ¡n Ã„Æ’n XE KHÃƒâ€ CHÃ¡Â»Â®A LÃƒâ‚¬NH.',
+    'HÃƒÂ£y Ã„â€˜Ã¡Â»Âc Ã¡ÂºÂ£nh hÃƒÂ³a Ã„â€˜Ã†Â¡n / phiÃ¡ÂºÂ¿u nhÃ¡ÂºÂ­p nguyÃƒÂªn liÃ¡Â»â€¡u vÃƒÂ  trÃ¡ÂºÂ£ vÃ¡Â»Â Ã„â€˜ÃƒÂºng 1 JSON.',
     'Schema:',
-    '{"name":"<tÃƒÂªn hoÃ¡ÂºÂ·c rÃ¡Â»â€”ng nÃƒÂªu chÃ†Â°a chÃ¡ÂºÂ¯c>","qty":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"price":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"rawText":"<toÃƒÂ n bÃ¡Â»â„¢ nÃ¡Â»â„¢i dung Ã„â€˜Ã¡Â»Â c Ã„â€˜Ã†Â°Ã¡Â»Â c>"}',
-    'NÃ¡ÂºÂ¿u khÃƒÂ´ng rÃƒÂµ trÃ¡Â»Â ng nÃƒÂ o thÃƒÂ¬ Ã„â€˜Ã¡Â»Æ’ null hoÃ¡ÂºÂ·c chuÃ¡Â»â€”i rÃ¡Â»â€”ng. KhÃƒÂ´ng dÃƒÂ¹ng markdown.',
+    '{"name":"<tÃƒÂªn hoÃ¡ÂºÂ·c rÃ¡Â»â€”ng nÃƒÂªu chÃ†Â°a chÃ¡ÂºÂ¯c>","qty":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"price":<sÃ¡Â»â€˜ hoÃ¡ÂºÂ·c null>,"rawText":"<toÃƒÂ n bÃ¡Â»â„¢ nÃ¡Â»â„¢i dung Ã„â€˜Ã¡Â»Âc Ã„â€˜Ã†Â°Ã¡Â»Â£c>"}',
+    'NÃ¡ÂºÂ¿u khÃƒÂ´ng rÃƒÂµ trÃ¡Â»Âng nÃƒÂ o thÃƒÂ¬ Ã„â€˜Ã¡Â»Æ’ null hoÃ¡ÂºÂ·c chuÃ¡Â»â€”i rÃ¡Â»â€”ng. KhÃƒÂ´ng dÃƒÂ¹ng markdown.',
   ].join('\n');
 
   const { payload } = await generateVertexText({
@@ -7013,14 +6499,13 @@ async function runVertexPurchaseOcr({ dataUrl = '' } = {}) {
 
   const text = collectTextFromPayload(payload);
   const parsed = extractFirstJson(text);
-  if (!parsed) throw new Error('Vertex OCR khÃ´ng tráº£ vá»  JSON há»£p lá»‡.');
+  if (!parsed) throw new Error('Vertex OCR khÃ´ng tráº£ vá» JSON há»£p lá»‡.');
   return parsed;
 }
 
 exports.purchaseOcr = onRequest({
   region: DEFAULT_REGION,
   memory: HEAVY_FUNCTION_MEMORY,
-  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
   secrets: [VERTEX_SERVICE_ACCOUNT_JSON],
 }, (req, res) => {
   cors(req, res, async () => {
@@ -7038,7 +6523,7 @@ exports.purchaseOcr = onRequest({
   });
 });
 
-exports.aiStatus = onRequest({ region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
+exports.aiStatus = onRequest({ region: 'asia-southeast1' }, (req, res) => {
   cors(req, res, () => {
     if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'Method not allowed' });
     try {
@@ -7269,7 +6754,6 @@ exports.scheduledTelegramReport = onSchedule({
   timeZone: 'Asia/Ho_Chi_Minh',
   region: DEFAULT_REGION,
   memory: HEAVY_FUNCTION_MEMORY,
-  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (event) => {
   try {
     // Read settings from Firestore

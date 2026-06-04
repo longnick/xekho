@@ -19,6 +19,23 @@
       "serviceAccountKey.json",
       "pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json"
     ],
+    "redirects": [
+      {
+        "source": "/dat-hang",
+        "destination": "https://smart-menu-pos-v2.web.app/dat-hang",
+        "type": 302
+      },
+      {
+        "source": "/dat-mon",
+        "destination": "https://smart-menu-pos-v2.web.app/dat-hang",
+        "type": 302
+      },
+      {
+        "source": "/order",
+        "destination": "https://smart-menu-pos-v2.web.app/dat-hang",
+        "type": 302
+      }
+    ],
     "rewrites": [
       {
         "source": "/kitchen",
@@ -31,7 +48,8 @@
   },
   "functions": [
     {
-      "source": "functions"
+      "source": "functions",
+      "codebase": "xekho"
     }
   ]
 }
