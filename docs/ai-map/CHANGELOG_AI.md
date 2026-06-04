@@ -1,5 +1,38 @@
 # AI Changelog
 
+## 2026-06-04 10:17 - Fix inventory stock display
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the POS `TỒN KHO` tab showing no stock products when the derived `appState.inventory` list is empty but Firestore master `Inventory_Items` has data.
+
+Changes:
+
+- `_getInventory()` now falls back to `window.appState.masterData.inventoryItems` before local storage.
+- Inventory normalization maps master fields `material_name`, `base_unit`, `current_stock`, `min_alert`, and `inv_type` into POS fields `name`, `unit`, `qty`, `minQty`, and `itemType`.
+- Mirrored the same mapping in `app/order/helpers.js`, because `app.js` delegates to the extracted helper when loaded.
+- Added `scripts/verify-inventory-stock-display.js` to guard the stock-list fallback and field mappings.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-1017-fix-inventory-stock-display.md`
+
+## 2026-06-04 09:54 - Compact mobile POS header/status bar
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Redesigned the POS mobile header/status bar after the screenshot showed the brand, offline badge, username, mic, and reload buttons overflowing the top frame.
+
+Changes:
+
+- Replaced the wide inline current-user chip with reusable `.header-user-chip` / `.header-user-name` classes.
+- Made `.app-header`, `.header-logo`, and `.header-actions` shrink-safe with viewport caps, overflow clipping, and ellipsis.
+- Added a `max-width: 430px` mobile breakpoint that tightens brand/actions for iPhone widths.
+- Shortened the offline backup badge label from `Offline: OK` to `OK` and bounded its width.
+- Added `scripts/verify-mobile-pos-header.js` to guard the compact header layout.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0954-mobile-pos-header-compact.md`
+
 ## 2026-06-04 08:52 - Make table-card notes readable
 
 Repo: `/home/longnick/projects/xekho`

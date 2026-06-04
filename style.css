@@ -123,18 +123,64 @@ body {
   height: var(--header-height);
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100vw;
+  overflow: hidden;
+  padding: 0 12px;
   padding-top: env(safe-area-inset-top, 0px);
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   backdrop-filter: blur(20px);
 }
-.header-logo { display: flex; align-items: center; gap: 10px; }
-.header-logo .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-.header-logo .logo-text { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; }
-.header-logo .logo-sub { font-size: 10px; color: var(--text2); }
-.header-actions { display: flex; gap: 8px; }
-.header-btn { width: 36px; height: 36px; border-radius: 10px; background: var(--bg3); border: none; color: var(--text2); font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  overflow: hidden;
+}
+.header-logo .logo-icon { width: 32px; height: 32px; flex: 0 0 32px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.header-logo .logo-text { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-logo .logo-sub { font-size: 10px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.header-user-chip {
+  min-width: 0;
+  max-width: 112px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+  background: rgba(124, 58, 237, 0.12);
+}
+.header-user-chip .header-user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-btn { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 10px; background: var(--bg3); border: none; color: var(--text2); font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
 .header-btn:active { transform: scale(0.92); }
 .header-actions #header-alert-btn,
 .header-actions #header-logout-btn,
@@ -387,6 +433,37 @@ body {
 }
 
 @media (max-width: 430px) {
+  .app-header {
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .header-logo {
+    max-width: 35%;
+    gap: 6px;
+  }
+  .header-logo .logo-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    font-size: 16px;
+  }
+  .header-logo .logo-text { font-size: 12px; }
+  .header-logo .logo-sub { display: none; }
+  .header-actions { gap: 5px; }
+  .header-user-chip {
+    max-width: 92px;
+    height: 32px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+  .header-btn {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    border-radius: 9px;
+  }
+
   .kds-monitor-list {
     max-height: min(48vh, 430px);
   }

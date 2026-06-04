@@ -732,8 +732,8 @@ function applyRoleRights() {
   const userDisplay = document.getElementById('current-user-display');
   if (userDisplay) {
     userDisplay.innerHTML = currentUser
-      ? `<span style="margin-right:4px">👤</span>${_escapeHtml(currentUser.username)}`
-      : `<span style="margin-right:4px">🔒</span>Đã khóa`;
+      ? `<span aria-hidden="true">👤</span><span class="header-user-name">${_escapeHtml(currentUser.username)}</span>`
+      : `<span aria-hidden="true">🔒</span><span class="header-user-name">Đã khóa</span>`;
   }
 
   const role = String(currentUser?.role || '').toLowerCase();
@@ -2405,14 +2405,16 @@ function _getMenu() {
   return (menu || []).map(item => normalizeMenuItemModel(item, inv));
 }
 function _getInventory() {
-  const hasMasterInventory = Array.isArray(window.appState?.masterData?.inventoryItems);
+  const masterInventory = Array.isArray(window.appState?.masterData?.inventoryItems)
+    ? window.appState.masterData.inventoryItems
+    : [];
   const cloudInventory = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
-  const inventory = hasMasterInventory
-    ? (cloudInventory.length > 0 ? cloudInventory : Store.getInventory())
-    : ((window.appState && window.appState.inventory && window.appState.inventory.length > 0)
-      ? window.appState.inventory
+  const inventory = cloudInventory.length > 0
+    ? cloudInventory
+    : (masterInventory.length > 0
+      ? masterInventory
       : Store.getInventory());
-  return (inventory || []).map(normalizeInventoryItemModel);
+  return (inventory || []).map(normalizeInventoryItemModel).filter(i => i && i.id && i.name);
 }
 
 function syncLocalOrderCacheFromCloud() {
@@ -2540,6 +2542,8 @@ function normalizeViKey(text) {
 function inferInventoryItemType(item = {}) {
   if (window.XekhoApp?.order?.inferInventoryItemType) return window.XekhoApp.order.inferInventoryItemType(item);
   if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
+  const masterType = String(item.inv_type || item.inventoryType || '').trim().toLowerCase();
+  if (masterType === 'retail' || masterType === 'retail_item' || masterType === 'hang_ban_thang') return ITEM_TYPES.RETAIL;
   if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
   return ITEM_TYPES.RAW;
 }
@@ -2549,14 +2553,24 @@ function normalizeInventoryItemModel(item = {}) {
     const base = window.XekhoApp.order.normalizeInventoryItemModel(item);
     return { ...item, ...base };
   }
+  const id = String(item.id || item.inv_id || item._docId || '').trim();
+  const name = String(item.name || item.material_name || id).trim();
   return {
     ...item,
+    id: id || item.id,
+    name,
+    unit: normalizeUnitText(item.unit || item.base_unit),
     itemType: inferInventoryItemType(item),
     mergedInto: item.mergedInto || null,
-    qty: Number(item.qty || 0),
-    minQty: Number(item.minQty || 0),
-    costPerUnit: Number(item.costPerUnit || 0),
+    qty: Number(item.qty ?? item.current_stock ?? 0),
+    minQty: Number(item.minQty ?? item.min_alert ?? 0),
+    costPerUnit: Number(item.costPerUnit ?? item.cost_per_unit ?? 0),
     hidden: !!item.hidden,
+    supplierName: item.supplierName || '',
+    supplierPhone: item.supplierPhone || '',
+    supplierAddress: item.supplierAddress || '',
+    masterInventoryId: String(item.masterInventoryId || item.inv_id || id || '').trim(),
+    _docId: String(item._docId || id || '').trim(),
   };
 }
 
