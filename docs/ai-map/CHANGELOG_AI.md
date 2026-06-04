@@ -1,6 +1,22 @@
 # AI Changelog
 
 
+## 2026-06-04 08:00 - Exact fractional-K price display across UI
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Fixed the remaining `17.500đ` → `18K` display regression outside the printed bill by updating the shared compact formatter used by the POS menu grid, cart rows, menu admin list, and other UI surfaces.
+
+Changes:
+
+- `app/utils/format.js#compactNumber()` now preserves fractional thousands: `17500` → `17,5K`, `17550` → `17,55K`, `18000` → `18K`.
+- `store.js` fallback `fmt` now uses the same exact fractional-K behavior if the extracted formatter is unavailable.
+- `index.html` bumps the `app/utils/format.js` cache key to `20260604-exact-price-ui` for deployed/mobile clients.
+- `scripts/verify-format-utils.js` now guards against reintroducing `toFixed(0)` rounding in the compact thousand formatter.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0800-exact-price-ui.md`
+
 ## 2026-06-03 23:28 - Deploy bill unit-price fix with app.js cache bust
 
 Repo: `/home/longnick/projects/xekho`

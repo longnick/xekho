@@ -28,6 +28,9 @@ if (!format || typeof format !== 'object') {
 const cases = [
   ['compactNumber', 999, '999'],
   ['compactNumber', 1000, '1K'],
+  ['compactNumber', 17500, '17,5K'],
+  ['compactNumber', 17550, '17,55K'],
+  ['compactNumber', 18000, '18K'],
   ['compactNumber', 2500000, '2.5M'],
   ['compactNumber', 'bad-input', '0'],
   ['currency', 1234567, '1.234.567đ'],
@@ -67,6 +70,13 @@ for (const marker of expectedDelegations) {
   if (!storeSource.includes(marker)) {
     throw new Error(`store.js missing formatter delegation marker: ${marker}`);
   }
+}
+
+if (source.includes('/ 1000).toFixed(0)') || source.includes('/1000).toFixed(0)')) {
+  throw new Error('format.js compactNumber must not round fractional-thousand prices to whole K');
+}
+if (storeSource.includes('/1000).toFixed(0)') || storeSource.includes('/ 1000).toFixed(0)')) {
+  throw new Error('store.js fmt fallback must not round fractional-thousand prices to whole K');
 }
 
 console.log('verify-format-utils passed');
