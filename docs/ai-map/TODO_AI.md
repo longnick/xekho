@@ -56,6 +56,7 @@
 
 ## Done recently
 
+- 2026-06-04 08:17: Added a quick table-note input beside `Bàn X` in the order-selection header; it stays synced with the cart note/table note and is guarded by `scripts/verify-order-table-note-ui.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0817-order-table-note-header.md`
 - 2026-06-04 08:00: Fixed shared compact formatter so all UI surfaces using `fmt()` preserve fractional-thousand prices (`17.500đ` → `17,5K`, not `18K`), including POS menu grid/cart/menu admin; bumped `format.js` cache key. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0800-exact-price-ui.md`
 - 2026-06-03 23:28: Deployed bill unit-price fix and bumped `app.js` cache key to `20260603-bill-unit-price` so mobile clients fetch the fixed `17,5K` bill formatter immediately. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2328-deploy-bill-price-cachebust.md`
 - 2026-06-03 23:12: Fixed bill unit-price display for fractional-thousand menu prices; bill `Đ.Giá` now shows `17,5K` for `17.500đ` instead of rounded `18K`. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-2312-fix-bill-unit-price-display.md`

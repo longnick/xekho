@@ -130,6 +130,12 @@
         <div class="order-header">
           <button class="back-btn" onclick="navigate('tables')">←</button>
           <div class="order-table-name" id="order-table-title">Bàn –</div>
+          <div class="order-table-note-field">
+            <label for="order-table-note" class="order-table-note-label">Ghi chú</label>
+            <input type="text" class="order-table-name-input" id="order-table-note"
+              placeholder="Tên bàn / ghi chú..." autocomplete="off"
+              oninput="handleOrderTableNoteInput(this.value)">
+          </div>
           <div class="order-cart-pill" id="order-cart-pill" style="padding:0; gap:0; overflow:hidden;">
             <button onclick="openCartSheet()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
               <span class="order-cart-pill-icon">🛒</span>
