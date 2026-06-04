@@ -1,3 +1,4 @@
 {
-    "livePreview.defaultPreviewPath": "/index.html"
+    "livePreview.defaultPreviewPath": "/index.html",
+    "idf.currentSetup": "D:/Espressif/frameworks/esp-idf-v5.5/"
 }

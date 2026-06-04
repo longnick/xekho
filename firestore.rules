@@ -23,6 +23,69 @@ service cloud.firestore {
       return userRole() == 'kitchen';
     }
 
+    function isStaff() {
+      return isAdmin() || isKitchen() || userRole() == 'staff';
+    }
+
+    function validPublicMenuWrite() {
+      return request.resource.data.keys().hasAll([
+        'display_name',
+        'sell_price',
+        'category',
+        'imageMode'
+      ]);
+    }
+
+    function validOrderRequestCreate() {
+      return request.resource.data.keys().hasAll([
+          'tableNumber',
+          'items',
+          'totalPrice',
+          'status',
+          'requestType',
+          'source',
+          'createdAt'
+        ]) &&
+        request.resource.data.status == 'pending_approval' &&
+        request.resource.data.requestType == 'menu_order' &&
+        request.resource.data.source == 'customer_web';
+    }
+
+    function validServiceRequestCreate() {
+      return request.resource.data.type == 'call_staff';
+    }
+
+    function validPaymentRequestCreate() {
+      return request.resource.data.status == 'requested';
+    }
+
+    match /public_menu/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && validPublicMenuWrite();
+    }
+
+    match /order_requests/{requestId} {
+      allow create: if validOrderRequestCreate();
+      allow get: if resource.data.source == 'customer_web';
+      allow list: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /service_requests/{requestId} {
+      allow create: if validServiceRequestCreate();
+      allow get, list: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /payment_requests/{requestId} {
+      allow create: if validPaymentRequestCreate();
+      allow get, list: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
     match /System_Logs/{logId} {
       allow create: if signedIn();
       allow read: if isAdmin();
@@ -54,19 +117,7 @@ service cloud.firestore {
       allow update: if (signedIn() && !isKitchen()) || (
         isKitchen() &&
         resource.data.status == 'open' &&
-        request.resource.data.id == resource.data.id &&
-        request.resource.data.tableId == resource.data.tableId &&
-        request.resource.data.tableName == resource.data.tableName &&
-        request.resource.data.staffUid == resource.data.staffUid &&
-        request.resource.data.createdBy == resource.data.createdBy &&
-        request.resource.data.createdByRole == resource.data.createdByRole &&
-        request.resource.data.discount == resource.data.discount &&
-        request.resource.data.discountType == resource.data.discountType &&
-        request.resource.data.shipping == resource.data.shipping &&
-        request.resource.data.vatAmount == resource.data.vatAmount &&
-        request.resource.data.note == resource.data.note &&
-        request.resource.data.status == resource.data.status &&
-        request.resource.data.openedAt == resource.data.openedAt
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items'])
       );
     }
 
@@ -118,7 +169,8 @@ service cloud.firestore {
     }
 
     match /Product_Catalog/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /Inventory_Items/{docId} {
