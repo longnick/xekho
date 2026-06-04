@@ -66,12 +66,27 @@ import {
 }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 
+import {
+  getStorage,
+  ref as sRef,
+  uploadString,
+  getDownloadURL,
+  deleteObject,
+}
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+
+import {
+  getFunctions,
+  httpsCallable,
+}
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
+
 
 // ============================================================
 // §0  CẤU HÌNH – THAY BẰNG CONFIG THỰC CỦA PROJECT
 // ============================================================
 const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyDOxVZDZ1JkpermI-J2L7AEioP0CWERqOY',
+  apiKey:            'AIzaSyC_Pr-jtKQQZM-zH0Uf9yDpO8CeC5-Zd98',
   authDomain:        'pos-v2-909ff.firebaseapp.com',
   databaseURL:       'https://pos-v2-909ff-default-rtdb.asia-southeast1.firebasedatabase.app',
   projectId:         'pos-v2-909ff',
@@ -142,6 +157,8 @@ const _db          = initializeFirestore(_firebaseApp, {
   }),
 });
 const _rtdb        = getDatabase(_firebaseApp);
+const _storage     = getStorage(_firebaseApp);
+const _functions   = getFunctions(_firebaseApp, 'asia-southeast1');
 const _messagingSupported = isMessagingSupported().catch(() => false);
 let _messaging = null;
 let _pushSwRegistration = null;
@@ -160,6 +177,8 @@ window.appState = {
   // --- Dữ liệu nghiệp vụ (thay thế Store.get...()) ---
   tables:     null,
   orders:     null,
+  onlineOrders: null,
+  dailyRevenueSnapshots: null,
   menu:       null,
   inventory:  null,
   settings:   null,
@@ -472,7 +491,7 @@ async function repairVietnameseNow(options = {}) {
 
 // Đếm số snapshot đã ready để biết khi nào appState.ready = true
 let _snapshotReadyCount  = 0;
-const TOTAL_SNAPSHOTS    = 10;   // tables, orders, menu, inventory, settings, users, staff, history, expenses, purchases
+const TOTAL_SNAPSHOTS    = 13;   // settings, settings/financial_profile, tables, orders, onlineOrders, dailyRevenueSnapshots, menu, inventory, users, staff, history, expenses, purchases
 
 function _markSnapshotReady() {
   _snapshotReadyCount++;
@@ -770,6 +789,8 @@ function _buildMenuViewFromMaster(products = [], inventoryRows = [], recipes = [
         linkedInventoryId: itemType === 'retail_item' ? (linkedInventory?.id || null) : null,
         ingredients,
         aliases: product.aliases || '',
+        image_url: product.image_url || '',
+        hidden: !!product.hidden,
         masterProductId: id,
         _docId: String(product._docId || id),
       };
@@ -874,12 +895,23 @@ async function _setupPresence(uid, displayName) {
 // ============================================================
 const _unsubs = [];
 
+function _mergeRuntimeSettingsPatch(patch = {}) {
+  const current = window.appState.settings || { ...SETTINGS_DEFAULTS };
+  window.appState.settings = {
+    ...current,
+    ...patch,
+  };
+}
+
 function _listen() {
   // 5a. Settings (single doc trong collection 'config')
   _unsubs.push(onSnapshot(_settingsDoc(), snap => {
     const saved = snap.exists() ? snap.data() : {};
     const repaired = _repairSettingsText({ ...SETTINGS_DEFAULTS, ...saved });
-    window.appState.settings = repaired;
+    const currentFinancialProfile = window.appState?.settings?.financial_profile || null;
+    window.appState.settings = currentFinancialProfile
+      ? { ...repaired, financial_profile: currentFinancialProfile }
+      : repaired;
     _markSnapshotReady();
     _dispatchEvent('db:update', { key: 'settings' });
 
@@ -887,6 +919,15 @@ function _listen() {
       Settings.save(repaired).catch(err => console.warn('[db:repair] settings warning', err));
     }
   }, _snapErr('settings')));
+
+  // 5a.1 Financial profile từ Sprint 0 của web online
+  _unsubs.push(onSnapshot(doc(_db, 'settings', 'financial_profile'), snap => {
+    const saved = snap.exists() ? (snap.data() || {}) : {};
+    const repaired = _deepRepairVietnameseValue(saved);
+    _mergeRuntimeSettingsPatch({ financial_profile: repaired });
+    _markSnapshotReady();
+    _dispatchEvent('db:update', { key: 'settings' });
+  }, _snapErr('settings/financial_profile')));
 
   // 5b. Tables  (sắp xếp theo id)
   _unsubs.push(onSnapshot(query(_col('tables'), orderBy('id')), snap => {
@@ -908,6 +949,28 @@ function _listen() {
       _markSnapshotReady();
       _dispatchEvent('db:update', { key: 'orders' });
     }, _snapErr('orders')
+  ));
+
+  _unsubs.push(onSnapshot(
+    query(_col('online_orders'), orderBy('createdAt', 'desc'), limit(30)),
+    snap => {
+      const rows = snap.docs
+        .map(_fromDoc)
+        .filter(Boolean)
+        .filter(order => String(order?.status || '').toLowerCase() !== 'completed');
+      window.appState.onlineOrders = rows;
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'onlineOrders' });
+    }, _snapErr('online_orders')
+  ));
+
+  _unsubs.push(onSnapshot(
+    query(_col('daily_revenue_snapshot'), orderBy('date', 'desc'), limit(120)),
+    snap => {
+      window.appState.dailyRevenueSnapshots = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'dailyRevenueSnapshots' });
+    }, _snapErr('daily_revenue_snapshot')
   ));
 
   // 5d. Menu
@@ -1084,6 +1147,8 @@ onAuthStateChanged(_auth, async user => {
     window.appState.currentUser = null;
     window.appState.tables = null;
     window.appState.orders = null;
+    window.appState.onlineOrders = null;
+    window.appState.dailyRevenueSnapshots = null;
     window.appState.menu = null;
     window.appState.inventory = null;
     window.appState.settings = null;
@@ -1308,6 +1373,37 @@ const Orders = {
     return window.appState.orders[String(tableId)] || null;
   },
 
+  async getById(orderId) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDoc(_doc('orders', cleanId));
+    return snap.exists() ? _fromDoc(snap) : null;
+  },
+
+  async findOpenByOnlineOrderId(onlineOrderId) {
+    const cleanId = String(onlineOrderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDocs(query(
+      _col('orders'),
+      where('onlineOrderId', '==', cleanId),
+      limit(1)
+    ));
+    const docSnap = snap.docs[0] || null;
+    return docSnap ? _fromDoc(docSnap) : null;
+  },
+
+  async findOpenByOnlineOrderCode(orderCode) {
+    const cleanCode = String(orderCode || '').trim();
+    if (!cleanCode) return null;
+    const snap = await getDocs(query(
+      _col('orders'),
+      where('onlineOrderCode', '==', cleanCode),
+      limit(1)
+    ));
+    const docSnap = snap.docs[0] || null;
+    return docSnap ? _fromDoc(docSnap) : null;
+  },
+
   /** Mở đơn mới cho bàn – thay Store.setOrders() + Store.setTables() */
   async open(tableId, tableName, staffUid, createdBy = null) {
     const orderId  = `ORD-${tableId}-${Date.now()}`;
@@ -1333,6 +1429,7 @@ const Orders = {
         openedAt:     serverTimestamp(),
       }));
       tx.set(tableRef, sanitize({
+        ...(String(tableId) === 'takeaway' ? { id: 'takeaway', name: tableName } : {}),
         status:   'occupied',
         orderId,
         openTime: serverTimestamp(),
@@ -1537,11 +1634,11 @@ const Orders = {
       tx.delete(orderRef);
 
       // Reset bàn
-      tx.update(_doc('tables', order.tableId), {
+      tx.set(_doc('tables', order.tableId), {
         status:   'empty',
         orderId:  null,
         openTime: null,
-      });
+      }, { merge: true });
 
       // FIX 5: Trừ tồn kho nguyên tử – dùng increment(-qty)
       invSnaps.forEach(snap => {
@@ -1572,11 +1669,11 @@ const Orders = {
         cancelledAt: serverTimestamp(),
         cancelledBy: actor,
       }));
-      tx.update(_doc('tables', tableId), {
+      tx.set(_doc('tables', tableId), {
         status:   'empty',
         orderId:  null,
         openTime: null,
-      });
+      }, { merge: true });
     });
     await logAction('order_cancelled', {
       orderId,
@@ -1602,12 +1699,14 @@ const Menu = {
       display_name: item.name || ref.id,
       category: item.category || 'Khac',
       sell_price: Number(item.price || 0),
+      image_url: item.image_url || '',
       item_type: _appMenuTypeToMaster(item.itemType),
       aliases: item.aliases || '',
       kitchenRouting: item.itemType === 'retail_item' ? 'skip' : (item.kitchenRouting || 'all'),
       linkedInventoryId: item.linkedInventoryId || null,
       cost: Number(item.cost || 0),
       unit: item.unit || 'phan',
+      hidden: !!item.hidden,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }), undefined, 'menu.add');
@@ -1622,6 +1721,8 @@ const Menu = {
     if (Object.prototype.hasOwnProperty.call(data, 'name')) payload.display_name = data.name;
     if (Object.prototype.hasOwnProperty.call(data, 'category')) payload.category = data.category;
     if (Object.prototype.hasOwnProperty.call(data, 'price')) payload.sell_price = Number(data.price || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'image_url')) payload.image_url = data.image_url;
+    if (Object.prototype.hasOwnProperty.call(data, 'hidden')) payload.hidden = !!data.hidden;
     if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.item_type = _appMenuTypeToMaster(data.itemType);
     if (Object.prototype.hasOwnProperty.call(data, 'aliases')) payload.aliases = data.aliases || '';
     if (Object.prototype.hasOwnProperty.call(data, 'kitchenRouting')) payload.kitchenRouting = data.itemType === 'retail_item' ? 'skip' : (data.kitchenRouting || 'all');
@@ -2008,6 +2109,59 @@ const History = {
       cancelReason: String(cancelReason || 'Void order').trim(),
       cancelledAt: serverTimestamp(),
     }), `history.cancel(${historyId})`);
+  },
+  async findByOrderId(orderId) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDocs(query(_col('history'), where('id', '==', cleanId), limit(1)));
+    const docSnap = snap.docs[0] || null;
+    return docSnap ? _fromDoc(docSnap) : null;
+  },
+  async findLatestByOnlineOrderId(onlineOrderId) {
+    const cleanId = String(onlineOrderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDocs(query(
+      _col('history'),
+      where('onlineOrderId', '==', cleanId),
+      limit(10)
+    ));
+    const rows = snap.docs.map(_fromDoc).filter(Boolean);
+    if (!rows.length) return null;
+    rows.sort((a, b) => {
+      const aTime = new Date(a?.paidAt || a?.timestamp || 0).getTime() || 0;
+      const bTime = new Date(b?.paidAt || b?.timestamp || 0).getTime() || 0;
+      return bTime - aTime;
+    });
+    return rows[0] || null;
+  },
+  async findLatestByOnlineOrderCode(orderCode) {
+    const cleanCode = String(orderCode || '').trim();
+    if (!cleanCode) return null;
+    const snap = await getDocs(query(
+      _col('history'),
+      where('onlineOrderCode', '==', cleanCode),
+      limit(10)
+    ));
+    const rows = snap.docs.map(_fromDoc).filter(Boolean);
+    if (!rows.length) return null;
+    rows.sort((a, b) => {
+      const aTime = new Date(a?.paidAt || a?.timestamp || 0).getTime() || 0;
+      const bTime = new Date(b?.paidAt || b?.timestamp || 0).getTime() || 0;
+      return bTime - aTime;
+    });
+    return rows[0] || null;
+  }
+};
+
+const HistoryArchive = {
+  async add(data) {
+    const archiveRef = doc(_col('history_duplicates_archive'));
+    await _safeSetDoc(archiveRef, sanitize({
+      ...data,
+      archiveId: archiveRef.id,
+      archivedAt: data?.archivedAt || new Date().toISOString(),
+    }), undefined, 'historyArchive.add');
+    return archiveRef.id;
   }
 };
 
@@ -2059,6 +2213,102 @@ const KitchenNotifications = {
 
   async add(payload) {
     return addDoc(_col('kitchen_notifications'), sanitize(payload));
+  },
+};
+
+const CustomerRequests = {
+  listenPendingOrders(handler) {
+    if (typeof handler !== 'function') return () => {};
+    const q = query(
+      _col('order_requests'),
+      where('status', '==', 'pending_approval')
+    );
+    return onSnapshot(q, snap => {
+      const docs = snap.docs
+        .map(_fromDoc)
+        .filter(Boolean)
+        .sort((a, b) => Number(b?.createdAt?.seconds || b?.createdAt || 0) - Number(a?.createdAt?.seconds || a?.createdAt || 0));
+      handler(docs, snap);
+    }, _snapErr('order_requests.pending'));
+  },
+
+  listenPendingService(handler) {
+    if (typeof handler !== 'function') return () => {};
+    const q = query(
+      _col('service_requests'),
+      where('status', '==', 'pending')
+    );
+    return onSnapshot(q, snap => {
+      const docs = snap.docs
+        .map(_fromDoc)
+        .filter(Boolean)
+        .sort((a, b) => Number(b?.createdAt?.seconds || b?.createdAt || 0) - Number(a?.createdAt?.seconds || a?.createdAt || 0));
+      handler(docs, snap);
+    }, _snapErr('service_requests.pending'));
+  },
+
+  listenPaymentRequests(handler) {
+    if (typeof handler !== 'function') return () => {};
+    const q = query(
+      _col('payment_requests'),
+      where('status', '==', 'requested')
+    );
+    return onSnapshot(q, snap => {
+      const docs = snap.docs
+        .map(_fromDoc)
+        .filter(Boolean)
+        .sort((a, b) => Number(b?.createdAt?.seconds || b?.createdAt || 0) - Number(a?.createdAt?.seconds || a?.createdAt || 0));
+      handler(docs, snap);
+    }, _snapErr('payment_requests.requested'));
+  },
+
+  async approveOrderRequest(requestId, actor = {}) {
+    if (!requestId) throw new Error('Missing order request id');
+    await _safeUpdateDoc(_doc('order_requests', requestId), sanitize({
+      status: 'approved',
+      approvedAt: serverTimestamp(),
+      approvedBy: actor.username || actor.name || actor.email || 'staff',
+    }), `order_requests.approve(${requestId})`);
+  },
+
+  async rejectOrderRequest(requestId, reason = '', actor = {}) {
+    if (!requestId) throw new Error('Missing order request id');
+    await _safeUpdateDoc(_doc('order_requests', requestId), sanitize({
+      status: 'rejected',
+      approvalNote: String(reason || '').trim(),
+      rejectedAt: serverTimestamp(),
+      rejectedBy: actor.username || actor.name || actor.email || 'staff',
+    }), `order_requests.reject(${requestId})`);
+  },
+};
+
+const _approveOnlineOrderCallable = httpsCallable(_functions, 'approveOnlineOrder');
+const _rejectOnlineOrderCallable = httpsCallable(_functions, 'rejectOnlineOrder');
+
+const OnlineOrders = {
+  async approve(orderId) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+    const response = await _approveOnlineOrderCallable({ orderId: cleanId });
+    return response?.data || { ok: false };
+  },
+
+  async reject(orderId) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+    const response = await _rejectOnlineOrderCallable({ orderId: cleanId });
+    return response?.data || { ok: false };
+  },
+
+  async syncFromPos(orderId, patch = {}) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+    await _safeSetDoc(_doc('online_orders', cleanId), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      lastKitchenSyncAt: serverTimestamp(),
+    }, { merge: true }, `online_orders.syncFromPos(${cleanId})`);
+    return { ok: true };
   },
 };
 
@@ -2408,7 +2658,7 @@ async function migrateLocalToFirestore(isDryRun = true) {
  *
  * Kiểm tra collection 'tables' trên Firestore.
  * Nếu CHƯ A CÓ BẬN NÀO hết → khởi tạo đủ tableCount bàn trống.
- * Nếu ĐÃ CÓ dữ liệu → không làm gì (chống ghi đè).
+ * Náº¿u ÄÃ£ cÃ³ dá»¯ liá»u â khÃ´ng lÃ m gÃ¬ (chá»ng ghi ÄÃ¨).
  *
  * Mục đích: Tránh lỗi "failed-precondition" khi app.js cố
  *   query/update một document bàn chưa tồn tại trên Firestore.
@@ -2527,7 +2777,7 @@ async function forceMigrateToCloud() {
   console.log(`- Đã bơm ${invData.length} Kho`);
   console.log(`- Đã đẩy Cấu hình Default Settings`);
   
-  alert('ĐÃ BƠM CHẾT DỮ LIỆU LÊN CLOUD THÀNH CÔNG! Trình duyệt sẽ được tải lại ngay.');
+  alert('ÄÃ BÆ M Dá»® LIá»U LÃN CLOUD THÃNH CÃNG! TrÃ¬nh duyá»t sáº½ ÄÆ°á»£c táº£i láº¡i ngay.');
   window.location.reload();
 }
 
@@ -2608,7 +2858,6 @@ async function migrateFromBackupJson(backupObj, isDryRun = true) {
   if (d.settings) {
     const merged = { ...SETTINGS_DEFAULTS, ..._cleanRecord(d.settings) };
     // Xóa các key nhạy cảm không cần thiết trên Cloud
-    delete merged.geminiApiKey;
     delete merged.googleTTSKey;
     delete merged.cassoToken;
     delete merged.gemmaApiKey;
@@ -2693,7 +2942,7 @@ async function migrateFromBackupJson(backupObj, isDryRun = true) {
     });
 
     if (isDryRun) {
-      console.groupCollapsed('[migrateJson 🔍] users (password ĐÃ bị loại bỏ)');
+      console.groupCollapsed('[migrateJson ð] users (password ÄÃ£ bá» loáº¡i bá»)');
       console.table(usersClean);
       console.groupEnd();
     } else {
@@ -2725,6 +2974,36 @@ async function migrateFromBackupJson(backupObj, isDryRun = true) {
 
 
 // ============================================================
+// §15  STORAGE API
+// ============================================================
+const Storage = {
+  /**
+   * Upload ảnh món ăn lên Firebase Storage
+   * @param {string} fileName - Tên file (thường là itemId)
+   * @param {string} dataUrl - Chuỗi base64 của ảnh đã nén
+   */
+  async uploadMenuImage(fileName, dataUrl) {
+    const storageRef = sRef(_storage, `menu_images/${fileName}`);
+    // uploadString hỗ trợ format data_url (base64)
+    await uploadString(storageRef, dataUrl, 'data_url');
+    const downloadURL = await getDownloadURL(storageRef);
+    return downloadURL;
+  },
+
+  /** Xóa ảnh khỏi Storage */
+  async deleteImage(url) {
+    if (!url || !url.includes('firebasestorage')) return;
+    try {
+      const storageRef = sRef(_storage, url);
+      await deleteObject(storageRef);
+    } catch (err) {
+      console.warn('[DB] Lỗi xóa ảnh Storage (có thể file không tồn tại):', err);
+    }
+  }
+};
+
+
+// ============================================================
 // §18  EXPORT  –  window.DB
 // ============================================================
 window.DB = {
@@ -2732,6 +3011,7 @@ window.DB = {
   auth: _auth,      // Trỏ thẳng vào Firebase Auth instance native
   db: _db,          // Trỏ thẳng vào Firestore instance
   rtdb: _rtdb,      // Trỏ thẳng vào Realtime Database instance
+  storage: _storage, // Trỏ thẳng vào Storage instance
   
   // Hàm đăng nhập/xuất/tạo NV 
   login: async (identifier, pass) => {
@@ -2837,13 +3117,17 @@ window.DB = {
   Users,
   Staff,
   History,
+  HistoryArchive,
   Expenses,
   Purchases,
   Suppliers,
   Presence,
   KitchenNotifications,
+  CustomerRequests,
+  OnlineOrders,
   SystemLogs,
   ShiftLogs,    // FIX 3: Chốt ca Cloud
+  Storage,
 
   // Công cụ di trú dữ liệu
   migrate:     migrateLocalToFirestore,

@@ -1537,8 +1537,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { renderMenuAdmin(); } catch(_) {}
       }
     }
-    // Báo cáo: re-render khi lịch sử / chi phí / nhập hàng thay đổi
-    if (key === 'history' || key === 'expenses' || key === 'purchases') {
+    // Báo cáo: re-render khi lịch sử / chi phí / nhập hàng / cấu hình tài chính thay đổi
+    if (key === 'history' || key === 'expenses' || key === 'purchases' || key === 'dailyRevenueSnapshots' || key === 'settings') {
       renderTables();    // cập nhật doanh thu hôm nay trên thẻ
       updateAlertBadge();
       // Nếu đang ở trang reports hoặc finance thì re-render luôn
@@ -2022,6 +2022,12 @@ function switchReportTab(tabId, btn) {
   reportsWrap.querySelectorAll('.report-tab-content').forEach(el => el.style.display = 'none');
   const target = document.getElementById('report-tab-' + tabId);
   if(target) target.style.display = 'block';
+  if (tabId === 'ads') {
+    ensureAdsRevenueReportDateInputs();
+    setTimeout(() => {
+      try { loadAdsRevenueReport(); } catch (_) {}
+    }, 0);
+  }
 }
 
 function navigateToReport(type) {
@@ -2269,6 +2275,31 @@ function isCompletedHistoryOrderForUi(order) {
   const status = String(order?.status || '').trim().toLowerCase();
   if (!status) return !order?.cancelledAt && !order?.cancelReason;
   return status === 'completed' || status === 'closed';
+}
+
+function isVisibleHistoryOrderForUi(order) {
+  if (!order || typeof order !== 'object') return false;
+  if (!isCompletedHistoryOrderForUi(order)) return false;
+  if (order.hidden === true) return false;
+  if (order.hiddenFromReports === true) return false;
+  if (order.hiddenFromHistory === true) return false;
+  if (order.deletedAt || order.deletedFromAppAt) return false;
+  if (order.archivedAt || order.archivedFromHistoryId) return false;
+  if (order.supersededAt || order.supersededByHistoryId) return false;
+  return true;
+}
+
+function _getVisibleHistoryForUi() {
+  return _getHistory().filter(isVisibleHistoryOrderForUi);
+}
+
+if (typeof filterHistory === 'function' && !filterHistory.__gkhlVisibleHistoryWrapped) {
+  const _baseFilterHistory = filterHistory;
+  filterHistory = function(period, opts) {
+    const rows = _baseFilterHistory(period, opts);
+    return Array.isArray(rows) ? rows.filter(isVisibleHistoryOrderForUi) : [];
+  };
+  filterHistory.__gkhlVisibleHistoryWrapped = true;
 }
 
 function _getExpenses() {
@@ -2852,7 +2883,8 @@ function initiateManualMerge() {
 }
 
 function renderTables() {
-  const tables = _getTables();
+  const allTables = _getTables();
+  const tables = allTables.filter(t => !t.hiddenInTableGrid);
   const orders = _getOrders();
   const grid = document.getElementById('table-grid');
   const now = Date.now();
@@ -2880,7 +2912,21 @@ function renderTables() {
     ${takeawayTotal > 0 ? `<div style="font-size:14px;font-weight:800;color:var(--primary)">${fmt(takeawayTotal)}đ</div>` : '<div style="font-size:11px;color:var(--text3)">Trống</div>'}
   </div>`;
 
-  grid.innerHTML = takeawayHtml + tables.map(t => {
+  const onlineOrders = window.appState?.onlineOrders || [];
+  const onlineOrderCount = onlineOrders.length;
+  const onlineTotal = onlineOrders.reduce((sum, o) => sum + _calculateOnlineOrderTotal(o), 0);
+  const onlineHtml = onlineOrderCount > 0 ? `
+    <div class="table-card occupied" style="grid-column:1/-1;aspect-ratio:auto;padding:12px;flex-direction:row;justify-content:flex-start;gap:12px" onclick="openOnlineOrdersPanel()">
+      <div style="font-size:28px">🌐</div>
+      <div style="flex:1;text-align:left">
+        <div style="font-size:13px;font-weight:800">Bàn online</div>
+        <div style="font-size:11px;color:var(--text2)">${onlineOrderCount} đơn | ${onlineOrders.filter(o => o.status === 'pending').length} chờ duyệt | ${onlineOrders.filter(o => o.status === 'approved' || o.status === 'pos_sync').length} đã vào POS</div>
+      </div>
+      <div style="font-size:14px;font-weight:800;color:var(--primary)">${fmt(onlineTotal)}đ</div>
+    </div>
+  ` : '';
+
+  grid.innerHTML = takeawayHtml + onlineHtml + tables.map(t => {
     const order      = orders[t.id];
     const total      = order ? order.reduce((s,i) => s+i.price*i.qty, 0) : 0;
     const elapsed    = t.openTime ? Math.floor((now - new Date(t.openTime).getTime())/60000) : 0;
@@ -2898,6 +2944,449 @@ function renderTables() {
     </div>`;
   }).join('');
   try { renderKdsMonitor(); } catch(_) {}
+}
+
+function openOnlineOrdersPanel() {
+  const modal = document.getElementById('online-orders-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+  renderOnlineOrdersPanel();
+}
+
+function closeOnlineOrdersModal() {
+  const modal = document.getElementById('online-orders-modal');
+  if (!modal) return;
+  modal.classList.remove('active');
+}
+
+function renderOnlineOrdersPanel() {
+  const body = document.getElementById('online-orders-modal-body');
+  if (!body) return;
+  
+  const onlineOrders = window.appState?.onlineOrders || [];
+  
+  if (onlineOrders.length === 0) {
+    body.innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--text3)">
+        <div style="font-size:48px;margin-bottom:12px">🌐</div>
+        <div>Chưa có đơn hàng online nào</div>
+      </div>
+    `;
+    return;
+  }
+  
+  const getStatusBadge = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'pending') return '<span style="background:#ffc107;color:#000;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Chờ duyệt</span>';
+    if (s === 'approved' || s === 'pos_sync') return '<span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đã vào POS</span>';
+    if (s === 'preparing') return '<span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đang làm</span>';
+    if (s === 'ready_to_serve') return '<span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Sẵn sàng giao</span>';
+    if (s === 'delivering') return '<span style="background:#673ab7;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đang giao</span>';
+    if (s === 'completed') return '<span style="background:#009688;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Hoàn tất</span>';
+    if (s === 'rejected') return '<span style="background:#f44336;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Từ chối</span>';
+    return `<span style="background:#9e9e9e;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">${status || 'N/A'}</span>`;
+  };
+  
+  body.innerHTML = `
+    <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+      ${onlineOrders.map(order => {
+        const items = Array.isArray(order.items) ? order.items : [];
+        const orderDocId = _resolveOnlineOrderDocId(order);
+        const total = _calculateOnlineOrderTotal(order);
+        const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleString('vi-VN') : 'N/A';
+        const customerName = order.customerName || order.customer?.name || 'Khách hàng';
+        const customerPhone = order.customerPhone || order.customer?.phone || '';
+        const address = order.address || order.deliveryAddress || '';
+        const note = order.note || '';
+        const statusKey = String(order.status || '').toLowerCase();
+        const canComplete = !!order.posOrderId && ['approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(statusKey);
+        const canCancel = !!order.posOrderId && ['approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(statusKey);
+        
+        return `
+          <div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div style="flex:1">
+                <div style="font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px">
+                  🌐 ${order.orderCode || order.id || 'Đơn không mã'}
+                </div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">
+                  ${createdAt}
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                ${getStatusBadge(order.status)}
+                <div style="font-weight:800;color:var(--primary)">${fmt(total)}đ</div>
+              </div>
+            </div>
+            
+            <div style="font-size:11px;color:var(--text2);display:flex;flex-direction:column;gap:2px">
+              <div>👤 ${customerName}${customerPhone ? ` • ${customerPhone}` : ''}</div>
+              ${address ? `<div>📍 ${address}</div>` : ''}
+              ${note ? `<div>📝 ${note}</div>` : ''}
+            </div>
+            
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--border)">
+              ${items.map(item => `
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+                  <div style="flex:1">
+                    <span style="font-weight:600">${_getOnlineOrderItemQty(item)}x</span> ${item.name || item.productName || 'Món không tên'}
+                  </div>
+                  <div style="font-weight:700;color:var(--text2)">${fmt(_getOnlineOrderItemUnitPrice(item) * _getOnlineOrderItemQty(item))}đ</div>
+                </div>
+              `).join('')}
+            </div>
+            
+            ${statusKey === 'pending' ? `
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-success btn-block" style="flex:1" onclick="approveOnlineOrder('${orderDocId}')">
+                  ✅ Duyệt đơn
+                </button>
+                <button class="btn btn-danger btn-block" style="flex:1" onclick="rejectOnlineOrder('${orderDocId}')">
+                  ❌ Từ chối
+                </button>
+              </div>
+            ` : ''}
+            ${(canComplete || canCancel) ? `
+              <div style="display:flex;gap:8px;margin-top:8px">
+                ${canComplete ? `
+                  <button class="btn btn-primary btn-block" style="flex:1" onclick="completeOnlineOrder('${orderDocId}')">
+                    ✅ Hoàn tất đơn
+                  </button>
+                ` : ''}
+                ${canCancel ? `
+                  <button class="btn btn-danger btn-block" style="flex:1" onclick="cancelOnlineOrder('${orderDocId}')">
+                    ❌ Hủy đơn
+                  </button>
+                ` : ''}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function _mapOnlineOrderPayMethod(order = {}) {
+  const paymentMethod = String(order.paymentMethod || '').trim().toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').trim().toLowerCase();
+  if (paymentMethod && paymentMethod !== 'cod') {
+    return paymentStatus === 'paid' ? 'bank' : 'cash';
+  }
+  return 'cash';
+}
+
+function _buildOnlineOrderBillNo(order = {}) {
+  const orderCode = String(order.orderCode || '').trim();
+  if (orderCode) return `ONL-${orderCode}`;
+  const now = new Date();
+  return `ONL-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${uid().slice(0, 4).toUpperCase()}`;
+}
+
+function _estimateOnlineOrderCost(items = []) {
+  const menu = _getMenu();
+  const inventory = _getInventory();
+  return (Array.isArray(items) ? items : []).reduce((sum, item) => {
+    const qty = Number(item?.qty || 0) || 0;
+    const inlineCost = Number(item?.cost || 0) || 0;
+    if (inlineCost > 0) return sum + (inlineCost * qty);
+    const menuItem = menu.find(m => String(m?.id || '') === String(item?.id || ''))
+      || menu.find(m => String(m?.name || '').trim() === String(item?.name || '').trim());
+    const unitCost = Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0) || 0;
+    return sum + (unitCost * qty);
+  }, 0);
+}
+
+function _getOnlineOrderItemQty(item = {}) {
+  return Number(item?.qty ?? item?.quantity ?? 1) || 1;
+}
+
+function _getOnlineOrderItemUnitPrice(item = {}) {
+  return Number(
+    item?.unitPrice ??
+    item?.price ??
+    item?.sellPrice ??
+    item?.finalPrice ??
+    item?.subtotal
+  ) || 0;
+}
+
+function _calculateOnlineOrderTotal(order = {}) {
+  const pricing = order?.pricing || {};
+  const explicitTotal = Number(
+    order?.total ??
+    order?.finalBillTotal ??
+    order?.temporaryTotal ??
+    order?.totalPrice ??
+    pricing?.total ??
+    pricing?.grandTotal ??
+    pricing?.finalTotal
+  ) || 0;
+  if (explicitTotal > 0) return explicitTotal;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const itemsTotal = items.reduce((sum, item) => sum + (_getOnlineOrderItemUnitPrice(item) * _getOnlineOrderItemQty(item)), 0);
+  const shipping = Number(order?.shipping || order?.shippingFee || pricing?.shippingFee || pricing?.deliveryFee || 0) || 0;
+  const discount = Number(order?.discount || order?.discountAmount || pricing?.discountTotal || pricing?.discountAmount || 0) || 0;
+  const vatAmount = Number(order?.vatAmount || pricing?.vatAmount || 0) || 0;
+  return Math.max(0, itemsTotal + shipping + vatAmount - discount);
+}
+
+function _patchLocalOnlineOrderStatus(orderId, nextStatus) {
+  const orders = Array.isArray(window.appState?.onlineOrders) ? window.appState.onlineOrders : null;
+  if (!orders) return;
+  const target = orders.find(order =>
+    String(order?._docId || order?.id || '') === String(orderId || '')
+  );
+  if (!target) return;
+  target.status = String(nextStatus || target.status || '').trim() || target.status;
+}
+
+function _patchLocalOnlineOrderMeta(orderId, patch = {}) {
+  const orders = Array.isArray(window.appState?.onlineOrders) ? window.appState.onlineOrders : null;
+  if (!orders) return;
+  const target = orders.find(order =>
+    String(order?._docId || order?.id || '') === String(orderId || '')
+  );
+  if (!target || !patch || typeof patch !== 'object') return;
+  Object.assign(target, patch);
+}
+
+function _resolveOnlineOrderDocId(order = {}, fallbackId = '') {
+  return String(order?._docId || order?.id || fallbackId || '').trim();
+}
+
+async function _resolveOnlinePosContext(onlineOrder = {}) {
+  const explicitPosOrderId = String(onlineOrder?.posOrderId || '').trim();
+  const inferredPosOrderId = onlineOrder?.id ? `ONLINE-${String(onlineOrder.id).trim()}` : '';
+  const orderCode = String(onlineOrder?.orderCode || '').trim();
+  const candidateOrderIds = [...new Set([explicitPosOrderId, inferredPosOrderId].filter(Boolean))];
+
+  let liveOrder = null;
+  for (const candidateId of candidateOrderIds) {
+    liveOrder = await window.DB?.Orders?.getById?.(candidateId);
+    if (liveOrder) break;
+  }
+  if (!liveOrder) {
+    liveOrder = await window.DB?.Orders?.findOpenByOnlineOrderId?.(onlineOrder?.id);
+  }
+  if (!liveOrder && orderCode) {
+    liveOrder = await window.DB?.Orders?.findOpenByOnlineOrderCode?.(orderCode);
+  }
+
+  let historyOrder = null;
+  if (!liveOrder) {
+    for (const candidateId of candidateOrderIds) {
+      historyOrder = await window.DB?.History?.findByOrderId?.(candidateId);
+      if (historyOrder) break;
+    }
+  }
+  if (!liveOrder && !historyOrder) {
+    historyOrder = await window.DB?.History?.findLatestByOnlineOrderId?.(onlineOrder?.id);
+  }
+  if (!liveOrder && !historyOrder && orderCode) {
+    historyOrder = await window.DB?.History?.findLatestByOnlineOrderCode?.(orderCode);
+  }
+
+  return {
+    posOrderId: String(liveOrder?.id || historyOrder?.id || explicitPosOrderId || '').trim(),
+    liveOrder,
+    historyOrder,
+  };
+}
+
+async function completeOnlineOrder(orderId) {
+  try {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+
+    const onlineOrder = (window.appState?.onlineOrders || []).find(order =>
+      String(order?._docId || order?.id || '') === cleanId
+    );
+    if (!onlineOrder) throw new Error('Không tìm thấy đơn online');
+    const onlineOrderDocId = _resolveOnlineOrderDocId(onlineOrder, cleanId);
+
+    const confirmOk = window.confirm(`Hoàn tất đơn online ${onlineOrder.orderCode || cleanId} và ghi nhận doanh số vào POS?`);
+    if (!confirmOk) return;
+
+    showToast('⏳ Đang hoàn tất đơn online...', 'info');
+
+    const { posOrderId, liveOrder, historyOrder } = await _resolveOnlinePosContext(onlineOrder);
+    if (posOrderId && posOrderId !== String(onlineOrder.posOrderId || '').trim()) {
+      _patchLocalOnlineOrderMeta(onlineOrderDocId, { posOrderId });
+    }
+    if (!liveOrder) {
+      if (historyOrder) {
+        await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
+        _patchLocalOnlineOrderStatus(onlineOrderDocId, 'completed');
+        showToast('✅ Đơn này đã được hoàn tất trong POS trước đó.', 'success');
+        renderOnlineOrdersPanel();
+        return;
+      }
+      throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
+    }
+    if (String(liveOrder.status || '').toLowerCase() !== 'open') {
+      throw new Error('Đơn POS không còn ở trạng thái mở');
+    }
+
+    const items = Array.isArray(liveOrder.items) ? liveOrder.items : [];
+    const itemsTotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+    const extras = {
+      discount: Number(liveOrder.discount || 0) || 0,
+      discountType: liveOrder.discountType === 'percent' ? 'percent' : 'vnd',
+      discountNote: String(liveOrder.discountNote || '').trim(),
+      shipping: Number(liveOrder.shipping || 0) || 0,
+      note: String(liveOrder.note || '').trim(),
+    };
+    const vatAmount = Number(liveOrder.vatAmount || 0) || 0;
+    const taxRate = Number(liveOrder.taxRate || 0) || 0;
+    const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+    const total = subtotal + vatAmount;
+    const cost = _estimateOnlineOrderCost(items);
+    const billNo = _buildOnlineOrderBillNo(onlineOrder);
+    const payMethod = _mapOnlineOrderPayMethod(onlineOrder);
+
+    await window.DB.Orders.close(liveOrder.id, {
+      total,
+      cost,
+      payMethod,
+      discount: extras.discount,
+      discountNote: extras.discountNote,
+      discountType: extras.discountType,
+      shipping: extras.shipping,
+      vatAmount,
+      taxRate,
+      billNo,
+    });
+
+    await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+      status: 'completed',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      completedAt: new Date().toISOString(),
+    });
+    _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+      status: 'completed',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+    });
+    showToast('✅ Đã hoàn tất đơn online và ghi nhận doanh số vào POS!', 'success');
+    renderOnlineOrdersPanel();
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể hoàn tất đơn online'), 'danger');
+  }
+}
+
+async function cancelOnlineOrder(orderId) {
+  try {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+
+    const onlineOrder = (window.appState?.onlineOrders || []).find(order =>
+      String(order?._docId || order?.id || '') === cleanId
+    );
+    if (!onlineOrder) throw new Error('Không tìm thấy đơn online');
+    const onlineOrderDocId = _resolveOnlineOrderDocId(onlineOrder, cleanId);
+
+    const reasonInput = window.prompt(`Nhập lý do hủy cho đơn online ${onlineOrder.orderCode || cleanId}:`, 'Khách hủy đơn');
+    if (reasonInput === null) return;
+    const cancelReason = String(reasonInput || '').trim() || 'Khách hủy đơn';
+
+    const confirmOk = window.confirm(`Xác nhận hủy đơn online ${onlineOrder.orderCode || cleanId}?`);
+    if (!confirmOk) return;
+
+    showToast('⏳ Đang hủy đơn online...', 'info');
+
+    const { posOrderId, liveOrder, historyOrder } = await _resolveOnlinePosContext(onlineOrder);
+    if (posOrderId && posOrderId !== String(onlineOrder.posOrderId || '').trim()) {
+      _patchLocalOnlineOrderMeta(onlineOrderDocId, { posOrderId });
+    }
+    if (!liveOrder) {
+      if (historyOrder) {
+        await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
+        _patchLocalOnlineOrderStatus(onlineOrderDocId, 'completed');
+        showToast('⚠️ Đơn này đã hoàn tất trong POS nên không thể hủy nữa.', 'warning');
+        renderOnlineOrdersPanel();
+        return;
+      }
+      const statusKey = String(onlineOrder.status || '').toLowerCase();
+      if (['cancelled', 'rejected'].includes(statusKey)) {
+        showToast('⚠️ Đơn online này đã ở trạng thái hủy.', 'warning');
+        renderOnlineOrdersPanel();
+        return;
+      }
+      throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
+    }
+    if (String(liveOrder.status || '').toLowerCase() !== 'open') {
+      throw new Error('Đơn POS không còn ở trạng thái mở');
+    }
+
+    await window.DB.Orders.cancel(liveOrder.id, cancelReason);
+
+    await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+      status: 'cancelled',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      cancelledAt: new Date().toISOString(),
+      cancelReason,
+    });
+    _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+      status: 'cancelled',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      cancelReason,
+    });
+    showToast('✅ Đã hủy đơn online!', 'success');
+    renderOnlineOrdersPanel();
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể hủy đơn online'), 'danger');
+  }
+}
+
+async function approveOnlineOrder(orderId) {
+  try {
+    showToast('⏳ Đang duyệt đơn...', 'info');
+    if (!window.DB?.OnlineOrders?.approve) {
+      throw new Error('Chức năng duyệt đơn không khả dụng');
+    }
+    const result = await window.DB.OnlineOrders.approve(orderId);
+    if (result?.ok) {
+      showToast('✅ Đã duyệt đơn thành công!', 'success');
+      renderOnlineOrdersPanel();
+    } else {
+      throw new Error(result?.message || 'Không thể duyệt đơn');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể duyệt đơn'), 'danger');
+  }
+}
+
+async function rejectOnlineOrder(orderId) {
+  try {
+    showToast('⏳ Đang từ chối đơn...', 'info');
+    if (!window.DB?.OnlineOrders?.reject) {
+      throw new Error('Chức năng từ chối không khả dụng');
+    }
+    const result = await window.DB.OnlineOrders.reject(orderId);
+    if (result?.ok) {
+      showToast('✅ Đã từ chối đơn!', 'success');
+      renderOnlineOrdersPanel();
+    } else {
+      throw new Error(result?.message || 'Không thể từ chối đơn');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể từ chối đơn'), 'danger');
+  }
 }
 
 function requireOpenShiftForOrderFlow(actionLabel = 'thao tác này') {
@@ -4310,10 +4799,9 @@ async function runPurchaseOcrFromLatestPhoto() {
         result = await runOfflineOcr(photo.dataUrl);
       } catch(e) {
         console.warn('Offline OCR failed, considering online fallback', e);
-        const s = Store.getSettings();
-        const canOnline = navigator.onLine && !!s.geminiApiKey;
+        const canOnline = navigator.onLine;
         if(canOnline) {
-          if(confirm('OCR Offline không đọc rõ. Dùng OCR Online (Gemini) để quét ảnh này?')) {
+          if(confirm('OCR Offline không đọc rõ. Dùng OCR Online qua Vertex để quét ảnh này?')) {
             result = await runOnlinePurchaseOcr(photo.dataUrl);
           } else {
             throw new Error('Người dùng không muốn dùng OCR Online');
@@ -4359,47 +4847,17 @@ async function runOfflineOcr(dataUrl) {
 }
 
 async function runOnlinePurchaseOcr(dataUrl) {
-  const s = Store.getSettings();
-  if(!s.geminiApiKey) throw new Error('Chưa cấu hình Gemini API Key cho OCR Online.');
-  const base64 = dataUrl.split(',')[1];
-  const prompt = `Bạn là trợ lý nhập hàng cho quán ăn "XE KHÔ CHỮA LÀNH".
-Đây là ảnh hóa đơn / phiếu nhập nguyên liệu. Hãy cố gắng trích xuất:
-- Tên nguyên liệu chính (name)
-- Số lượng (qty)
-- Tổng tiền (price, đơn vị VND)
-
-Trả về JSON dạng:
-{ "name": "<tên hoặc rỗng nếu không chắc>", "qty": <số hoặc null>, "price": <số hoặc null>, "rawText": "<toàn bộ nội dung đọc được>" }
-
-Nếu không rõ một trường nào đó, để null hoặc chuỗi rỗng. Không dùng markdown.`;
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContentkey=${s.geminiApiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: 'image/jpeg', data: base64 } }
-          ]
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 256, response_mime_type: 'application/json' }
-      })
-    }
-  );
-  const data = await res.json();
-  if(data.error) throw new Error(data.error.message || 'Gemini API error');
-  const _gc = data.candidates && data.candidates[0];
-  const _gp = _gc && _gc.content && _gc.content.parts;
-  const _g0 = _gp && _gp[0];
-  let raw = (_g0 && _g0.text) || '';
-  raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-  let parsed = null;
-  try { parsed = JSON.parse(raw); } catch(e) { throw new Error('Không parse được JSON từ Gemini'); }
-  return parsePurchaseJson(parsed, 'online');
+  const endpoint = 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/purchaseOcr';
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataUrl }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok || !data?.ok) {
+    throw new Error(data?.error || 'Vertex OCR không phản hồi.');
+  }
+  return parsePurchaseJson(data, 'online');
 }
 
 function parsePurchaseText(text, source) {
@@ -5696,10 +6154,10 @@ function submitPurchase(e) {
 }
 
 // ============================================================
-// STOCKTAKE (Kiđm kê)
+// STOCKTAKE (Kiểm kê)
 // ============================================================
 function renderStocktakeHistory() {
-  const stocktakeCategory = normalizeExpenseCategoryLabel('\u004c\u00e3\u0069\u002f\u004c\u1ed7 \u0064\u006f \u006b\u0069\u1ec3\u006d \u006b\u00ea');
+  const stocktakeCategory = normalizeExpenseCategoryLabel('Lãi/Lỗ do kiểm kê');
   const periodEl = document.getElementById('stocktake-history-period');
   const fromEl = document.getElementById('stocktake-history-from');
   const toEl = document.getElementById('stocktake-history-to');
@@ -6442,7 +6900,7 @@ function updateShiftBtnUI() {
 
 function openShiftModal(shift) {
   // Lấy dữ liệu trong ca
-  const history = (window.appState && window.appState.history) || Store.getHistory();
+  const history = _getVisibleHistoryForUi();
   
   // Các đơn trong ca
   const shiftOrders = history.filter(h => h.paidAt >= shift.openedAt);
@@ -6666,7 +7124,7 @@ function populateReportMenuFilter() {
     .filter(item => !item.hidden)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
   const current = String(reportFilters.menuItemId || '');
-  const html = '<option value="">\u0054\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e</option>' + menu
+  const html = '<option value="">Tất cả món ăn</option>' + menu
     .map(item => `<option value="${item.id}">${item.name}</option>`)
     .join('');
   const nextValue = menu.some(item => String(item.id) === current) ? current : '';
@@ -6694,7 +7152,7 @@ function ensureReportSummaryLayout() {
     card.id = 'report-menu-summary-card';
     card.style.marginBottom = '16px';
     card.innerHTML = `
-      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">\u0054\u00f3\u006d \u0074\u1eaft \u0074\u0068\u0065\u006f \u006d\u00f3\u006e \u0103\u006e</div>
+      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">Tóm tắt theo món ăn</div>
       <div id="report-menu-summary-content"></div>
     `;
     revenueTab.insertBefore(card, revenueTab.firstElementChild);
@@ -6759,11 +7217,11 @@ function renderReportFilterSummary() {
   const summaryEls = Array.from(document.querySelectorAll('#report-filter-summary'));
   if (!summaryEls.length) return;
   const labels = [];
-  if (isReportTransactionEnabled('sales')) labels.push('\u0110\u01a1\u006e \u0062\u00e1\u006e');
-  if (isReportTransactionEnabled('purchases')) labels.push('\u004e\u0068\u1ead\u0070 \u0068\u00e0\u006e\u0067');
-  if (isReportTransactionEnabled('expenses')) labels.push('\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063');
+  if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
+  if (isReportTransactionEnabled('purchases')) labels.push('Nhập hàng');
+  if (isReportTransactionEnabled('expenses')) labels.push('Chi phí khác');
   const menuItem = getSelectedReportMenuItem();
-  const text = `\u0110\u0061\u006e\u0067 \u0078\u0065\u006d: ${labels.length ? labels.join(', ') : '\u0063\u0068\u01b0\u0061 \u0063\u0068\u1ecd\u006e \u0067\u0069\u0061\u006f \u0064\u1ecb\u0063\u0068 \u006e\u00e0\u006f'}${menuItem ? ` \u00b7 \u004d\u00f3\u006e \u0103\u006e: ${menuItem.name}` : ' \u00b7 \u0054\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e'}`;
+  const text = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${menuItem ? ` · Món ăn: ${menuItem.name}` : ' · Tất cả món ăn'}`;
   summaryEls.forEach(summaryEl => { summaryEl.textContent = text; });
 }
 
@@ -6854,10 +7312,298 @@ function refreshReportViews() {
   renderExpenseReport();
 }
 
+function ensureAdsRevenueReportDateInputs() {
+  const fromEl = document.getElementById('ads-report-from');
+  const toEl = document.getElementById('ads-report-to');
+  if (!fromEl || !toEl) return;
+
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+  if (!fromEl.value) fromEl.value = monthStart;
+  if (!toEl.value) toEl.value = today;
+}
+
+function detectAdsExpensePlatform(expense = {}) {
+  const raw = `${expense.name || ''} ${expense.category || ''}`;
+  const key = normalizeViKey(repairVietnameseText(raw));
+  if (!key) return '';
+  if (key.includes('facebook') || key.includes('meta')) return 'facebook';
+  if (key.includes('tiktok')) return 'tiktok';
+  return '';
+}
+
+function isAdsExpenseEntry(expense = {}) {
+  const raw = `${expense.name || ''} ${expense.category || ''}`;
+  const key = normalizeViKey(repairVietnameseText(raw));
+  if (!key) return false;
+  return key.includes('facebook')
+    || key.includes('meta')
+    || key.includes('tiktok')
+    || key.includes('ads')
+    || key.includes('quang cao')
+    || key.includes('marketing');
+}
+
+function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
+  const rows = Array.isArray(window.appState?.dailyRevenueSnapshots) ? window.appState.dailyRevenueSnapshots : [];
+  return rows.filter((snapshot) => {
+    const dateKey = String(snapshot?.date || '').trim().slice(0, 10);
+    return !!dateKey && dateKey >= fromDate && dateKey <= toDate;
+  });
+}
+
+function getFixedCostProfileForReports() {
+  const financialProfile = window.appState?.settings?.financial_profile || {};
+  const monthly = financialProfile?.monthly_fixed_costs || {};
+  const monthlyFixedCostTotal =
+    Number(monthly.total || 0)
+    || (
+      (Number(monthly.rent || 0) || 0)
+      + (Number(monthly.staff || 0) || 0)
+      + (Number(monthly.utilities || 0) || 0)
+      + (Number(monthly.other || 0) || 0)
+    );
+  const dailyFixedCost =
+    Number(financialProfile?.daily_fixed_cost || 0)
+    || (monthlyFixedCostTotal > 0 ? Math.round(monthlyFixedCostTotal / 30) : 0);
+  const targetMonthlyProfit = Number(financialProfile?.target_monthly_profit || 0) || 0;
+
+  return {
+    monthlyFixedCostTotal,
+    dailyFixedCost,
+    targetMonthlyProfit,
+    isConfigured: monthlyFixedCostTotal > 0 || dailyFixedCost > 0 || targetMonthlyProfit > 0,
+  };
+}
+
+function countInclusiveReportDays(fromDate, toDate) {
+  const start = new Date(`${String(fromDate || '').trim()}T00:00:00`);
+  const end = new Date(`${String(toDate || '').trim()}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+  return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+function buildAdsRevenueReportHtml(summary = {}) {
+  const fmtMoney = (value) => `${fmt(Number(value || 0))}đ`;
+  const posMargin = Number(summary.posRevenue || 0) > 0
+    ? ((Number(summary.grossProfit || 0) / Number(summary.posRevenue || 0)) * 100).toFixed(1)
+    : '0.0';
+  const roasText = summary.adsSpendTotal > 0
+    ? `${Number(summary.roas || 0).toFixed(2)}x`
+    : '—';
+  const adsDataNote = summary.adsEntriesCount > 0 || summary.snapshotAdsDays > 0
+    ? `<div class="report-ads-note">${summary.dataSourceNote || ''}</div>`
+    : `<div class="empty-state report-ads-empty">
+        <div class="empty-text">Chưa có dữ liệu ads trong khoảng này. Hệ thống ưu tiên daily_revenue_snapshot.ads_spend_today, sau đó mới cộng các mục chi phí marketing/Facebook/TikTok nếu có.</div>
+      </div>`;
+
+  return `
+    <div class="report-ads-kpis">
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">Doanh thu POS</div>
+        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.posRevenue)}</div>
+      </div>
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">Đơn hàng</div>
+        <div class="stat-value report-ads-kpi-value">${fmt(summary.orderCount || 0)}</div>
+      </div>
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">Giá vốn</div>
+        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.cogsTotal)}</div>
+      </div>
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">Lãi gộp</div>
+        <div class="stat-value report-ads-kpi-value" style="color:var(--success)">${fmtMoney(summary.grossProfit)}</div>
+      </div>
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">Chi ads</div>
+        <div class="stat-value report-ads-kpi-value" style="color:var(--warning)">${fmtMoney(summary.adsSpendTotal)}</div>
+      </div>
+      <div class="stat-card report-ads-kpi">
+        <div class="stat-label">ROAS</div>
+        <div class="stat-value report-ads-kpi-value">${roasText}</div>
+      </div>
+    </div>
+
+    <div class="report-ads-grid">
+      <div class="card report-ads-panel">
+        <div class="card-title report-ads-panel-title">Tóm tắt khoảng ngày</div>
+        <div class="report-ads-meta-grid">
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Từ ngày</div>
+            <div class="report-ads-meta-value">${summary.fromDate || ''}</div>
+          </div>
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Đến ngày</div>
+            <div class="report-ads-meta-value">${summary.toDate || ''}</div>
+          </div>
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Món đã bán</div>
+            <div class="report-ads-meta-value">${fmt(summary.itemQty || 0)} phần</div>
+          </div>
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Biên lãi gộp</div>
+            <div class="report-ads-meta-value">${posMargin}%</div>
+          </div>
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Chi phí cố định / ngày</div>
+            <div class="report-ads-meta-value">${fmtMoney(summary.fixedCostDaily)}</div>
+          </div>
+          <div class="report-ads-meta-item">
+            <div class="report-ads-meta-label">Số ngày phân bổ</div>
+            <div class="report-ads-meta-value">${fmt(summary.reportDays || 0)} ngày</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card report-ads-panel">
+        <div class="card-title report-ads-panel-title">Chi phí & lợi nhuận</div>
+        <div class="report-ads-breakdown">
+          <div class="report-ads-row"><span>Facebook Ads</span><strong>${fmtMoney(summary.facebookAdsSpend)}</strong></div>
+          <div class="report-ads-row"><span>TikTok Ads</span><strong>${fmtMoney(summary.tiktokAdsSpend)}</strong></div>
+          <div class="report-ads-row"><span>Marketing khác</span><strong>${fmtMoney(summary.otherAdsSpend)}</strong></div>
+          <div class="report-ads-row"><span>Nhập hàng</span><strong>${fmtMoney(summary.purchaseSpend)}</strong></div>
+          <div class="report-ads-row"><span>Chi phí khác</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>
+          <div class="report-ads-row"><span>Chi phí cố định kỳ báo cáo</span><strong>${fmtMoney(summary.fixedCostTotal)}</strong></div>
+          <div class="report-ads-row report-ads-row-total">
+            <span>Lợi nhuận sau ads, chi phí khác & chi phí cố định</span>
+            <strong style="color:${summary.netAfterAdsAndExpenses >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtMoney(summary.netAfterAdsAndExpenses)}</strong>
+          </div>
+        </div>
+        ${summary.snapshotAdsDays > 0 ? `<div class="report-ads-pill">Meta Ads snapshot: ${fmt(summary.snapshotAdsDays)} ngày</div>` : ''}
+        ${summary.expenseAdsDays > 0 ? `<div class="report-ads-pill">Chi phí nội bộ: ${fmt(summary.expenseAdsDays)} dòng ads</div>` : ''}
+        ${summary.fixedCostConfigured ? `<div class="report-ads-pill">Chi phí cố định: ${fmtMoney(summary.fixedCostDaily)}/ngày từ Sprint 0</div>` : '<div class="report-ads-pill">Chi phí cố định: chưa cấu hình trong Sprint 0</div>'}
+        ${adsDataNote}
+      </div>
+    </div>
+  `;
+}
+
+function loadAdsRevenueReport() {
+  const resultEl = document.getElementById('ads-revenue-report-result');
+  const fromEl = document.getElementById('ads-report-from');
+  const toEl = document.getElementById('ads-report-to');
+  if (!resultEl || !fromEl || !toEl) return;
+
+  ensureAdsRevenueReportDateInputs();
+  const fromDate = String(fromEl.value || '').trim();
+  const toDate = String(toEl.value || '').trim();
+
+  if (!fromDate || !toDate) {
+    resultEl.innerHTML = `<div class="empty-state"><div class="empty-text">Vui lòng chọn đầy đủ khoảng ngày để xem báo cáo.</div></div>`;
+    return;
+  }
+  if (fromDate > toDate) {
+    resultEl.innerHTML = `<div class="empty-state"><div class="empty-text">Ngày bắt đầu không được lớn hơn ngày kết thúc.</div></div>`;
+    return;
+  }
+
+  const rangeOpts = { fromDate, toDate };
+  const orders = filterHistory('range', rangeOpts).filter(isCompletedHistoryOrderForUi);
+  const expenses = filterExpenses('range', rangeOpts);
+  const purchases = filterPurchases('range', rangeOpts);
+  const revenueSnapshots = getDailyRevenueSnapshotsInRange(fromDate, toDate);
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+
+  const getOrderItemUnitCost = (item) => {
+    const inlineCost = Number(item?.cost || 0);
+    if (inlineCost > 0) return inlineCost;
+    const menuItem = menuById.get(String(item?.id || '')) || menuByName.get(normalizeViKey(item?.name || ''));
+    return Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
+  };
+
+  const posSummary = orders.reduce((acc, order) => {
+    const items = Array.isArray(order?.items) ? order.items : [];
+    const itemRevenue = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+    const itemQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    const itemCost = items.reduce((sum, item) => sum + (getOrderItemUnitCost(item) * Number(item.qty || 0)), 0);
+    const discount = Number(order?.discount || 0);
+    acc.posRevenue += Math.max(0, itemRevenue - discount);
+    acc.itemQty += itemQty;
+    acc.cogsTotal += itemCost;
+    return acc;
+  }, { posRevenue: 0, itemQty: 0, cogsTotal: 0 });
+
+  const adsSummary = expenses.reduce((acc, expense) => {
+    const amount = Number(expense?.amount || 0);
+    if (!(amount > 0)) return acc;
+    if (isAdsExpenseEntry(expense)) {
+      acc.adsEntriesCount += 1;
+      acc.expenseAdsDays += 1;
+      const platform = detectAdsExpensePlatform(expense);
+      if (platform === 'facebook') acc.facebookAdsSpendManual += amount;
+      else if (platform === 'tiktok') acc.tiktokAdsSpend += amount;
+      else acc.otherAdsSpend += amount;
+    } else {
+      acc.otherExpenseSpend += amount;
+    }
+    return acc;
+  }, {
+    adsEntriesCount: 0,
+    expenseAdsDays: 0,
+    facebookAdsSpendManual: 0,
+    tiktokAdsSpend: 0,
+    otherAdsSpend: 0,
+    otherExpenseSpend: 0,
+  });
+
+  const snapshotAdsSpend = revenueSnapshots.reduce((sum, row) => sum + (Number(row?.ads_spend_today || 0) || 0), 0);
+  const facebookAdsSpend = snapshotAdsSpend > 0 ? snapshotAdsSpend : adsSummary.facebookAdsSpendManual;
+  const adsSpendTotal = facebookAdsSpend + adsSummary.tiktokAdsSpend + adsSummary.otherAdsSpend;
+
+  const fixedCostProfile = getFixedCostProfileForReports();
+  const reportDays = countInclusiveReportDays(fromDate, toDate);
+  const fixedCostTotal = (Number(fixedCostProfile.dailyFixedCost || 0) || 0) * (Number(reportDays || 0) || 0);
+  const purchaseSpend = purchases.reduce((sum, purchase) => sum + Number(purchase?.price || 0), 0);
+  const grossProfit = posSummary.posRevenue - posSummary.cogsTotal;
+  const netAfterAdsAndExpenses = grossProfit - adsSpendTotal - adsSummary.otherExpenseSpend - fixedCostTotal;
+  const dataSourceNote = snapshotAdsSpend > 0
+    ? `Facebook Ads đang lấy từ daily_revenue_snapshot (${fmt(snapshotAdsSpend)}đ). TikTok/Marketing khác lấy từ mục chi phí nội bộ.`
+    : (adsSummary.adsEntriesCount > 0
+      ? 'Chưa có snapshot Meta Ads trong khoảng này, hệ thống đang cộng từ các mục chi phí nội bộ.'
+      : '');
+
+  resultEl.innerHTML = buildAdsRevenueReportHtml({
+    fromDate,
+    toDate,
+    orderCount: orders.length,
+    itemQty: posSummary.itemQty,
+    posRevenue: posSummary.posRevenue,
+    cogsTotal: posSummary.cogsTotal,
+    grossProfit,
+    purchaseSpend,
+    netAfterAdsAndExpenses,
+    fixedCostDaily: fixedCostProfile.dailyFixedCost,
+    fixedCostTotal,
+    fixedCostConfigured: fixedCostProfile.isConfigured,
+    reportDays,
+    roas: adsSpendTotal > 0 ? (posSummary.posRevenue / adsSpendTotal) : 0,
+    adsSpendTotal,
+    facebookAdsSpend,
+    tiktokAdsSpend: adsSummary.tiktokAdsSpend,
+    otherAdsSpend: adsSummary.otherAdsSpend,
+    otherExpenseSpend: adsSummary.otherExpenseSpend,
+    adsEntriesCount: adsSummary.adsEntriesCount,
+    snapshotAdsDays: revenueSnapshots.filter(row => Number(row?.ads_spend_today || 0) > 0).length,
+    expenseAdsDays: adsSummary.expenseAdsDays,
+    dataSourceNote,
+  });
+}
+
 function renderReports() {
   ensureReportSummaryLayout();
+  ensureAdsRevenueReportDateInputs();
   syncReportFilterUI();
   setReportPeriod(reportPeriod);
+  const adsTab = document.getElementById('report-tab-ads');
+  if (adsTab && adsTab.style.display !== 'none') {
+    try { loadAdsRevenueReport(); } catch (_) {}
+  }
 }
 
 function setReportPeriod(p) {
@@ -6955,20 +7701,20 @@ function renderReportMenuSummary() {
   const summary = getReportMenuSalesSummary(menuItem);
   const profit = Number(summary?.revenue || 0) - Number(summary?.cost || 0);
 
-  titleEl.textContent = menuItem ? `\u0044\u006f\u0061\u006e\u0068 \u0074\u0068\u0075 \u006d\u00f3\u006e: ${menuItem.name}` : '\u0054\u00f3\u006d \u0074\u1eaft \u0074\u1ea5\u0074 \u0063\u1ea3 \u006d\u00f3\u006e \u0103\u006e';
+  titleEl.textContent = menuItem ? `Doanh thu món: ${menuItem.name}` : 'Tóm tắt tất cả món ăn';
   contentEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">\u0054\u1ed5\u006e\u0067 \u0073\u1ed1 \u006c\u01b0\u1ee3\u006e\u0067</div>
+        <div class="stat-label">Tổng số lượng</div>
         <div class="stat-value" style="font-size:24px">${fmt(summary?.qty || 0)}</div>
       </div>
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">\u0054\u0068\u00e0\u006e\u0068 \u0074\u0069\u1ec1\u006e</div>
-        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}\u0111</div>
+        <div class="stat-label">Thành tiền</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}đ</div>
       </div>
       <div class="stat-card" style="padding:14px">
-        <div class="stat-label">\u004c\u00e3\u0069</div>
-        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}\u0111</div>
+        <div class="stat-label">Lãi</div>
+        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}đ</div>
       </div>
     </div>
   `;
@@ -7088,7 +7834,7 @@ function renderTrendChart() {
       labels: data.map(d => d.label),
       datasets: [
         {
-          label: '\u0044\u006f\u0061\u006e\u0068 \u0074\u0068\u0075',
+          label: 'Doanh thu',
           data: data.map(d => d.revenue),
           backgroundColor: 'rgba(0, 229, 255, 0.85)',
           borderColor: '#00E5FF',
@@ -7102,7 +7848,7 @@ function renderTrendChart() {
           yAxisID: 'y'
         },
         {
-          label: '\u0054\u0069\u1ec1\u006e \u0076\u1ed1\u006e',
+          label: 'Tiền vốn',
           data: data.map(d => d.cost),
           backgroundColor: 'rgba(255, 215, 0, 0.92)',
           borderColor: '#FFD700',
@@ -7293,10 +8039,10 @@ function renderExpenseReport() {
 
   const sums = {};
   rawPurchases.forEach(p => {
-    sums['\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075'] = (sums['\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075'] || 0) + (p.price);
+    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.price);
   });
   rawExpenses.forEach(e => {
-    const cat = normalizeExpenseCategoryLabel(e.category || '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063');
+    const cat = normalizeExpenseCategoryLabel(e.category || 'Chi phí khác');
     sums[cat] = (sums[cat] || 0) + e.amount;
   });
 
@@ -7603,36 +8349,126 @@ function renderInsights() {
 function renderMenuAdmin() {
   const menu = _getMenu();
   const inv = _getInventory();
-  const search = (document.getElementById('menu-admin-search')||{}).value || '';
-  const filtered = menu.filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()));
-
-  document.getElementById('menu-admin-list').innerHTML = filtered.map(m => {
-    let computedCost = m.cost || 0;
+  const searchPrimary = (document.getElementById('menu-admin-search') || {}).value || '';
+  const searchSecondary = (document.getElementById('menu-search') || {}).value || '';
+  const search = String(searchPrimary || searchSecondary || '').trim().toLowerCase();
+  const normalizedMenu = menu.map(m => {
+    let computedCost = Number(m.cost || 0) || 0;
     if (m.itemType === ITEM_TYPES.RETAIL) {
       const linked = inv.find(i => i.id === m.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(m.name));
-      computedCost = linked ? linked.costPerUnit || 0 : 0;
+      computedCost = linked ? Number(linked.costPerUnit || 0) || 0 : 0;
     } else if (m.ingredients && m.ingredients.length > 0) {
       computedCost = m.ingredients.reduce((s, ing) => {
         const stock = inv.find(i => i.name === ing.name);
-        return s + (ing.qty * (stock ? stock.costPerUnit : 0));
+        return s + (Number(ing.qty || 0) * (stock ? Number(stock.costPerUnit || 0) || 0 : 0));
       }, 0);
     }
-    return `<div class="list-item">
-      <div class="list-item-icon" style="background:rgba(255,107,53,0.1)">🍽️</div>
-      <div class="list-item-content">
-        <div class="list-item-title">${m.name} <span style="font-size:11px;color:var(--text3);font-weight:normal">(${m.unit || 'phần'})</span></div>
-        <div class="list-item-sub">${m.category} · ${ITEM_TYPE_LABELS[m.itemType] || 'Món'} · Giá vốn: ${fmt(computedCost)}đ ${m.itemType === ITEM_TYPES.FINISHED && m.ingredients?.length ? `· 🧂 ${m.ingredients.length} NL` : ''}</div>
-      </div>
-      <div class="list-item-right">
-        <div class="list-item-amount">${fmt(m.price)}đ</div>
-        <div style="display:flex;gap:4px;margin-top:4px">
-          <button class="btn btn-xs btn-outline" onclick="editMenuItem('${m.id}')">✏️</button>
-          <button class="btn btn-xs btn-danger" onclick="deleteMenuItem('${m.id}')">🗑️</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('') || '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>';
+    const price = Number(m.price || 0) || 0;
+    const cogsPercent = price > 0 ? (computedCost / price) * 100 : 0;
+    return { ...m, computedCost, price, cogsPercent };
+  });
+  const filtered = normalizedMenu.filter(m => {
+    if (!search) return true;
+    const haystack = [
+      m.name,
+      m.category,
+      ITEM_TYPE_LABELS[m.itemType] || '',
+      m.unit,
+      m.aliases,
+    ].map(part => String(part || '').toLowerCase()).join(' ');
+    return haystack.includes(search);
+  });
+  const totalCost = filtered.reduce((sum, item) => sum + (Number(item.computedCost || 0) || 0), 0);
+  const totalPrice = filtered.reduce((sum, item) => sum + (Number(item.price || 0) || 0), 0);
+  const avgCogsPercent = totalPrice > 0 ? (totalCost / totalPrice) * 100 : 0;
+  const renderThumb = (item) => {
+    const imageUrl = _escapeHtml(getMenuItemImageUrl(item));
+    if (imageUrl) {
+      return '<div class="list-item-icon" style="padding:0;background:#2a2230;overflow:hidden">' +
+        '<img src="' + imageUrl + '" alt="' + _escapeHtml(item.name || 'Món ăn') + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
+      '</div>';
+    }
+    return '<div class="list-item-icon" style="background:rgba(255,107,53,0.1)">MÓN</div>';
+  };
+  const listHtml = filtered.length
+    ? filtered.map(m => {
+      const cogsTone = m.cogsPercent >= 60 ? 'var(--danger)' : m.cogsPercent >= 40 ? 'var(--warning)' : 'var(--success)';
+      return '<div class="list-item">' +
+        renderThumb(m) +
+        '<div class="list-item-content">' +
+          '<div class="list-item-title">' + _escapeHtml(m.name) + ' <span style="font-size:11px;color:var(--text3);font-weight:normal">(' + _escapeHtml(m.unit || 'phần') + ')</span></div>' +
+          '<div class="list-item-sub">' + _escapeHtml(m.category) + ' &middot; ' + _escapeHtml(ITEM_TYPE_LABELS[m.itemType] || 'Món') + (m.itemType === ITEM_TYPES.FINISHED && m.ingredients?.length ? (' &middot; NL: ' + m.ingredients.length) : '') + '</div>' +
+          '<div style="margin-top:4px;font-size:12px;color:var(--text2)">Giá vốn: <b style="color:var(--text)">' + fmt(m.computedCost) + 'đ</b> &middot; COGS: <b style="color:' + cogsTone + '">' + m.cogsPercent.toFixed(1) + '%</b></div>' +
+        '</div>' +
+        '<div class="list-item-right">' +
+          '<div class="list-item-amount">' + fmt(m.price) + 'đ</div>' +
+          '<div style="display:flex;gap:4px;margin-top:4px">' +
+            '<button class="btn btn-xs btn-outline" onclick="editMenuItem(\'' + m.id + '\')">Sửa</button>' +
+            '<button class="btn btn-xs btn-danger" onclick="deleteMenuItem(\'' + m.id + '\')">Xóa</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('')
+    : '<div class="empty-state"><div class="empty-icon">MÓN</div><div class="empty-text">Không có món</div></div>';
+
+  document.getElementById('menu-admin-list').innerHTML = '<div class="card card-sm" style="margin-bottom:12px;padding:14px 16px;background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.18)">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
+        '<div>' +
+          '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">COGS tổng các món ăn</div>' +
+          '<div style="font-size:20px;font-weight:800;color:var(--warning)">' + fmt(totalCost) + 'đ</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">COGS trung bình</div>' +
+          '<div style="font-size:18px;font-weight:800">' + avgCogsPercent.toFixed(1) + '%</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Dựa trên ' + filtered.length + '/' + normalizedMenu.length + ' món đang hiển thị trong danh sách.</div>' +
+    '</div>' + listHtml;
 }
+
+function getMenuItemImageUrl(item = {}) {
+  return String(
+    item.image_url ||
+    item.imageUrl ||
+    item.photoUrl ||
+    item.thumbnail ||
+    item.photo ||
+    ''
+  ).trim();
+}
+
+function syncMenuItemImagePreview(imageUrl) {
+  const previewEl = document.getElementById('menu-item-image-preview');
+  const imageUrlEl = document.getElementById('menu-item-image-url');
+  const safeUrl = String(imageUrl || '').trim();
+  if (imageUrlEl) imageUrlEl.value = safeUrl;
+  if (!previewEl) return;
+  if (safeUrl) {
+    previewEl.innerHTML = '<img src="' + _escapeHtml(safeUrl) + '" alt="Ảnh món ăn" style="width:100%;height:100%;object-fit:cover;display:block">';
+    return;
+  }
+  previewEl.innerHTML = '<span style="font-size:20px">🖼️</span>';
+}
+
+async function handleMenuImageChange(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  if (!String(file.type || '').startsWith('image/')) {
+    showToast('Vui lòng chọn đúng file ảnh.', 'warning');
+    return;
+  }
+  try {
+    const dataUrl = await resizeImageToDataUrl(file, 720, 0.78);
+    syncMenuItemImagePreview(dataUrl);
+  } catch (err) {
+    console.error(err);
+    showToast('Không thể đọc ảnh món ăn.', 'danger');
+  } finally {
+    if (event?.target) event.target.value = '';
+  }
+}
+
+window.handleMenuImageChange = handleMenuImageChange;
 
 function openAddMenuModal(id) {
   const menu = _getMenu();
@@ -7681,6 +8517,11 @@ function openAddMenuModal(id) {
   const costEl = document.getElementById('menu-item-cost');
   if (costEl) costEl.value = (typeof formDish.cost === 'number' ? formDish.cost : (parseFloat(formDish.cost) || 0));
   syncMenuCostFieldText();
+  const hiddenEl = document.getElementById('menu-item-hidden');
+  if (hiddenEl) hiddenEl.checked = !!formDish.hidden;
+  const imageInputEl = document.getElementById('menu-item-image-input');
+  if (imageInputEl) imageInputEl.value = '';
+  syncMenuItemImagePreview(getMenuItemImageUrl(formDish));
   document.getElementById('menu-item-category').value = formDish.category || CATEGORIES[0];
   document.getElementById('menu-item-type').value = formDish.itemType || ITEM_TYPES.FINISHED;
   const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
@@ -7739,6 +8580,8 @@ function applyMenuItemOptimisticState(savedId, payload) {
     kitchenRouting: payload.kitchenRouting || prev.kitchenRouting || 'all',
     linkedInventoryId: payload.linkedInventoryId || null,
     aliases: payload.aliases || prev.aliases || '',
+    image_url: payload.image_url || prev.image_url || '',
+    hidden: Object.prototype.hasOwnProperty.call(payload, 'hidden') ? !!payload.hidden : !!prev.hidden,
     ingredients: Array.isArray(payload.ingredients) ? payload.ingredients : [],
   }, inventory);
 
@@ -7764,6 +8607,8 @@ function applyMenuItemOptimisticState(savedId, payload) {
       cost: Number(payload.cost || 0),
       unit: payload.unit || 'phần',
       aliases: payload.aliases || (idx >= 0 ? products[idx].aliases || '' : ''),
+      image_url: payload.image_url || (idx >= 0 ? products[idx].image_url || '' : ''),
+      hidden: Object.prototype.hasOwnProperty.call(payload, 'hidden') ? !!payload.hidden : (idx >= 0 ? !!products[idx].hidden : false),
     };
     if (idx >= 0) products[idx] = nextProduct;
     else products.unshift(nextProduct);
@@ -7812,6 +8657,8 @@ async function submitMenuItem(e) {
   const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
   const kitchenRouting = kitchenRoutingEl ? String(kitchenRoutingEl.value || 'all') : 'all';
   const cost = parseFloat(document.getElementById('menu-item-cost')?.value || '0') || 0;
+  const imageUrl = String(document.getElementById('menu-item-image-url')?.value || '').trim();
+  const hidden = !!document.getElementById('menu-item-hidden')?.checked;
   if(!name || isNaN(price)) return;
 
   const ingredients = [];
@@ -7841,6 +8688,8 @@ async function submitMenuItem(e) {
     kitchenRouting: itemType === ITEM_TYPES.RETAIL ? 'skip' : kitchenRouting,
     linkedInventoryId,
     ingredients: itemType === ITEM_TYPES.FINISHED ? ingredients : [],
+    image_url: imageUrl,
+    hidden,
   };
 
   // FIX 4: Ghi thẳng lên Firestore
@@ -7981,7 +8830,7 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
     if (formulaEl) {
       formulaEl.textContent = stock
         ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
-        : 'Gi? v?n h?ng b?n th?ng s? l?y t? h?ng t?n kho li?n k?t.';
+        : 'Giá vốn hàng bán thẳng sẽ lấy từ hàng tồn kho liên kết.';
     }
     return;
   }
@@ -7990,7 +8839,7 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
   const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
   if (!hasAny) {
     costEl.value = 0;
-    if (formulaEl) formulaEl.textContent = 'Ch?a c? nguy?n li?u n?o trong c?ng th?c.';
+    if (formulaEl) formulaEl.textContent = 'Chưa có nguyên liệu nào trong công thức.';
     return;
   }
 
@@ -8033,8 +8882,8 @@ window.updateMenuCostFromForm = function updateMenuCostFromForm() {
   costEl.value = Math.max(0, Math.round(cost));
   if (formulaEl) {
     formulaEl.textContent = formulaParts.length
-      ? `${formulaParts.join(' + ' )} | T?ng: ${fmtCost(cost)}`
-      : 'Kh?ng t?nh ???c gi? v?n. H?y ki?m tra l?i ??n v? quy ??i trong c?ng th?c.';
+      ? `${formulaParts.join(' + ' )} | Tổng: ${fmtCost(cost)}`
+      : 'Không tính được giá vốn. Hãy kiểm tra lại đơn vị quy đổi trong công thức.';
   }
 };
 
@@ -8203,20 +9052,20 @@ function repairVietnameseText(input) {
 function normalizeExpenseCategoryLabel(input) {
   const raw = repairVietnameseText(input || '').trim();
   const key = normalizeViKey(raw);
-  if (!key) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063';
+  if (!key) return 'Chi phí khác';
 
-  if (key.includes('nguyen lieu')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0067\u0075\u0079\u00ea\u006e \u006c\u0069\u1ec7\u0075';
-  if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return '\u004c\u00e3\u0069\u002f\u004c\u1ed7 \u0064\u006f \u006b\u0069\u1ec3\u006d \u006b\u00ea';
-  if (key.includes('chenh lech ca')) return '\u0043\u0068\u00ea\u006e\u0068 \u006c\u1ec7\u0063\u0068 \u0063\u0061';
-  if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return '\u004e\u0068\u1ead\u0070 \u0068\u00e0\u006e\u0067';
-  if (key.includes('nhan su') || /nh n s/.test(key)) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0068\u00e2\u006e \u0073\u1ef1';
-  if (key.includes('marketing')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006d\u0061\u0072\u006b\u0065\u0074\u0069\u006e\u0067';
-  if (key.includes('van chuyen') || key.includes('giao hang')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0076\u1ead\u006e \u0063\u0068\u0075\u0079\u1ec3\u006e';
-  if (key.includes('dien nuoc')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0111\u0069\u1ec7\u006e \u006e\u01b0\u1edb\u0063';
-  if (key.includes('mat bang')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006d\u1eb7\u0074 \u0062\u1eb1\u006e\u0067';
-  if (key.includes('nhap so') || /nh p s/.test(key)) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006e\u0068\u1ead\u0070 \u0073\u1ed5';
-  if (key.includes('hao hut')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u0068\u0061\u006f \u0068\u1ee5\u0074';
-  if (key.includes('khac')) return '\u0043\u0068\u0069 \u0070\u0068\u00ed \u006b\u0068\u00e1\u0063';
+  if (key.includes('nguyen lieu')) return 'Chi phí nguyên liệu';
+  if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return 'Lãi/Lỗ do kiểm kê';
+  if (key.includes('chenh lech ca')) return 'Chênh lệch ca';
+  if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return 'Nhập hàng';
+  if (key.includes('nhan su') || /nh n s/.test(key)) return 'Chi phí nhân sự';
+  if (key.includes('marketing')) return 'Chi phí marketing';
+  if (key.includes('van chuyen') || key.includes('giao hang')) return 'Chi phí vận chuyển';
+  if (key.includes('dien nuoc')) return 'Chi phí điện nước';
+  if (key.includes('mat bang')) return 'Chi phí mặt bằng';
+  if (key.includes('nhap so') || /nh p s/.test(key)) return 'Chi phí nhập sổ';
+  if (key.includes('hao hut')) return 'Chi phí hao hụt';
+  if (key.includes('khac')) return 'Chi phí khác';
 
   return raw;
 }
@@ -8559,7 +9408,6 @@ async function submitSettings(e) {
     bankName:     (bankNameEl    && bankNameEl.value.trim())    || 'Vietinbank',
     bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
     bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
-    geminiApiKey: '',
     deepseekApiKey: '',
     deepseekEndpoint: '',
     deepseekModel: '',
@@ -9435,7 +10283,7 @@ async function exportReportExcel(override = {}) {
       const cost = Number(o.cost || 0);
       const total = Number(o.total || 0);
       const gross = total - cost;
-      const payLabel = o.payMethod === 'bank' ? 'Chuyđơ khoản' : 'Tiền mặt';
+      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
       const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}đ)`).join('; ');
 
       const row = ws.getRow(r);
@@ -9948,7 +10796,7 @@ async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename
     throw new Error('Failed to fetch để URL phải là Web App Google (dạng script.google.com/.../exec). Kiđm tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
   }
 
-  console.warn('[Drive] Chuyđơ sang no-cors (chđ phù hợp vđi Web App Google):', lastNet);
+  console.warn('[Drive] Chuyển sang no-cors (chỉ phù hợp với Web App Google):', lastNet);
   return tryNoCorsPlain();
 }
 
@@ -10343,8 +11191,8 @@ function renderKdsMonitor() {
   }
   if (!count) {
     listEl.innerHTML = `<div class="empty-state" style="padding:20px;font-size:13px;">
-      <div style="font-size:28px;margin-bottom:6px;">&#x2705;</div>
-      <div>Chua co mon nao dang cho bep</div>
+      <div style="font-size:28px;margin-bottom:6px;">✅</div>
+      <div>Chưa có món nào đang chờ bếp</div>
     </div>`;
     return;
   }
@@ -10355,20 +11203,20 @@ function renderKdsMonitor() {
     return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   }
   const headerHtml = `<div class="kds-monitor-head">
-    <div>Ban</div><div>Mon</div><div>SL</div><div>Cho</div><div>Trang thai</div>
+    <div>Bàn</div><div>Món</div><div>SL</div><div>Chờ</div><div>Trạng thái</div>
   </div>`;
   const rowsHtml = rows.map(({ tableName, item, ks, elapsedMs }) => {
     const isOverdue = elapsedMs >= 8 * 60 * 1000;
     const isCooking = ks === 'cooking';
     const rowClass = isOverdue ? ' overdue' : isCooking ? ' cooking' : '';
     const chipClass = isCooking ? ' cooking' : '';
-    const label  = isCooking ? 'Dang lam' : 'Cho lam';
-    const tShort = String(tableName).replace('Ban ', 'B');
+    const label  = isCooking ? 'Đang làm' : 'Chờ làm';
+    const tShort = String(tableName).replace('Bàn ', 'B');
     return `<div class="kds-monitor-row${rowClass}">
       <div class="kds-monitor-table">${tShort}</div>
       <div class="kds-monitor-dish">
-        <div class="kds-monitor-dish-name">${item.name||'Mon'}</div>
-        ${item.note ? `<div class="kds-monitor-dish-note">&#x1F4DD; ${item.note}</div>` : ''}
+        <div class="kds-monitor-dish-name">${item.name||'Món'}</div>
+        ${item.note ? `<div class="kds-monitor-dish-note">📝 ${item.note}</div>` : ''}
       </div>
       <div class="kds-monitor-qty">x${Number(item.qty||1)}</div>
       <div class="kds-monitor-wait${isOverdue ? ' overdue' : ''}">${_fmtWait(elapsedMs)}</div>
@@ -10384,4 +11232,120 @@ function getKitchenRoutingLabel(value) {
   if (normalized === 'kitchen_2') return 'Bep 2';
   if (normalized === 'skip') return 'Khong qua bep';
   return 'Ca 2 bep';
+}
+
+let customerRequestFabLayoutObserver = null;
+let customerRequestFabResizeBound = false;
+
+function syncCustomerRequestFabLayout() {
+  const fab = document.getElementById('customer-request-fab');
+  if (!fab) return;
+
+  const spans = fab.querySelectorAll('span');
+  const iconEl = spans[0] || null;
+  const labelEl = spans[1] || null;
+  const countEl = document.getElementById('customer-request-fab-count') || spans[2] || null;
+  const count = Number(String(countEl?.textContent || '0').replace(/[^\d]/g, '')) || 0;
+  const isMobile = window.innerWidth <= 768;
+
+  if (!isMobile) {
+    fab.style.left = '';
+    fab.style.top = '';
+    fab.style.right = '18px';
+    fab.style.bottom = 'calc(var(--nav-height,70px) + var(--safe-bottom, env(safe-area-inset-bottom,0px)) + 86px)';
+    fab.style.width = '';
+    fab.style.height = '';
+    fab.style.minWidth = '';
+    fab.style.minHeight = '48px';
+    fab.style.padding = '12px 14px';
+    fab.style.borderRadius = '16px';
+    fab.style.gap = '8px';
+    fab.style.alignItems = 'center';
+    fab.style.justifyContent = 'center';
+    fab.style.boxShadow = '0 10px 28px rgba(0,0,0,0.28)';
+    fab.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (fab.dataset.mobileCompact === '1') delete fab.dataset.mobileCompact;
+    if (labelEl) labelEl.style.display = '';
+    if (iconEl) iconEl.style.fontSize = '';
+    if (countEl) {
+      countEl.style.position = '';
+      countEl.style.top = '';
+      countEl.style.right = '';
+      countEl.style.minWidth = '24px';
+      countEl.style.height = '24px';
+      countEl.style.padding = '0 6px';
+      countEl.style.fontSize = '12px';
+      countEl.style.boxShadow = '';
+    }
+    return;
+  }
+
+  fab.dataset.mobileCompact = '1';
+  fab.style.left = 'auto';
+  fab.style.right = '12px';
+  fab.style.top = 'calc(var(--header-height,56px) + env(safe-area-inset-top,0px) + 14px)';
+  fab.style.bottom = 'auto';
+  fab.style.width = '46px';
+  fab.style.height = '46px';
+  fab.style.minWidth = '46px';
+  fab.style.minHeight = '46px';
+  fab.style.padding = '0';
+  fab.style.borderRadius = '14px';
+  fab.style.gap = '0';
+  fab.style.alignItems = 'center';
+  fab.style.justifyContent = 'center';
+  fab.style.boxShadow = '0 8px 24px rgba(0,0,0,0.26)';
+  fab.style.display = count > 0 ? 'inline-flex' : 'none';
+
+  if (labelEl) labelEl.style.display = 'none';
+  if (iconEl) iconEl.style.fontSize = '18px';
+  if (countEl) {
+    countEl.style.position = 'absolute';
+    countEl.style.top = '-6px';
+    countEl.style.right = '-6px';
+    countEl.style.minWidth = '22px';
+    countEl.style.height = '22px';
+    countEl.style.padding = '0 5px';
+    countEl.style.fontSize = '11px';
+    countEl.style.boxShadow = '0 4px 12px rgba(0,0,0,0.22)';
+  }
+}
+
+function startCustomerRequestFabLayoutSync() {
+  if (typeof MutationObserver !== 'function') {
+    try { syncCustomerRequestFabLayout(); } catch (_) {}
+    return;
+  }
+
+  if (!customerRequestFabLayoutObserver) {
+    customerRequestFabLayoutObserver = new MutationObserver(() => {
+      try { syncCustomerRequestFabLayout(); } catch (_) {}
+    });
+    customerRequestFabLayoutObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+  }
+
+  if (!customerRequestFabResizeBound) {
+    customerRequestFabResizeBound = true;
+    window.addEventListener('resize', () => {
+      try { syncCustomerRequestFabLayout(); } catch (_) {}
+    });
+  }
+
+  try { syncCustomerRequestFabLayout(); } catch (_) {}
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    try { startCustomerRequestFabLayoutSync(); } catch (_) {}
+  }, { once: true });
+} else {
+  setTimeout(() => {
+    try { startCustomerRequestFabLayoutSync(); } catch (_) {}
+  }, 0);
 }
