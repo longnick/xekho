@@ -51,4 +51,29 @@ assert(
   'wide card amount is constrained and ellipsized'
 );
 
+assert(
+  /const tableNote = String\(t\.note \|\| getOrderExtrasForTable\(t\.id\)\.note \|\| ''\)\.trim\(\);/.test(appJs),
+  'table card note uses table.note with orderExtras fallback'
+);
+assert(
+  appJs.includes('const safeTableNote = _escapeHtml(tableNote);'),
+  'table card note is escaped before rendering'
+);
+assert(
+  appJs.includes('class="table-title-row"'),
+  'table card wraps table number and note in a title row'
+);
+assert(
+  appJs.includes('class="table-note-chip"'),
+  'table card renders table note chip beside the table number'
+);
+assert(
+  /\.table-title-row\s*\{[\s\S]*display:\s*flex;[\s\S]*min-width:\s*0;/.test(css),
+  'table title row is flex and shrink-safe'
+);
+assert(
+  /\.table-note-chip\s*\{[\s\S]*max-width:\s*58%;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/.test(css),
+  'table note chip is constrained and ellipsized inside table card'
+);
+
 console.log('verify-mobile-table-grid passed');
