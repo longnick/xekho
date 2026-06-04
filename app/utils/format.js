@@ -13,11 +13,20 @@
     return Number.isFinite(number) ? number : fallback;
   }
 
+  /** @param {number} number @returns {string} */
+  function compactThousands(number) {
+    const thousands = number / 1000;
+    return thousands.toLocaleString('vi-VN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 3,
+    }) + 'K';
+  }
+
   /** @param {*} value @returns {string} */
   function compactNumber(value) {
     const number = toFiniteNumber(value);
     if (number >= 1000000) return (number / 1000000).toFixed(1) + 'M';
-    if (number >= 1000) return (number / 1000).toFixed(0) + 'K';
+    if (number >= 1000) return compactThousands(number);
     return number.toLocaleString('vi-VN');
   }
 
