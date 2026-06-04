@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-04 08:52 - Make table-card notes readable
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Improved the `Bàn` tab note display after the mobile screenshot showed table 2 as unreadable `📝 To...`.
+
+Changes:
+
+- Removed the note icon/pill from physical table cards.
+- Cards with a note now use `has-note` and replace the status emoji with full-width `.table-note-text`.
+- Note text is still escaped with `_escapeHtml()` and now gets up to two centered lines with safe wrapping.
+- `scripts/verify-mobile-table-grid.js` guards against reintroducing the compact icon chip.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0852-readable-table-note.md`
+
+
 ## 2026-06-04 08:27 - Show table note inside table cards
 
 Repo: `/home/longnick/projects/xekho`
