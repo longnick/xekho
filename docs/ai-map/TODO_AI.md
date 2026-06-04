@@ -56,6 +56,8 @@
 
 ## Done recently
 
+- 2026-06-04 10:17: Fixed `TỒN KHO` tab showing no stock by falling back to Firestore master `Inventory_Items` and normalizing `material_name`/`base_unit`/`current_stock`/`min_alert`/`inv_type` into POS stock fields; guarded by `scripts/verify-inventory-stock-display.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-1017-fix-inventory-stock-display.md`
+- 2026-06-04 09:54: Compact mobile POS header/status bar so brand, offline badge, username, mic, and reload controls no longer overflow the top frame on iPhone widths. Offline badge now uses compact labels like `OK`; guarded by `scripts/verify-mobile-pos-header.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0954-mobile-pos-header-compact.md`
 - 2026-06-04 08:52: Improved physical table-card note readability by removing the note icon/pill and replacing the status emoji with full-width two-line note text on noted cards. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0852-readable-table-note.md`
 - 2026-06-04 08:27: Added table-card note chips in the `Bàn` tab so each physical table card can show `table.note`/order note beside the table number; guarded by `scripts/verify-mobile-table-grid.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0827-table-card-note-chip.md`
 - 2026-06-04 08:17: Added a quick table-note input beside `Bàn X` in the order-selection header; it stays synced with the cart note/table note and is guarded by `scripts/verify-order-table-note-ui.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0817-order-table-note-header.md`
