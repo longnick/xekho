@@ -563,7 +563,7 @@ const Store = {
 const _formatUtils = (typeof window !== 'undefined' ? window.XekhoApp?.utils?.format : globalThis.XekhoApp?.utils?.format) || {};
 const fmt = n => _formatUtils.compactNumber ? _formatUtils.compactNumber(n) : (() => {
   if(n >= 1000000) return (n/1000000).toFixed(1) + 'M';
-  if(n >= 1000) return (n/1000).toFixed(0) + 'K';
+  if(n >= 1000) return (n/1000).toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + 'K';
   return n.toLocaleString('vi-VN');
 })();
 const fmtFull = n => _formatUtils.currency ? _formatUtils.currency(n) : n.toLocaleString('vi-VN') + 'đ';
