@@ -3133,10 +3133,16 @@ function renderTables() {
     const tableNum = Number(t.id) || 0;
     const occupiedEmoji = occupiedIcons[(Math.max(1, tableNum) - 1) % occupiedIcons.length];
     const statusEmoji = isOccupied ? occupiedEmoji : '🪑';
+    const tableNote = String(t.note || getOrderExtrasForTable(t.id).note || '').trim();
+    const safeTableId = _escapeHtml(t.id);
+    const safeTableNote = _escapeHtml(tableNote);
 
     return `<div class="table-card ${statusClass}" onclick="openTable(${t.id})" id="table-card-${t.id}">
       ${elapsed > 0 ? `<div class="table-time">${elapsed}p</div>` : ''}
-      <div class="table-num">${t.id}</div>
+      <div class="table-title-row">
+        <div class="table-num">${safeTableId}</div>
+        ${tableNote ? `<div class="table-note-chip" title="${safeTableNote}">📝 ${safeTableNote}</div>` : ''}
+      </div>
       <div class="table-icon">${statusEmoji}</div>
       ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${isOccupied ? 'Đang phục vụ' : 'Trống'}</div>`}
     </div>`;
