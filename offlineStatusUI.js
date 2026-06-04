@@ -52,10 +52,10 @@
 
   function formatBadgeText(summary) {
     const data = normalizeSummary(summary);
-    if (data.failed > 0) return `Offline: ${data.failed} lỗi`;
-    if (data.pending > 0) return `Offline: ${data.pending} chờ`;
-    if (!data.online) return 'Offline: mất mạng';
-    return 'Offline: OK';
+    if (data.failed > 0) return `${data.failed} lỗi`;
+    if (data.pending > 0) return `${data.pending} chờ`;
+    if (!data.online) return 'Mất mạng';
+    return 'OK';
   }
 
   function formatPanelText(summary) {
@@ -74,15 +74,19 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${BADGE_ID} {
-        min-width: 86px;
+        min-width: 44px;
+        max-width: 72px;
         height: 34px;
         border: 1px solid rgba(255,255,255,.12);
         border-radius: 999px;
-        padding: 0 10px;
+        padding: 0 9px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
+        gap: 4px;
+        flex: 0 1 72px;
+        overflow: hidden;
+        text-overflow: ellipsis;
         font-size: 11px;
         font-weight: 800;
         color: var(--text, #f8fafc);
@@ -134,7 +138,8 @@
     badge.type = 'button';
     badge.title = 'POS Offline Backup';
     badge.setAttribute('data-state', 'warning');
-    badge.textContent = 'Offline: ...';
+    badge.setAttribute('aria-label', 'Trạng thái offline backup');
+    badge.textContent = '...';
 
     const headerActions = doc.querySelector('.header-actions') || doc.body;
     headerActions.insertBefore(badge, headerActions.firstChild || null);
