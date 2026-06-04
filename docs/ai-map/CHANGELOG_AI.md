@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-04 08:27 - Show table note inside table cards
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Added a compact note chip directly inside each physical table card in the `Bàn` tab so staff can see the table note/name before opening the order.
+
+Changes:
+
+- `app.js#renderTables()` renders `table.note` with `orderExtras` fallback beside the table number.
+- The rendered note is escaped with `_escapeHtml()` before insertion.
+- `style.css` adds shrink-safe `.table-title-row` and ellipsized `.table-note-chip` styling for mobile cards.
+- `scripts/verify-mobile-table-grid.js` now guards the table-note chip behavior and CSS.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0827-table-card-note-chip.md`
+
+
 ## 2026-06-04 08:17 - Add quick table note in order header
 
 Repo: `/home/longnick/projects/xekho`
