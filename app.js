@@ -3608,6 +3608,99 @@ function requireOpenShiftForOrderFlow(actionLabel = 'thao tác này') {
   return false;
 }
 
+function getOrderExtrasForTable(tableKey) {
+  const key = String(tableKey || '');
+  const existing = orderExtras[key] || orderExtras[tableKey] || {};
+  return {
+    discount: Number(existing.discount || 0) || 0,
+    discountInput: Number(existing.discountInput || existing.discount || 0) || 0,
+    discountType: existing.discountType || 'amount',
+    discountNote: String(existing.discountNote || ''),
+    shipping: Number(existing.shipping || 0) || 0,
+    note: String(existing.note || ''),
+  };
+}
+
+function getTableNoteForOrder(tableKey) {
+  const key = String(tableKey || '');
+  if (!key) return '';
+  const cloudOrder = window.appState?.orders?.[key] || null;
+  const cloudOrderNote = String(cloudOrder?.note || '').trim();
+  if (cloudOrderNote) return cloudOrderNote;
+  const cloudTable = Array.isArray(window.appState?.tables)
+    ? window.appState.tables.find(t => String(t.id) === key)
+    : null;
+  const cloudTableNote = String(cloudTable?.note || '').trim();
+  if (cloudTableNote) return cloudTableNote;
+  const localTable = (Store.getTables() || []).find(t => String(t.id) === key);
+  return String(localTable?.note || '').trim();
+}
+
+function ensureOrderExtrasForCurrentTable() {
+  if (currentTable == null) return {};
+  const key = String(currentTable);
+  const existing = getOrderExtrasForTable(key);
+  if (!existing.note) existing.note = getTableNoteForOrder(key);
+  orderExtras[key] = existing;
+  orderExtras[currentTable] = existing;
+  return existing;
+}
+
+function syncOrderTableNoteInput(value) {
+  const noteValue = String(value != null ? value : ensureOrderExtrasForCurrentTable().note || '');
+  const headerNoteInp = document.getElementById('order-table-note');
+  const cartNoteInp = document.getElementById('cart-note');
+  if (headerNoteInp && document.activeElement !== headerNoteInp) headerNoteInp.value = noteValue;
+  if (cartNoteInp && document.activeElement !== cartNoteInp) cartNoteInp.value = noteValue;
+}
+
+function updateCurrentTableNoteEverywhere(noteValue) {
+  if (currentTable == null) return;
+  const key = String(currentTable);
+  const note = String(noteValue || '').trim();
+  const extras = ensureOrderExtrasForCurrentTable();
+  extras.note = note;
+  orderExtras[key] = extras;
+  orderExtras[currentTable] = extras;
+
+  if (key !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => String(t.id) === key);
+    if (table) {
+      table.note = note;
+      Store.setTables(tables);
+    }
+    if (Array.isArray(window.appState?.tables)) {
+      const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+      if (cloudTable) cloudTable.note = note;
+    }
+  }
+
+  if ((orderItems[currentTable] || []).length > 0 && window.DB && key !== 'takeaway') {
+    _queueWholeOrderCloudSync(key);
+  }
+  _queueTableNoteCloudUpdate(key, note);
+}
+
+function _queueTableNoteCloudUpdate(tableKey, noteValue) {
+  const key = String(tableKey || '');
+  if (!key || key === 'takeaway' || !window.DB?.Tables?.update) return;
+  window.__tableNoteCloudTimers = window.__tableNoteCloudTimers || {};
+  if (window.__tableNoteCloudTimers[key]) clearTimeout(window.__tableNoteCloudTimers[key]);
+  window.__tableNoteCloudTimers[key] = setTimeout(() => {
+    window.DB.Tables.update(key, { note: String(noteValue || '').trim() })
+      .catch(err => console.warn('[POS] table note cloud update failed:', key, err))
+      .finally(() => {
+        if (window.__tableNoteCloudTimers) delete window.__tableNoteCloudTimers[key];
+      });
+  }, 400);
+}
+
+function handleOrderTableNoteInput(value) {
+  updateCurrentTableNoteEverywhere(value);
+  syncOrderTableNoteInput(value);
+}
+
 function openTakeaway() {
   if (!requireOpenShiftForOrderFlow('open_takeaway')) return;
   currentTable = 'takeaway';
@@ -3615,7 +3708,9 @@ function openTakeaway() {
   if(!orderItems['takeaway']) {
     orderItems['takeaway'] = orders['takeaway'] ? [...orders['takeaway']] : [];
   }
+  ensureOrderExtrasForCurrentTable();
   document.getElementById('order-table-title').textContent = '🛍️ Mang về';
+  syncOrderTableNoteInput();
   navigate('orders');
 }
 
@@ -3643,7 +3738,9 @@ function openTable(tableId) {
   }
 
   const label = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
+  ensureOrderExtrasForCurrentTable();
   document.getElementById('order-table-title').textContent = label;
+  syncOrderTableNoteInput();
   navigate('orders');
 }
 
@@ -3950,6 +4047,7 @@ function saveOrderForTable(tableId) {
       if(hasItems) {
         table.status   = 'occupied';
         table.openTime = table.openTime || Date.now();
+        table.note     = getOrderExtrasForTable(key).note || table.note || '';
       } else if(!hasItems) {
         table.status   = 'empty';
         table.orderId  = null;
@@ -4191,6 +4289,7 @@ function saveOrder() {
       if(hasItems) {
         table.status   = 'occupied';
         table.openTime = table.openTime || Date.now();
+        table.note     = ensureOrderExtrasForCurrentTable().note || table.note || '';
       } else if(!hasItems) {
         table.status   = 'empty';
         table.orderId  = null;
@@ -4212,13 +4311,14 @@ function saveOrder() {
 
 function renderCart() {
   const items = orderItems[currentTable] || [];
-  const extras = orderExtras[currentTable] || {discount: 0, discountInput: 0, discountType: 'amount', shipping: 0};
+  const extras = ensureOrderExtrasForCurrentTable();
   
   const discountTypeEl = document.getElementById('cart-discount-type');
   const dInp = document.getElementById('cart-discount');
   const dNoteInp = document.getElementById('cart-discount-note');
   const sInp = document.getElementById('cart-shipping');
   const noteInp = document.getElementById('cart-note');
+  const headerNoteInp = document.getElementById('order-table-note');
 
   if (discountTypeEl && document.activeElement === discountTypeEl) extras.discountType = discountTypeEl.value;
   else if (discountTypeEl) discountTypeEl.value = extras.discountType || 'amount';
@@ -4232,8 +4332,11 @@ function renderCart() {
   if (sInp && document.activeElement === sInp) extras.shipping = parseFloat(sInp.value) || 0;
   else if (sInp) sInp.value = extras.shipping || '';
 
-  if (noteInp && document.activeElement === noteInp) extras.note = noteInp.value || '';
+  if (noteInp && document.activeElement === noteInp) updateCurrentTableNoteEverywhere(noteInp.value || '');
   else if (noteInp) noteInp.value = extras.note || '';
+
+  if (headerNoteInp && document.activeElement === headerNoteInp) updateCurrentTableNoteEverywhere(headerNoteInp.value || '');
+  else if (headerNoteInp) headerNoteInp.value = extras.note || '';
 
   const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
   const itemsTotal = items.reduce((s,i) => s + i.price*(i.qty||1), 0);

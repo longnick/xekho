@@ -564,11 +564,27 @@ body {
 
 /* ---- ORDER PAGE ---- */
 .order-layout { display: flex; flex-direction: column; gap: 0; }
-.order-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.order-header .back-btn { width: 36px; height: 36px; background: var(--bg3); border-radius: 10px; border: none; color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.order-table-name { font-size: 18px; font-weight: 800; }
+.order-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; min-width: 0; }
+.order-header .back-btn { width: 36px; height: 36px; background: var(--bg3); border-radius: 10px; border: none; color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto; }
+.order-table-name { font-size: 18px; font-weight: 800; white-space: nowrap; flex: 0 0 auto; }
+.order-table-note-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+.order-table-note-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
 .order-table-name-input {
-  width: min(240px, 38vw);
+  width: 100%;
   height: 36px;
   border: 1.5px solid var(--border);
   border-radius: 10px;
@@ -633,7 +649,11 @@ body {
   .order-pane-cart { display: none; }
   .order-cart-pill { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-height) + var(--safe-bottom) + 14px); height: 52px; padding: 0 22px; z-index: 120; border-width: 2px; background: linear-gradient(135deg, rgba(0,149,255,0.22), rgba(255,107,53,0.12)); }
   .order-cart-pill:active { transform: translateX(-50%) scale(0.97); }
-  .order-header { margin-bottom: 0; }
+  .order-header { margin-bottom: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .order-table-note-field { flex: 1 1 calc(100% - 52px); max-width: none; order: 3; }
+  .order-table-note-label { font-size: 10px; }
+  .order-table-name-input { height: 34px; font-size: 14px; }
+  .order-table-name { font-size: 16px; }
 }
 
 #cart-sheet #order-cart-root {
