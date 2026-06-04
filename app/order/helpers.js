@@ -54,6 +54,8 @@
   function inferInventoryItemType(item) {
     item = item || {};
     if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
+    var masterType = String(item.inv_type || item.inventoryType || '').trim().toLowerCase();
+    if (masterType === 'retail' || masterType === 'retail_item' || masterType === 'hang_ban_thang') return ITEM_TYPES.RETAIL;
     if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
     return ITEM_TYPES.RAW;
   }
@@ -61,13 +63,23 @@
   /** @param {Object} item @returns {Object} */
   function normalizeInventoryItemModel(item) {
     item = item || {};
+    var id = String(item.id || item.inv_id || item._docId || '').trim();
+    var name = String(item.name || item.material_name || id).trim();
     return {
+      id: id || item.id,
+      name: name,
+      unit: normalizeUnitText(item.unit || item.base_unit),
       itemType: inferInventoryItemType(item),
       mergedInto: item.mergedInto || null,
-      qty: Number(item.qty || 0),
-      minQty: Number(item.minQty || 0),
-      costPerUnit: Number(item.costPerUnit || 0),
+      qty: Number(item.qty ?? item.current_stock ?? 0),
+      minQty: Number(item.minQty ?? item.min_alert ?? 0),
+      costPerUnit: Number(item.costPerUnit ?? item.cost_per_unit ?? 0),
       hidden: !!item.hidden,
+      supplierName: item.supplierName || '',
+      supplierPhone: item.supplierPhone || '',
+      supplierAddress: item.supplierAddress || '',
+      masterInventoryId: String(item.masterInventoryId || item.inv_id || id || '').trim(),
+      _docId: String(item._docId || id || '').trim(),
     };
   }
 
