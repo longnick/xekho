@@ -60,20 +60,40 @@ assert(
   'table card note is escaped before rendering'
 );
 assert(
-  appJs.includes('class="table-title-row"'),
-  'table card wraps table number and note in a title row'
+  appJs.includes("class=\"table-card ${statusClass}${tableNote ? ' has-note' : ''}\""),
+  'table card adds has-note class when a note is present'
 );
 assert(
-  appJs.includes('class="table-note-chip"'),
-  'table card renders table note chip beside the table number'
+  appJs.includes('class="table-note-text"'),
+  'table card renders readable table note text instead of a compact icon chip'
+);
+assert(
+  !appJs.includes('class="table-note-chip"'),
+  'old table note icon chip markup is removed'
+);
+assert(
+  !appJs.includes('📝 ${safeTableNote}'),
+  'table note no longer reserves space for an icon inside the card'
+);
+assert(
+  appJs.includes('tableNote ? `<div class="table-note-text"') && appJs.includes(': `<div class="table-icon">${statusEmoji}</div>`'),
+  'table card hides the status icon when a note is present so note text has more room'
 );
 assert(
   /\.table-title-row\s*\{[\s\S]*display:\s*flex;[\s\S]*min-width:\s*0;/.test(css),
   'table title row is flex and shrink-safe'
 );
 assert(
-  /\.table-note-chip\s*\{[\s\S]*max-width:\s*58%;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/.test(css),
-  'table note chip is constrained and ellipsized inside table card'
+  /\.table-card\.has-note\s*\{[\s\S]*gap:\s*3px;/.test(css),
+  'noted table cards use tighter spacing'
+);
+assert(
+  /\.table-note-text\s*\{[\s\S]*width:\s*100%;[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*overflow-wrap:\s*anywhere;/.test(css),
+  'table note text uses full width, two-line clamp, and safe wrapping'
+);
+assert(
+  !css.includes('.table-note-chip'),
+  'old pill-style table note chip CSS is removed'
 );
 
 console.log('verify-mobile-table-grid passed');
