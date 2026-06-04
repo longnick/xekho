@@ -545,6 +545,29 @@ body {
 .table-card.selected { border-color: var(--info); background: rgba(0,149,255,0.1); }
 @keyframes pulse-border { 0%,100%{opacity:1} 50%{opacity:0.6} }
 .table-num { font-size: 16px; font-weight: 800; line-height: 1; }
+.table-title-row {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.table-note-chip {
+  min-width: 0;
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 215, 0, 0.12);
+  color: var(--secondary);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.45;
+}
 .table-custom-name {
   width: 100%;
   max-width: 100%;
