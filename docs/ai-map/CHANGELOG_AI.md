@@ -1,5 +1,22 @@
 # AI Changelog
 
+## 2026-06-04 08:17 - Add quick table note in order header
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `test/xe-kho-repo-implementer-skill`
+
+Added a quick `Ghi chú` input beside the order table title (`Bàn X`) so staff can see/type the table name or note while choosing dishes.
+
+Changes:
+
+- `index.html` adds `#order-table-note` next to `#order-table-title`.
+- `style.css` makes the note field responsive beside the table title and wrap-safe on mobile.
+- `app.js` syncs the new header note with the existing cart note, `orderExtras.note`, local `table.note`, and queued cloud table-note update when available.
+- `scripts/verify-order-table-note-ui.js` guards the UI, handler, mobile CSS, and note-sync source markers.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0817-order-table-note-header.md`
+
+
 
 ## 2026-06-04 08:00 - Exact fractional-K price display across UI
 
