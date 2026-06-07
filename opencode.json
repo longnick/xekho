@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "google/gemini-2.5-flash",
+  "model": "google/gemini-3.5-flash",
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -15,8 +15,8 @@
     },
     "google": {
       "models": {
-        "gemini-2.5-flash": {
-          "name": "Gemini 2.5 Flash Free Online"
+        "gemini-3.5-flash": {
+          "name": "Gemini 3.5 Flash Free Online"
         }
       }
     }

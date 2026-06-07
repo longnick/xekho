@@ -5,7 +5,7 @@
 ### POS frontend
 
 - `index.html`: main POS page. Obsolete top-level Menu, AI Insights, and Media pages/navigation entries were removed in the 2026-06-03 deploy cleanup; stale markers for those pages now scan to 0.
-- `app.js`: main POS application logic and UI orchestration. It now explicitly denies stale navigation to removed `menu`, `insights`, and `media` pages while preserving shared menu CRUD/backend helpers. `renderMenuItems()` reads `#order-search` directly so the POS chọn món search stays in sync with ESM delegated input events.
+- `app.js`: main POS application logic and UI orchestration. It now explicitly denies stale navigation to removed `menu`, `insights`, and `media` pages while preserving shared menu CRUD/backend helpers. `renderMenuItems()` reads `#order-search` directly so the POS chọn món search stays in sync with ESM delegated input events. Purchase and stocktake inventory modals use shared item-search helpers to filter item pickers/lists without touching stock mutation logic; the stocktake modal layout keeps the sheet fixed-height while only the result area scrolls below the sticky/top search panel.
 - `app/esm/main.js`: ESM Phase E1/E2/E3 compatibility harness. Loaded as a browser module after the existing classic runtime; imports DOM/format/date/Excel/staff leaf facades plus DOM/Store/DB runtime adapters, sets `window.XekhoApp.esm.harness`, marks `window.XekhoApp.esm.facades.*`, installs `window.XekhoApp.esm.adapters.*`, and dispatches `xekho:esm-ready` without importing the `app.js` monolith.
 - `app/esm/utils/dom.js`: ESM Phase E2 DOM facade. Exports `escapeHtml()` and `installGlobalDomUtils()` while preserving `window.XekhoApp.utils.dom.escapeHtml()` compatibility.
 - `app/esm/utils/format.js`: ESM Phase E2 formatter facade. Exports formatter helpers and `installGlobalFormatUtils()` while preserving `window.XekhoApp.utils.format.*` and legacy globals.
@@ -34,6 +34,7 @@
 - `scripts/verify-format-utils.js`: Node VM verification for `app/utils/format.js`; checks compact/currency/date helper behavior and confirms `store.js` contains compatibility delegation markers.
 - `scripts/verify-menu-price-save.js`: Regression verifier for `Kho` → `Quản lý món` price saves; checks Vietnamese thousands parsing (`17.500` → `17500`), existing-item recipe gating, and DB `sell_price`/`price` mapping.
 - `scripts/verify-bill-unit-price.js`: Regression verifier for POS payment bill unit-price display; checks `formatBillUnitPrice()` keeps `17.500đ` visible as `17,5K` instead of rounded `18K`, and asserts the bill `Đ.Giá` column no longer uses rounded compact `fmt(i.price)`.
+- `scripts/verify-inventory-item-search.js`: Regression verifier for `Kho` purchase/stocktake item search fields; checks DOM markers, JS filter helpers, stocktake hidden-row behavior, fixed-height stocktake modal layout, top search panel, dedicated result-scroll area, and CSS markers.
 - `scripts/verify-offline-runtime.js`: Sprint 19-aligned runtime verification; checks current `offlineRuntime.js` version marker plus disabled-sync and enabled-sync memory-flow behavior.
 - `scripts/verify-offline-backup.js`: Node verification script for `offlineBackup.js` using in-memory storage.
 - `scripts/verify-offline-sync.js`: Node verification script for `offlineSync.js` using memory backup + memory sync adapter.

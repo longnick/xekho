@@ -5707,8 +5707,16 @@ function renderPurchaseList() {
     .slice()
     .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
     .slice(0, 50);
+  const search = (document.getElementById('purchase-search')||{}).value || '';
   const inv = _getInventory();
-  const purchasesHtml = purchases.length ? purchases.map(p => {
+  const filtered = search
+    ? purchases.filter(p => {
+        const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
+        return p.name.toLowerCase().includes(search.toLowerCase()) ||
+          (invItem && invItem.name.toLowerCase().includes(search.toLowerCase()));
+      })
+    : purchases;
+  const purchasesHtml = filtered.length ? filtered.map(p => {
     const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
     let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
     if (invItem) subInfo += `<br><small style="color:var(--text3)">${ITEM_TYPE_LABELS[invItem.itemType] || 'Nguyên liệu'}</small>`;
@@ -5732,7 +5740,7 @@ function renderPurchaseList() {
         </div>
       </div>
     </div>`;
-  }).join('') : '<div class="empty-state"><div class="empty-icon">📥</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>';
+  }).join('') : (search ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">Không tìm thấy "${_escapeHtml(search)}"</div></div>` : '<div class="empty-state"><div class="empty-icon">📥</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>');
 
   const wrap = document.getElementById('purchase-list');
   if(!wrap) return;
@@ -6103,6 +6111,56 @@ function resetPurchasePhotoFileInputs() {
   });
 }
 
+function getInventorySearchText(item = {}) {
+  return normalizeViKey([
+    item.name,
+    item.unit,
+    item.itemType,
+    ITEM_TYPE_LABELS[item.itemType],
+    item.sku,
+    item.code,
+  ].filter(Boolean).join(' '));
+}
+
+function getVisibleInventoryForPicking() {
+  return _getInventory()
+    .filter(i => !i.hidden && !i.mergedInto)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
+}
+
+function renderPurchaseItemOptions(query = '', selectedId = '') {
+  const select = document.getElementById('pur-name');
+  if (!select) return;
+  const normalizedQuery = normalizeViKey(query || '');
+  const inv = getVisibleInventoryForPicking();
+  const filtered = normalizedQuery
+    ? inv.filter(i => getInventorySearchText(i).includes(normalizedQuery))
+    : inv;
+  select.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' +
+    filtered.map(i => {
+      const safeId = _escapeHtml(i.id || '');
+      const safeName = _escapeHtml(i.name || '');
+      const safeType = _escapeHtml(ITEM_TYPE_LABELS[i.itemType] || 'Nguyên liệu');
+      return `<option value="${safeId}">${safeName} (${safeType})</option>`;
+    }).join('');
+  if (selectedId && filtered.some(i => String(i.id) === String(selectedId))) {
+    select.value = selectedId;
+  }
+  const hint = document.getElementById('pur-item-search-hint');
+  if (hint) {
+    hint.textContent = normalizedQuery
+      ? `Hiển thị ${filtered.length}/${inv.length} món / nguyên liệu phù hợp`
+      : `${inv.length} món / nguyên liệu có thể nhập kho`;
+  }
+}
+
+function filterPurchaseItemOptions() {
+  const search = document.getElementById('pur-item-search');
+  const select = document.getElementById('pur-name');
+  renderPurchaseItemOptions(search?.value || '', select?.value || '');
+  onPurchaseItemSelect();
+}
+
 function openPurchaseModal() {
   const form = document.getElementById('purchase-form');
   delete form.dataset.editId;
@@ -6118,14 +6176,10 @@ function openPurchaseModal() {
   setPurOcrStatus('');
   document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
   renderPurchaseSupplierDropdown(); // Load danh sách NCC
-  
-  // Render options for inventory select
-  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
-  const select = document.getElementById('pur-name');
-  if(select) {
-    select.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' + 
-      inv.map(i => `<option value="${i.id}">${i.name} (${ITEM_TYPE_LABELS[i.itemType] || 'Nguyên liệu'})</option>`).join('');
-  }
+
+  const search = document.getElementById('pur-item-search');
+  if (search) search.value = '';
+  renderPurchaseItemOptions('', '');
   document.getElementById('pur-last-price-hint').style.display = 'none';
   document.getElementById('pur-price-compare-hint').style.display = 'none';
 
@@ -6591,23 +6645,54 @@ window.editStocktakeNote = async function editStocktakeNote(expenseId) {
   showToast('Đã cập nhật ghi chú kiểm kê.', 'success');
 };
 
+function renderStocktakeItemsList(items) {
+  const listEl = document.getElementById('stocktake-list');
+  if (!listEl) return;
+  listEl.innerHTML = items.map(i => {
+    const safeName = _escapeHtml(i.name || '');
+    const safeUnit = _escapeHtml(i.unit || '');
+    const safeSearch = _escapeHtml(getInventorySearchText(i));
+    return `
+    <div class="list-item stocktake-item-row" data-stocktake-search="${safeSearch}" style="padding:8px 12px; gap:8px">
+      <div class="list-item-content">
+        <div class="list-item-title">${safeName}</div>
+        <div class="list-item-sub">Hệ thống: ${i.qty} ${safeUnit}</div>
+      </div>
+      <div style="flex-shrink:0; width:100px">
+        <input type="number" class="input input-sm stocktake-actual-qty" data-id="${i.id}" data-sys="${i.qty}" data-unit="${safeUnit}" placeholder="Thực tế..." min="0" step="0.01">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterStocktakeItems() {
+  const input = document.getElementById('stocktake-item-search');
+  const query = normalizeViKey(input?.value || '');
+  const rows = Array.from(document.querySelectorAll('.stocktake-item-row'));
+  let visible = 0;
+  rows.forEach(row => {
+    const matches = !query || String(row.dataset.stocktakeSearch || '').includes(query);
+    row.style.display = matches ? '' : 'none';
+    if (matches) visible += 1;
+  });
+  const hint = document.getElementById('stocktake-search-hint');
+  if (hint) {
+    hint.textContent = query
+      ? `Hiển thị ${visible}/${rows.length} món / nguyên liệu để kiểm kê`
+      : `${rows.length} món / nguyên liệu trong danh sách kiểm kê`;
+  }
+}
+
 function openStocktakeModal() {
   const inv = _getInventory().filter(i => !i.hidden);
   const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   const listEl = document.getElementById('stocktake-list');
   if(!listEl) return;
 
-  listEl.innerHTML = sortedInv.map(i => `
-    <div class="list-item" style="padding:8px 12px; gap:8px">
-      <div class="list-item-content">
-        <div class="list-item-title">${i.name}</div>
-        <div class="list-item-sub">Hệ thống: ${i.qty} ${i.unit}</div>
-      </div>
-      <div style="flex-shrink:0; width:100px">
-        <input type="number" class="input input-sm stocktake-actual-qty" data-id="${i.id}" data-sys="${i.qty}" data-unit="${i.unit}" placeholder="Thực tế..." min="0" step="0.01">
-      </div>
-    </div>
-  `).join('');
+  renderStocktakeItemsList(sortedInv);
+  const search = document.getElementById('stocktake-item-search');
+  if (search) search.value = '';
+  filterStocktakeItems();
 
   document.getElementById('stocktake-modal').classList.add('active');
 }
