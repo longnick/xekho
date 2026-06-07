@@ -1,5 +1,20 @@
 # AI Changelog
 
+## 2026-06-07 11:19 - Speed up Firebase Hosting deploys
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Optimized Hosting deploys while preserving the legacy classic-script runtime:
+
+- `firebase.json` now deploys Hosting from `dist` instead of repo root `.`.
+- `scripts/build-hosting-dist.js` builds Vite output and copies required runtime static assets into `dist`.
+- `package.json` adds `build:hosting` and `deploy:hosting:fast`.
+- Firebase Hosting `predeploy` prepares `dist` automatically for `npx firebase-tools deploy --only hosting`.
+- Measured deploy output changed from the prior 238 root files to 83 `dist` files; deploy completed in 12 seconds including predeploy build.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-07-1119-hosting-deploy-speed.md`
+
 ## 2026-06-07 10:35 - Gemini 3.5 Flash routing defaults
 
 Repo: `/home/longnick/projects/xekho`

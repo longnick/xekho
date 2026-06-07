@@ -1,23 +1,14 @@
 {
   "hosting": {
     "site": "xe-kho",
-    "public": ".",
+    "public": "dist",
+    "predeploy": [
+      "npm run build:hosting"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
-      ".git/**",
-      "**/.git/**",
-      ".vscode/**",
-      "**/.vscode/**",
-      "**/node_modules/**",
-      "functions/**",
-      "*.md",
-      "*.ps1",
-      "*.json",
-      "!package.json",
-      "!manifest.json",
-      "serviceAccountKey.json",
-      "pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json"
+      "**/node_modules/**"
     ],
     "redirects": [
       {

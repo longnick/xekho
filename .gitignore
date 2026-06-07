@@ -22,7 +22,7 @@ functions-list.json
 *.backup-*
 
 # Firebase generated
-.firebase/hosting..cache
+.firebase/
 firebase-debug.log
 functions-list.json
 dist
