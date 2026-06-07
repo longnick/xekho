@@ -328,6 +328,12 @@
 
         <!-- PURCHASE TAB -->
         <div id="inv-tab-purchase" style="display:none">
+          <div class="search-wrap" style="display:flex;gap:8px;margin-bottom:12px">
+            <div style="flex:1;position:relative">
+              <span class="search-icon">🔍</span>
+              <input class="input" id="purchase-search" placeholder="Tìm theo tên món / nguyên liệu..." data-esm-admin-render="renderPurchaseList">
+            </div>
+          </div>
           <div id="purchase-list"></div>
         </div>
 
@@ -1555,10 +1561,18 @@
           <div class="purchase-pane purchase-pane-form">
             <form id="purchase-form" onsubmit="submitPurchase(event)">
               <div class="input-group">
+                <label class="input-label">Tìm món / nguyên liệu</label>
+                <div class="inventory-modal-search">
+                  <span class="search-icon">🔍</span>
+                  <input class="input" id="pur-item-search" type="search" inputmode="search" autocomplete="off" placeholder="Gõ tên món, nguyên liệu..." oninput="filterPurchaseItemOptions()">
+                </div>
+              </div>
+              <div class="input-group">
                 <label class="input-label">Tên nguyên liệu *</label>
                 <select class="select" id="pur-name" required onchange="onPurchaseItemSelect()">
                   <option value="">-- Chọn nguyên liệu --</option>
                 </select>
+                <div id="pur-item-search-hint" class="inventory-search-hint"></div>
                 <div id="pur-last-price-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
                 <div id="pur-price-compare-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
               </div>
@@ -2106,19 +2120,28 @@
 
   <!-- Stocktake (Kiểm kê) Modal -->
   <div class="modal-overlay" id="stocktake-modal" data-esm-modal-self-dismiss>
-    <div class="modal-sheet" style="max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-sheet stocktake-modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📋 Kiểm kê kho</div>
         <button class="modal-close" data-esm-modal-close="stocktake-modal">✕</button>
       </div>
-      <div class="modal-body" style="flex:1;overflow-y:auto;padding-bottom:80px;">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+      <div class="modal-body stocktake-modal-body">
+        <div class="stocktake-modal-intro">
           Nhập số lượng thực tế trong kho. Bỏ trống nếu không thay đổi.
         </div>
-        <div id="stocktake-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="stocktake-search-panel">
+          <div class="inventory-modal-search stocktake-modal-search">
+            <span class="search-icon">🔍</span>
+            <input class="input" id="stocktake-item-search" type="search" inputmode="search" autocomplete="off" placeholder="Tìm món / nguyên liệu kiểm kê..." oninput="filterStocktakeItems()">
+          </div>
+          <div id="stocktake-search-hint" class="inventory-search-hint"></div>
+        </div>
+        <div class="stocktake-results-scroll">
+          <div id="stocktake-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
       </div>
-      <div style="position:absolute;bottom:0;left:0;right:0;padding:16px;background:var(--bg);border-top:1px solid var(--border);box-shadow:0 -4px 12px rgba(0,0,0,0.1)">
+      <div class="stocktake-modal-actions">
         <button class="btn btn-primary btn-block" onclick="submitStocktake()">Lưu kiểm kê</button>
       </div>
     </div>
