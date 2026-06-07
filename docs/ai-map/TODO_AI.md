@@ -56,6 +56,10 @@
 
 ## Done recently
 
+- 2026-06-07 10:35: Updated active Gemini text-model defaults/fallbacks and `opencode.json` in `xekho` from `gemini-2.5-flash` to `gemini-3.5-flash`; task log: `docs/ai-map/TASK_LOGS/2026-06-07-1035-gemini-35-flash-routing.md`
+
+- 2026-06-06 20:24: Refined `Kiểm kê kho` search layout so the modal keeps fixed height, the search field stays at the top, and only filtered result rows scroll in a shorter viewport to avoid iPhone keyboard covering results. Task log: `docs/ai-map/TASK_LOGS/2026-06-06-2024-stocktake-search-layout.md`
+- 2026-06-06 20:11: Added item search fields in `Kho` purchase and stocktake modals; purchase select options filter by typed item/material text, and stocktake rows are hidden/shown without dropping typed actual quantities. Task log: `docs/ai-map/TASK_LOGS/2026-06-06-2011-inventory-item-search.md`
 - 2026-06-04 10:17: Fixed `TỒN KHO` tab showing no stock by falling back to Firestore master `Inventory_Items` and normalizing `material_name`/`base_unit`/`current_stock`/`min_alert`/`inv_type` into POS stock fields; guarded by `scripts/verify-inventory-stock-display.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-1017-fix-inventory-stock-display.md`
 - 2026-06-04 09:54: Compact mobile POS header/status bar so brand, offline badge, username, mic, and reload controls no longer overflow the top frame on iPhone widths. Offline badge now uses compact labels like `OK`; guarded by `scripts/verify-mobile-pos-header.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0954-mobile-pos-header-compact.md`
 - 2026-06-04 08:52: Improved physical table-card note readability by removing the note icon/pill and replacing the status emoji with full-width two-line note text on noted cards. Task log: `docs/ai-map/TASK_LOGS/2026-06-04-0852-readable-table-note.md`

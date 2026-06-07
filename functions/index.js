@@ -112,7 +112,7 @@ const DEEPSEEK_MODEL = defineString('DEEPSEEK_MODEL', { default: 'deepseek-chat'
 const VERTEX_SERVICE_ACCOUNT_JSON = defineSecret('VERTEX_SERVICE_ACCOUNT_JSON');
 const VERTEX_PROJECT_ID = defineString('VERTEX_PROJECT_ID', { default: 'pos-v2-909ff' });
 const VERTEX_LOCATION = defineString('VERTEX_LOCATION', { default: 'global' });
-const VERTEX_TEXT_MODEL = defineString('VERTEX_TEXT_MODEL', { default: 'gemini-2.5-flash' });
+const VERTEX_TEXT_MODEL = defineString('VERTEX_TEXT_MODEL', { default: 'gemini-3.5-flash' });
 const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen-3.0-generate-001' });
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
@@ -157,7 +157,7 @@ function getVertexRuntimeConfig() {
         ? configuredProjectId
         : (credentialProjectId || configuredProjectId || 'pos-v2-909ff'),
     location: String(VERTEX_LOCATION.value() || '').trim() || 'global',
-    textModel: String(VERTEX_TEXT_MODEL.value() || '').trim() || 'gemini-2.5-flash',
+    textModel: String(VERTEX_TEXT_MODEL.value() || '').trim() || 'gemini-3.5-flash',
     imageModel: String(VERTEX_IMAGE_MODEL.value() || '').trim() || 'imagen-3.0-generate-001',
   };
 }
@@ -166,7 +166,7 @@ function buildVertexTextModels(preferredModel = '') {
   return [
     preferredModel,
     getVertexRuntimeConfig().textModel,
-    'gemini-2.5-flash',
+    'gemini-3.5-flash',
     'gemini-2.0-flash-001',
     'gemini-2.0-flash',
   ].filter((name, index, arr) => name && arr.indexOf(name) === index);
@@ -4755,7 +4755,7 @@ exports.adminProbeVertex = onRequest({
       const requestBody = req.method === 'POST' ? (req.body || {}) : {};
       const query = req.query || {};
       const requestedLocation = String(requestBody.location || query.location || vertexConfig.location || 'global').trim() || 'global';
-      const requestedModel = String(requestBody.model || query.model || vertexConfig.textModel || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash';
+      const requestedModel = String(requestBody.model || query.model || vertexConfig.textModel || 'gemini-3.5-flash').trim() || 'gemini-3.5-flash';
       const rawAuthStrategy = String(requestBody.authStrategy || query.authStrategy || 'adc_first').trim().toLowerCase();
       const authStrategy = ['adc_only', 'secret_only', 'secret_first', 'adc_first'].includes(rawAuthStrategy)
         ? rawAuthStrategy

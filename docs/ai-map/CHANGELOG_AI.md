@@ -1,5 +1,50 @@
 # AI Changelog
 
+## 2026-06-07 10:35 - Gemini 3.5 Flash routing defaults
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Updated Gemini text model defaults and local coding config:
+
+- `functions/index.js` now defaults `VERTEX_TEXT_MODEL`, runtime fallback text model, text fallback list, and `adminProbeVertex` probe model to `gemini-3.5-flash`.
+- `functions/vertexAi.js` now prefers `gemini-3.5-flash` in the default text fallback list.
+- `opencode.json` now points the Google provider config to `google/gemini-3.5-flash`.
+- Runtime/config search found no remaining active `gemini-2.5-flash` / `gemini-2.5-pro` outside excluded docs/artifacts/backups/env paths.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-07-1035-gemini-35-flash-routing.md`
+
+## 2026-06-06 20:24 - Keep stocktake modal height fixed while filtering results
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Refined the stocktake item search layout after mobile/iPhone QA feedback:
+
+- The `Kiểm kê kho` modal sheet now keeps a fixed viewport height instead of shrinking around the filtered result count.
+- The search input remains in the top panel of the modal.
+- Only the result list has a smaller dedicated scroll window, reducing keyboard overlap risk on iPhone while keeping filtered rows visible.
+- `scripts/verify-inventory-item-search.js` now guards the fixed-height sheet, top search panel, and dedicated result-scroll layout.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-06-2024-stocktake-search-layout.md`
+
+## 2026-06-06 20:11 - Add inventory item search in purchase and stocktake modals
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Added focused search fields so staff can find items faster in both inventory entry flows:
+
+Changes:
+
+- `index.html` adds `#pur-item-search` above the purchase item picker in the `Nhập hàng mới` modal.
+- `index.html` adds `#stocktake-item-search` above the stocktake item list in the `Kiểm kê kho` modal.
+- `app.js` adds shared inventory search text helpers, filtered purchase select rendering, and stocktake row filtering that hides rows without removing typed quantity inputs.
+- `style.css` adds reusable modal search/hint styles.
+- `scripts/verify-inventory-item-search.js` guards the new DOM markers, JS helpers, and CSS markers.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-06-2011-inventory-item-search.md`
+
 ## 2026-06-04 10:17 - Fix inventory stock display
 
 Repo: `/home/longnick/projects/xekho`
