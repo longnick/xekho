@@ -56,6 +56,8 @@
 
 ## Done recently
 
+- 2026-06-07 11:19: Optimized Firebase Hosting deploys by switching static hosting output from repo root `.` to prepared `dist`; `npm run build:hosting` now copies required legacy runtime assets, Firebase predeploy runs it automatically, and deploy output dropped from 238 root files to 83 dist files. Task log: `docs/ai-map/TASK_LOGS/2026-06-07-1119-hosting-deploy-speed.md`
+
 - 2026-06-07 10:35: Updated active Gemini text-model defaults/fallbacks and `opencode.json` in `xekho` from `gemini-2.5-flash` to `gemini-3.5-flash`; task log: `docs/ai-map/TASK_LOGS/2026-06-07-1035-gemini-35-flash-routing.md`
 
 - 2026-06-06 20:24: Refined `Kiểm kê kho` search layout so the modal keeps fixed height, the search field stays at the top, and only filtered result rows scroll in a shorter viewport to avoid iPhone keyboard covering results. Task log: `docs/ai-map/TASK_LOGS/2026-06-06-2024-stocktake-search-layout.md`

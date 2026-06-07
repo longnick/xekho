@@ -10,7 +10,9 @@
     "check": "node --check app.js && for f in app/utils/*.js app/ui/*.js app/auth/*.js app/order/*.js app/report/*.js; do node --check \"$f\"; done",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:hosting": "node scripts/build-hosting-dist.js",
+    "deploy:hosting:fast": "npm run build:hosting && npx firebase-tools deploy --only hosting"
   },
   "keywords": [],
   "author": "",
