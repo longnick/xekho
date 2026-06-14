@@ -419,3 +419,9 @@ Related files:
 - Legacy `db.js` / `app.js` KHO surfaces remain the schema reference for `xekho_v2` inventory writes.
 - `xekho_v2/functions/src/inventory/inventoryOperationsCore.js` writes collection/field pairs compatible with this repo: `Inventory_Items.current_stock`/`stockQty`, `purchases.qty/unit/total/supplier/date`, `stocktakes.systemQty/countedQty/varianceQty`, `suppliers.name/contact`, and `Product_Catalog.cost`.
 - No code in this legacy repo was changed for the bridge; this note is the cross-repo contract so future legacy edits do not unknowingly break xekho_v2 Kho vận operations.
+
+## xekho_v2 item-scoped inventory actions — 2026-06-14 21:11 +0700
+
+- Follow-up to the Function bridge: `xekho_v2` actions are now row-scoped, not global.
+- Soft-delete/hide semantics map to common legacy-compatible flags (`active:false`, `deleted:true`, `hidden:true`) rather than hard deleting legacy collections.
+- Legacy repo code was not changed.

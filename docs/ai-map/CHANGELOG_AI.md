@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-06-14 21:11 - xekho_v2 item-scoped inventory action parity note
+
+Documented follow-up: `xekho_v2` now scopes Kho vận add/edit/delete buttons to the exact selected inventory/menu/supplier/document row and uses audited soft-hide for delete. Legacy runtime code remains unchanged.
+
 ## 2026-06-14 20:06 - xekho_v2 Kho vận Function bridge parity note
 
 Repo: `/home/longnick/projects/xekho`
