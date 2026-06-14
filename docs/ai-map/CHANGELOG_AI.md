@@ -1,5 +1,13 @@
 # AI Changelog
 
+## 2026-06-14 20:06 - xekho_v2 Kho vận Function bridge parity note
+
+Repo: `/home/longnick/projects/xekho`
+
+Documented cross-repo compatibility for the new `xekho_v2` Kho vận Cloud Functions: writes remain aligned with legacy collections/fields (`Inventory_Items.current_stock/stockQty`, `purchases`, `stocktakes`, `suppliers`, `Product_Catalog.cost`) and add audit-only `inventoryOpsAudit` in `xekho_v2`. No legacy runtime files were changed.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-14-2006-xekho-v2-inventory-functions-parity.md`
+
 ## 2026-06-07 11:19 - Speed up Firebase Hosting deploys
 
 Repo: `/home/longnick/projects/xekho`
