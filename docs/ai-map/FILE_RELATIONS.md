@@ -413,3 +413,9 @@ Related files:
 - `app.js#renderTables()` owns the table-screen markup. It now excludes persisted `takeaway` table records from the physical table grid while preserving the dedicated `#table-card-takeaway` summary card and `openTakeaway()` flow.
 - `style.css` owns `.table-grid`, `.table-card-wide`, and `.table-summary-*` mobile layout constraints. The grid uses `minmax(0, 1fr)` and summary rows use `min-width: 0` + ellipsis to prevent long labels/totals from overflowing the mobile viewport.
 - `scripts/verify-mobile-table-grid.js` protects this relationship with deterministic source assertions.
+
+## xekho_v2 Kho vận Cloud Function parity — 2026-06-14 20:06 +0700
+
+- Legacy `db.js` / `app.js` KHO surfaces remain the schema reference for `xekho_v2` inventory writes.
+- `xekho_v2/functions/src/inventory/inventoryOperationsCore.js` writes collection/field pairs compatible with this repo: `Inventory_Items.current_stock`/`stockQty`, `purchases.qty/unit/total/supplier/date`, `stocktakes.systemQty/countedQty/varianceQty`, `suppliers.name/contact`, and `Product_Catalog.cost`.
+- No code in this legacy repo was changed for the bridge; this note is the cross-repo contract so future legacy edits do not unknowingly break xekho_v2 Kho vận operations.
