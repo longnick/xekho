@@ -224,11 +224,12 @@ function collectTextFromPayload(payload = {}) {
 function collectFunctionCalls(payload = {}) {
   const parts = payload?.candidates?.[0]?.content?.parts || [];
   return parts
-    .map((part) => part?.functionCall || null)
-    .filter(Boolean)
-    .map((call) => ({
+    .map((part) => ({ part, call: part?.functionCall || null }))
+    .filter((item) => item.call)
+    .map(({ part, call }) => ({
       name: String(call.name || '').trim(),
       args: call.args || {},
+      part,
     }))
     .filter((call) => call.name);
 }

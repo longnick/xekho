@@ -1,6 +1,16 @@
 # AI Changelog
 
 
+## 2026-06-17 00:24 - Preserve Gemini function-call thought signatures
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Fixed post-deploy Telegram owner-assistant tool calling with newer Gemini/Vertex models by preserving the original function-call `part` (including thought-signature metadata) when sending tool responses. Added `scripts/verify-gemini-function-call-thought-signature.js`.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0024-gemini-function-call-thought-signature.md`
+
+
 ## 2026-06-17 00:13 - Telegram owner assistant guard
 
 Repo: `/home/longnick/projects/xekho`

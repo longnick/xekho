@@ -433,3 +433,9 @@ Related files:
 - Guarded paths: open text AI/smart report, voice/audio AI, non-order photo OCR/import AI, and ads/revenue report commands.
 - Operational Telegram order-photo draft context remains available for the configured group flow.
 - `scripts/verify-telegram-owner-assistant-guard.js` protects the token separation and owner-only markers.
+
+## 2026-06-17 - Gemini function-call thought signatures
+
+- `functions/vertexAi.js#collectFunctionCalls()` returns the original model `part` with each parsed function call.
+- `functions/index.js#runVertexToolLoop()` must append those original function-call parts before tool responses so Gemini/Vertex thought-signature metadata is preserved.
+- `scripts/verify-gemini-function-call-thought-signature.js` guards against regressions.
