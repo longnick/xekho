@@ -189,6 +189,82 @@ function formatTelegramSmartRangeLabel(from, toExclusive) {
 }
 
 /**
+ * @param {Date} date
+ * @returns {Date}
+ */
+function getVietnamStartOfDay(date) {
+  var parts = getVietnamDateParts(date || new Date());
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0) - 7 * 60 * 60 * 1000);
+}
+
+/**
+ * @param {Date} date
+ * @param {number} days
+ * @returns {Date}
+ */
+function addDays(date, days) {
+  return new Date((date || new Date()).getTime() + Number(days || 0) * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * @param {string} normalized
+ * @returns {string}
+ */
+function inferTelegramRelativeScope(normalized) {
+  var text = String(normalized || '');
+  if (/\bhom qua\b/.test(text)) return 'hom_qua';
+  if (/\bhom nay\b/.test(text)) return 'hom_nay';
+  if (/\btuan nay\b/.test(text)) return 'tuan_nay';
+  if (/\bthang nay\b/.test(text)) return 'thang_nay';
+  if (/\bnam nay\b/.test(text)) return 'nam_nay';
+  return '';
+}
+
+/**
+ * @param {string} scope
+ * @param {Date} fallbackNow
+ * @returns {{from: Date, toExclusive: Date, label: string}|null}
+ */
+function buildTelegramRelativeReportRange(scope, fallbackNow) {
+  var now = fallbackNow || new Date();
+  var todayStart = getVietnamStartOfDay(now);
+  if (scope === 'hom_qua') return { from: addDays(todayStart, -1), toExclusive: todayStart, label: 'hôm qua' };
+  if (scope === 'hom_nay') return { from: todayStart, toExclusive: addDays(todayStart, 1), label: 'hôm nay' };
+  if (scope === 'tuan_nay') {
+    var parts = getVietnamDateParts(now);
+    var localNoon = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0));
+    var dayIndex = (localNoon.getUTCDay() + 6) % 7;
+    return { from: addDays(todayStart, -dayIndex), toExclusive: addDays(todayStart, 1), label: 'tuần này' };
+  }
+  if (scope === 'thang_nay') {
+    var monthParts = getVietnamDateParts(now);
+    var fromMonth = new Date(Date.UTC(monthParts.year, monthParts.month - 1, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+    return { from: fromMonth, toExclusive: addDays(todayStart, 1), label: 'tháng này' };
+  }
+  if (scope === 'nam_nay') {
+    var yearParts = getVietnamDateParts(now);
+    var fromYear = new Date(Date.UTC(yearParts.year, 0, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+    return { from: fromYear, toExclusive: addDays(todayStart, 1), label: 'năm nay' };
+  }
+  return null;
+}
+
+/**
+ * @param {string} normalized
+ * @returns {string}
+ */
+function extractTelegramSmartReportItemName(normalized) {
+  var item = String(normalized || '')
+    .replace(/\?/g, ' ')
+    .replace(/\b(hom qua|hom nay|tuan nay|thang nay|nam nay)\b/g, ' ')
+    .replace(/\b(tu|den|bay gio|hien tai|luc nay|now)\b/g, ' ')
+    .replace(/\b(doanh thu|loi nhuan|lai gop|lai|ban duoc bao nhieu|ban bao nhieu|ban duoc may|ban may|duoc bao nhieu|co bao nhieu don|so don|hoa don|don hang)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return item;
+}
+
+/**
  * @param {string} userText
  * @returns {Object|null}
  */
@@ -196,22 +272,37 @@ function parseTelegramSmartReportIntent(userText) {
   if (!userText) userText = '';
   var normalized = normalizeTelegramSmartReportText(userText);
   if (!normalized) return null;
+  var asksQuantity = /\b(ban duoc bao nhieu|ban bao nhieu|ban duoc may|ban may|duoc bao nhieu)\b/.test(normalized);
   var metric = normalized.includes('doanh thu') ? 'revenue'
     : (normalized.includes('loi nhuan') || normalized.includes('lai gop') || normalized.includes('lai bao nhieu') || normalized.includes('lai ')) ? 'profit'
-    : (normalized.includes('ban duoc bao nhieu') || normalized.includes('duoc bao nhieu') || normalized.includes('ban duoc may') || normalized.includes('co bao nhieu don')) ? 'summary'
+    : asksQuantity ? 'quantity'
+    : (normalized.includes('co bao nhieu don') || normalized.includes('so don') || normalized.includes('hoa don')) ? 'summary'
     : '';
   if (!metric) return null;
   var rangeMatch = normalized.match(/\btu\s+(.+?)\s+\bden\s+(bay gio|hien tai|luc nay|now)\b/i);
-  if (!rangeMatch) return null;
-  var beforeRange = normalized.slice(0, rangeMatch.index).trim();
-  var itemName = beforeRange
-    .replace(/(?:^|\s)(doanh thu|loi nhuan|lai gop|lai|ban duoc bao nhieu|duoc bao nhieu|ban duoc may|co bao nhieu don)\s*/i, '')
-    .trim();
-  var from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
-  if (!from) return null;
-  var toExclusive = new Date();
-  var rangeLabel = formatTelegramSmartRangeLabel(from, toExclusive);
-  return { metric: metric, itemName: itemName || '', rangeLabel: rangeLabel, from: from, toExclusive: toExclusive };
+  if (rangeMatch) {
+    var beforeRange = normalized.slice(0, rangeMatch.index).trim();
+    var itemName = extractTelegramSmartReportItemName(beforeRange);
+    var from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
+    if (!from) return null;
+    var toExclusive = new Date();
+    var rangeLabel = formatTelegramSmartRangeLabel(from, toExclusive);
+    return { metric: metric, itemName: itemName || '', rangeLabel: rangeLabel, from: from, toExclusive: toExclusive };
+  }
+
+  var scope = inferTelegramRelativeScope(normalized);
+  if (!scope) return null;
+  var relativeRange = buildTelegramRelativeReportRange(scope, new Date());
+  if (!relativeRange) return null;
+  var relativeItemName = extractTelegramSmartReportItemName(normalized);
+  if (metric === 'quantity' && !relativeItemName) metric = 'summary';
+  return {
+    metric: metric,
+    itemName: relativeItemName || '',
+    rangeLabel: relativeRange.label,
+    from: relativeRange.from,
+    toExclusive: relativeRange.toExclusive,
+  };
 }
 
 var DEFAULT_TELEGRAM_REPORT_SETTINGS = {
@@ -299,6 +390,9 @@ module.exports = {
   getTelegramPayMethodLabel: getTelegramPayMethodLabel,
   isTelegramBankPayMethod: isTelegramBankPayMethod,
   formatTelegramSmartRangeLabel: formatTelegramSmartRangeLabel,
+  inferTelegramRelativeScope: inferTelegramRelativeScope,
+  buildTelegramRelativeReportRange: buildTelegramRelativeReportRange,
+  extractTelegramSmartReportItemName: extractTelegramSmartReportItemName,
   parseTelegramSmartReportIntent: parseTelegramSmartReportIntent,
   DEFAULT_TELEGRAM_REPORT_SETTINGS: DEFAULT_TELEGRAM_REPORT_SETTINGS,
   getVietnamBusinessReportRange: getVietnamBusinessReportRange,
