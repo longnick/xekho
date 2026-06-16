@@ -26,6 +26,8 @@ assert(count(/skipped: 'owner-only-voice-ai'/g) === 1, 'voice AI branch must hav
 assert(count(/skipped: 'owner-only-photo-ai'/g) === 1, 'non-order photo AI branch must have exactly one owner-only guard');
 assert(count(/skipped: 'owner-only-ads-report'/g) === 1, 'ads report branch must have exactly one owner-only guard');
 assert(source.includes('ownerOnlyAllowed: isTelegramOwnerContext(userContext)'), 'webhook log should record owner-only decision without secrets');
+assert(source.includes('Xe Khô Chữa Lành'), 'assistant prompt must use exact shop name Xe Khô Chữa Lành');
+assert(!source.includes('Xe Kho Chua Lanh'), 'assistant prompt must not use old unaccented/wrong shop name');
 
 const tokenLine = "const botToken = getTelegramAssistantBotToken();";
 assert(source.includes(tokenLine), 'telegramWebhook must use the assistant bot token resolver');
