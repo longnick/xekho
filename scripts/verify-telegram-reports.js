@@ -13,6 +13,9 @@ const expectedFunctions = [
   'normalizeTelegramWildcardText',
   'buildTelegramWildcardRegex',
   'parseTelegramLooseDateTime',
+  'inferTelegramRelativeScope',
+  'buildTelegramRelativeReportRange',
+  'extractTelegramSmartReportItemName',
   'getInclusiveVietnamDateCount',
   'formatAchievementPercent',
   'buildMorningRevenueMood',
@@ -169,6 +172,15 @@ if (!yesterdayToNow || yesterdayToNow.metric !== 'revenue' || yesterdayToNow.ite
 }
 const itemIntent = exported.parseTelegramSmartReportIntent('doanh thu bia Heineken tu 18h hom qua den bay gio');
 if (!itemIntent || itemIntent.itemName !== 'bia heineken') { console.error('FAIL: item-scoped smart report:', itemIntent); process.exit(1); }
+const beerQtyIntent = exported.parseTelegramSmartReportIntent('Hôm qua bán bao nhiêu bia?');
+if (!beerQtyIntent || beerQtyIntent.metric !== 'quantity' || beerQtyIntent.itemName !== 'bia' || beerQtyIntent.rangeLabel !== 'hôm qua') {
+  console.error('FAIL: natural item quantity smart report:', beerQtyIntent);
+  process.exit(1);
+}
+if (exported.extractTelegramSmartReportItemName('hom qua ban bao nhieu bia') !== 'bia') {
+  console.error('FAIL: extractTelegramSmartReportItemName bia');
+  process.exit(1);
+}
 const intentNull = exported.parseTelegramSmartReportIntent('hello world');
 if (intentNull !== null) { console.error('FAIL: parseTelegramSmartReportIntent non-matching should be null'); process.exit(1); }
 

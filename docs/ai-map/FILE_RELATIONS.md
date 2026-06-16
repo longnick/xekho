@@ -445,3 +445,10 @@ Related files:
 - `functions/telegram/reports.js#parseTelegramSmartReportIntent()` parses `từ ... đến bây giờ` ranges and derives optional `itemName` only from text before the range marker. Range-only revenue queries such as `Doanh thu từ 18h hôm qua đến bây giờ?` must keep `itemName: ''`.
 - `functions/index.js#askGeminiWithFirestoreTools()` prompt must use the exact shop name `Xe Khô Chữa Lành`.
 - `scripts/verify-telegram-reports.js` and `scripts/verify-telegram-owner-assistant-guard.js` protect these cases.
+
+## 2026-06-17 - Telegram open-ended Firebase assistant
+
+- `functions/telegram/reports.js#parseTelegramSmartReportIntent()` now handles relative-date natural quantity questions such as `Hôm qua bán bao nhiêu bia?` and extracts `metric=quantity`, `itemName=bia`.
+- `functions/index.js#tryAnswerTelegramSmartReportQuestion()` formats quantity answers from `report.itemSummary` returned by `executeReportQuery()`.
+- `functions/index.js#isTelegramAssistantCapabilityQuestion()` and `#buildTelegramAssistantCapabilityResponse()` provide deterministic answers for assistant capability questions.
+- Gemini prompt remains the fallback for non-fixed questions and must call read tools before returning data-backed numbers.

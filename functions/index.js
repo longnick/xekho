@@ -419,8 +419,21 @@ function formatTelegramSmartRangeLabel(from, toExclusive) {
   return telegramReports.formatTelegramSmartRangeLabel(from, toExclusive);
 }
 
-function parseTelegramSmartReportIntent(userText = '') {
-  return telegramReports.parseTelegramSmartReportIntent(userText);
+function isTelegramAssistantCapabilityQuestion(userText = '') {
+  const normalized = normalizeTelegramSmartReportText(userText);
+  return /\b(ban|em|bot|tro ly|ai)\b.*\b(co the lam gi|lam duoc gi|giup duoc gi|biet lam gi)\b/.test(normalized)
+    || /\b(co the lam gi|lam duoc gi|giup duoc gi|biet lam gi)\b/.test(normalized);
+}
+
+function buildTelegramAssistantCapabilityResponse() {
+  return [
+    'Em là trợ lý AI của quán Xe Khô Chữa Lành, không chỉ trả lời command cố định.',
+    'Em có thể hiểu câu hỏi tự nhiên và dùng dữ liệu thật khi cần:',
+    '• Đọc Firebase/POS: doanh thu, số đơn, lãi gộp, tiền mặt/chuyển khoản, món bán, tồn kho, lịch sử nhập hàng.',
+    '• Trả lời các câu như: “hôm qua bán bao nhiêu bia?”, “doanh thu từ 18h hôm qua đến bây giờ?”, “món nào bán chạy tuần này?”, “tồn kho bia còn bao nhiêu?”.',
+    '• Tạo đề xuất thao tác như nhập hàng/sửa menu/gọi món, nhưng chỉ ghi dữ liệu sau khi anh xác nhận.',
+    'BigQuery: em có thể được nối thêm nguồn BigQuery read-only khi repo cấu hình dataset/table và quyền truy cập; hiện đường Telegram production đang ưu tiên đọc Firebase/POS thật.',
+  ].join('\n');
 }
 
 async function tryAnswerTelegramSmartReportQuestion(userText = '') {
@@ -488,6 +501,27 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
         `Trong khoảng ${intent.rangeLabel}, quán bán được ${formatQtyVi(summary.invoiceCount || 0)} đơn.`,
         `Doanh thu: ${formatCurrencyVi(summary.revenue || 0)}.`,
         `Lãi gộp: ${formatCurrencyVi(summary.grossProfit || 0)}.`,
+      ].join(' '),
+    };
+  }
+
+  if (intent.metric === 'quantity') {
+    if (!intent.itemName || !report?.itemSummary) {
+      return {
+        intent,
+        report,
+        text: intent.itemName
+          ? `Em chưa tìm thấy dữ liệu bán ${intent.itemName} trong ${intent.rangeLabel}.`
+          : `Anh hỏi số lượng món nào trong ${intent.rangeLabel} ạ?`,
+      };
+    }
+    return {
+      intent,
+      report,
+      text: [
+        `${intent.rangeLabel.charAt(0).toUpperCase() + intent.rangeLabel.slice(1)}, quán bán được ${formatQtyVi(itemSummary.totalQty)} ${intent.itemName}.`,
+        `Doanh thu ${intent.itemName}: ${formatCurrencyVi(itemSummary.revenue)}.`,
+        `Lãi gộp: ${formatCurrencyVi(itemSummary.grossProfit)}.`,
       ].join(' '),
     };
   }
@@ -3942,15 +3976,23 @@ exports.telegramWebhook = onRequest({
           await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
           return json(res, 200, { ok: true, skipped: 'owner-only-text-ai' });
         }
-        const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
-        if (smartReportReply?.text) {
+        if (isTelegramAssistantCapabilityQuestion(userText)) {
           geminiResult = {
-            text: smartReportReply.text,
+            text: buildTelegramAssistantCapabilityResponse(),
             pendingActions: [],
-            toolResults: smartReportReply.report ? [smartReportReply.report] : [],
+            toolResults: [],
           };
         } else {
-          geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
+          const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
+          if (smartReportReply?.text) {
+            geminiResult = {
+              text: smartReportReply.text,
+              pendingActions: [],
+              toolResults: smartReportReply.report ? [smartReportReply.report] : [],
+            };
+          } else {
+            geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
+          }
         }
       } else {
         await sendTelegramTextMessage({
@@ -5260,8 +5302,11 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
     systemInstruction: [
       'Bạn là trợ lý AI thông minh của quán Xe Khô Chữa Lành.',
       'Nhiệm vụ của bạn là trả lời các câu hỏi về doanh thu, lợi nhuận, tồn kho, lịch sử nhập hàng và vận hành POS.',
-      'Nếu người dùng hỏi một món cụ thể, ví dụ bia Heineken, hãy cố gắng trích ten_mon và trả lời theo chính món đó.',
+      'Hãy hiểu câu hỏi tự nhiên, không chỉ các command cố định. Nếu cần dữ liệu thật, phải gọi tool đọc dữ liệu trước khi trả lời; không bịa số.',
+      'Nếu người dùng hỏi một món cụ thể, ví dụ bia/bia Heineken/Tiger/nước suối, hãy trích ten_mon và trả lời theo chính món đó.',
+      'Nếu người dùng hỏi "hôm qua bán bao nhiêu bia" hoặc "bán mấy lon Tiger tuần này", hãy gọi tool truy_van_bao_cao với loai_bao_cao=tong_quan hoặc doanh_thu, khoang_thoi_gian phù hợp và ten_mon là mặt hàng.',
       'Nếu người dùng nói mốc giờ như "từ 18h hôm qua đến bây giờ" hoặc "từ 17h ngày 10/5 đến bây giờ", hãy ưu tiên gọi tool truy_van_bao_cao với tu_thoi_diem và den_thoi_diem hoặc den_bay_gio.',
+      'Nếu người dùng hỏi khả năng của bạn, trả lời rõ bạn là trợ lý AI cho Xe Khô Chữa Lành, có thể đọc Firebase/POS khi cần, BigQuery khi được cấu hình nguồn read-only, và có thể tạo đề xuất thao tác cần owner xác nhận.',
       'Trả lời ngắn gọn, rõ ràng, thân thiện. Luôn gọi đúng tên quán là Xe Khô Chữa Lành. Sử dụng tools khi cần thiết.',
     ].join(' '),
     source: options.source || 'telegram_text',
