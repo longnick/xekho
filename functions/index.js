@@ -419,6 +419,10 @@ function formatTelegramSmartRangeLabel(from, toExclusive) {
   return telegramReports.formatTelegramSmartRangeLabel(from, toExclusive);
 }
 
+function parseTelegramSmartReportIntent(userText = '') {
+  return telegramReports.parseTelegramSmartReportIntent(userText);
+}
+
 function isTelegramAssistantCapabilityQuestion(userText = '') {
   const normalized = normalizeTelegramSmartReportText(userText);
   return /\b(ban|em|bot|tro ly|ai)\b.*\b(co the lam gi|lam duoc gi|giup duoc gi|biet lam gi)\b/.test(normalized)
