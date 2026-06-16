@@ -425,3 +425,11 @@ Related files:
 - Follow-up to the Function bridge: `xekho_v2` actions are now row-scoped, not global.
 - Soft-delete/hide semantics map to common legacy-compatible flags (`active:false`, `deleted:true`, `hidden:true`) rather than hard deleting legacy collections.
 - Legacy repo code was not changed.
+
+## 2026-06-17 - Telegram owner assistant guard
+
+- `functions/index.js#telegramWebhook` now resolves the assistant/report bot token with `getTelegramAssistantBotToken()` (`TELEGRAM_REPORT_BOT_TOKEN` -> `TELEGRAM_BOT_TOKEN`) so the open AI/revenue/report assistant path does not fall back to the kitchen-ready bot token.
+- Owner-only assistant gates use `isTelegramOwnerContext()` with `TELEGRAM_OWNER_CHAT_ID` plus pinned owner Telegram ID `6496387732`.
+- Guarded paths: open text AI/smart report, voice/audio AI, non-order photo OCR/import AI, and ads/revenue report commands.
+- Operational Telegram order-photo draft context remains available for the configured group flow.
+- `scripts/verify-telegram-owner-assistant-guard.js` protects the token separation and owner-only markers.

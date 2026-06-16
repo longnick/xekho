@@ -121,6 +121,7 @@ const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default:
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
 const TELEGRAM_OWNER_CHAT_ID = defineString('TELEGRAM_OWNER_CHAT_ID', { default: '' });
+const TELEGRAM_ASSISTANT_BOT_NAME = defineString('TELEGRAM_ASSISTANT_BOT_NAME', { default: 'XE KHO Owner Assistant' });
 const TELEGRAM_COMPLETED_ORDER_CHAT_ID = defineString('TELEGRAM_COMPLETED_ORDER_CHAT_ID', { default: '' });
 const TELEGRAM_KITCHEN_READY_CHAT_ID = defineString('TELEGRAM_KITCHEN_READY_CHAT_ID', { default: '' });
 const TELEGRAM_KITCHEN_READY_BOT_TOKEN = defineString('TELEGRAM_KITCHEN_READY_BOT_TOKEN', { default: '' });
@@ -128,6 +129,7 @@ const META_AD_ACCOUNT_ID = defineString('META_AD_ACCOUNT_ID', { default: '' });
 const META_ACCESS_TOKEN = defineString('META_ACCESS_TOKEN', { default: '' });
 const KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID = defineString('KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID', { default: '' });
 const OWNER_EMAIL = 'owner@ganhkho.vn';
+const DEFAULT_TELEGRAM_OWNER_CHAT_ID = '6496387732';
 const DEFAULT_REGION = 'asia-southeast1';
 const HEAVY_FUNCTION_MEMORY = '512MiB';
 const FUNCTIONS_RUNTIME_SERVICE_ACCOUNT = 'functions-runtime@pos-v2-909ff.iam.gserviceaccount.com';
@@ -567,6 +569,49 @@ function getTelegramReportBotToken() {
     || TELEGRAM_BOT_TOKEN.value()
     || ''
   ).trim();
+}
+
+function getTelegramAssistantBotToken() {
+  return String(
+    TELEGRAM_REPORT_BOT_TOKEN.value()
+    || TELEGRAM_BOT_TOKEN.value()
+    || ''
+  ).trim();
+}
+
+function getTelegramAssistantBotName() {
+  return String(TELEGRAM_ASSISTANT_BOT_NAME.value() || 'XE KHO Owner Assistant').trim();
+}
+
+function getTelegramOwnerChatIds() {
+  return uniqueTokens([
+    TELEGRAM_OWNER_CHAT_ID.value(),
+    DEFAULT_TELEGRAM_OWNER_CHAT_ID,
+  ]);
+}
+
+function isTelegramOwnerContext(context = {}) {
+  const allowlist = getTelegramOwnerChatIds();
+  const chatId = String(context.chatId || '').trim();
+  const userId = String(context.userId || '').trim();
+  return allowlist.some(id => id && (id === chatId || id === userId));
+}
+
+function buildTelegramOwnerOnlyMessage() {
+  return [
+    `Bot ${getTelegramAssistantBotName()} chỉ phục vụ chủ quán đã cấu hình.`,
+    'Tính năng doanh thu, báo cáo, AI trợ lý và nhập liệu thông minh chỉ mở cho Telegram ID chủ quán.',
+    'Nếu cần cấp quyền, dùng /chatid rồi cấu hình TELEGRAM_OWNER_CHAT_ID đúng ID đó.',
+  ].join('\n');
+}
+
+async function rejectTelegramOwnerOnlyAccess({ chatId, botToken }) {
+  if (!chatId || !botToken) return;
+  await sendTelegramTextMessage({
+    chatId,
+    botToken,
+    text: buildTelegramOwnerOnlyMessage(),
+  });
 }
 
 async function loadTelegramReportFinancialProfile() {
@@ -3406,7 +3451,7 @@ exports.telegramWebhook = onRequest({
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
 
-    const botToken = getTelegramReportBotToken();
+    const botToken = getTelegramAssistantBotToken();
     const callbackQuery = req.body?.callback_query || null;
     const message = req.body?.message || req.body?.edited_message || null;
     const callbackData = String(callbackQuery?.data || '').trim();
@@ -3434,6 +3479,8 @@ exports.telegramWebhook = onRequest({
         chatType: String(callbackQuery?.message?.chat?.type || message?.chat?.type || ''),
         userId: userContext.userId,
         username: userContext.username,
+        assistantBotName: getTelegramAssistantBotName(),
+        ownerOnlyAllowed: isTelegramOwnerContext(userContext),
         hasCallback: !!callbackQuery,
         hasText: !!userText,
         hasPhoto: Array.isArray(message?.photo) && message.photo.length > 0,
@@ -3740,6 +3787,10 @@ exports.telegramWebhook = onRequest({
         || normalizedText.startsWith('bao cao ads')
         || normalizedText.startsWith('bao cao doanh thu ads');
       if (isAdsReportCommand) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-ads-report' });
+        }
         const reportRange = buildAdsDateRangeFromText(userText, new Date(), { defaultYesterday: false });
         const report = await buildAdsRevenueTelegramData(reportRange);
         const text = buildAdsRevenueTelegramMessage(report);
@@ -3825,6 +3876,10 @@ exports.telegramWebhook = onRequest({
           return json(res, 200, { ok: true, command: 'order-slip-draft', draftId: draft.draftId });
         }
 
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-photo-ai' });
+        }
         const image = await getTelegramPhotoAsBase64({ botToken, photo: message.photo });
         geminiResult = await askGeminiVisionForImport({
           caption: userText,
@@ -3833,6 +3888,10 @@ exports.telegramWebhook = onRequest({
           ...userContext,
         });
       } else if (message?.voice || message?.audio) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-voice-ai' });
+        }
         // Ưu tiên voice, rồi mới audio (podcast, file âm thanh đính kèm)
         const voiceObj = message.voice || message.audio;
         const voiceFileId = String(voiceObj?.file_id || '').trim();
@@ -3876,6 +3935,10 @@ exports.telegramWebhook = onRequest({
           return json(res, 200, { ok: true, skipped: 'voice-processing-error' });
         }
       } else if (userText) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-text-ai' });
+        }
         const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
         if (smartReportReply?.text) {
           geminiResult = {
