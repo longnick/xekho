@@ -226,7 +226,10 @@ async function runVertexToolLoop({
 
     contents.push({
       role: 'model',
-      parts: functionCalls.map((call) => ({
+      // Preserve the original functionCall parts exactly as returned by Gemini.
+      // Newer Gemini/Vertex models attach thoughtSignature metadata to function-call
+      // parts and require it on the follow-up request that provides tool responses.
+      parts: functionCalls.map((call) => call.part || ({
         functionCall: {
           name: call.name,
           args: call.args || {},
