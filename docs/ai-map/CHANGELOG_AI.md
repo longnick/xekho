@@ -1,6 +1,16 @@
 # AI Changelog
 
 
+## 2026-06-17 00:49 - Telegram shop name and 18h-yesterday smart range
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Corrected Telegram AI prompt shop name to `Xe Khô Chữa Lành` and fixed smart-report parsing so `Doanh thu từ 18h hôm qua đến bây giờ?` is treated as a range-only revenue query instead of an item-scoped query. Added verifier coverage.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0049-telegram-shop-name-smart-range.md`
+
+
 ## 2026-06-17 00:32 - Deploy Telegram owner assistant guard
 
 Repo: `/home/longnick/projects/xekho`

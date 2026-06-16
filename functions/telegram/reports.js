@@ -203,8 +203,10 @@ function parseTelegramSmartReportIntent(userText) {
   if (!metric) return null;
   var rangeMatch = normalized.match(/\btu\s+(.+?)\s+\bden\s+(bay gio|hien tai|luc nay|now)\b/i);
   if (!rangeMatch) return null;
-  var itemMatch = normalized.match(/(?:doanh thu|loi nhuan|lai gop|lai)\s+(.+?)(?=\s+\btu\b|\s+\bhom nay\b|\s+\bngay\b|$)/i);
-  var itemName = String((itemMatch && itemMatch[1]) || '').trim();
+  var beforeRange = normalized.slice(0, rangeMatch.index).trim();
+  var itemName = beforeRange
+    .replace(/(?:^|\s)(doanh thu|loi nhuan|lai gop|lai|ban duoc bao nhieu|duoc bao nhieu|ban duoc may|co bao nhieu don)\s*/i, '')
+    .trim();
   var from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
   if (!from) return null;
   var toExclusive = new Date();
