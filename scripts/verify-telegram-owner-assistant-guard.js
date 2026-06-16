@@ -28,6 +28,7 @@ assert(count(/skipped: 'owner-only-ads-report'/g) === 1, 'ads report branch must
 assert(source.includes('ownerOnlyAllowed: isTelegramOwnerContext(userContext)'), 'webhook log should record owner-only decision without secrets');
 assert(source.includes('Xe Khô Chữa Lành'), 'assistant prompt must use exact shop name Xe Khô Chữa Lành');
 assert(source.includes('function isTelegramAssistantCapabilityQuestion'), 'assistant capability question detector is missing');
+assert(source.includes('function parseTelegramSmartReportIntent(userText'), 'index wrapper for parseTelegramSmartReportIntent is missing');
 assert(source.includes('không chỉ trả lời command cố định'), 'assistant capability response must explain open-ended behavior');
 assert(source.includes('hôm qua bán bao nhiêu bia'), 'assistant prompt/capability response should cover natural item-sales questions');
 assert(!source.includes('Xe Kho Chua Lanh'), 'assistant prompt must not use old unaccented/wrong shop name');
