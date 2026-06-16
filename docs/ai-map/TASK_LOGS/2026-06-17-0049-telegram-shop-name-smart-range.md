@@ -34,4 +34,4 @@ Branch: `push-clean-main-20260604-072900`
 
 ## Notes
 
-No database mutation. Deploy after verification is required for Telegram production behavior.
+No database mutation. Deployed to `xekho:telegramWebhook` after verification. Live smoke test for `Doanh thu từ 18h hôm qua đến bây giờ?` returned HTTP 200 / `{ ok: true }`.
