@@ -1,6 +1,14 @@
 # AI Changelog
 
 
+## 2026-06-17 00:32 - Deploy Telegram owner assistant guard
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Deployed `xekho:telegramWebhook` after owner guard and Gemini thought-signature fixes. Smoke tests passed for GET 405, OPTIONS 204, missing-chat safe skip, and owner revenue webhook path returning `ok: true`.
+
+
 ## 2026-06-17 00:24 - Preserve Gemini function-call thought signatures
 
 Repo: `/home/longnick/projects/xekho`

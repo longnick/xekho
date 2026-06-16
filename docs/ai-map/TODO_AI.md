@@ -56,6 +56,7 @@
 
 ## Done recently
 
+- 2026-06-17 00:32: Deployed `xekho:telegramWebhook` after owner guard and Gemini thought-signature fixes. Smoke tests passed: GET 405, OPTIONS 204, missing-chat safe skip, owner revenue path `ok: true`.
 - 2026-06-17 00:24: Fixed Gemini/Vertex tool-call continuity for Telegram owner assistant by preserving original function-call parts with thought-signature metadata. Added `scripts/verify-gemini-function-call-thought-signature.js`. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0024-gemini-function-call-thought-signature.md`
 - 2026-06-17 00:13: Tightened Telegram owner-only AI/revenue/report assistant access. `telegramWebhook` now uses the assistant/report bot token resolver (no kitchen fallback), open AI/report paths require owner Telegram ID `6496387732` or configured `TELEGRAM_OWNER_CHAT_ID`, and `scripts/verify-telegram-owner-assistant-guard.js` guards the behavior. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0013-telegram-owner-assistant-guard.md`
 - 2026-06-07 11:19: Optimized Firebase Hosting deploys by switching static hosting output from repo root `.` to prepared `dist`; `npm run build:hosting` now copies required legacy runtime assets, Firebase predeploy runs it automatically, and deploy output dropped from 238 root files to 83 dist files. Task log: `docs/ai-map/TASK_LOGS/2026-06-07-1119-hosting-deploy-speed.md`

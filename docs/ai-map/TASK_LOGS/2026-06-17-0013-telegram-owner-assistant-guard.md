@@ -37,4 +37,4 @@ Owner approved tightening the Telegram bot so only the owner's Telegram ID can u
 
 ## Notes
 
-No Firebase deploy was run. No production database/POS/payment/customer data was read or mutated.
+Deployed after follow-up request with `npx firebase-tools deploy --only functions:xekho:telegramWebhook`. Post-deploy smoke tests covered GET/OPTIONS, missing-chat safe skip, and owner revenue query webhook path. No production database/POS/payment/customer data was mutated.
