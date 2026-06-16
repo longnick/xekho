@@ -161,6 +161,14 @@ if (!rangeLabel.includes('t\u1eeb') || !rangeLabel.includes('\u0111\u1ebfn')) { 
 // parseTelegramSmartReportIntent
 const intent = exported.parseTelegramSmartReportIntent('doanh thu tu 8h ngay 15/6 den bay gio');
 if (!intent || intent.metric !== 'revenue') { console.error('FAIL: parseTelegramSmartReportIntent revenue:', intent); process.exit(1); }
+if (intent.itemName !== '') { console.error('FAIL: range-only revenue should not become itemName:', intent); process.exit(1); }
+const yesterdayToNow = exported.parseTelegramSmartReportIntent('Doanh thu từ 18h hôm qua đến bây giờ?');
+if (!yesterdayToNow || yesterdayToNow.metric !== 'revenue' || yesterdayToNow.itemName !== '') {
+  console.error('FAIL: parseTelegramSmartReportIntent 18h yesterday to now:', yesterdayToNow);
+  process.exit(1);
+}
+const itemIntent = exported.parseTelegramSmartReportIntent('doanh thu bia Heineken tu 18h hom qua den bay gio');
+if (!itemIntent || itemIntent.itemName !== 'bia heineken') { console.error('FAIL: item-scoped smart report:', itemIntent); process.exit(1); }
 const intentNull = exported.parseTelegramSmartReportIntent('hello world');
 if (intentNull !== null) { console.error('FAIL: parseTelegramSmartReportIntent non-matching should be null'); process.exit(1); }
 

@@ -439,3 +439,9 @@ Related files:
 - `functions/vertexAi.js#collectFunctionCalls()` returns the original model `part` with each parsed function call.
 - `functions/index.js#runVertexToolLoop()` must append those original function-call parts before tool responses so Gemini/Vertex thought-signature metadata is preserved.
 - `scripts/verify-gemini-function-call-thought-signature.js` guards against regressions.
+
+## 2026-06-17 - Telegram smart report range parsing
+
+- `functions/telegram/reports.js#parseTelegramSmartReportIntent()` parses `từ ... đến bây giờ` ranges and derives optional `itemName` only from text before the range marker. Range-only revenue queries such as `Doanh thu từ 18h hôm qua đến bây giờ?` must keep `itemName: ''`.
+- `functions/index.js#askGeminiWithFirestoreTools()` prompt must use the exact shop name `Xe Khô Chữa Lành`.
+- `scripts/verify-telegram-reports.js` and `scripts/verify-telegram-owner-assistant-guard.js` protect these cases.
