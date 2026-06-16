@@ -1,6 +1,16 @@
 # AI Changelog
 
 
+## 2026-06-17 01:07 - Telegram open-ended Firebase assistant
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Improved Telegram owner assistant so natural questions such as `Hôm qua bán bao nhiêu bia?` parse as item quantity reports against Firebase/POS data, and `Bạn có thể làm gì?` returns a deterministic capability response instead of depending on command-only behavior. Strengthened Gemini prompt to call read tools for non-fixed data questions.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0107-telegram-open-ended-firebase-assistant.md`
+
+
 ## 2026-06-17 00:49 - Telegram shop name and 18h-yesterday smart range
 
 Repo: `/home/longnick/projects/xekho`
