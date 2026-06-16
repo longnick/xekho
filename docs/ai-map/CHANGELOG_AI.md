@@ -1,5 +1,20 @@
 # AI Changelog
 
+
+## 2026-06-17 00:13 - Telegram owner assistant guard
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Tightened the Telegram open AI/revenue/report assistant path:
+
+- `telegramWebhook` now uses an assistant/report bot token resolver that does not fall back to the kitchen-ready bot token.
+- Open text AI, voice/audio AI, non-order photo OCR/import AI, and ads/revenue report commands are owner-only.
+- Owner allowlist includes the configured `TELEGRAM_OWNER_CHAT_ID` plus the current owner Telegram ID `6496387732`.
+- Added a deterministic guard verifier: `scripts/verify-telegram-owner-assistant-guard.js`.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0013-telegram-owner-assistant-guard.md`
+
 ## 2026-06-14 21:11 - xekho_v2 item-scoped inventory action parity note
 
 Documented follow-up: `xekho_v2` now scopes Kho vận add/edit/delete buttons to the exact selected inventory/menu/supplier/document row and uses audited soft-hide for delete. Legacy runtime code remains unchanged.
