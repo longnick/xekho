@@ -43,4 +43,4 @@ User expectation: Telegram bot should not only answer fixed commands. It should 
 
 ## Notes
 
-No database mutation. Production deploy still required after commit.
+No database mutation. Deployed to `xekho:telegramWebhook`. Live smoke tests for `Hôm qua bán bao nhiêu bia?` and `Bạn có thể làm gì?` both returned HTTP 200 / `{ ok: true }`.
