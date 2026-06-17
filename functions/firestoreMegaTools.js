@@ -1464,6 +1464,7 @@ async function executeOrderAction(db, pending) {
     tableId,
     tableName,
     itemCount: resolvedItems.length,
+    items: resolvedItems,
     appendedToExisting: !!existingOrderDoc,
   };
 }
