@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-17 - Telegram BigQuery reporting + month revenue fix
+
+Allowed Telegram owner assistant to use read-only BigQuery reporting for data answers. `doanh thu tháng này?` is verified as a smart report and deterministic reports now prefer BigQuery when available, with Firestore fallback.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-bigquery-reporting-month-revenue.md`
+
 
 ## 2026-06-17 - Telegram owner assistant proactive/menu/chart expansion
 

@@ -164,6 +164,15 @@ function getVertexRuntimeConfig() {
   };
 }
 
+function getBigQueryRuntimeConfig() {
+  return {
+    enabled: true,
+    projectId: String(process.env.BIGQUERY_PROJECT_ID || VERTEX_PROJECT_ID.value() || 'pos-v2-909ff').trim(),
+    datasetId: String(process.env.BIGQUERY_DATASET_ID || '').trim(),
+    salesTable: String(process.env.BIGQUERY_SALES_TABLE || '').trim(),
+  };
+}
+
 function buildVertexTextModels(preferredModel = '') {
   return [
     preferredModel,
@@ -247,6 +256,7 @@ async function runVertexToolLoop({
         source,
         noPersist,
         previewOnly,
+        bigQueryConfig: getBigQueryRuntimeConfig(),
       });
       toolResults.push(toolResult);
       functionResponseParts.push({
@@ -438,7 +448,7 @@ function buildTelegramAssistantCapabilityResponse() {
     '• Chủ động cảnh báo số liệu chưa tốt, so sánh cùng kỳ tháng trước và gợi ý cải thiện.',
     '• Với báo cáo doanh thu/lợi nhuận/nhập hàng/chi phí, em có thể hiện nút xem biểu đồ và vẽ biểu đồ khi anh bấm.',
     '• Tạo đề xuất thao tác như nhập hàng/sửa menu/gọi món, nhưng chỉ ghi dữ liệu sau khi anh xác nhận.',
-    'BigQuery: em có thể được nối thêm nguồn BigQuery read-only khi repo cấu hình dataset/table và quyền truy cập; hiện đường Telegram production đang ưu tiên đọc Firebase/POS thật.',
+    'BigQuery: em đã có đường đọc BigQuery read-only để trả lời báo cáo khi Firebase/POS không đủ dữ liệu; chỉ đọc, không ghi/sửa dữ liệu.',
   ].join('\n');
 }
 
@@ -452,7 +462,7 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
     ...(intent.itemName ? { ten_mon: intent.itemName } : {}),
     tu_thoi_diem: intent.from.toISOString(),
     den_thoi_diem: intent.toExclusive.toISOString(),
-  }, { db });
+  }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() });
 
   if (!report?.ok) {
     return {
@@ -752,8 +762,8 @@ async function tryAnswerTelegramProactiveOwnerInsight(userText = '', chatId = ''
   const { executeReportQuery } = getAiDeps();
   const ranges = getCurrentAndPreviousMonthComparableRanges(new Date());
   const [currentReport, previousReport] = await Promise.all([
-    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db }),
-    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
   ]);
   const cur = currentReport.summary || {};
   const prev = previousReport.summary || {};
@@ -5726,7 +5736,7 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
       'Nếu người dùng hỏi giá hoặc hình ảnh món, ví dụ "Món mực 1 nắng nướng muối ớt giá bao nhiêu?", hãy dùng dữ liệu menu/kho, không tự bịa giá; nếu có ảnh món trong dữ liệu thì trả lời kèm ảnh.',
       'Nếu người dùng hỏi "hôm qua bán bao nhiêu bia" hoặc "bán mấy lon Tiger tuần này", hãy gọi tool truy_van_bao_cao với loai_bao_cao=tong_quan hoặc doanh_thu, khoang_thoi_gian phù hợp và ten_mon là mặt hàng.',
       'Nếu người dùng nói mốc giờ như "từ 18h hôm qua đến bây giờ" hoặc "từ 17h ngày 10/5 đến bây giờ", hãy ưu tiên gọi tool truy_van_bao_cao với tu_thoi_diem và den_thoi_diem hoặc den_bay_gio.',
-      'Nếu người dùng hỏi khả năng của bạn, trả lời rõ bạn là trợ lý AI cho Xe Khô Chữa Lành, có thể đọc Firebase/POS khi cần, BigQuery khi được cấu hình nguồn read-only, và có thể tạo đề xuất thao tác cần owner xác nhận.',
+      'Nếu người dùng hỏi khả năng của bạn, trả lời rõ bạn là trợ lý AI cho Xe Khô Chữa Lành, có thể đọc Firebase/POS khi cần, có đường BigQuery read-only cho báo cáo khi Firebase không đủ dữ liệu, và có thể tạo đề xuất thao tác cần owner xác nhận.',
       'Trả lời ngắn gọn, rõ ràng, thân thiện. Luôn gọi đúng tên quán là Xe Khô Chữa Lành. Sử dụng tools khi cần thiết.',
     ].join(' '),
     source: options.source || 'telegram_text',
