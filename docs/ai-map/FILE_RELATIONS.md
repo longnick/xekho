@@ -460,3 +460,10 @@ Related files:
 - `functions/index.js#createTelegramChartRequest()` stores chart payloads in `telegram_chart_requests`; `#handleTelegramChartCallback()` renders and sends charts when `chart_<id>` callback is pressed.
 - `functions/telegram/send.js#sendTelegramPhotoBuffer()` uploads generated PNG buffers to Telegram via multipart `sendPhoto`.
 - `scripts/verify-telegram-chart-menu-features.js` guards the proactive/menu/chart feature wiring.
+
+## 2026-06-17 - Telegram BigQuery reporting + month revenue fix
+
+- `functions/index.js#getBigQueryRuntimeConfig()` exposes optional read-only BigQuery runtime env config to deterministic reports and Gemini tool calls.
+- `functions/firestoreMegaTools.js#executeBigQueryReportQuery()` queries BigQuery with Standard SQL SELECT summaries and no write operations.
+- `functions/geminiTools.js` declares `truy_van_bigquery_pos` for Gemini fallback data questions.
+- `scripts/verify-telegram-bigquery-reporting.js` verifies `doanh thu tháng này?` parsing and BigQuery read-only wiring.
