@@ -461,6 +461,12 @@ Related files:
 - `functions/telegram/send.js#sendTelegramPhotoBuffer()` uploads generated PNG buffers to Telegram via multipart `sendPhoto`.
 - `scripts/verify-telegram-chart-menu-features.js` guards the proactive/menu/chart feature wiring.
 
+## 2026-06-17 - Telegram webhook drift guard
+
+- `scripts/check-telegram-webhook-target.js` checks the deployed Telegram bot webhook is pointed at the XE KHO `telegramwebhook` Cloud Run service, not a foreign service such as `aidirectorbrieftelegramwebhook`, and fails on Telegram `last_error_message`.
+- `scripts/verify-telegram-owner-assistant-regressions.js` guards deterministic routing for owner questions seen in the incident: month revenue, month order summary, and menu price lookup before Gemini fallback.
+- Incident notes live in `docs/ai-map/TASK_LOGS/2026-06-17-telegram-webhook-drift-chatbot-silence.md`.
+
 ## 2026-06-17 - Telegram BigQuery reporting + month revenue fix
 
 - `functions/index.js#getBigQueryRuntimeConfig()` exposes optional read-only BigQuery runtime env config to deterministic reports and Gemini tool calls.
