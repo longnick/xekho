@@ -479,3 +479,9 @@ Related files:
 - `functions/index.js#parseTelegramChartCallbackData()` normalizes chart callback payloads from current and legacy inline buttons.
 - `functions/index.js#telegramWebhook` routes parsed chart callbacks to `handleTelegramChartCallback()` before generic unknown callback handling.
 - `scripts/verify-telegram-chart-menu-features.js` asserts chart callback parser coverage.
+## EchoEar kitchen-ready notifier
+
+- `functions/index.js` exports the `kitchenDeviceFeed` HTTP endpoint for device polling.
+- `functions/kitchenDeviceFeed.js` contains the read-only Firestore `orders` -> ready item feed builder.
+- `scripts/verify-kitchen-device-feed.js` checks endpoint security markers and feed filtering.
+- Firmware lives outside this repo at `/home/longnick/echoear/xekho_kitchen_notifier`.
