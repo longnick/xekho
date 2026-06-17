@@ -53,6 +53,31 @@ Behavior:
 - `npx tsc --noEmit -p functions/tsconfig.json`
 - `npm test -- --runInBand`
 
+## Deploy
+
+Deployed:
+
+```text
+functions:xekho:kitchenDeviceFeed
+https://kitchendevicefeed-7kq6qyia4q-as.a.run.app
+```
+
+Cloud Run invoker was set public because unauthenticated device HTTP requests were blocked by Cloud Run IAM. App-level bearer token remains required.
+
+Smoke:
+
+```text
+unauthorized: 401 unauthorized
+authorized: 200 { ok: true, count: 0, source: 'firestore.orders', station: 'all' }
+```
+
+Device token is stored locally, not committed:
+
+```text
+/home/longnick/echoear/xekho_kitchen_notifier/DEVICE_TOKEN.local
+mode 600
+```
+
 ## Build blocker
 
 This machine does not currently have ESP-IDF `idf.py`, so the firmware project cannot be built/flashed here. Build on an ESP-IDF host with:
