@@ -452,3 +452,11 @@ Related files:
 - `functions/index.js#tryAnswerTelegramSmartReportQuestion()` formats quantity answers from `report.itemSummary` returned by `executeReportQuery()`.
 - `functions/index.js#isTelegramAssistantCapabilityQuestion()` and `#buildTelegramAssistantCapabilityResponse()` provide deterministic answers for assistant capability questions.
 - Gemini prompt remains the fallback for non-fixed questions and must call read tools before returning data-backed numbers.
+
+## 2026-06-17 - Telegram owner assistant proactive/menu/chart expansion
+
+- `functions/index.js#tryAnswerTelegramProactiveOwnerInsight()` handles owner-analysis questions, compares current month-to-date vs comparable previous-month period, and attaches chart buttons.
+- `functions/index.js#tryAnswerTelegramMenuDataQuestion()` reads `Product_Catalog` and `Inventory_Items` for menu price/image answers and sends stored dish images when present.
+- `functions/index.js#createTelegramChartRequest()` stores chart payloads in `telegram_chart_requests`; `#handleTelegramChartCallback()` renders and sends charts when `chart_<id>` callback is pressed.
+- `functions/telegram/send.js#sendTelegramPhotoBuffer()` uploads generated PNG buffers to Telegram via multipart `sendPhoto`.
+- `scripts/verify-telegram-chart-menu-features.js` guards the proactive/menu/chart feature wiring.
