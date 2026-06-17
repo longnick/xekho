@@ -473,3 +473,9 @@ Related files:
 - `functions/index.js#tryAnswerTelegramSmartReportQuestion()` uses Firestore/POS-first reports for direct owner questions such as `Doanh thu tháng này?`.
 - `functions/firestoreMegaTools.js#executeReportQuery()` requires explicit `allowEmptyFirestoreBigQueryFallback` before BigQuery can replace an empty Firestore report.
 - `scripts/verify-telegram-bigquery-reporting.js` prevents future `preferBigQuery: true` regressions in direct Telegram report paths.
+
+## 2026-06-17 - Telegram chart callback prefix regression
+
+- `functions/index.js#parseTelegramChartCallbackData()` normalizes chart callback payloads from current and legacy inline buttons.
+- `functions/index.js#telegramWebhook` routes parsed chart callbacks to `handleTelegramChartCallback()` before generic unknown callback handling.
+- `scripts/verify-telegram-chart-menu-features.js` asserts chart callback parser coverage.

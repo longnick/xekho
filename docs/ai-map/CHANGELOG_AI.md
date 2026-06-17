@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-17 - Telegram chart callback prefix regression
+
+Fixed chart button callbacks falling into unknown-callback when the payload uses legacy/variant prefixes. The webhook now recognizes `chart`, `show_chart`, `tg_chart`, `ve_bieu_do`, and `draw_chart` payloads and routes them to the chart renderer.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-chart-callback-prefix-regression.md`
+
 ## 2026-06-17 - Telegram month revenue zero regression
 
 Fixed bot regression where `Doanh thu tháng này?` returned `0đ` after BigQuery was made the preferred report source. Direct Telegram report answers now use Firestore/POS first; BigQuery remains read-only tool/fallback and cannot override with zero summaries.
