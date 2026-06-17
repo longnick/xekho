@@ -720,6 +720,12 @@ function buildChartButtons(chartId) {
   return chartId ? [[{ text: '📊 Có, vẽ biểu đồ', callback_data: `chart_${chartId}` }]] : [];
 }
 
+function parseTelegramChartCallbackData(callbackData = '') {
+  const data = String(callbackData || '').trim();
+  const match = data.match(/^(?:chart|show_chart|tg_chart|ve_bieu_do|draw_chart)[:_](.+)$/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
 function appendChartPrompt(text, chartId) {
   if (!chartId) return text;
   return `${text}\n\nBạn có muốn xem biểu đồ không?`;
@@ -3911,12 +3917,12 @@ exports.telegramWebhook = onRequest({
         const customerPaymentBankMatch = callbackData.match(/^cw_payment_bank_(.+)$/);
         const customerPaymentCancelMatch = callbackData.match(/^cw_payment_cancel_(.+)$/);
         const customerPaymentAckMatch = callbackData.match(/^cw_payment_ack_(.+)$/);
-        const chartMatch = callbackData.match(/^chart_(.+)$/);
+        const chartIdFromCallback = parseTelegramChartCallbackData(callbackData);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
 
-        if (chartMatch) {
-          const chartId = String(chartMatch[1] || '').trim();
+        if (chartIdFromCallback) {
+          const chartId = chartIdFromCallback;
           const result = await handleTelegramChartCallback({
             chartId,
             callbackChatId,
