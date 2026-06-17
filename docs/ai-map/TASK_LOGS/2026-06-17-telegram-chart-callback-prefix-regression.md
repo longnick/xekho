@@ -32,3 +32,15 @@ Passed:
 - `git diff --check`
 - `npx tsc --noEmit -p functions/tsconfig.json`
 - `npm test -- --runInBand`
+
+## Deploy
+
+Deployed `functions:xekho:telegramWebhook` successfully.
+
+Live smoke after deploy:
+
+```json
+{"ok":false,"callback":"chart","result":{"ok":false,"error":"chart_not_found"}}
+```
+
+This smoke used a fake `show_chart_fakeid` payload. The important regression check is that the webhook no longer returns `unknown-callback`; it now recognizes the chart action and routes it to the chart handler. Real chart IDs will continue into rendering.
