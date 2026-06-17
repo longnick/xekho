@@ -190,6 +190,39 @@ async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken,
 }
 
 /**
+ * @param {{chatId: string, photoBuffer: Buffer, caption?: string, botToken: string, parseMode?: string, buttons?: any[], filename?: string, contentType?: string}} params
+ * @returns {Promise<any>}
+ */
+async function sendTelegramPhotoBuffer({ chatId, photoBuffer, caption = '', botToken, parseMode = 'HTML', buttons = [], filename = 'chart.png', contentType = 'image/png' }) {
+  const finalBotToken = String(botToken || '').trim();
+  const finalChatId = String(chatId || '').trim();
+  if (!finalBotToken || !finalChatId || !Buffer.isBuffer(photoBuffer) || !photoBuffer.length) {
+    throw new Error('Missing Telegram bot token, chat id or photo buffer');
+  }
+  const form = new FormData();
+  form.append('chat_id', finalChatId);
+  form.append('photo', new Blob([new Uint8Array(photoBuffer)], { type: contentType }), filename);
+  form.append('caption', normalizeTelegramTextPreserveLines(String(caption || '')).slice(0, 1000));
+  form.append('parse_mode', parseMode);
+  if (Array.isArray(buttons) && buttons.length) {
+    form.append('reply_markup', JSON.stringify({
+      inline_keyboard: buttons.map(row => (Array.isArray(row)
+        ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
+        : [])),
+    }));
+  }
+  const response = await axios.post(
+    `https://api.telegram.org/bot${finalBotToken}/sendPhoto`,
+    form,
+    { timeout: 30000 }
+  );
+  if (response?.data?.ok !== true) {
+    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
+  }
+  return response.data;
+}
+
+/**
  * @param {{callbackQueryId: string, text: string, botToken: string}} params
  * @returns {Promise<any>}
  */
@@ -296,6 +329,7 @@ module.exports = {
   sendTelegramActionConfirmation,
   sendTelegramInlineMessage,
   sendTelegramPhotoMessage,
+  sendTelegramPhotoBuffer,
   answerTelegramCallback,
   editTelegramMessage,
   editTelegramInlineMessage,

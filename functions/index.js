@@ -433,8 +433,10 @@ function buildTelegramAssistantCapabilityResponse() {
   return [
     'Em là trợ lý AI của quán Xe Khô Chữa Lành, không chỉ trả lời command cố định.',
     'Em có thể hiểu câu hỏi tự nhiên và dùng dữ liệu thật khi cần:',
-    '• Đọc Firebase/POS: doanh thu, số đơn, lãi gộp, tiền mặt/chuyển khoản, món bán, tồn kho, lịch sử nhập hàng.',
-    '• Trả lời các câu như: “hôm qua bán bao nhiêu bia?”, “doanh thu từ 18h hôm qua đến bây giờ?”, “món nào bán chạy tuần này?”, “tồn kho bia còn bao nhiêu?”.',
+    '• Đọc Firebase/POS: doanh thu, số đơn, lãi gộp, tiền mặt/chuyển khoản, món bán, tồn kho, lịch sử nhập hàng, chi phí.',
+    '• Trả lời các câu như: “hôm qua bán bao nhiêu bia?”, “doanh thu từ 18h hôm qua đến bây giờ?”, “món mực 1 nắng nướng muối ớt giá bao nhiêu?”, “tồn kho bia còn bao nhiêu?”.',
+    '• Chủ động cảnh báo số liệu chưa tốt, so sánh cùng kỳ tháng trước và gợi ý cải thiện.',
+    '• Với báo cáo doanh thu/lợi nhuận/nhập hàng/chi phí, em có thể hiện nút xem biểu đồ và vẽ biểu đồ khi anh bấm.',
     '• Tạo đề xuất thao tác như nhập hàng/sửa menu/gọi món, nhưng chỉ ghi dữ liệu sau khi anh xác nhận.',
     'BigQuery: em có thể được nối thêm nguồn BigQuery read-only khi repo cấu hình dataset/table và quyền truy cập; hiện đường Telegram production đang ưu tiên đọc Firebase/POS thật.',
   ].join('\n');
@@ -558,6 +560,357 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
       `Số lượng đã bán: ${formatQtyVi(itemSummary.totalQty)}.`,
     ].join(' '),
   };
+}
+
+
+function isTelegramProactiveOwnerInsightQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(canh bao|chu dong|goi y|tu van|so sanh|kinh doanh chua tot|tinh hinh kinh doanh|co gi bat thuong|phan tich quan)\b/.test(n);
+}
+
+function isTelegramMenuDataQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(gia bao nhieu|bao nhieu tien|gia may|gia mon|hinh anh|anh mon|mon .* gia)\b/.test(n)
+    && !/\b(doanh thu|loi nhuan|lai|ban duoc|nhap hang|chi phi)\b/.test(n);
+}
+
+function extractTelegramMenuQuery(userText = '') {
+  let n = normalizeTelegramSmartReportText(userText);
+  n = n.replace(/\?/g, ' ')
+    .replace(/\b(mon|hinh anh|anh mon|cho xem|xem|lay duoc|gia bao nhieu|bao nhieu tien|gia may|gia mon|co gia|la bao nhieu|bao nhieu|gia)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return n;
+}
+
+function tokenScore(query = '', name = '') {
+  const q = normalizeVi(query).split(/[^a-z0-9]+/).filter(Boolean);
+  const n = normalizeVi(name);
+  if (!q.length || !n) return 0;
+  let score = 0;
+  q.forEach(token => { if (n.includes(token)) score += token.length >= 3 ? 2 : 1; });
+  if (n.includes(normalizeVi(query))) score += 8;
+  return score / Math.max(1, q.length);
+}
+
+function normalizeMenuItemFromDoc(doc, sourceCollection) {
+  const data = doc.data ? (doc.data() || {}) : (doc || {});
+  const name = String(data.display_name || data.material_name || data.name || data.productName || data.item_name || data.inv_id || doc.id || '').trim();
+  const price = Number(data.sell_price ?? data.price ?? data.gia ?? data.unitPrice ?? 0) || 0;
+  const imageUrl = String(
+    data.image_url || data.imageUrl || data.realImageUrl || data.aiImageUrl || data.photoUrl || data.photo_url || data.thumbnailUrl || data.coverImageUrl || ''
+  ).trim();
+  return {
+    id: String(data.item_id || data.inv_id || data.id || doc.id || '').trim(),
+    name,
+    price,
+    unit: String(data.base_unit || data.unit || data.don_vi || '').trim(),
+    category: String(data.category || data.group || '').trim(),
+    imageUrl,
+    hidden: data.hidden === true,
+    sourceCollection,
+    raw: data,
+  };
+}
+
+async function findTelegramMenuItem(query = '') {
+  const q = String(query || '').trim();
+  if (!q) return null;
+  const [productSnap, inventorySnap] = await Promise.all([
+    db.collection('Product_Catalog').get().catch(() => null),
+    db.collection('Inventory_Items').get().catch(() => null),
+  ]);
+  const items = [];
+  if (productSnap?.docs) productSnap.docs.forEach(doc => items.push(normalizeMenuItemFromDoc(doc, 'Product_Catalog')));
+  if (inventorySnap?.docs) inventorySnap.docs.forEach(doc => items.push(normalizeMenuItemFromDoc(doc, 'Inventory_Items')));
+  const ranked = items
+    .filter(item => !item.hidden && item.name && item.price > 0)
+    .map(item => ({ item, score: tokenScore(q, item.name) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || b.item.name.length - a.item.name.length);
+  return ranked[0]?.item || null;
+}
+
+async function tryAnswerTelegramMenuDataQuestion(userText = '') {
+  if (!isTelegramMenuDataQuestion(userText)) return null;
+  const query = extractTelegramMenuQuery(userText);
+  const item = await findTelegramMenuItem(query);
+  if (!item) {
+    return { text: `Em chưa tìm thấy món “${query || userText}” trong menu/kho. Anh gửi tên món rõ hơn giúp em nhé.` };
+  }
+  const lines = [
+    `${item.name} hiện có giá ${formatCurrencyVi(item.price)}${item.unit ? `/${item.unit}` : ''}.`,
+  ];
+  if (item.category) lines.push(`Nhóm: ${item.category}.`);
+  if (item.imageUrl) lines.push('Em gửi kèm hình món bên dưới.');
+  else lines.push('Món này hiện chưa có ảnh trong dữ liệu menu.');
+  return {
+    text: lines.join('\n'),
+    photoUrl: item.imageUrl || '',
+    menuItem: item,
+  };
+}
+
+function getCurrentAndPreviousMonthComparableRanges(now = new Date()) {
+  const parts = getVietnamDateParts(now);
+  const currentFrom = new Date(Date.UTC(parts.year, parts.month - 1, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const currentTo = now;
+  const prevMonth = parts.month === 1 ? 12 : parts.month - 1;
+  const prevYear = parts.month === 1 ? parts.year - 1 : parts.year;
+  const day = Math.min(parts.day, new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate());
+  const previousFrom = new Date(Date.UTC(prevYear, prevMonth - 1, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const previousTo = new Date(Date.UTC(prevYear, prevMonth - 1, day, parts.hour, parts.minute, parts.second || 0) - 7 * 60 * 60 * 1000);
+  return { currentFrom, currentTo, previousFrom, previousTo };
+}
+
+function percentChange(current, previous) {
+  const c = Number(current || 0);
+  const p = Number(previous || 0);
+  if (!p && !c) return 0;
+  if (!p) return 100;
+  return ((c - p) / p) * 100;
+}
+
+function formatSignedPercent(value) {
+  const n = Number(value || 0);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)}%`;
+}
+
+async function createTelegramChartRequest({ chatId, title, kind = 'report', rows = [], summary = {}, source = {} }) {
+  const safeRows = (Array.isArray(rows) ? rows : [])
+    .map(row => ({ label: String(row.label || '').slice(0, 40), value: Number(row.value || 0) || 0 }))
+    .filter(row => row.label && Number.isFinite(row.value))
+    .slice(0, 8);
+  if (!safeRows.length) return '';
+  const ref = await db.collection('telegram_chart_requests').add({
+    chatId: String(chatId || ''),
+    title: String(title || 'Biểu đồ báo cáo').slice(0, 120),
+    kind: String(kind || 'report'),
+    rows: safeRows,
+    summary: sanitizeSimpleObject(summary),
+    source: sanitizeSimpleObject(source),
+    status: 'ready',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 6 * 60 * 60 * 1000)),
+  });
+  return ref.id;
+}
+
+function sanitizeSimpleObject(obj = {}) {
+  const out = {};
+  Object.entries(obj || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') out[key] = value;
+  });
+  return out;
+}
+
+function buildChartButtons(chartId) {
+  return chartId ? [[{ text: '📊 Có, vẽ biểu đồ', callback_data: `chart_${chartId}` }]] : [];
+}
+
+function appendChartPrompt(text, chartId) {
+  if (!chartId) return text;
+  return `${text}\n\nBạn có muốn xem biểu đồ không?`;
+}
+
+function chartRowsFromReport(report = {}, intent = {}) {
+  const summary = report.summary || {};
+  const item = report.itemSummary || null;
+  if (item) {
+    return [
+      { label: 'Doanh thu', value: item.revenue || 0 },
+      { label: 'Giá vốn', value: item.cost || 0 },
+      { label: 'Lãi gộp', value: item.grossProfit || 0 },
+      { label: 'Số lượng', value: item.totalQty || 0 },
+    ];
+  }
+  return [
+    { label: 'Doanh thu', value: summary.revenue || 0 },
+    { label: 'Giá vốn', value: summary.cost || 0 },
+    { label: 'Lãi gộp', value: summary.grossProfit || 0 },
+    { label: 'Số đơn', value: summary.invoiceCount || 0 },
+  ];
+}
+
+async function prepareTelegramReportChart({ chatId, smartReportReply, title }) {
+  const report = smartReportReply?.report || {};
+  if (!report?.ok) return '';
+  return createTelegramChartRequest({
+    chatId,
+    title: title || `Báo cáo ${smartReportReply?.intent?.rangeLabel || ''}`.trim(),
+    kind: 'sales-report',
+    rows: chartRowsFromReport(report, smartReportReply?.intent || {}),
+    summary: report.summary || {},
+    source: { tool: report.tool || 'truy_van_bao_cao', rangeLabel: smartReportReply?.intent?.rangeLabel || '' },
+  });
+}
+
+async function tryAnswerTelegramProactiveOwnerInsight(userText = '', chatId = '') {
+  if (!isTelegramProactiveOwnerInsightQuestion(userText)) return null;
+  const { executeReportQuery } = getAiDeps();
+  const ranges = getCurrentAndPreviousMonthComparableRanges(new Date());
+  const [currentReport, previousReport] = await Promise.all([
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db }),
+  ]);
+  const cur = currentReport.summary || {};
+  const prev = previousReport.summary || {};
+  const revenueDelta = percentChange(cur.revenue, prev.revenue);
+  const profitDelta = percentChange(cur.grossProfit, prev.grossProfit);
+  const orderDelta = percentChange(cur.invoiceCount, prev.invoiceCount);
+  const margin = Number(cur.revenue || 0) > 0 ? (Number(cur.grossProfit || 0) / Number(cur.revenue || 0)) * 100 : 0;
+  const warnings = [];
+  if (revenueDelta < -10) warnings.push(`Doanh thu đang giảm ${formatSignedPercent(revenueDelta)} so với cùng kỳ tháng trước.`);
+  if (profitDelta < -10) warnings.push(`Lãi gộp giảm ${formatSignedPercent(profitDelta)} — cần kiểm tra giá vốn/khuyến mãi.`);
+  if (orderDelta < -10) warnings.push(`Số đơn giảm ${formatSignedPercent(orderDelta)} — cần kéo khách quay lại hoặc đẩy combo.`);
+  if (margin > 0 && margin < 35) warnings.push(`Biên lãi gộp chỉ khoảng ${margin.toFixed(1)}%, hơi thấp.`);
+  if (!warnings.length) warnings.push('Chưa thấy cảnh báo đỏ lớn; vẫn nên tối ưu món bán chạy và kiểm soát giá vốn.');
+  const suggestions = [
+    'Đẩy combo bia + món mồi có biên lãi tốt vào khung giờ thấp điểm.',
+    'Kiểm tra top món bán chạy: tăng trưng bày/ảnh/menu cho món có lãi cao, không chỉ món doanh thu cao.',
+    'Nếu số đơn giảm: chạy ưu đãi quay lại cho khách cũ hoặc nhắc bàn gọi thêm món mồi sau 20–30 phút.',
+  ];
+  const chartId = await createTelegramChartRequest({
+    chatId,
+    title: 'So sánh kinh doanh tháng này vs cùng kỳ tháng trước',
+    kind: 'owner-insight',
+    rows: [
+      { label: 'DT tháng này', value: cur.revenue || 0 },
+      { label: 'DT tháng trước', value: prev.revenue || 0 },
+      { label: 'Lãi tháng này', value: cur.grossProfit || 0 },
+      { label: 'Lãi tháng trước', value: prev.grossProfit || 0 },
+      { label: 'Đơn tháng này', value: cur.invoiceCount || 0 },
+      { label: 'Đơn tháng trước', value: prev.invoiceCount || 0 },
+    ],
+    summary: { revenue: cur.revenue || 0, previousRevenue: prev.revenue || 0, grossProfit: cur.grossProfit || 0, previousGrossProfit: prev.grossProfit || 0 },
+    source: { type: 'month-comparison' },
+  });
+  const text = [
+    '📌 Em xem nhanh tình hình kinh doanh cho chủ quán:',
+    `• Doanh thu tháng này: ${formatCurrencyVi(cur.revenue || 0)} (${formatSignedPercent(revenueDelta)} so với cùng kỳ tháng trước).`,
+    `• Lãi gộp: ${formatCurrencyVi(cur.grossProfit || 0)} (${formatSignedPercent(profitDelta)}).`,
+    `• Số đơn: ${formatQtyVi(cur.invoiceCount || 0)} (${formatSignedPercent(orderDelta)}).`,
+    '',
+    '⚠️ Cảnh báo/góc cần chú ý:',
+    ...warnings.map(w => `• ${w}`),
+    '',
+    '💡 Gợi ý cải thiện:',
+    ...suggestions.map(s => `• ${s}`),
+  ].join('\n');
+  return { text: appendChartPrompt(text, chartId), inlineButtons: buildChartButtons(chartId), toolResults: [currentReport, previousReport] };
+}
+
+function isTelegramFinanceReportQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(nhap hang|da nhap|tong tien nhap|chi phi|expense|cost)\b/.test(n);
+}
+
+async function querySimpleCollectionTotal(collectionNames = [], range = {}) {
+  let rows = [];
+  for (const name of collectionNames) {
+    const snap = await db.collection(name).get().catch(() => null);
+    if (!snap?.docs) continue;
+    rows = rows.concat(snap.docs.map(doc => ({ id: doc.id, collection: name, ...(doc.data() || {}) })));
+  }
+  const from = range.from;
+  const to = range.toExclusive || range.to || new Date();
+  const filtered = rows.filter(row => {
+    const raw = row.date || row.createdAt || row.paidAt || row.timestamp || row.ngay;
+    const d = raw?.toDate ? raw.toDate() : (raw ? new Date(raw) : null);
+    return d && !Number.isNaN(d.getTime()) && (!from || d >= from) && (!to || d < to);
+  });
+  return {
+    rows: filtered,
+    total: filtered.reduce((sum, row) => sum + (Number(row.total || row.amount || row.price || row.cost || row.tong_tien || 0) || 0), 0),
+    count: filtered.length,
+  };
+}
+
+async function tryAnswerTelegramFinanceReportQuestion(userText = '', chatId = '') {
+  if (!isTelegramFinanceReportQuestion(userText)) return null;
+  const n = normalizeVi(userText);
+  const intent = parseTelegramSmartReportIntent(userText) || (() => {
+    const scope = telegramReports.inferTelegramRelativeScope(normalizeTelegramSmartReportText(userText)) || 'hom_nay';
+    const r = telegramReports.buildTelegramRelativeReportRange(scope, new Date());
+    return { rangeLabel: r?.label || 'hôm nay', from: r?.from || new Date(Date.now() - 24*60*60*1000), toExclusive: r?.toExclusive || new Date() };
+  })();
+  const isPurchase = /\b(nhap hang|da nhap|tong tien nhap)\b/.test(n);
+  const result = isPurchase
+    ? await querySimpleCollectionTotal(['purchases'], { from: intent.from, toExclusive: intent.toExclusive })
+    : await querySimpleCollectionTotal(['expenses', 'Expense_Records', 'costs'], { from: intent.from, toExclusive: intent.toExclusive });
+  const label = isPurchase ? 'nhập hàng' : 'chi phí';
+  const chartId = await createTelegramChartRequest({
+    chatId,
+    title: `Báo cáo ${label} ${intent.rangeLabel}`,
+    kind: isPurchase ? 'purchases' : 'expenses',
+    rows: [
+      { label: `Tổng ${label}`, value: result.total || 0 },
+      { label: 'Số dòng', value: result.count || 0 },
+    ],
+    summary: { total: result.total || 0, count: result.count || 0 },
+    source: { type: label, rangeLabel: intent.rangeLabel },
+  });
+  const text = [
+    `Báo cáo ${label} ${intent.rangeLabel}:`,
+    `• Tổng tiền: ${formatCurrencyVi(result.total || 0)}.`,
+    `• Số dòng ghi nhận: ${formatQtyVi(result.count || 0)}.`,
+  ].join('\n');
+  return { text: appendChartPrompt(text, chartId), inlineButtons: buildChartButtons(chartId), toolResults: [{ ok: true, tool: isPurchase ? 'purchases' : 'expenses', ...result }] };
+}
+
+function escapeSvgText(text = '') {
+  return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[ch]));
+}
+
+async function renderTelegramChartPng(chart = {}) {
+  const rows = Array.isArray(chart.rows) ? chart.rows : [];
+  const width = 1100;
+  const height = 720;
+  const max = Math.max(1, ...rows.map(row => Math.abs(Number(row.value || 0))));
+  const barMax = 680;
+  const rowHeight = 62;
+  const top = 130;
+  const bars = rows.map((row, idx) => {
+    const y = top + idx * rowHeight;
+    const value = Number(row.value || 0);
+    const w = Math.max(4, Math.round((Math.abs(value) / max) * barMax));
+    const fill = value >= 0 ? '#E10600' : '#2A1608';
+    return `<g><text x="60" y="${y + 25}" font-size="24" fill="#2A1608">${escapeSvgText(row.label)}</text><rect x="330" y="${y}" width="${w}" height="34" rx="10" fill="${fill}"/><text x="${Math.min(1030, 345 + w)}" y="${y + 25}" font-size="22" fill="#2A1608">${escapeSvgText(formatCurrencyVi(value))}</text></g>`;
+  }).join('\n');
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#F9EAD1"/>
+<text x="60" y="70" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#2A1608">${escapeSvgText(chart.title || 'Biểu đồ báo cáo')}</text>
+<text x="60" y="105" font-family="Arial, sans-serif" font-size="20" fill="#2A1608">Xe Khô Chữa Lành • dữ liệu từ Firebase/POS</text>
+<g font-family="Arial, sans-serif">${bars}</g>
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function handleTelegramChartCallback({ chartId, callbackChatId, callbackQueryId, botToken }) {
+  const snap = await db.collection('telegram_chart_requests').doc(chartId).get();
+  if (!snap.exists) {
+    await answerTelegramCallback({ callbackQueryId, text: 'Biểu đồ đã hết hạn hoặc không còn dữ liệu.', botToken });
+    return { ok: false, error: 'chart_not_found' };
+  }
+  const chart = snap.data() || {};
+  if (String(chart.chatId || '') && String(chart.chatId) !== String(callbackChatId || '')) {
+    await answerTelegramCallback({ callbackQueryId, text: 'Biểu đồ này không thuộc chat hiện tại.', botToken });
+    return { ok: false, error: 'chat_mismatch' };
+  }
+  const png = await renderTelegramChartPng(chart);
+  await sendTelegramPhotoBuffer({
+    chatId: callbackChatId,
+    botToken,
+    photoBuffer: png,
+    caption: `📊 ${chart.title || 'Biểu đồ báo cáo'}`,
+    filename: `xekho-chart-${chartId}.png`,
+  });
+  await answerTelegramCallback({ callbackQueryId, text: 'Đã vẽ biểu đồ.', botToken });
+  await db.collection('telegram_chart_requests').doc(chartId).set({ viewedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  return { ok: true, chartId };
 }
 
 const DEFAULT_TELEGRAM_REPORT_SETTINGS = telegramReports.DEFAULT_TELEGRAM_REPORT_SETTINGS;
@@ -706,6 +1059,10 @@ async function sendTelegramInlineMessage({ chatId, text, buttons = [], botToken,
 
 async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken, parseMode = 'HTML', buttons = [] }) {
   return telegramSend.sendTelegramPhotoMessage({ chatId, photo, caption, botToken, parseMode, buttons });
+}
+
+async function sendTelegramPhotoBuffer({ chatId, photoBuffer, caption = '', botToken, parseMode = 'HTML', buttons = [], filename = 'chart.png', contentType = 'image/png' }) {
+  return telegramSend.sendTelegramPhotoBuffer({ chatId, photoBuffer, caption, botToken, parseMode, buttons, filename, contentType });
 }
 
 function escapeXml(text) { return textUtils.escapeXml(text); }
@@ -3544,8 +3901,20 @@ exports.telegramWebhook = onRequest({
         const customerPaymentBankMatch = callbackData.match(/^cw_payment_bank_(.+)$/);
         const customerPaymentCancelMatch = callbackData.match(/^cw_payment_cancel_(.+)$/);
         const customerPaymentAckMatch = callbackData.match(/^cw_payment_ack_(.+)$/);
+        const chartMatch = callbackData.match(/^chart_(.+)$/);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
+
+        if (chartMatch) {
+          const chartId = String(chartMatch[1] || '').trim();
+          const result = await handleTelegramChartCallback({
+            chartId,
+            callbackChatId,
+            callbackQueryId: callbackQuery.id,
+            botToken,
+          });
+          return json(res, 200, { ok: !!result?.ok, callback: 'chart', result });
+        }
 
         if (onlineOrderApproveMatch || onlineOrderRejectMatch) {
           const targetId = String(
@@ -3987,10 +4356,36 @@ exports.telegramWebhook = onRequest({
             toolResults: [],
           };
         } else {
-          const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
-          if (smartReportReply?.text) {
+          const menuDataReply = await tryAnswerTelegramMenuDataQuestion(userText);
+          const proactiveReply = menuDataReply ? null : await tryAnswerTelegramProactiveOwnerInsight(userText, chatId);
+          const financeReportReply = (menuDataReply || proactiveReply) ? null : await tryAnswerTelegramFinanceReportQuestion(userText, chatId);
+          const smartReportReply = (menuDataReply || proactiveReply || financeReportReply) ? null : await tryAnswerTelegramSmartReportQuestion(userText);
+          if (menuDataReply?.text) {
             geminiResult = {
-              text: smartReportReply.text,
+              text: menuDataReply.text,
+              photoUrl: menuDataReply.photoUrl || '',
+              pendingActions: [],
+              toolResults: menuDataReply.menuItem ? [{ ok: true, tool: 'tra_cuu_menu', item: menuDataReply.menuItem }] : [],
+            };
+          } else if (proactiveReply?.text) {
+            geminiResult = {
+              text: proactiveReply.text,
+              inlineButtons: proactiveReply.inlineButtons || [],
+              pendingActions: [],
+              toolResults: proactiveReply.toolResults || [],
+            };
+          } else if (financeReportReply?.text) {
+            geminiResult = {
+              text: financeReportReply.text,
+              inlineButtons: financeReportReply.inlineButtons || [],
+              pendingActions: [],
+              toolResults: financeReportReply.toolResults || [],
+            };
+          } else if (smartReportReply?.text) {
+            const chartId = await prepareTelegramReportChart({ chatId, smartReportReply });
+            geminiResult = {
+              text: appendChartPrompt(smartReportReply.text, chartId),
+              inlineButtons: buildChartButtons(chartId),
               pendingActions: [],
               toolResults: smartReportReply.report ? [smartReportReply.report] : [],
             };
@@ -4025,11 +4420,31 @@ exports.telegramWebhook = onRequest({
           });
         }
       } else {
-        await sendTelegramTextMessage({
-          chatId,
-          botToken,
-          text: geminiResult?.text || 'Dạ em chưa có câu trả lời phù hợp.',
-        });
+        const responseText = geminiResult?.text || 'Dạ em chưa có câu trả lời phù hợp.';
+        const inlineButtons = Array.isArray(geminiResult?.inlineButtons) ? geminiResult.inlineButtons : [];
+        const photoUrl = String(geminiResult?.photoUrl || '').trim();
+        if (photoUrl) {
+          await sendTelegramPhotoMessage({
+            chatId,
+            botToken,
+            photo: photoUrl,
+            caption: responseText,
+            buttons: inlineButtons,
+          });
+        } else if (inlineButtons.length) {
+          await sendTelegramInlineMessage({
+            chatId,
+            botToken,
+            text: responseText,
+            buttons: inlineButtons,
+          });
+        } else {
+          await sendTelegramTextMessage({
+            chatId,
+            botToken,
+            text: responseText,
+          });
+        }
       }
 
       return json(res, 200, { ok: true });
@@ -5308,6 +5723,7 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
       'Nhiệm vụ của bạn là trả lời các câu hỏi về doanh thu, lợi nhuận, tồn kho, lịch sử nhập hàng và vận hành POS.',
       'Hãy hiểu câu hỏi tự nhiên, không chỉ các command cố định. Nếu cần dữ liệu thật, phải gọi tool đọc dữ liệu trước khi trả lời; không bịa số.',
       'Nếu người dùng hỏi một món cụ thể, ví dụ bia/bia Heineken/Tiger/nước suối, hãy trích ten_mon và trả lời theo chính món đó.',
+      'Nếu người dùng hỏi giá hoặc hình ảnh món, ví dụ "Món mực 1 nắng nướng muối ớt giá bao nhiêu?", hãy dùng dữ liệu menu/kho, không tự bịa giá; nếu có ảnh món trong dữ liệu thì trả lời kèm ảnh.',
       'Nếu người dùng hỏi "hôm qua bán bao nhiêu bia" hoặc "bán mấy lon Tiger tuần này", hãy gọi tool truy_van_bao_cao với loai_bao_cao=tong_quan hoặc doanh_thu, khoang_thoi_gian phù hợp và ten_mon là mặt hàng.',
       'Nếu người dùng nói mốc giờ như "từ 18h hôm qua đến bây giờ" hoặc "từ 17h ngày 10/5 đến bây giờ", hãy ưu tiên gọi tool truy_van_bao_cao với tu_thoi_diem và den_thoi_diem hoặc den_bay_gio.',
       'Nếu người dùng hỏi khả năng của bạn, trả lời rõ bạn là trợ lý AI cho Xe Khô Chữa Lành, có thể đọc Firebase/POS khi cần, BigQuery khi được cấu hình nguồn read-only, và có thể tạo đề xuất thao tác cần owner xác nhận.',
