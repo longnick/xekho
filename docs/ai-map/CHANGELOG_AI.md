@@ -1,6 +1,16 @@
 # AI Changelog
 
 
+## 2026-06-17 - Telegram owner assistant proactive/menu/chart expansion
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Expanded Telegram owner assistant with proactive business warnings/comparisons, menu price/image lookup from Firebase menu data, and chart inline-button flow for report answers. Chart callbacks render SVG to PNG with `sharp` and send the chart as a Telegram photo.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-owner-assistant-proactive-menu-charts.md`
+
+
 ## 2026-06-17 01:07 - Telegram open-ended Firebase assistant
 
 Repo: `/home/longnick/projects/xekho`

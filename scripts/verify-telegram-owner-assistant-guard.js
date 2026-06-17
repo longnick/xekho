@@ -30,7 +30,13 @@ assert(source.includes('Xe Khô Chữa Lành'), 'assistant prompt must use exact
 assert(source.includes('function isTelegramAssistantCapabilityQuestion'), 'assistant capability question detector is missing');
 assert(source.includes('function parseTelegramSmartReportIntent(userText'), 'index wrapper for parseTelegramSmartReportIntent is missing');
 assert(source.includes('không chỉ trả lời command cố định'), 'assistant capability response must explain open-ended behavior');
+assert(source.includes('function isTelegramProactiveOwnerInsightQuestion'), 'proactive owner insight detector is missing');
+assert(source.includes('function tryAnswerTelegramMenuDataQuestion'), 'menu price/image data answer path is missing');
+assert(source.includes('callbackData.match(/^chart_(.+)$/)'), 'chart callback handler is missing');
+assert(source.includes('Bạn có muốn xem biểu đồ không?'), 'report chart prompt is missing');
+assert(source.includes('function renderTelegramChartPng'), 'chart PNG renderer is missing');
 assert(source.includes('hôm qua bán bao nhiêu bia'), 'assistant prompt/capability response should cover natural item-sales questions');
+assert(source.includes('món mực 1 nắng nướng muối ớt giá bao nhiêu'), 'assistant must cover menu price natural questions');
 assert(!source.includes('Xe Kho Chua Lanh'), 'assistant prompt must not use old unaccented/wrong shop name');
 
 const tokenLine = "const botToken = getTelegramAssistantBotToken();";

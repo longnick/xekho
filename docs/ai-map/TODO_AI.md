@@ -56,6 +56,7 @@
 
 ## Done recently
 
+- 2026-06-17: Expanded Telegram owner assistant with proactive business insights, menu price/image answers, and inline chart callbacks for reports. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-owner-assistant-proactive-menu-charts.md`
 - 2026-06-17 01:07: Improved Telegram owner assistant for open-ended natural Firebase/POS questions (`Hôm qua bán bao nhiêu bia?`) and deterministic capability response (`Bạn có thể làm gì?`). Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0107-telegram-open-ended-firebase-assistant.md`
 - 2026-06-17 00:49: Fixed Telegram bot shop name to `Xe Khô Chữa Lành` and smart report parsing for `Doanh thu từ 18h hôm qua đến bây giờ?`; range-only queries no longer become item-scoped. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-0049-telegram-shop-name-smart-range.md`
 - 2026-06-17 00:32: Deployed `xekho:telegramWebhook` after owner guard and Gemini thought-signature fixes. Smoke tests passed: GET 405, OPTIONS 204, missing-chat safe skip, owner revenue path `ok: true`.
