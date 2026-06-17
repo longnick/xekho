@@ -15,6 +15,7 @@ Build an EchoEar ESP32-S3 firmware path for service-staff alerts when kitchen ma
 
 - `functions/index.js`
   - Exposes `exports.kitchenDeviceFeed` as a GET endpoint.
+  - Uses `HEAVY_FUNCTION_MEMORY` because the shared Functions index loads heavy dependencies at cold start.
   - Requires configured `KITCHEN_DEVICE_TOKEN`.
   - Accepts `Authorization: Bearer ***` or `?token=`.
   - Fails closed with `503 device_token_not_configured` if token is missing.
