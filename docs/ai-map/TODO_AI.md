@@ -56,6 +56,7 @@
 
 ## Done recently
 
+- 2026-06-17: Fixed Telegram chart button unknown-callback regression by accepting legacy/new chart callback prefixes. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-chart-callback-prefix-regression.md`
 - 2026-06-17: Fixed Telegram `Doanh thu tháng này?` zero regression by restoring Firestore/POS-first direct reports and constraining BigQuery fallback. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-month-revenue-zero-regression.md`
 - 2026-06-17: Enabled read-only BigQuery reporting for Telegram owner assistant and fixed month-revenue source fallback. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-bigquery-reporting-month-revenue.md`
 - 2026-06-17: Expanded Telegram owner assistant with proactive business insights, menu price/image answers, and inline chart callbacks for reports. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-owner-assistant-proactive-menu-charts.md`

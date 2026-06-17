@@ -18,6 +18,9 @@ assert(sendSource.includes('sendTelegramPhotoBuffer,'), 'Photo-buffer sender mus
 assert(indexSource.includes('function createTelegramChartRequest'), 'Chart request persistence helper is missing');
 assert(indexSource.includes("db.collection('telegram_chart_requests')"), 'Chart requests must be persisted in Firestore');
 assert(indexSource.includes('function handleTelegramChartCallback'), 'Chart callback handler is missing');
+assert(indexSource.includes('function parseTelegramChartCallbackData'), 'Chart callback parser is missing');
+assert(indexSource.includes('show_chart|tg_chart|ve_bieu_do|draw_chart'), 'Chart callback parser must accept old/new chart callback prefixes');
+assert(indexSource.includes('const chartIdFromCallback = parseTelegramChartCallbackData(callbackData)'), 'Webhook callback path must use chart callback parser');
 assert(indexSource.includes('sendTelegramPhotoBuffer({'), 'Chart callback must send rendered PNG as photo');
 assert(indexSource.includes('function tryAnswerTelegramProactiveOwnerInsight'), 'Proactive owner insight handler is missing');
 assert(indexSource.includes('So sánh kinh doanh tháng này vs cùng kỳ tháng trước'), 'Proactive comparison title is missing');
