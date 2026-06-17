@@ -33,3 +33,13 @@ Passed:
 - `git diff --check`
 - `npx tsc --noEmit -p functions/tsconfig.json`
 - `npm test -- --runInBand`
+
+## Deploy
+
+Deployed `functions:xekho:telegramWebhook` successfully.
+
+Live smoke:
+
+- `Doanh thu tháng này?` → HTTP 200 / `{ ok: true }`
+
+Deploy env file was removed after deploy.
