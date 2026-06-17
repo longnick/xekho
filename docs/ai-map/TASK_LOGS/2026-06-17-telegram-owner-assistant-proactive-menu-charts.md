@@ -52,4 +52,4 @@ Passed:
 
 ## Notes
 
-No database mutation beyond future Telegram runtime chart-request documents generated when owner asks for chartable reports. Deploy pending at time of this log.
+Deployed to `functions:xekho:telegramWebhook`. Live smoke tests returned HTTP 200 / `{ ok: true }` for proactive business warning, menu price/image question, and `Doanh thu hôm nay` chartable report. The `Doanh thu hôm nay` test creates a chart request document by design so the inline button can render the chart when pressed.
