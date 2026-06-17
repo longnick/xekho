@@ -323,17 +323,35 @@ function buildTelegramNewKitchenOrderMessageClean(order = {}, rows = []) {
   return telegramKitchen.buildTelegramNewKitchenOrderMessageClean(order, rows);
 }
 
+function getTelegramKitchenNewOrderBotToken() {
+  return String(
+    TELEGRAM_KITCHEN_READY_BOT_TOKEN.value()
+    || TELEGRAM_BOT_TOKEN.value()
+    || TELEGRAM_REPORT_BOT_TOKEN.value()
+    || ''
+  ).trim();
+}
+
+function getTelegramKitchenNewOrderChatId() {
+  return String(
+    TELEGRAM_KITCHEN_READY_CHAT_ID.value()
+    || KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID.value()
+    || TELEGRAM_GROUP_CHAT_ID.value()
+    || ''
+  ).trim();
+}
+
 async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
-  const botToken = getTelegramReportBotToken();
-  const chatId = String(KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID.value() || TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
+  const botToken = getTelegramKitchenNewOrderBotToken();
+  const chatId = getTelegramKitchenNewOrderChatId();
   if (!botToken || !chatId || !rows.length) {
     logger.warn('Skipping kitchen new-order Telegram: missing token/chat/items', {
       orderId,
       hasBotToken: !!botToken,
-      chatId,
+      hasChatId: !!chatId,
       itemCount: rows.length,
     });
-    return;
+    return { ok: false, skipped: 'missing-config-or-items' };
   }
 
   const unsentRows = [];
@@ -359,7 +377,7 @@ async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
 
   if (!unsentRows.length) {
     logger.info('Skipping kitchen new-order Telegram: all items already sent', { orderId });
-    return;
+    return { ok: true, skipped: 'already-sent' };
   }
 
   const enrichedRows = await Promise.all(unsentRows.map(async row => {
@@ -373,6 +391,58 @@ async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
     chatId,
     itemCount: unsentRows.length,
   });
+  return { ok: true, sent: true, chatId, itemCount: unsentRows.length };
+}
+
+function buildRowsForKitchenTelegramFromExecutedOrder(result = {}) {
+  const items = Array.isArray(result.items) ? result.items : [];
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      key: getKitchenOrderItemKey(item, index),
+    }))
+    .filter(row => isKitchenOrderItemForTelegram(row.item));
+}
+
+async function sendKitchenTelegramForExecutedOrder(result = {}) {
+  if (!result?.ok || String(result.actionType || '') !== 'goi_mon_ban') return { ok: false, skipped: 'not-order-action' };
+  const rows = buildRowsForKitchenTelegramFromExecutedOrder(result);
+  if (!rows.length) return { ok: false, skipped: 'no-kitchen-items' };
+  return sendKitchenNewOrderTelegram(result.orderId, {
+    id: result.orderId,
+    tableId: result.tableId,
+    tableName: result.tableName,
+    items: result.items || [],
+    status: 'open',
+  }, rows);
+}
+
+function buildTelegramExecutedActionMessage(actionDocId, result = {}, kitchenResult = null) {
+  if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+    const items = Array.isArray(result.items) ? result.items : [];
+    const itemLines = items.length
+      ? items.map(item => `\u2022 ${normalizeTelegramText(item.name || 'M\u00f3n')} x${formatQtyVi(item.qty || 1)}`).join('\n')
+      : '\u2022 Kh\u00f4ng c\u00f3 chi ti\u1ebft';
+    const kitchenLine = kitchenResult?.ok
+      ? (kitchenResult.sent ? '\u0110\u00e3 g\u1eedi Telegram cho b\u1ebfp.' : 'Telegram b\u1ebfp: \u0111\u00e3 g\u1eedi tr\u01b0\u1edbc \u0111\u00f3 / kh\u00f4ng c\u1ea7n g\u1eedi l\u1ea1i.')
+      : `Telegram b\u1ebfp: ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c${kitchenResult?.skipped ? ` (${kitchenResult.skipped})` : ''}.`;
+    return [
+      '\u2705 \u0110\u00e3 l\u00ean \u0111\u01a1n th\u00e0nh c\u00f4ng.',
+      `B\u00e0n/\u0110\u01a1n: ${normalizeTelegramText(result.tableName || result.tableId || 'Kh\u00f4ng r\u00f5')}`,
+      `Order: ${String(result.orderId || '')}`,
+      `S\u1ed1 d\u00f2ng m\u00f3n m\u1edbi: ${String(result.itemCount || items.length || 0)}`,
+      `Tr\u1ea1ng th\u00e1i: ${result.appendedToExisting ? '\u0110\u00e3 c\u1ed9ng v\u00e0o \u0111\u01a1n \u0111ang m\u1edf' : '\u0110\u00e3 t\u1ea1o \u0111\u01a1n m\u1edbi'}`,
+      '',
+      'M\u00f3n:',
+      itemLines,
+      '',
+      kitchenLine,
+    ].join('\n');
+  }
+  return result?.ok
+    ? `\u2705 \u0110\u00e3 th\u1ef1c thi.\nM\u00e3: ${actionDocId}`
+    : `\u26a0\ufe0f Kh\u00f4ng th\u1ef1c thi \u0111\u01b0\u1ee3c.\n${result?.error || 'H\u00e0nh \u0111\u1ed9ng kh\u00f4ng c\u00f2n h\u1ee3p l\u1ec7.'}`;
 }
 
 function escapeTelegramHtml(text) { return textUtils.escapeTelegramHtml(text); }
@@ -3964,8 +4034,8 @@ exports.telegramWebhook = onRequest({
             });
           } else {
             editText = onlineOrderApproveMatch
-              ? `⚠️ Không xác nhận được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`
-              : `⚠️ Không hủy được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `⚠️ Không xác nhận được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhân.'}`
+              : `⚠️ Không hủy được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhân.'}`;
           }
 
           await editTelegramMessage({
@@ -4070,19 +4140,19 @@ exports.telegramWebhook = onRequest({
               ? (result.alreadyFinalized
                 ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
                 : `✅ Ä Ã£ nhận thanh toÃ¡n tiá» n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentBankMatch) {
             result = await closePosOrderFromTelegram(targetId, 'bank');
             notifyText = result.ok
               ? (result.alreadyFinalized
                 ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
                 : `✅ Ä Ã£ nhận thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else {
             result = await cancelCustomerPaymentTelegram(targetId);
             notifyText = result.ok
-              ? `ðŸ›‘ Đã hủy yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
-              : `⚠️ Không hủy được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `ðŸ›‘ Đã hủy yÃªu cáº§u tính tiền.\nMã: ${targetId}`
+              : `⚠️ Không hủy được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`;
           }
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
@@ -4113,33 +4183,33 @@ exports.telegramWebhook = onRequest({
           if (customerOrderApproveMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'approved');
             editText = result.ok
-              ? `✅ Đã duyệt yêu cầu gọi món.\nMÃ£: ${targetId}`
-              : `⚠️ Không duyệt được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã duyệt yêu cầu gọi món.\nMã: ${targetId}`
+              : `⚠️ Không duyệt được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerOrderRejectMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'rejected');
             editText = result.ok
-              ? `❌ Đã từ chối yÃªu cáº§u gọi món.\nMÃ£: ${targetId}`
-              : `⚠️ Không từ chối được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `❌ Đã từ chối yÃªu cáº§u gọi món.\nMã: ${targetId}`
+              : `⚠️ Không từ chối được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerServiceAckMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `✅ Đã nhận yêu cầu hỗ trợ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `⚠️ Không cập nhật được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã nhận yêu cầu hỗ trợ khÃ¡ch.\nMã: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerServiceDoneMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'resolved');
             editText = result.ok
-              ? `✅ Ä Ã£ hoàn tất há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `⚠️ Không đóng được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ hoàn tất há»— trá»£ khÃ¡ch.\nMã: ${targetId}`
+              : `⚠️ Không đóng được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentConfirmMatch) {
             result = await confirmCustomerPaymentBillTelegram(targetId);
             editText = result.ok
-              ? `✅ Đã xác nhận bill tính tiền.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
-              : `⚠️ Không xác nhận được bill.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã xác nhận bill tính tiền.\nMã: ${targetId}\nBill: ${result.billNo || ''}`
+              : `⚠️ Không xác nhận được bill.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentAckMatch) {
             result = await resolveCustomerPaymentRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `✅ Ä Ã£ nhận yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
-              : `⚠️ Không cập nhật được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ nhận yÃªu cáº§u tính tiền.\nMã: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`;
           }
 
           await answerTelegramCallback({
@@ -4165,16 +4235,41 @@ exports.telegramWebhook = onRequest({
         if (confirmMatch) {
           const { executePendingAction } = getAiDeps();
           const result = await executePendingAction(actionDocId, { db });
-          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'Đã thực thi.' : 'Không thực thi được.', botToken });
+          let kitchenResult = null;
+          if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+            try {
+              kitchenResult = await sendKitchenTelegramForExecutedOrder(result);
+            } catch (err) {
+              kitchenResult = { ok: false, error: err?.message || String(err) };
+              logger.error('Telegram kitchen send after confirm failed', {
+                actionDocId,
+                orderId: result.orderId || '',
+                error: kitchenResult.error,
+                responseData: err?.response?.data || null,
+              });
+            }
+          }
+          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? '\u0110\u00e3 th\u1ef1c thi.' : 'Kh\u00f4ng th\u1ef1c thi \u0111\u01b0\u1ee3c.', botToken });
+          const executedActionMessage = buildTelegramExecutedActionMessage(actionDocId, result, kitchenResult);
           await editTelegramMessage({
             chatId: callbackChatId,
             messageId: callbackMessageId,
             botToken,
-            text: result.ok
-              ? `✅ Đã thực thi.\nMÃ£: ${actionDocId}`
-              : `⚠️ Không thực thi được.\n${result.error || 'Hành động không còn hợp lệ.'}`,
+            text: executedActionMessage,
           });
-          return json(res, 200, { ok: true, callback: 'confirm', result });
+          if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+            await sendTelegramTextMessage({
+              chatId: callbackChatId,
+              botToken,
+              text: executedActionMessage,
+            }).catch(err => logger.error('Telegram owner order confirmation send failed', {
+              actionDocId,
+              orderId: result.orderId || '',
+              error: err?.message || String(err),
+              responseData: err?.response?.data || null,
+            }));
+          }
+          return json(res, 200, { ok: true, callback: 'confirm', result, kitchenTelegram: kitchenResult });
         }
 
         const { cancelPendingAction } = getAiDeps();
@@ -4184,7 +4279,7 @@ exports.telegramWebhook = onRequest({
           chatId: callbackChatId,
           messageId: callbackMessageId,
           botToken,
-          text: `❌ Đã hủy.\nMÃ£: ${actionDocId}`,
+          text: `❌ Đã hủy.\nMã: ${actionDocId}`,
         });
         return json(res, 200, { ok: true, callback: 'cancel', result });
       }
@@ -4234,9 +4329,9 @@ exports.telegramWebhook = onRequest({
           botToken,
           text: result.ok
             ? (result.reused
-              ? `✅ Đã gửi lại bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
-              : `✅ Đã tạo yêu cầu tính tiền cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
-            : `⚠️ Không tạo được yêu cầu tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`,
+              ? `✅ Đã gửi lại bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMã yêu cầu: ${result.requestId}`
+              : `✅ Đã tạo yêu cầu tính tiền cho ${result.tableLabel}.\nBill: ${result.billNo}\nMã yêu cầu: ${result.requestId}`)
+            : `⚠️ Không tạo được yêu cầu tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`,
         });
         return json(res, 200, { ok: result.ok, command: 'telegram-table-payment', result });
       }
