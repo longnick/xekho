@@ -20,8 +20,9 @@ assert(indexSource.includes('process.env.BIGQUERY_PROJECT_ID'), 'BigQuery projec
 assert(indexSource.includes('process.env.BIGQUERY_DATASET_ID'), 'BigQuery dataset runtime env fallback is missing');
 assert(indexSource.includes('process.env.BIGQUERY_SALES_TABLE'), 'BigQuery sales table runtime env fallback is missing');
 assert(indexSource.includes('function getBigQueryRuntimeConfig'), 'BigQuery runtime config resolver is missing');
-assert(indexSource.includes('preferBigQuery: true'), 'smart report path must prefer BigQuery when available');
-assert(indexSource.includes('fallbackBigQuery: true'), 'smart report path must enable BigQuery fallback');
+assert(!indexSource.includes('preferBigQuery: true'), 'direct Telegram smart reports must not prefer BigQuery over Firestore/POS');
+assert(indexSource.includes('fallbackBigQuery: true'), 'smart report path must keep controlled BigQuery fallback');
+assert(toolsSource.includes('allowEmptyFirestoreBigQueryFallback === true'), 'empty Firestore reports must not be blindly overridden by BigQuery zeros');
 assert(indexSource.includes('bigQueryConfig: getBigQueryRuntimeConfig()'), 'Gemini tool loop must pass BigQuery config');
 
 assert(toolsSource.includes("const { GoogleAuth } = require('google-auth-library');"), 'BigQuery REST auth must use google-auth-library');

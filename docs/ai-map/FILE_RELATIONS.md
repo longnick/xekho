@@ -467,3 +467,9 @@ Related files:
 - `functions/firestoreMegaTools.js#executeBigQueryReportQuery()` queries BigQuery with Standard SQL SELECT summaries and no write operations.
 - `functions/geminiTools.js` declares `truy_van_bigquery_pos` for Gemini fallback data questions.
 - `scripts/verify-telegram-bigquery-reporting.js` verifies `doanh thu tháng này?` parsing and BigQuery read-only wiring.
+
+## 2026-06-17 - Telegram month revenue zero regression
+
+- `functions/index.js#tryAnswerTelegramSmartReportQuestion()` uses Firestore/POS-first reports for direct owner questions such as `Doanh thu tháng này?`.
+- `functions/firestoreMegaTools.js#executeReportQuery()` requires explicit `allowEmptyFirestoreBigQueryFallback` before BigQuery can replace an empty Firestore report.
+- `scripts/verify-telegram-bigquery-reporting.js` prevents future `preferBigQuery: true` regressions in direct Telegram report paths.

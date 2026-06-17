@@ -952,7 +952,7 @@ async function executeReportQuery(args = {}, options = {}) {
       };
     }
 
-    if (options.preferBigQuery === true || (options.fallbackBigQuery === true && summary.invoiceCount === 0)) {
+    if (options.preferBigQuery === true || (options.allowEmptyFirestoreBigQueryFallback === true && options.fallbackBigQuery === true && summary.invoiceCount === 0 && summary.revenue === 0)) {
       const bigQueryReport = await executeBigQueryReportQuery(args, options);
       if (bigQueryReport?.ok) return bigQueryReport;
       payload.bigQueryFallback = bigQueryReport;

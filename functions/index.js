@@ -462,7 +462,7 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
     ...(intent.itemName ? { ten_mon: intent.itemName } : {}),
     tu_thoi_diem: intent.from.toISOString(),
     den_thoi_diem: intent.toExclusive.toISOString(),
-  }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() });
+  }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() });
 
   if (!report?.ok) {
     return {
@@ -762,8 +762,8 @@ async function tryAnswerTelegramProactiveOwnerInsight(userText = '', chatId = ''
   const { executeReportQuery } = getAiDeps();
   const ranges = getCurrentAndPreviousMonthComparableRanges(new Date());
   const [currentReport, previousReport] = await Promise.all([
-    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
-    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db, preferBigQuery: true, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
   ]);
   const cur = currentReport.summary || {};
   const prev = previousReport.summary || {};

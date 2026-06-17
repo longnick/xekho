@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-17 - Telegram month revenue zero regression
+
+Fixed bot regression where `Doanh thu tháng này?` returned `0đ` after BigQuery was made the preferred report source. Direct Telegram report answers now use Firestore/POS first; BigQuery remains read-only tool/fallback and cannot override with zero summaries.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-month-revenue-zero-regression.md`
+
 ## 2026-06-17 - Telegram BigQuery reporting + month revenue fix
 
 Allowed Telegram owner assistant to use read-only BigQuery reporting for data answers. `doanh thu tháng này?` is verified as a smart report and deterministic reports now prefer BigQuery when available, with Firestore fallback.
