@@ -4491,7 +4491,7 @@ exports.telegramWebhook = onRequest({
 
 exports.kitchenDeviceFeed = onRequest({
   region: DEFAULT_REGION,
-  memory: '256MiB',
+  memory: HEAVY_FUNCTION_MEMORY,
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, (req, res) => {
   cors(req, res, async () => {
