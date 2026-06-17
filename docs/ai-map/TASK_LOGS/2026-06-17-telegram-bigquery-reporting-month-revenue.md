@@ -58,3 +58,13 @@ Passed:
 ## Notes
 
 BigQuery path is read-only and only executes generated SELECT summaries. It does not write, update, delete, or merge BigQuery data.
+
+## Deploy
+
+Deployed `functions:xekho:telegramWebhook` successfully after keeping BigQuery config optional via runtime env instead of mandatory Firebase params.
+
+Live smoke:
+
+- `doanh thu tháng này?` → HTTP 200 / `{ ok: true }`
+
+Deploy env file was removed after deploy.
