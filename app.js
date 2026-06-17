@@ -3161,6 +3161,7 @@ function renderTables() {
     </div>`;
   }).join('');
   try { renderKdsMonitor(); } catch(_) {}
+  try { updateDailyTargetProgressBar(); } catch(e) { console.error("Error updating daily target progress bar:", e); }
 }
 
 function openOnlineOrdersPanel() {
@@ -11808,3 +11809,181 @@ if (document.readyState === 'loading') {
     try { startCustomerRequestFabLayoutSync(); } catch (_) {}
   }, 0);
 }
+
+// ============================================================
+// DAILY REVENUE TARGET & PROGRESS BAR
+// ============================================================
+function updateDailyTargetProgressBar() {
+  const targetVal = 5000000;
+  
+  // Calculate paid total from history (today)
+  const history = _getHistory();
+  const todayDs = new Date().toDateString();
+  const todayPaidOrders = history.filter(o => o.paidAt && new Date(o.paidAt).toDateString() === todayDs && isVisibleHistoryOrderForUi(o));
+  const paidTotal = todayPaidOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+
+  // Calculate unpaid total from active orders
+  const orders = _getOrders();
+  let unpaidTotal = 0;
+  for (const tableId in orders) {
+    const orderItems = orders[tableId] || [];
+    if (orderItems.length === 0) continue;
+    
+    const itemsTotal = orderItems.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
+    const extras = getOrderExtrasForTable(tableId);
+    let discount = 0;
+    if (extras.discountType === 'percent') {
+      discount = Math.round((itemsTotal * (extras.discountInput || 0)) / 100);
+    } else {
+      discount = extras.discountInput || extras.discount || 0;
+    }
+    const subtotal = Math.max(0, itemsTotal - discount + extras.shipping);
+    const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
+    const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+    const total = subtotal + vatAmount;
+    
+    unpaidTotal += total;
+  }
+
+  // Update UI elements if they exist
+  const pctText = document.getElementById('target-progress-percentage');
+  const ratioText = document.getElementById('target-progress-ratio');
+  const paidBar = document.getElementById('target-progress-paid');
+  const unpaidBar = document.getElementById('target-progress-unpaid');
+  const paidText = document.getElementById('target-progress-paid-text');
+  const unpaidText = document.getElementById('target-progress-unpaid-text');
+
+  if (pctText && ratioText && paidBar && unpaidBar && paidText && unpaidText) {
+    const totalRatio = paidTotal / targetVal;
+    const totalPercentage = Math.round(totalRatio * 100);
+    
+    pctText.textContent = totalPercentage + '%';
+    ratioText.textContent = fmt(paidTotal) + 'đ / ' + fmt(targetVal) + 'đ';
+    
+    paidText.textContent = fmt(paidTotal) + 'đ';
+    unpaidText.textContent = fmt(unpaidTotal) + 'đ';
+    
+    const paidWidth = Math.min(100, (paidTotal / targetVal) * 100);
+    const unpaidWidth = Math.min(100 - paidWidth, (unpaidTotal / targetVal) * 100);
+    
+    paidBar.style.width = paidWidth + '%';
+    unpaidBar.style.width = unpaidWidth + '%';
+  }
+
+  // Confetti trigger check
+  if (paidTotal >= targetVal) {
+    const todayStr = new Date().toLocaleDateString('en-US');
+    const storageKey = 'target_confetti_played_' + todayStr;
+    if (!localStorage.getItem(storageKey)) {
+      localStorage.setItem(storageKey, 'true');
+      triggerConfetti(paidTotal);
+    }
+  }
+}
+
+function triggerConfetti(paidAmount) {
+  if (window.confetti) {
+    runConfettiEffects(paidAmount);
+  } else {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
+    script.onload = () => {
+      runConfettiEffects(paidAmount);
+    };
+    script.onerror = () => {
+      runEmojiConfetti(paidAmount);
+    };
+    document.head.appendChild(script);
+  }
+}
+
+function runConfettiEffects(paidAmount) {
+  const duration = 5 * 1000;
+  const animationEnd = Date.now() + duration;
+  const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999999 };
+
+  function randomInRange(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  const interval = setInterval(function() {
+    const timeLeft = animationEnd - Date.now();
+
+    if (timeLeft <= 0) {
+      return clearInterval(interval);
+    }
+
+    const particleCount = 50 * (timeLeft / duration);
+    window.confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+    window.confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+  }, 250);
+
+  showTargetCongratsModal(paidAmount);
+}
+
+function runEmojiConfetti(paidAmount) {
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100vw';
+  container.style.height = '100vh';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '9999999';
+  document.body.appendChild(container);
+
+  const emojis = ['🍢', '🍻', '🎉', '💰', '💵', '🌟', '✨', '🔥'];
+  const particleCount = 100;
+
+  for (let i = 0; i < particleCount; i++) {
+    const p = document.createElement('div');
+    p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    p.style.position = 'absolute';
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.top = '-50px';
+    p.style.fontSize = (Math.random() * 20 + 20) + 'px';
+    p.style.transition = 'transform ' + (Math.random() * 3 + 2) + 's linear, opacity ' + (Math.random() * 3 + 2) + 's ease-out';
+    p.style.transform = 'translateY(0) rotate(0deg)';
+    container.appendChild(p);
+
+    setTimeout(() => {
+      p.style.transform = 'translateY(' + (window.innerHeight + 100) + 'px) rotate(' + (Math.random() * 720 - 360) + 'deg)';
+      p.style.opacity = '0';
+    }, 50);
+  }
+
+  setTimeout(() => {
+    container.remove();
+  }, 5000);
+
+  showTargetCongratsModal(paidAmount);
+}
+
+function showTargetCongratsModal(paidAmount) {
+  const modal = document.getElementById('target-congrats-modal');
+  if (modal) {
+    const amtEl = document.getElementById('target-congrats-amount');
+    if (amtEl) {
+      amtEl.textContent = fmt(paidAmount) + 'đ';
+    }
+    modal.classList.add('active');
+  }
+}
+
+function closeTargetCongratsModal() {
+  const modal = document.getElementById('target-congrats-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+window.closeTargetCongratsModal = closeTargetCongratsModal;
+
+window.triggerConfettiTest = function() {
+  const history = _getHistory();
+  const todayDs = new Date().toDateString();
+  const todayPaidOrders = history.filter(o => o.paidAt && new Date(o.paidAt).toDateString() === todayDs && isVisibleHistoryOrderForUi(o));
+  const paidTotal = todayPaidOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  triggerConfetti(paidTotal || 5000000);
+};
+
