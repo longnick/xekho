@@ -8,6 +8,10 @@ const root = path.resolve(__dirname, '..');
 const indexSource = fs.readFileSync(path.join(root, 'functions', 'index.js'), 'utf8');
 const sendSource = fs.readFileSync(path.join(root, 'functions', 'telegram', 'send.js'), 'utf8');
 
+assert(indexSource.includes('function getBigQueryRuntimeConfig'), 'BigQuery runtime config resolver is missing');
+assert(indexSource.includes('BIGQUERY_PROJECT_ID'), 'BigQuery project config param is missing');
+assert(indexSource.includes('bigQueryConfig: getBigQueryRuntimeConfig()'), 'Gemini tool loop must pass BigQuery config');
+assert(indexSource.includes('fallbackBigQuery: true'), 'Deterministic report path must enable BigQuery fallback');
 assert(sendSource.includes('async function sendTelegramPhotoBuffer'), 'Telegram send helper must support photo buffers for chart images');
 assert(sendSource.includes('new Blob([new Uint8Array(photoBuffer)]'), 'Photo-buffer sender must upload multipart Blob data');
 assert(sendSource.includes('sendTelegramPhotoBuffer,'), 'Photo-buffer sender must be exported');

@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { GoogleAuth } = require('google-auth-library');
 
 const VN_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -711,6 +712,179 @@ async function createPendingOrderAction(args = {}, options = {}) {
   }
 }
 
+
+let cachedBigQueryAuth = null;
+let cachedBigQueryTable = null;
+
+function getBigQueryAuth() {
+  if (!cachedBigQueryAuth) {
+    cachedBigQueryAuth = new GoogleAuth({
+      scopes: [
+        'https://www.googleapis.com/auth/bigquery.readonly',
+        'https://www.googleapis.com/auth/cloud-platform',
+      ],
+    });
+  }
+  return cachedBigQueryAuth;
+}
+
+function getBigQueryConfig(options = {}) {
+  const cfg = options.bigQueryConfig || {};
+  return {
+    enabled: cfg.enabled !== false,
+    projectId: String(cfg.projectId || process.env.BIGQUERY_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || '').trim(),
+    datasetId: String(cfg.datasetId || process.env.BIGQUERY_DATASET_ID || '').trim(),
+    tableId: String(cfg.salesTable || cfg.tableId || process.env.BIGQUERY_SALES_TABLE || '').trim(),
+  };
+}
+
+async function bigQueryRequest({ method = 'GET', url, data }) {
+  const auth = getBigQueryAuth();
+  const client = await auth.getClient();
+  return client.request({ method, url, data, timeout: 20000 });
+}
+
+function bigQueryValue(cell) {
+  if (!cell) return null;
+  return cell.v;
+}
+
+function parseBigQueryRows(response = {}) {
+  const fields = response.schema?.fields || [];
+  return (response.rows || []).map(row => {
+    const out = {};
+    (row.f || []).forEach((cell, idx) => {
+      const name = fields[idx]?.name || `field_${idx}`;
+      out[name] = bigQueryValue(cell);
+    });
+    return out;
+  });
+}
+
+function pickColumn(columns = [], candidates = []) {
+  const normalized = new Map(columns.map(col => [normalizeVi(col.name), col.name]));
+  for (const candidate of candidates) {
+    const exact = normalized.get(normalizeVi(candidate));
+    if (exact) return exact;
+  }
+  for (const col of columns) {
+    const n = normalizeVi(col.name);
+    if (candidates.some(candidate => n.includes(normalizeVi(candidate)))) return col.name;
+  }
+  return '';
+}
+
+function quoteBigQueryIdent(value = '') {
+  return String(value || '').replace(/`/g, '');
+}
+
+async function listBigQueryDatasets(projectId) {
+  const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(projectId)}/datasets?maxResults=50`;
+  const { data } = await bigQueryRequest({ url });
+  return (data.datasets || []).map(row => String(row.datasetReference?.datasetId || '').trim()).filter(Boolean);
+}
+
+async function listBigQueryTables(projectId, datasetId) {
+  const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/tables?maxResults=100`;
+  const { data } = await bigQueryRequest({ url });
+  return (data.tables || []).map(row => String(row.tableReference?.tableId || '').trim()).filter(Boolean);
+}
+
+async function getBigQueryTableSchema(projectId, datasetId, tableId) {
+  const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/tables/${encodeURIComponent(tableId)}`;
+  const { data } = await bigQueryRequest({ url });
+  return data.schema?.fields || [];
+}
+
+async function discoverBigQuerySalesTable(config = {}) {
+  if (cachedBigQueryTable) return cachedBigQueryTable;
+  const projectId = config.projectId;
+  if (!projectId) throw new Error('BIGQUERY_PROJECT_ID is not configured');
+  const datasetIds = config.datasetId
+    ? [config.datasetId]
+    : (await listBigQueryDatasets(projectId)).filter(id => /xekho|xe_kho|pos|analytics|firestore|report|sales/i.test(id)).slice(0, 10);
+  const tableHints = ['history', 'orders', 'order_history', 'sales', 'revenue', 'paid'];
+  for (const datasetId of datasetIds) {
+    const tableIds = config.tableId ? [config.tableId] : await listBigQueryTables(projectId, datasetId);
+    const ranked = tableIds
+      .map(tableId => ({ tableId, score: tableHints.reduce((sum, hint) => sum + (normalizeVi(tableId).includes(normalizeVi(hint)) ? 1 : 0), 0) }))
+      .filter(row => config.tableId || row.score > 0)
+      .sort((a, b) => b.score - a.score);
+    for (const { tableId } of ranked) {
+      const columns = await getBigQueryTableSchema(projectId, datasetId, tableId).catch(() => []);
+      const paidAtColumn = pickColumn(columns, ['paidAt', 'paid_at', 'completedAt', 'completed_at', 'closedAt', 'createdAt', 'timestamp', 'date']);
+      const totalColumn = pickColumn(columns, ['total', 'grandTotal', 'grand_total', 'amount', 'revenue', 'totalAmount', 'total_amount']);
+      if (paidAtColumn && totalColumn) {
+        cachedBigQueryTable = { projectId, datasetId, tableId, columns, paidAtColumn, totalColumn };
+        return cachedBigQueryTable;
+      }
+    }
+  }
+  throw new Error('No readable BigQuery sales/history table found');
+}
+
+async function executeBigQueryReportQuery(args = {}, options = {}) {
+  try {
+    const config = getBigQueryConfig(options);
+    if (!config.enabled) throw new Error('BigQuery reporting is disabled');
+    const range = buildDateRange(args);
+    const table = await discoverBigQuerySalesTable(config);
+    const costColumn = pickColumn(table.columns, ['cost', 'totalCost', 'total_cost', 'cogs']);
+    const statusColumn = pickColumn(table.columns, ['status', 'state']);
+    const payMethodColumn = pickColumn(table.columns, ['payMethod', 'paymentMethod', 'payment_method']);
+    const filters = [];
+    if (statusColumn) filters.push(`LOWER(CAST(\`${statusColumn}\` AS STRING)) IN ('completed','closed','paid')`);
+    if (args.phuong_thuc_thanh_toan && String(args.phuong_thuc_thanh_toan).toLowerCase() !== 'all' && payMethodColumn) {
+      filters.push(`LOWER(CAST(\`${payMethodColumn}\` AS STRING)) = @payMethod`);
+    }
+    const whereExtra = filters.length ? ` AND ${filters.join(' AND ')}` : '';
+    const fqtn = `\`${quoteBigQueryIdent(table.projectId)}.${quoteBigQueryIdent(table.datasetId)}.${quoteBigQueryIdent(table.tableId)}\``;
+    const query = `
+      SELECT
+        COUNT(1) AS invoiceCount,
+        COALESCE(SUM(SAFE_CAST(\`${table.totalColumn}\` AS FLOAT64)), 0) AS revenue,
+        ${costColumn ? `COALESCE(SUM(SAFE_CAST(\`${costColumn}\` AS FLOAT64)), 0)` : '0'} AS cost
+      FROM ${fqtn}
+      WHERE TIMESTAMP(\`${table.paidAtColumn}\`) >= @fromTs
+        AND TIMESTAMP(\`${table.paidAtColumn}\`) < @toTs
+        ${whereExtra}
+    `;
+    const queryParameters = [
+      { name: 'fromTs', parameterType: { type: 'TIMESTAMP' }, parameterValue: { value: range.from.toISOString() } },
+      { name: 'toTs', parameterType: { type: 'TIMESTAMP' }, parameterValue: { value: range.toExclusive.toISOString() } },
+    ];
+    if (args.phuong_thuc_thanh_toan && String(args.phuong_thuc_thanh_toan).toLowerCase() !== 'all' && payMethodColumn) {
+      queryParameters.push({ name: 'payMethod', parameterType: { type: 'STRING' }, parameterValue: { value: String(args.phuong_thuc_thanh_toan).toLowerCase() } });
+    }
+    const { data } = await bigQueryRequest({
+      method: 'POST',
+      url: `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(table.projectId)}/queries`,
+      data: { query, useLegacySql: false, parameterMode: 'NAMED', queryParameters, timeoutMs: 20000, maxResults: 10 },
+    });
+    const row = parseBigQueryRows(data)[0] || {};
+    const revenue = toFiniteNumber(row.revenue);
+    const cost = toFiniteNumber(row.cost);
+    return {
+      ok: true,
+      tool: 'truy_van_bigquery_pos',
+      source: 'bigquery',
+      table: `${table.projectId}.${table.datasetId}.${table.tableId}`,
+      range,
+      filters: { phuong_thuc_thanh_toan: args.phuong_thuc_thanh_toan || 'all' },
+      summary: {
+        invoiceCount: toFiniteNumber(row.invoiceCount),
+        revenue,
+        revenueCash: 0,
+        revenueBank: 0,
+        cost,
+        grossProfit: revenue - cost,
+      },
+    };
+  } catch (error) {
+    return { ok: false, tool: 'truy_van_bigquery_pos', source: 'bigquery', error: String(error?.message || error) };
+  }
+}
+
 async function executeReportQuery(args = {}, options = {}) {
   try {
     const db = getFirestoreDb(options.db);
@@ -778,8 +952,19 @@ async function executeReportQuery(args = {}, options = {}) {
       };
     }
 
+    if (options.preferBigQuery === true || (options.fallbackBigQuery === true && summary.invoiceCount === 0)) {
+      const bigQueryReport = await executeBigQueryReportQuery(args, options);
+      if (bigQueryReport?.ok) return bigQueryReport;
+      payload.bigQueryFallback = bigQueryReport;
+    }
+
     return payload;
   } catch (error) {
+    if (options.fallbackBigQuery === true || options.preferBigQuery === true) {
+      const bigQueryReport = await executeBigQueryReportQuery(args, options);
+      if (bigQueryReport?.ok) return bigQueryReport;
+      return bigQueryReport;
+    }
     return {
       ok: false,
       tool: 'truy_van_bao_cao',
@@ -1333,7 +1518,8 @@ async function cancelPendingAction(docId, options = {}) {
 async function executeGeminiTool(functionCall, options = {}) {
   const name = String(functionCall?.name || '');
   const args = functionCall?.args || {};
-  if (name === 'truy_van_bao_cao') return executeReportQuery(args, options);
+  if (name === 'truy_van_bao_cao') return executeReportQuery(args, { ...options, fallbackBigQuery: true });
+  if (name === 'truy_van_bigquery_pos') return executeBigQueryReportQuery(args, options);
   if (name === 'tra_cuu_lich_su_nhap_kho') return executeImportQuery(args, options);
   if (name === 'nhap_hang_thu_cong') return createPendingImportAction(args, options);
   if (name === 'sua_menu') return createPendingMenuAction(args, options);
@@ -1343,6 +1529,7 @@ async function executeGeminiTool(functionCall, options = {}) {
 
 module.exports = {
   executeReportQuery,
+  executeBigQueryReportQuery,
   executeImportQuery,
   createPendingImportAction,
   createPendingMenuAction,
