@@ -27,6 +27,7 @@ const telegramAds = require('./telegram/ads');
 const telegramOrders = require('./telegram/orders');
 const telegramOnlineOrders = require('./telegram/online-orders');
 const generalUtils = require('./utils/general');
+const kitchenDeviceFeed = require('./kitchenDeviceFeed');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -128,6 +129,7 @@ const TELEGRAM_KITCHEN_READY_BOT_TOKEN = defineString('TELEGRAM_KITCHEN_READY_BO
 const META_AD_ACCOUNT_ID = defineString('META_AD_ACCOUNT_ID', { default: '' });
 const META_ACCESS_TOKEN = defineString('META_ACCESS_TOKEN', { default: '' });
 const KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID = defineString('KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID', { default: '' });
+const KITCHEN_DEVICE_TOKEN = defineString('KITCHEN_DEVICE_TOKEN', { default: '' });
 const OWNER_EMAIL = 'owner@ganhkho.vn';
 const DEFAULT_TELEGRAM_OWNER_CHAT_ID = '6496387732';
 const DEFAULT_REGION = 'asia-southeast1';
@@ -4483,6 +4485,47 @@ exports.telegramWebhook = onRequest({
       }
 
       return json(res, 200, { ok: false, error: err?.message || String(err) });
+    }
+  });
+});
+
+exports.kitchenDeviceFeed = onRequest({
+  region: DEFAULT_REGION,
+  memory: '256MiB',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method_not_allowed' });
+
+    const configuredToken = String(KITCHEN_DEVICE_TOKEN.value() || '').trim();
+    const authHeader = String(req.get('authorization') || '').trim();
+    const bearer = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+    const queryToken = String(req.query.token || '').trim();
+    const suppliedToken = bearer || queryToken;
+
+    if (!configuredToken) {
+      return json(res, 503, { ok: false, error: 'device_token_not_configured' });
+    }
+    if (!suppliedToken || suppliedToken !== configuredToken) {
+      return json(res, 401, { ok: false, error: 'unauthorized' });
+    }
+
+    try {
+      const station = String(req.query.station || 'all').trim() || 'all';
+      const limit = Math.max(1, Math.min(20, Number(req.query.limit || 8) || 8));
+      const items = await kitchenDeviceFeed.fetchKitchenReadyFeed({ db, station, limit });
+      return json(res, 200, {
+        ok: true,
+        source: 'firestore.orders',
+        station,
+        count: items.length,
+        generatedAt: Date.now(),
+        items,
+      });
+    } catch (err) {
+      logger.error('kitchenDeviceFeed error', { message: err?.message, stack: err?.stack });
+      return json(res, 500, { ok: false, error: 'feed_failed' });
     }
   });
 });
