@@ -1,3 +1,8 @@
+# 2026-06-19 16:58 +07 - Fix stale Table special cards
+- Fixed tab Ban special cards so cancelled/completed/rejected/expired online orders no longer keep `Ban Online` occupied.
+- Prevented stale cloud `takeaway` orders from overriding the local-only `Khach Mang Ve` cart.
+- Added verifier `scripts/verify-table-special-cards-cleanup.js`; checks/build passed.
+
 # AI Changelog
 
 ## 2026-06-19 16:35 - Finance date-range report sync

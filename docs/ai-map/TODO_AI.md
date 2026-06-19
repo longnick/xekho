@@ -1,3 +1,8 @@
+# 2026-06-19 16:58 +07 - DONE: Table special cards stale order cleanup
+- DONE: Diagnose raw `onlineOrders` rendering and stale cloud `takeaway` source.
+- DONE: Filter active online orders in listener/UI and preserve local takeaway only.
+- DONE: Add verifier + build/check gate.
+
 # AI TODO
 
 ## Doing
