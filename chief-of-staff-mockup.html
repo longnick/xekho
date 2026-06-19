@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chief of Staff - Mobile-First Mockup</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -26,6 +27,36 @@
     .hide-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
+    }
+
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    button {
+      min-height: 44px;
+    }
+
+    @media (max-width: 900px) {
+      .mobile-action-grid {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        overflow-x: visible !important;
+        padding-bottom: 0 !important;
+      }
+
+      .mobile-timeline-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        overflow-x: visible !important;
+      }
+
+      .mobile-timeline-grid > div {
+        width: auto !important;
+        min-width: 0 !important;
+      }
     }
   </style>
 </head>
@@ -117,7 +148,7 @@
     
     <!-- 2. Quick Actions Bar (Sticky on mobile) -->
     <div class="sticky top-0 z-10 -mx-4 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:static lg:mx-0 lg:rounded-xl lg:border lg:border-slate-200 lg:px-5 lg:py-4 lg:shadow-none">
-      <div class="flex gap-2 overflow-x-auto pb-2 hide-scrollbar lg:grid lg:grid-cols-3 lg:gap-3 lg:overflow-visible lg:pb-0">
+      <div class="mobile-action-grid flex gap-2 overflow-x-auto pb-2 hide-scrollbar lg:grid lg:grid-cols-3 lg:gap-3 lg:overflow-visible lg:pb-0">
         <button class="flex-shrink-0 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 active:scale-95 transition lg:justify-center">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
@@ -355,8 +386,8 @@
         <h3 class="font-semibold text-slate-900 lg:text-lg">Timeline (7 ngày)</h3>
       </div>
       
-      <div class="overflow-x-auto lg:overflow-visible">
-        <div class="flex gap-3 p-4 hide-scrollbar lg:grid lg:grid-cols-7 lg:gap-4">
+      <div class="overflow-x-hidden lg:overflow-visible">
+        <div class="mobile-timeline-grid flex gap-3 p-4 hide-scrollbar lg:grid lg:grid-cols-7 lg:gap-4">
           <!-- Day 1 -->
           <div class="flex-shrink-0 w-32 rounded-lg border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition cursor-pointer lg:w-auto">
             <div class="text-center">
