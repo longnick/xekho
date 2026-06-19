@@ -7679,7 +7679,7 @@ function getSelectedReportMenuItem() {
 }
 
 function populateReportMenuFilter() {
-  const selects = Array.from(document.querySelectorAll('#report-menu-filter'));
+  const selects = Array.from(document.querySelectorAll('[data-esm-report-menu-filter]'));
   if (!selects.length) return;
   const menu = _getMenu()
     .filter(item => !item.hidden)
@@ -7700,7 +7700,7 @@ function ensureReportSummaryLayout() {
   if (!revenueTab) return;
 
   const legacyCards = Array.from(revenueTab.querySelectorAll('.card')).filter(card =>
-    card.querySelector('#report-filter-summary') || card.querySelector('#report-menu-filter')
+    card.querySelector('[data-esm-report-filter-summary]') || card.querySelector('[data-esm-report-menu-filter]')
   );
   legacyCards.forEach(card => {
     card.style.display = 'none';
@@ -7769,7 +7769,7 @@ function getReportMenuSalesSummary(menuItem) {
 }
 
 function renderReportFilterSummary() {
-  const summaryEls = Array.from(document.querySelectorAll('#report-filter-summary'));
+  const summaryEls = Array.from(document.querySelectorAll('[data-esm-report-filter-summary]'));
   if (!summaryEls.length) return;
   const labels = [];
   if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
@@ -7781,9 +7781,9 @@ function renderReportFilterSummary() {
 }
 
 function syncReportFilterUI() {
-  document.querySelectorAll('#report-filter-sales').forEach(el => { el.checked = isReportTransactionEnabled('sales'); });
-  document.querySelectorAll('#report-filter-purchases').forEach(el => { el.checked = isReportTransactionEnabled('purchases'); });
-  document.querySelectorAll('#report-filter-expenses').forEach(el => { el.checked = isReportTransactionEnabled('expenses'); });
+  document.querySelectorAll('[data-esm-report-transaction-filter="sales"]').forEach(el => { el.checked = isReportTransactionEnabled('sales'); });
+  document.querySelectorAll('[data-esm-report-transaction-filter="purchases"]').forEach(el => { el.checked = isReportTransactionEnabled('purchases'); });
+  document.querySelectorAll('[data-esm-report-transaction-filter="expenses"]').forEach(el => { el.checked = isReportTransactionEnabled('expenses'); });
   populateReportMenuFilter();
   renderReportFilterSummary();
 }
