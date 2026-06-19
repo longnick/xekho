@@ -1,3 +1,8 @@
+# 2026-06-19 16:58 +07 - Table special-card file relations
+- `index.html` cache keys -> loads fresh `db.js` and `app.js` for table special-card cleanup.
+- `db.js` online-order listener -> `window.appState.onlineOrders` -> `app.js#renderTables` / `renderOnlineOrdersPanel`.
+- `Store.orders.takeaway` remains canonical for local-only `Khach Mang Ve`; stale cloud `orders.takeaway` is ignored by `app.js#_getOrders` and `syncLocalOrderCacheFromCloud`.
+
 # File Relations
 
 ## Module: POS frontend

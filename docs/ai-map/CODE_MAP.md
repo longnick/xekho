@@ -1,3 +1,9 @@
+# 2026-06-19 16:58 +07 - Table special-card order source map
+- `app.js#_getOrders`: cloud orders are converted to legacy table map, but cloud `takeaway` is ignored and live local Store `takeaway` is preserved.
+- `app.js#getActiveOnlineOrdersForTables`: active-only filter for `Ban Online` card/modal.
+- `db.js#online_orders listener`: online rows are filtered to active operational statuses before entering `window.appState.onlineOrders`.
+- `scripts/verify-table-special-cards-cleanup.js`: source regression guard for these invariants.
+
 # Code Map
 
 ## Main modules
