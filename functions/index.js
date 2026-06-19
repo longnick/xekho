@@ -9,6 +9,7 @@ const cors = require('cors')({ origin: true });
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const sharp = require('sharp');
+const { GoogleGenAI, Type } = require('@google/genai');
 const {
   getVertexCredentials,
   getVertexAuthContexts,
@@ -192,6 +193,144 @@ function buildVertexImageModels(preferredModel = '') {
     'imagen-3.0-generate-001',
     'imagen-4.0-fast-generate-001',
   ].filter((name, index, arr) => name && arr.indexOf(name) === index);
+}
+
+const POS_CHATBOT_MODEL = 'gemini-2.5-flash';
+
+const getProfitReportTool = {
+  functionDeclarations: [
+    {
+      name: 'getProfitReportTool',
+      description: 'Truy vấn báo cáo lợi nhuận POS theo khoảng thời gian và thứ tự sắp xếp. Dùng khi người dùng hỏi doanh thu, lãi/lỗ, món lãi cao/thấp hoặc báo cáo kinh doanh.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          timeframe: {
+            type: Type.STRING,
+            description: "Khoảng thời gian báo cáo. Ví dụ: 'today', 'current_month', 'last_month'.",
+            enum: ['today', 'current_month', 'last_month'],
+          },
+          sort: {
+            type: Type.STRING,
+            description: "Sắp xếp kết quả theo lợi nhuận: 'highest' hoặc 'lowest'.",
+            enum: ['highest', 'lowest'],
+          },
+        },
+        required: ['timeframe'],
+      },
+    },
+  ],
+};
+
+function getPosChatbotAi() {
+  // Keep SDK initialization lazy so local syntax checks do not require runtime Gemini credentials.
+  try {
+    const ai = new GoogleGenAI();
+    return ai;
+  } catch (error) {
+    const apiKey = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    if (!apiKey) throw error;
+    return new GoogleGenAI({ apiKey });
+  }
+}
+
+function getGenAiText(response = {}) {
+  if (typeof response.text === 'string') return response.text.trim();
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  return parts.map((part) => part?.text || '').join('').trim();
+}
+
+function getGenAiFunctionCallParts(response = {}) {
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  const functionCallParts = parts.filter((part) => part?.functionCall?.name);
+  if (functionCallParts.length) return functionCallParts;
+  return (response.functionCalls || []).map((functionCall) => ({ functionCall }));
+}
+
+async function getProfitReport(args = {}) {
+  const timeframe = String(args.timeframe || 'current_month').trim() || 'current_month';
+  const sort = String(args.sort || 'highest').trim() || 'highest';
+  // TODO: Replace this mock with a read-only Firestore/BigQuery POS query after schema is finalized.
+  return {
+    bestSellerItem: 'Ốc Nướng Nabi',
+    profit: 15200000,
+    time: timeframe === 'today' ? 'Hôm nay' : (timeframe === 'last_month' ? 'Tháng trước' : 'Tháng này'),
+    timeframe,
+    sort,
+    dataSource: 'mock',
+  };
+}
+
+async function runAskPosChatbot(userMessage) {
+  const ai = getPosChatbotAi();
+  const contents = [
+    {
+      role: 'user',
+      parts: [{ text: userMessage }],
+    },
+  ];
+  const config = {
+    tools: [getProfitReportTool],
+    temperature: 0.2,
+    systemInstruction: 'Bạn là trợ lý báo cáo POS của Xe Khô Chữa Lành. Không bịa số liệu. Khi câu hỏi cần doanh thu/lợi nhuận/báo cáo thật, hãy gọi tool phù hợp rồi diễn giải dữ liệu trả về bằng tiếng Việt tự nhiên, ngắn gọn.',
+  };
+
+  const response = await ai.models.generateContent({
+    model: POS_CHATBOT_MODEL,
+    contents,
+    config,
+  });
+
+  const functionCallParts = getGenAiFunctionCallParts(response);
+  if (!functionCallParts.length) {
+    return {
+      ok: true,
+      answer: getGenAiText(response),
+      usedTool: false,
+    };
+  }
+
+  const functionResponseParts = [];
+  for (const part of functionCallParts) {
+    const functionCall = part.functionCall || {};
+    if (functionCall.name !== 'getProfitReportTool') {
+      throw new HttpsError('failed-precondition', `Gemini yêu cầu tool chưa hỗ trợ: ${functionCall.name || 'unknown'}`);
+    }
+    const report = await getProfitReport(functionCall.args || {});
+    functionResponseParts.push({
+      functionResponse: {
+        name: functionCall.name,
+        response: report,
+      },
+    });
+  }
+
+  contents.push({
+    role: 'model',
+    // Preserve the original functionCall parts exactly as returned by Gemini.
+    parts: functionCallParts,
+  });
+  contents.push({
+    role: 'user',
+    parts: functionResponseParts,
+  });
+
+  const finalResponse = await ai.models.generateContent({
+    model: POS_CHATBOT_MODEL,
+    contents,
+    config,
+  });
+
+  return {
+    ok: true,
+    answer: getGenAiText(finalResponse),
+    usedTool: true,
+    toolCalls: functionCallParts.map((part) => ({
+      name: part.functionCall?.name || '',
+      args: part.functionCall?.args || {},
+    })),
+    mockData: functionResponseParts.map((part) => part.functionResponse?.response || {}),
+  };
 }
 
 async function runVertexToolLoop({
@@ -3188,6 +3327,30 @@ async function cancelCustomerPaymentTelegram(requestId) {
   }));
   return { ok: true, request: current, nextStatus: 'cancelled' };
 }
+
+exports.askPosChatbot = onCall({
+  region: 'asia-southeast1',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Bạn cần đăng nhập để dùng trợ lý báo cáo POS.');
+  }
+  const userMessage = String(request.data?.userMessage || '').trim();
+  if (!userMessage) {
+    throw new HttpsError('invalid-argument', 'Thiếu userMessage.');
+  }
+  try {
+    return await runAskPosChatbot(userMessage);
+  } catch (error) {
+    logger.error('askPosChatbot failed', {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      uid: request.auth?.uid || '',
+    });
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error?.message || 'Không thể hỏi trợ lý POS.');
+  }
+});
 
 exports.approveOnlineOrder = onCall({
   region: 'asia-southeast1',
