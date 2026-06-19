@@ -1,5 +1,15 @@
 # AI Changelog
 
+## 2026-06-19 16:35 - Finance date-range report sync
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `push-clean-main-20260604-072900`
+
+Fixed the Finance tab custom range flow so choosing a range such as 2026-06-01 to 2026-06-18 persists `financePeriod = range` before rendering. Revenue, operational expenses, fixed-cost day counts, charts/lists, and discount details now read the same `financeDateOpts`. Added `scripts/verify-finance-date-range.js` and bumped the `app.js` cache key.
+
+Task log: `docs/ai-map/TASK_LOGS/2026-06-19-1635-finance-date-range.md`
+
+
 ## 2026-06-17 - Telegram chart callback prefix regression
 
 Fixed chart button callbacks falling into unknown-callback when the payload uses legacy/variant prefixes. The webhook now recognizes `chart`, `show_chart`, `tg_chart`, `ve_bieu_do`, and `draw_chart` payloads and routes them to the chart renderer.

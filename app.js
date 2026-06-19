@@ -7265,7 +7265,7 @@ setTimeout(async () => {
 
 
 function openDiscountDetails() {
-  const orders = filterHistory(financePeriod).filter(o => o.discount && o.discount > 0);
+  const orders = filterHistory(financePeriod, financeDateOpts).filter(o => o.discount && o.discount > 0);
   if (orders.length === 0) {
     showToast('Chưa có đơn nào được giảm giá trong thời gian này', 'warning');
     return;
@@ -9493,6 +9493,7 @@ function applyDateFilter(page) {
   const period = mode === 'range' ? 'range' : 'day';
   
   if(page === 'finance') {
+    financePeriod = period;
     financeDateOpts = opts;
     const s = getRevenueSummary(period, opts);
     updateFinanceUI(s);
