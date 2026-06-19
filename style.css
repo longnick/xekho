@@ -117,6 +117,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html.auth-locked,
+body.auth-locked {
+  height: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+body.auth-locked #app {
+  display: none !important;
+  pointer-events: none;
+  user-select: none;
+  visibility: hidden;
+}
+
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  .clickable {
+    min-height: 44px;
+  }
+}
+
 /* ---- SCROLLBARS ---- */
 ::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -567,7 +590,7 @@ body {
 .btn-danger { background: linear-gradient(135deg, var(--danger), #D42B5E); color: #fff; }
 .btn-warning { background: linear-gradient(135deg, var(--warning), #E09500); color: #fff; }
 .btn-info { background: linear-gradient(135deg, var(--info), #006ED8); color: #fff; }
-.btn-sm { height: 34px; padding: 0 14px; font-size: 12px; border-radius: 8px; }
+.btn-sm { height: 44px; min-height: 44px; padding: 0 14px; font-size: 12px; border-radius: 8px; }
 .btn-xs { height: 28px; padding: 0 10px; font-size: 11px; border-radius: 6px; }
 .btn-icon { width: 44px; padding: 0; }
 .btn-block { width: 100%; }
@@ -1463,6 +1486,8 @@ body {
   }
   .main-content {
     margin-left: 80px;
+    width: calc(100% - 80px);
+    max-width: calc(100vw - 80px);
     padding-bottom: var(--safe-bottom); /* Fix bottom overflow since there's no bottom nav */
   }
 
@@ -1740,6 +1765,10 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px 16px;
+  min-height: 100svh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease;
