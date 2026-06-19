@@ -1,3 +1,8 @@
+# 2026-06-19 18:09 +07 - DONE: Telegram route for POS chatbot function calling
+- DONE: Route owner-only Telegram report questions into the Gemini 2.5 Flash POS chatbot function-calling path before generic fallback.
+- DONE: Harden GenAI initialization for API-key and Vertex AI Cloud Functions runtime.
+- DONE: Extend verifier coverage for Telegram route integration.
+
 # 2026-06-19 17:26 +07 - DONE: POS chatbot Gemini function calling
 - DONE: Add `@google/genai` dependency for Cloud Functions.
 - DONE: Add authenticated callable `askPosChatbot` with `getProfitReportTool` tool declarations and mock profit report function response loop.
