@@ -303,17 +303,27 @@ let kitchenNotifSeenDocIds = new Set();
 let kitchenPushForegroundUnsub = null;
 let kitchenPushInitTimer = null;
 
+function syncAuthScrollLock() {
+  const locked = !!document.querySelector('.login-screen.active');
+  document.documentElement?.classList.toggle('auth-locked', locked);
+  document.body?.classList.toggle('auth-locked', locked);
+}
+
 function showLoginScreen(show) {
   const loginScreen = document.getElementById('login-screen');
   if (!loginScreen) return;
   loginScreen.classList.toggle('active', !!show);
+  syncAuthScrollLock();
 }
 
 function showLockScreen(show) {
   const lockScreen = document.getElementById('lock-screen');
   if (!lockScreen) return;
   lockScreen.classList.toggle('active', !!show);
+  syncAuthScrollLock();
 }
+
+syncAuthScrollLock();
 
 function updateLockScreenUI(reason = '') {
   const masterLabel = document.getElementById('lock-screen-master-label');
