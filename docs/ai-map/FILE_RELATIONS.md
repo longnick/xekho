@@ -1,3 +1,8 @@
+# 2026-06-19 18:09 +07 - Telegram POS chatbot function-calling route
+- `telegramWebhook` owner text branch now checks deterministic menu/proactive/finance/smart-report handlers first, then uses `tryAnswerTelegramPosChatbotFunctionCalling()` for natural report questions before the generic `askGeminiWithFirestoreTools()` fallback.
+- `tryAnswerTelegramPosChatbotFunctionCalling()` delegates to `runAskPosChatbot()` and sends the resulting natural Gemini answer back through the normal Telegram message path.
+- `getPosChatbotAi()` supports Gemini API-key runtime and Vertex AI runtime fallback for Cloud Functions deploys.
+
 # 2026-06-19 17:26 +07 - POS chatbot Gemini function-calling relations
 - `functions/index.js#askPosChatbot` is an authenticated callable entrypoint for POS report chat questions.
 - `getProfitReportTool` lets Gemini request `timeframe` (`today/current_month/last_month`) plus optional `sort` (`highest/lowest`) instead of inventing numbers.

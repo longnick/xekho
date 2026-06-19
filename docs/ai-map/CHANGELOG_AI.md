@@ -1,3 +1,7 @@
+# 2026-06-19 18:09 +07 - Telegram route for POS chatbot function calling
+- Wired owner-only Telegram text AI fallback into `tryAnswerTelegramPosChatbotFunctionCalling()` so natural report questions such as top/highest profit can use the Gemini 2.5 Flash `getProfitReportTool` flow before the generic Firestore tool loop.
+- Hardened `@google/genai` initialization with API-key and Vertex AI runtime fallbacks while retaining the `const ai = new GoogleGenAI()` fallback required by the implementation request.
+
 # 2026-06-19 17:26 +07 - POS chatbot Gemini function calling
 - Added callable Cloud Function `askPosChatbot` using `@google/genai` + `gemini-2.5-flash` with `getProfitReportTool` function declarations.
 - The callable requires Firebase Auth, accepts `userMessage`, lets Gemini request `getProfitReportTool`, feeds mock POS profit data back as a function response turn, then returns a natural Vietnamese answer.

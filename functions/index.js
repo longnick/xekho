@@ -224,14 +224,18 @@ const getProfitReportTool = {
 
 function getPosChatbotAi() {
   // Keep SDK initialization lazy so local syntax checks do not require runtime Gemini credentials.
-  try {
-    const ai = new GoogleGenAI();
-    return ai;
-  } catch (error) {
-    const apiKey = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-    if (!apiKey) throw error;
-    return new GoogleGenAI({ apiKey });
+  const apiKey = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+  if (apiKey) return new GoogleGenAI({ apiKey });
+  const vertexConfig = getVertexRuntimeConfig();
+  if (vertexConfig.projectId) {
+    return new GoogleGenAI({
+      vertexai: true,
+      project: vertexConfig.projectId,
+      location: vertexConfig.location || 'global',
+    });
   }
+  const ai = new GoogleGenAI();
+  return ai;
 }
 
 function getGenAiText(response = {}) {
@@ -661,6 +665,29 @@ function buildTelegramAssistantCapabilityResponse() {
     '• Tạo đề xuất thao tác như nhập hàng/sửa menu/gọi món, nhưng chỉ ghi dữ liệu sau khi anh xác nhận.',
     'BigQuery: em đã có đường đọc BigQuery read-only để trả lời báo cáo khi Firebase/POS không đủ dữ liệu; chỉ đọc, không ghi/sửa dữ liệu.',
   ].join('\n');
+}
+
+function isTelegramPosChatbotFunctionCallingQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(doanh thu|loi nhuan|lai|lai gop|bao cao|mon nao|mat hang|ban chay|cao nhat|thap nhat|highest|lowest)\b/.test(n)
+    && /\b(hom nay|thang nay|thang truoc|doanh thu|loi nhuan|lai|bao cao|cao nhat|thap nhat)\b/.test(n);
+}
+
+async function tryAnswerTelegramPosChatbotFunctionCalling(userText = '') {
+  if (!isTelegramPosChatbotFunctionCallingQuestion(userText)) return null;
+  const result = await runAskPosChatbot(userText);
+  if (!result?.answer) return null;
+  return {
+    text: result.answer,
+    pendingActions: [],
+    toolResults: [{
+      ok: true,
+      tool: 'getProfitReportTool',
+      usedTool: result.usedTool === true,
+      toolCalls: result.toolCalls || [],
+      mockData: result.mockData || [],
+    }],
+  };
 }
 
 async function tryAnswerTelegramSmartReportQuestion(userText = '') {
@@ -4636,6 +4663,7 @@ exports.telegramWebhook = onRequest({
           const proactiveReply = menuDataReply ? null : await tryAnswerTelegramProactiveOwnerInsight(userText, chatId);
           const financeReportReply = (menuDataReply || proactiveReply) ? null : await tryAnswerTelegramFinanceReportQuestion(userText, chatId);
           const smartReportReply = (menuDataReply || proactiveReply || financeReportReply) ? null : await tryAnswerTelegramSmartReportQuestion(userText);
+          const posChatbotFunctionReply = (menuDataReply || proactiveReply || financeReportReply || smartReportReply) ? null : await tryAnswerTelegramPosChatbotFunctionCalling(userText);
           if (menuDataReply?.text) {
             geminiResult = {
               text: menuDataReply.text,
@@ -4664,6 +4692,12 @@ exports.telegramWebhook = onRequest({
               inlineButtons: buildChartButtons(chartId),
               pendingActions: [],
               toolResults: smartReportReply.report ? [smartReportReply.report] : [],
+            };
+          } else if (posChatbotFunctionReply?.text) {
+            geminiResult = {
+              text: posChatbotFunctionReply.text,
+              pendingActions: [],
+              toolResults: posChatbotFunctionReply.toolResults || [],
             };
           } else {
             geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
