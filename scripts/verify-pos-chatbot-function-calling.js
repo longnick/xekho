@@ -19,8 +19,11 @@ assert(source.includes("sort: {") && source.includes("enum: ['highest', 'lowest'
 assert(source.includes('const ai = new GoogleGenAI();'), 'SDK must retain const ai = new GoogleGenAI() initialization fallback');
 assert(source.includes('new GoogleGenAI({ apiKey })'), 'SDK must support explicit API key options');
 assert(source.includes('vertexai: true'), 'SDK must support Vertex AI fallback for Cloud Functions runtime');
-assert(source.includes('async function getProfitReport(args = {})'), 'mock getProfitReport function is missing');
-assert(source.includes("bestSellerItem: 'Ốc Nướng Nabi'") && source.includes('profit: 15200000'), 'mock profit report data is missing');
+assert(source.includes('async function getProfitReport(args = {})'), 'getProfitReport function is missing');
+assert(source.includes("db.collection('history').get()") && source.includes("dataSource: 'firestore-history-readonly'"), 'getProfitReport must read Firestore history read-only');
+assert(source.includes('isVisibleHistoryOrderForReports(order)') && source.includes('coerceHistoryDate(order.paidAt || order.timestamp)'), 'getProfitReport must reuse visible-history/date helpers');
+assert(source.includes('buildMockProfitReport') && source.includes("bestSellerItem: 'Ốc Nướng Nabi'") && source.includes('profit: 15200000'), 'mock fallback profit report data is missing');
+assert(source.includes("dataSource: `mock-${reason}`"), 'mock fallback must label its dataSource reason');
 assert(source.includes('ai.models.generateContent({') && source.includes('tools: [getProfitReportTool]'), 'generateContent with tool config is missing');
 assert(source.includes('functionResponse: {') && source.includes('parts: functionResponseParts'), 'function response turn is missing');
 assert(source.includes('exports.askPosChatbot = onCall({'), 'askPosChatbot callable export is missing');

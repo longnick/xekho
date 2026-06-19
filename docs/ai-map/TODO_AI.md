@@ -1,3 +1,8 @@
+# 2026-06-19 18:21 +07 - DONE: POS chatbot Firestore profit report fallback
+- DONE: Replace primary mock `getProfitReport()` response with read-only `history` aggregation for item profit ranking.
+- DONE: Keep mock response only as an explicit fallback when Firestore read fails or the selected range has no item rows.
+- DONE: Extend verifier coverage for Firestore read-only markers and fallback labeling.
+
 # 2026-06-19 18:09 +07 - DONE: Telegram route for POS chatbot function calling
 - DONE: Route owner-only Telegram report questions into the Gemini 2.5 Flash POS chatbot function-calling path before generic fallback.
 - DONE: Harden GenAI initialization for API-key and Vertex AI Cloud Functions runtime.
