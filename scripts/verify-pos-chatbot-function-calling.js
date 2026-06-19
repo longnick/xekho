@@ -1,0 +1,30 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+
+const root = path.resolve(__dirname, '..');
+const source = fs.readFileSync(path.join(root, 'functions', 'index.js'), 'utf8');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'functions', 'package.json'), 'utf8'));
+
+assert(pkg.dependencies && pkg.dependencies['@google/genai'], '@google/genai dependency is missing');
+assert(source.includes("const { GoogleGenAI, Type } = require('@google/genai');"), 'GoogleGenAI SDK import is missing');
+assert(source.includes("const POS_CHATBOT_MODEL = 'gemini-2.5-flash';"), 'askPosChatbot must use gemini-2.5-flash');
+assert(source.includes('const getProfitReportTool = {'), 'getProfitReportTool declaration is missing');
+assert(source.includes("name: 'getProfitReportTool'"), 'function declaration name must be getProfitReportTool');
+assert(source.includes("timeframe: {") && source.includes("required: ['timeframe']"), 'timeframe parameter must exist and be required');
+assert(source.includes("enum: ['today', 'current_month', 'last_month']"), 'timeframe enum is missing');
+assert(source.includes("sort: {") && source.includes("enum: ['highest', 'lowest']"), 'sort enum is missing');
+assert(source.includes('const ai = new GoogleGenAI();'), 'SDK must first try const ai = new GoogleGenAI()');
+assert(source.includes('new GoogleGenAI({ apiKey })'), 'SDK must fall back to explicit API key options for @google/genai runtimes that require it');
+assert(source.includes('async function getProfitReport(args = {})'), 'mock getProfitReport function is missing');
+assert(source.includes("bestSellerItem: 'Ốc Nướng Nabi'") && source.includes('profit: 15200000'), 'mock profit report data is missing');
+assert(source.includes('ai.models.generateContent({') && source.includes('tools: [getProfitReportTool]'), 'generateContent with tool config is missing');
+assert(source.includes('functionResponse: {') && source.includes('parts: functionResponseParts'), 'function response turn is missing');
+assert(source.includes('exports.askPosChatbot = onCall({'), 'askPosChatbot callable export is missing');
+assert(source.includes('if (!request.auth)') && source.includes("new HttpsError('unauthenticated'"), 'askPosChatbot must require authenticated users');
+assert(source.includes("String(request.data?.userMessage || '').trim()"), 'askPosChatbot must read userMessage from request data');
+assert(source.includes('usedTool: false') && source.includes('usedTool: true'), 'tool/no-tool response branches are missing');
+
+console.log('OK pos chatbot function calling verified');

@@ -1,3 +1,8 @@
+# 2026-06-19 17:26 +07 - DONE: POS chatbot Gemini function calling
+- DONE: Add `@google/genai` dependency for Cloud Functions.
+- DONE: Add authenticated callable `askPosChatbot` with `getProfitReportTool` tool declarations and mock profit report function response loop.
+- DONE: Add deterministic verifier for function-calling structure.
+
 # 2026-06-19 16:58 +07 - DONE: Table special cards stale order cleanup
 - DONE: Diagnose raw `onlineOrders` rendering and stale cloud `takeaway` source.
 - DONE: Filter active online orders in listener/UI and preserve local takeaway only.
