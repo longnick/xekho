@@ -978,7 +978,7 @@ function _listen() {
       const rows = snap.docs
         .map(_fromDoc)
         .filter(Boolean)
-        .filter(order => String(order?.status || '').toLowerCase() !== 'completed');
+        .filter(order => isActiveOnlineOrderForTables(order));
       window.appState.onlineOrders = rows;
       _markSnapshotReady();
       _dispatchEvent('db:update', { key: 'onlineOrders' });
@@ -1175,6 +1175,13 @@ function _snapErr(name) {
   return e => console.error(`[DB] onSnapshot error [${name}]:`, e);
 }
 
+function isActiveOnlineOrderForTables(order) {
+  if (!order || order.hidden === true || order.deletedAt || order.deletedFromAppAt || order.archivedAt) return false;
+  const status = String(order.status || 'pending').trim().toLowerCase();
+  if (['completed', 'closed', 'cancelled', 'canceled', 'rejected', 'declined', 'expired', 'archived', 'deleted'].includes(status)) return false;
+  if (order.cancelledAt || order.canceledAt || order.cancelReason) return false;
+  return ['pending', 'approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(status);
+}
 
 // ============================================================
 // §6  FIREBASE AUTH  +  RBAC

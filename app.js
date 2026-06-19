@@ -2392,16 +2392,35 @@ function _getTables() {
 function _getOrders() {
   // appState.orders = { [tableId]: orderObject } (online format)
   // Store.getOrders() = { [tableId]: itemsArray } (offline format)
-  // Trả về offline format đă không vỡ các hàm cũ
+  // Tra ve offline format de khong vo cac ham cu.
   if (window.appState && window.appState.orders && typeof window.appState.orders === 'object') {
     const map = {};
     Object.entries(window.appState.orders).forEach(([tid, order]) => {
-      if (!order || order.status === 'cancelled') return;
+      if (String(tid).toLowerCase() === 'takeaway') return;
+      const status = String(order?.status || '').toLowerCase();
+      if (!order || status === 'cancelled' || status === 'canceled' || status === 'rejected' || status === 'completed' || status === 'closed') return;
       map[tid] = Array.isArray(order.items) ? order.items : [];
     });
+    const localOrders = Store.getOrders();
+    const localTakeawayOrder = localOrders.takeaway;
+    if (Array.isArray(localTakeawayOrder) && localTakeawayOrder.length > 0) {
+      map.takeaway = localTakeawayOrder;
+    }
     return map;
   }
   return Store.getOrders();
+}
+
+function isActiveOnlineOrderForTables(order) {
+  if (!order || order.hidden === true || order.deletedAt || order.deletedFromAppAt || order.archivedAt) return false;
+  const status = String(order.status || 'pending').trim().toLowerCase();
+  if (['completed', 'closed', 'cancelled', 'canceled', 'rejected', 'declined', 'expired', 'archived', 'deleted'].includes(status)) return false;
+  if (order.cancelledAt || order.canceledAt || order.cancelReason) return false;
+  return ['pending', 'approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(status);
+}
+
+function getActiveOnlineOrdersForTables(orders = []) {
+  return (Array.isArray(orders) ? orders : []).filter(order => isActiveOnlineOrderForTables(order));
 }
 function _getMenu() {
   const inv = _getInventory();
@@ -2431,6 +2450,7 @@ function syncLocalOrderCacheFromCloud() {
   if (!window.appState?.ready || !window.appState?.orders || typeof window.appState.orders !== 'object') return;
   const cloudOrders = {};
   Object.entries(window.appState.orders).forEach(([tid, order]) => {
+    if (String(tid).toLowerCase() === 'takeaway') return;
     if (!order || String(order.status || '').toLowerCase() !== 'open') return;
     const cloudItems = normalizeKitchenOrderItems(Array.isArray(order.items) ? order.items : []);
     cloudOrders[tid] = cloudItems;
@@ -2464,6 +2484,11 @@ function syncLocalOrderCacheFromCloud() {
       }
     }
   });
+  const localOrders = Store.getOrders();
+  const localTakeawayOrder = localOrders.takeaway;
+  if (Array.isArray(localTakeawayOrder) && localTakeawayOrder.length > 0) {
+    cloudOrders.takeaway = localTakeawayOrder;
+  }
   Store.setOrders(cloudOrders);
 }
 
@@ -3134,7 +3159,8 @@ function renderTables() {
     ${takeawayTotal > 0 ? `<div class="table-summary-meta">${fmt(takeawayTotal)}đ</div>` : '<div class="table-summary-sub">Trống</div>'}
   </div>`;
 
-  const onlineOrders = window.appState?.onlineOrders || [];
+  const activeOnlineOrders = getActiveOnlineOrdersForTables(window.appState?.onlineOrders || []);
+  const onlineOrders = activeOnlineOrders;
   const onlineOrderCount = onlineOrders.length;
   const onlineTotal = onlineOrders.reduce((sum, o) => sum + _calculateOnlineOrderTotal(o), 0);
   const onlineHtml = onlineOrderCount > 0 ? `
@@ -3193,7 +3219,7 @@ function renderOnlineOrdersPanel() {
   const body = document.getElementById('online-orders-modal-body');
   if (!body) return;
   
-  const onlineOrders = window.appState?.onlineOrders || [];
+  const onlineOrders = getActiveOnlineOrdersForTables(window.appState?.onlineOrders || []);
   
   if (onlineOrders.length === 0) {
     body.innerHTML = `
@@ -3459,9 +3485,15 @@ async function completeOnlineOrder(orderId) {
           completedAt: new Date().toISOString(),
           historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
         });
-        _patchLocalOnlineOrderStatus(onlineOrderDocId, 'completed');
+        _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
         showToast('✅ Đơn này đã được hoàn tất trong POS trước đó.', 'success');
         renderOnlineOrdersPanel();
+        renderTables();
         return;
       }
       throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
@@ -3508,9 +3540,11 @@ async function completeOnlineOrder(orderId) {
     _patchLocalOnlineOrderMeta(onlineOrderDocId, {
       status: 'completed',
       posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      completedAt: new Date().toISOString(),
     });
     showToast('✅ Đã hoàn tất đơn online và ghi nhận doanh số vào POS!', 'success');
     renderOnlineOrdersPanel();
+    renderTables();
   } catch (err) {
     console.error(err);
     showToast('❌ Lỗi: ' + (err.message || 'Không thể hoàn tất đơn online'), 'danger');
@@ -3577,10 +3611,12 @@ async function cancelOnlineOrder(orderId) {
     _patchLocalOnlineOrderMeta(onlineOrderDocId, {
       status: 'cancelled',
       posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      cancelledAt: new Date().toISOString(),
       cancelReason,
     });
     showToast('✅ Đã hủy đơn online!', 'success');
     renderOnlineOrdersPanel();
+    renderTables();
   } catch (err) {
     console.error(err);
     showToast('❌ Lỗi: ' + (err.message || 'Không thể hủy đơn online'), 'danger');
@@ -3595,8 +3631,10 @@ async function approveOnlineOrder(orderId) {
     }
     const result = await window.DB.OnlineOrders.approve(orderId);
     if (result?.ok) {
+      _patchLocalOnlineOrderMeta(orderId, { status: 'approved' });
       showToast('✅ Đã duyệt đơn thành công!', 'success');
       renderOnlineOrdersPanel();
+      renderTables();
     } else {
       throw new Error(result?.message || 'Không thể duyệt đơn');
     }
@@ -3614,8 +3652,10 @@ async function rejectOnlineOrder(orderId) {
     }
     const result = await window.DB.OnlineOrders.reject(orderId);
     if (result?.ok) {
+      _patchLocalOnlineOrderMeta(orderId, { status: 'rejected', rejectedAt: new Date().toISOString() });
       showToast('✅ Đã từ chối đơn!', 'success');
       renderOnlineOrdersPanel();
+      renderTables();
     } else {
       throw new Error(result?.message || 'Không thể từ chối đơn');
     }
