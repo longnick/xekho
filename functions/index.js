@@ -251,18 +251,152 @@ function getGenAiFunctionCallParts(response = {}) {
   return (response.functionCalls || []).map((functionCall) => ({ functionCall }));
 }
 
-async function getProfitReport(args = {}) {
+function getVietnamDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return {
+    year: Number(parts.year || 0),
+    month: Number(parts.month || 0),
+    day: Number(parts.day || 0),
+  };
+}
+
+function buildVietnamPosReportRange(timeframe = 'current_month', now = new Date()) {
+  const normalized = ['today', 'current_month', 'last_month'].includes(timeframe) ? timeframe : 'current_month';
+  const parts = getVietnamDateParts(now);
+  const startUtcFromVietnam = (year, month, day) => new Date(Date.UTC(year, month - 1, day) - (7 * 60 * 60 * 1000));
+  if (normalized === 'today') {
+    const from = startUtcFromVietnam(parts.year, parts.month, parts.day);
+    const to = startUtcFromVietnam(parts.year, parts.month, parts.day + 1);
+    return { from, to, label: 'Hôm nay', timeframe: normalized };
+  }
+  if (normalized === 'last_month') {
+    const from = startUtcFromVietnam(parts.year, parts.month - 1, 1);
+    const to = startUtcFromVietnam(parts.year, parts.month, 1);
+    return { from, to, label: 'Tháng trước', timeframe: normalized };
+  }
+  const from = startUtcFromVietnam(parts.year, parts.month, 1);
+  const to = startUtcFromVietnam(parts.year, parts.month + 1, 1);
+  return { from, to, label: 'Tháng này', timeframe: normalized };
+}
+
+function buildMockProfitReport(args = {}, reason = 'fallback') {
   const timeframe = String(args.timeframe || 'current_month').trim() || 'current_month';
   const sort = String(args.sort || 'highest').trim() || 'highest';
-  // TODO: Replace this mock with a read-only Firestore/BigQuery POS query after schema is finalized.
   return {
     bestSellerItem: 'Ốc Nướng Nabi',
     profit: 15200000,
     time: timeframe === 'today' ? 'Hôm nay' : (timeframe === 'last_month' ? 'Tháng trước' : 'Tháng này'),
     timeframe,
     sort,
-    dataSource: 'mock',
+    orderCount: 0,
+    topItems: [],
+    dataSource: `mock-${reason}`,
   };
+}
+
+async function getProfitReport(args = {}) {
+  const timeframe = String(args.timeframe || 'current_month').trim() || 'current_month';
+  const sort = String(args.sort || 'highest').trim() || 'highest';
+  const range = buildVietnamPosReportRange(timeframe);
+
+  try {
+    const historySnap = await db.collection('history').get();
+    const itemMap = new Map();
+    let orderCount = 0;
+    let revenue = 0;
+    let cost = 0;
+
+    historySnap.docs.forEach(doc => {
+      const order = { docId: doc.id, ...(doc.data() || {}) };
+      if (!isVisibleHistoryOrderForReports(order)) return;
+      const paidAt = coerceHistoryDate(order.paidAt || order.timestamp);
+      if (!(paidAt instanceof Date) || Number.isNaN(paidAt.getTime())) return;
+      if (paidAt < range.from || paidAt >= range.to) return;
+
+      orderCount += 1;
+      revenue += Number(order.total || 0) || 0;
+      const items = Array.isArray(order.items) ? order.items : [];
+      items.forEach(item => {
+        const name = String(item?.name || '').trim();
+        const qty = Number(item?.qty || 0) || 0;
+        const unitPrice = Number(item?.price || item?.unitPrice || 0) || 0;
+        const unitCost = Number(item?.cost || item?.unitCost || 0) || 0;
+        if (!name || !(qty > 0)) return;
+        if (!itemMap.has(name)) {
+          itemMap.set(name, {
+            name,
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            grossProfit: 0,
+          });
+        }
+        const row = itemMap.get(name);
+        const lineRevenue = unitPrice * qty;
+        const lineCost = unitCost * qty;
+        row.qty += qty;
+        row.revenue += lineRevenue;
+        row.cost += lineCost;
+        row.grossProfit += (lineRevenue - lineCost);
+        cost += lineCost;
+      });
+    });
+
+    const topItems = [...itemMap.values()]
+      .map(item => ({
+        ...item,
+        profit: item.grossProfit,
+      }))
+      .sort((a, b) => {
+        const primary = sort === 'lowest' ? a.grossProfit - b.grossProfit : b.grossProfit - a.grossProfit;
+        if (primary !== 0) return primary;
+        return b.revenue - a.revenue;
+      })
+      .slice(0, 5);
+
+    if (!topItems.length) return buildMockProfitReport({ timeframe: range.timeframe, sort }, 'empty-live-data');
+
+    const best = topItems[0];
+    return {
+      bestSellerItem: best.name,
+      profit: Math.round(best.grossProfit),
+      time: range.label,
+      timeframe: range.timeframe,
+      sort,
+      orderCount,
+      revenue: Math.round(revenue),
+      cost: Math.round(cost),
+      grossProfit: Math.round(revenue - cost),
+      topItems: topItems.map(item => ({
+        name: item.name,
+        qty: item.qty,
+        revenue: Math.round(item.revenue),
+        cost: Math.round(item.cost),
+        grossProfit: Math.round(item.grossProfit),
+      })),
+      range: {
+        from: range.from.toISOString(),
+        toExclusive: range.to.toISOString(),
+        timezone: 'Asia/Ho_Chi_Minh',
+      },
+      dataSource: 'firestore-history-readonly',
+    };
+  } catch (error) {
+    logger.warn('getProfitReport Firestore read failed; falling back to mock report', {
+      error: error?.message || String(error),
+      timeframe,
+      sort,
+    });
+    return buildMockProfitReport({ timeframe, sort }, 'firestore-error');
+  }
 }
 
 async function runAskPosChatbot(userMessage) {
@@ -333,7 +467,7 @@ async function runAskPosChatbot(userMessage) {
       name: part.functionCall?.name || '',
       args: part.functionCall?.args || {},
     })),
-    mockData: functionResponseParts.map((part) => part.functionResponse?.response || {}),
+    toolData: functionResponseParts.map((part) => part.functionResponse?.response || {}),
   };
 }
 
@@ -685,7 +819,7 @@ async function tryAnswerTelegramPosChatbotFunctionCalling(userText = '') {
       tool: 'getProfitReportTool',
       usedTool: result.usedTool === true,
       toolCalls: result.toolCalls || [],
-      mockData: result.mockData || [],
+      toolData: result.toolData || [],
     }],
   };
 }

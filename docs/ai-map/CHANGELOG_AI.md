@@ -1,3 +1,7 @@
+# 2026-06-19 18:21 +07 - POS chatbot Firestore profit report fallback
+- Replaced the primary `getProfitReport()` mock path with read-only Firestore `history` aggregation for Telegram/callable Gemini function calling.
+- The report now computes item-level revenue, cost, and gross profit for `today/current_month/last_month` in Vietnam time, returning top items plus range metadata; mock data remains only as an explicitly labeled fallback when Firestore read fails or live data is empty.
+
 # 2026-06-19 18:09 +07 - Telegram route for POS chatbot function calling
 - Wired owner-only Telegram text AI fallback into `tryAnswerTelegramPosChatbotFunctionCalling()` so natural report questions such as top/highest profit can use the Gemini 2.5 Flash `getProfitReportTool` flow before the generic Firestore tool loop.
 - Hardened `@google/genai` initialization with API-key and Vertex AI runtime fallbacks while retaining the `const ai = new GoogleGenAI()` fallback required by the implementation request.
