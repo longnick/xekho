@@ -1,3 +1,8 @@
+# 2026-06-19 18:21 +07 - POS chatbot Firestore profit report relations
+- `functions/index.js#getProfitReport()` now reads `history` via Admin SDK read-only, filters visible report orders with existing Telegram report guards, and aggregates item-level qty/revenue/cost/grossProfit for Vietnam-time `today/current_month/last_month` ranges.
+- `buildMockProfitReport()` remains only as a labeled fallback (`mock-firestore-error` / `mock-empty-live-data`) so Gemini does not invent numbers if Firestore is unavailable or the range has no item data.
+- `runAskPosChatbot()` exposes returned tool data as `toolData` rather than `mockData`; Telegram owner route keeps this data inside `toolResults` for internal traceability.
+
 # 2026-06-19 18:09 +07 - Telegram POS chatbot function-calling route
 - `telegramWebhook` owner text branch now checks deterministic menu/proactive/finance/smart-report handlers first, then uses `tryAnswerTelegramPosChatbotFunctionCalling()` for natural report questions before the generic `askGeminiWithFirestoreTools()` fallback.
 - `tryAnswerTelegramPosChatbotFunctionCalling()` delegates to `runAskPosChatbot()` and sends the resulting natural Gemini answer back through the normal Telegram message path.
