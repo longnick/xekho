@@ -1,3 +1,8 @@
+# 2026-06-19 17:26 +07 - POS chatbot Gemini function calling
+- Added callable Cloud Function `askPosChatbot` using `@google/genai` + `gemini-2.5-flash` with `getProfitReportTool` function declarations.
+- The callable requires Firebase Auth, accepts `userMessage`, lets Gemini request `getProfitReportTool`, feeds mock POS profit data back as a function response turn, then returns a natural Vietnamese answer.
+- Added verifier `scripts/verify-pos-chatbot-function-calling.js`; no deploy was run in this implementation step.
+
 # 2026-06-19 16:58 +07 - Fix stale Table special cards
 - Fixed tab Ban special cards so cancelled/completed/rejected/expired online orders no longer keep `Ban Online` occupied.
 - Prevented stale cloud `takeaway` orders from overriding the local-only `Khach Mang Ve` cart.

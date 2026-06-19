@@ -1,3 +1,9 @@
+# 2026-06-19 17:26 +07 - POS chatbot Gemini function-calling relations
+- `functions/index.js#askPosChatbot` is an authenticated callable entrypoint for POS report chat questions.
+- `getProfitReportTool` lets Gemini request `timeframe` (`today/current_month/last_month`) plus optional `sort` (`highest/lowest`) instead of inventing numbers.
+- `getProfitReport()` currently returns mock data only; replace it with read-only Firestore/BigQuery reporting before exposing real financial answers broadly.
+- `scripts/verify-pos-chatbot-function-calling.js` guards the SDK import, tool schema, auth gate, function-response turn, and mock data markers.
+
 # 2026-06-19 16:58 +07 - Table special-card file relations
 - `index.html` cache keys -> loads fresh `db.js` and `app.js` for table special-card cleanup.
 - `db.js` online-order listener -> `window.appState.onlineOrders` -> `app.js#renderTables` / `renderOnlineOrdersPanel`.
