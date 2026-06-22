@@ -58,18 +58,21 @@ async function importEsm(filePath) {
     renderTables() { calls.push(['renderTables']); },
     renderStockList() { calls.push(['renderStockList']); },
     renderMenuAdmin() { calls.push(['renderMenuAdmin']); },
+    renderPurchaseList() { calls.push(['renderPurchaseList']); },
     renderMenuItems() { calls.push(['renderMenuItems', this.menuSearch]); },
   };
 
   mod.callAdminRender(root, 'renderTables');
   mod.callAdminRender(root, 'renderStockList');
   mod.callAdminRender(root, 'renderMenuAdmin');
+  mod.callAdminRender(root, 'renderPurchaseList');
   mod.callAdminRender(root, 'resetAllData');
   mod.callMenuItemsSearch(root, 'cafe sua');
   assert.deepStrictEqual(calls, [
     ['renderTables'],
     ['renderStockList'],
     ['renderMenuAdmin'],
+    ['renderPurchaseList'],
     ['renderMenuItems', 'cafe sua'],
   ]);
 
@@ -100,7 +103,7 @@ async function importEsm(filePath) {
   assert.strictEqual(root2.XekhoApp.esm.ui.adminRenderControls, published);
 
   const html = fs.readFileSync(path.join(repo, 'index.html'), 'utf8');
-  assert.strictEqual((html.match(/data-esm-admin-render=/g) || []).length, 4);
+  assert.strictEqual((html.match(/data-esm-admin-render=/g) || []).length, 5);
   assert.strictEqual((html.match(/data-esm-menu-items-search/g) || []).length, 1);
   assert(!html.includes('onclick="renderTables()"'));
   assert(!html.includes('oninput="menuSearch=this.value;renderMenuItems()"'));
