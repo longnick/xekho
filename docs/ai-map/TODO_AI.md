@@ -76,6 +76,7 @@
 
 ## Done recently
 
+- 2026-06-22 22:18: Fixed Kho inventory type saves so `Nguyên liệu` ↔ `Hàng bán thẳng` edits persist through `itemType` + `inv_type`. Task log: `docs/ai-map/TASK_LOGS/2026-06-22-2218-inventory-type-save.md`
 - 2026-06-19 16:35: Fixed Finance tab custom range reports so 2026-06-01 to 2026-06-18 keeps `financePeriod=range` in sync with `financeDateOpts`; expenses/fixed costs/charts/discount details now use the same range. Task log: `docs/ai-map/TASK_LOGS/2026-06-19-1635-finance-date-range.md`
 - 2026-06-17: Fixed Telegram chart button unknown-callback regression by accepting legacy/new chart callback prefixes. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-chart-callback-prefix-regression.md`
 - 2026-06-17: Fixed Telegram `Doanh thu tháng này?` zero regression by restoring Firestore/POS-first direct reports and constraining BigQuery fallback. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-month-revenue-zero-regression.md`

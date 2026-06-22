@@ -1,3 +1,10 @@
+# 2026-06-22 22:18 +07 - Fix Kho inventory type save
+- Fixed the **Kho** inventory edit flow so changing an item between `Nguyên liệu` and `Hàng bán thẳng` persists correctly.
+- `submitInvEdit()` now sends both app-level `itemType` and master/reporting `inv_type`; added a local `_appInventoryTypeToMaster()` helper in `app.js`.
+- Bumped the `app.js` cache key and added `scripts/verify-inventory-type-save.js`.
+- Verification passed: targeted verifier, `npm run check`, `node --input-type=module --check < db.js`, and `npm run build:hosting`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-22-2218-inventory-type-save.md`
+
 # 2026-06-19 18:21 +07 - POS chatbot Firestore profit report fallback
 - Replaced the primary `getProfitReport()` mock path with read-only Firestore `history` aggregation for Telegram/callable Gemini function calling.
 - The report now computes item-level revenue, cost, and gross profit for `today/current_month/last_month` in Vietnam time, returning top items plus range metadata; mock data remains only as an explicitly labeled fallback when Firestore read fails or live data is empty.
