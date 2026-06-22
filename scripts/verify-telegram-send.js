@@ -13,6 +13,7 @@ const expectedFunctions = [
   'sendTelegramActionConfirmation',
   'sendTelegramInlineMessage',
   'sendTelegramPhotoMessage',
+  'sendTelegramPhotoBuffer',
   'answerTelegramCallback',
   'editTelegramMessage',
   'editTelegramInlineMessage',

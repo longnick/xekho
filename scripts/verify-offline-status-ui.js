@@ -118,19 +118,19 @@ async function main() {
   assert.equal(clean.online, true);
   assert.equal(clean.pending, 0);
   assert.equal(getBadgeState(clean), 'ok');
-  assert.equal(formatBadgeText(clean), 'Offline: OK');
+  assert.equal(formatBadgeText(clean), 'OK');
 
   const pending = normalizeSummary({ online: true, pending: 3, failed: 0, syncEnabled: false });
   assert.equal(getBadgeState(pending), 'warning');
-  assert.equal(formatBadgeText(pending), 'Offline: 3 chờ');
+  assert.equal(formatBadgeText(pending), '3 chờ');
 
   const failed = normalizeSummary({ online: true, pending: 1, failed: 2, syncEnabled: false });
   assert.equal(getBadgeState(failed), 'danger');
-  assert.equal(formatBadgeText(failed), 'Offline: 2 lỗi');
+  assert.equal(formatBadgeText(failed), '2 lỗi');
 
   const offline = normalizeSummary({ online: false, pending: 0, failed: 0, syncEnabled: false });
   assert.equal(getBadgeState(offline), 'offline');
-  assert.equal(formatBadgeText(offline), 'Offline: mất mạng');
+  assert.equal(formatBadgeText(offline), 'Mất mạng');
 
   const panel = formatPanelText({ online: true, pending: 1, failed: 0, synced: 2, total: 3, syncEnabled: false });
   assert.equal(panel.network, 'Online');
