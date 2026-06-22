@@ -8,6 +8,7 @@ const ALLOWED_ADMIN_RENDER_CALLS = new Set([
   'renderTables',
   'renderStockList',
   'renderMenuAdmin',
+  'renderPurchaseList',
 ]);
 
 /**

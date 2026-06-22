@@ -5508,7 +5508,7 @@ async function submitInvEdit(e) {
 
   const hidden = (status === 'hidden');
   const existing = id ? _getInventory().find(i => i.id === id) : null;
-  const updateData = { name, unit, itemType, minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
+  const updateData = { name, unit, inv_type: _appInventoryTypeToMaster(itemType), minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
   
   if (window.DB && window.DB.Inventory) {
     try {
