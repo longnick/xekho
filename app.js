@@ -2583,6 +2583,12 @@ function inferInventoryItemType(item = {}) {
   return ITEM_TYPES.RAW;
 }
 
+function _appInventoryTypeToMaster(itemType) {
+  return String(itemType || '').trim().toLowerCase() === ITEM_TYPES.RETAIL
+    ? 'Retail'
+    : 'Raw';
+}
+
 function normalizeInventoryItemModel(item = {}) {
   if (window.XekhoApp?.order?.normalizeInventoryItemModel) {
     const base = window.XekhoApp.order.normalizeInventoryItemModel(item);
@@ -5508,7 +5514,7 @@ async function submitInvEdit(e) {
 
   const hidden = (status === 'hidden');
   const existing = id ? _getInventory().find(i => i.id === id) : null;
-  const updateData = { name, unit, inv_type: _appInventoryTypeToMaster(itemType), minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
+  const updateData = { name, unit, itemType, inv_type: _appInventoryTypeToMaster(itemType), minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
   
   if (window.DB && window.DB.Inventory) {
     try {
