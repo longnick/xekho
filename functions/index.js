@@ -1303,10 +1303,6 @@ async function handleTelegramChartCallback({ chartId, callbackChatId, callbackQu
 
 const DEFAULT_TELEGRAM_REPORT_SETTINGS = telegramReports.DEFAULT_TELEGRAM_REPORT_SETTINGS;
 
-function getVietnamDateParts(date = new Date()) {
-  return telegramReports.getVietnamDateParts(date);
-}
-
 function getVietnamBusinessReportRange(now = new Date()) {
   return telegramReports.getVietnamBusinessReportRange(now);
 }

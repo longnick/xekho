@@ -57,6 +57,7 @@ export default [
         btoa: 'readonly',
         FileReader: 'readonly',
         Blob: 'readonly',
+        FormData: 'readonly',
       },
     },
     rules: {
