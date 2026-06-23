@@ -59,12 +59,10 @@ function isVisibleHistoryOrderForReports(order) {
  * @param {any} value
  * @returns {string}
  */
-function extractTelegramCashierName(value) {
-// Override table normalization so customer-request flows do not render labels like duplicated "BAN".
 function normalizeTelegramTableLabel(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang về';
+  if (/^(takeaway|mang ve|mangv[eá» ])$/i.test(raw)) return 'Mang về';
 
   const repeatedPrefixMatch = raw.match(/^(?:b[aà]n?\s*)?(?:ban|b[aà]n)\s*(.+)$/i);
   if (repeatedPrefixMatch?.[1]) return `Bàn ${repeatedPrefixMatch[1].trim()}`;
@@ -75,6 +73,11 @@ function normalizeTelegramTableLabel(value) {
   return raw;
 }
 
+/**
+ * @param {any} value
+ * @returns {string}
+ */
+function extractTelegramCashierName(value) {
   if (!value) return '';
   if (typeof value === 'string') return value.trim();
   if (typeof value !== 'object') return String(value).trim();
@@ -215,6 +218,7 @@ module.exports = {
   isCompletedHistoryOrderForReports,
   isVisibleHistoryOrderForReports,
   extractTelegramCashierName,
+  normalizeTelegramTableLabel,
   pickFirstPresentValue,
   toTelegramMoneyNumber,
   normalizeCompletedOrderItems,
