@@ -1732,6 +1732,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       initKitchenPushClient().catch(err => console.warn('[KitchenPush] settings init error', err));
     }
     if (key === 'users' || key === 'presence' || key === 'staff') renderUserManagement();
+    if (key === 'inventory' && typeof currentPage !== 'undefined' && currentPage === 'inventory') {
+      try { renderInventory(); } catch(_) {}
+    }
     if (key === 'attendanceDaily' || key === 'attendanceShifts' || key === 'staff') renderAttendanceManagement();
     if (key === 'staff') syncCurrentStaffSession();
     if (key === 'menu') {
@@ -1751,6 +1754,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (typeof currentPage !== 'undefined' && currentPage === 'finance') {
         try { renderFinancePage?.() || updateFinanceUI(getRevenueSummary(financePeriod, financeDateOpts)); } catch(_) {}
+      }
+      if (typeof currentPage !== 'undefined' && currentPage === 'inventory') {
+        try { renderAutoStockNormBoard(); } catch(_) {}
       }
     }
   });
@@ -5353,6 +5359,234 @@ function resizeImageToDataUrl(file, maxSize, quality) {
   });
 }
 
+function escapeAutoStockNormHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getAutoStockNormDateKey(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getAutoStockNormDayKeys(days = 56) {
+  const todayKey = getAutoStockNormDateKey(new Date());
+  const todayStart = new Date(`${todayKey}T00:00:00+07:00`).getTime();
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    out.push(getAutoStockNormDateKey(new Date(todayStart - i * 86400000)));
+  }
+  return out;
+}
+
+function autoStockNormQuantile(values, q) {
+  const nums = (values || []).map(Number).filter(n => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!nums.length) return 0;
+  const pos = (nums.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return nums[lo];
+  return nums[lo] * (hi - pos) + nums[hi] * (pos - lo);
+}
+
+function getAutoStockNormClass(total, avgDay, daysSold) {
+  if (total >= 50 || avgDay >= 1 || daysSold >= 20) return 'A';
+  if (total >= 15 || daysSold >= 8) return 'B';
+  return 'C';
+}
+
+function getAutoStockNormLevels(row) {
+  const total = row.total || 0;
+  const avgDay = row.avgDay || 0;
+  const avgSoldDay = row.avgSoldDay || 0;
+  const daysSold = row.daysSold || 0;
+  const p75 = row.p75 || 0;
+  const p90 = row.p90 || 0;
+  const p95 = row.p95 || 0;
+  if (row.abc === 'A') {
+    return {
+      min: Math.ceil(Math.max(p75, avgDay * 1.2, 1)),
+      par: Math.ceil(Math.max(p90 * 2, avgDay * 3, Math.ceil(Math.max(p75, avgDay * 1.2, 1)) + 1)),
+      max: Math.ceil(Math.max(p95 * 3, avgDay * 4, Math.ceil(Math.max(p90 * 2, avgDay * 3, Math.ceil(Math.max(p75, avgDay * 1.2, 1)) + 1)) + 1))
+    };
+  }
+  if (row.abc === 'B') {
+    const min = Math.ceil(Math.max(p75, avgDay, daysSold >= 8 ? 1 : 0));
+    const par = Math.ceil(Math.max(p90 * 1.5, avgDay * 2, min + 1));
+    return { min, par, max: Math.ceil(Math.max(p95 * 2, avgDay * 3, par + 1)) };
+  }
+  const min = 0;
+  const par = Math.ceil(Math.max(total >= 3 ? 1 : 0, p90, avgSoldDay * 0.75));
+  return { min, par, max: Math.ceil(Math.max(par, p95 * 1.5, avgSoldDay)) };
+}
+
+function buildAutoStockNormRows(days = 56) {
+  const history = _getVisibleHistoryForUi();
+  const inventory = _getInventory();
+  const dayKeys = getAutoStockNormDayKeys(days);
+  const daySet = new Set(dayKeys);
+  const byId = new Map();
+  const byName = new Map();
+  inventory.forEach(item => {
+    if (!item || item.hidden) return;
+    byId.set(String(item.id || ''), item);
+    byName.set(normalizeViKey(item.name), item);
+  });
+
+  const groups = new Map();
+  let ordersInRange = 0;
+  history.forEach(order => {
+    const ts = order?.paidAt || order?.timestamp || order?.createdAt;
+    const dayKey = getAutoStockNormDateKey(ts);
+    if (!daySet.has(dayKey)) return;
+    ordersInRange += 1;
+    (Array.isArray(order.items) ? order.items : []).forEach(item => {
+      const qty = Number(item?.qty || 0);
+      const name = String(item?.name || item?.id || '').trim();
+      if (!name || !Number.isFinite(qty) || qty <= 0) return;
+      const key = normalizeViKey(name) || name;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name,
+          id: String(item?.id || ''),
+          linkedInventoryId: String(item?.linkedInventoryId || ''),
+          daily: Object.create(null),
+          total: 0,
+          price: Number(item?.price || 0),
+        });
+      }
+      const row = groups.get(key);
+      row.total += qty;
+      row.daily[dayKey] = (row.daily[dayKey] || 0) + qty;
+      if (!row.linkedInventoryId && item?.linkedInventoryId) row.linkedInventoryId = String(item.linkedInventoryId);
+      if (!row.id && item?.id) row.id = String(item.id);
+    });
+  });
+
+  const rows = [...groups.values()].map(row => {
+    const values = dayKeys.map(day => Number(row.daily[day] || 0));
+    const nonZero = values.filter(v => v > 0);
+    const avgDay = row.total / Math.max(1, dayKeys.length);
+    const avgSoldDay = row.total / Math.max(1, nonZero.length);
+    const stats = {
+      ...row,
+      daysSold: nonZero.length,
+      avgDay,
+      avgSoldDay,
+      p75: autoStockNormQuantile(values, 0.75),
+      p90: autoStockNormQuantile(values, 0.90),
+      p95: autoStockNormQuantile(values, 0.95),
+      maxDay: values.length ? Math.max(...values) : 0,
+    };
+    stats.abc = getAutoStockNormClass(stats.total, stats.avgDay, stats.daysSold);
+    const levels = getAutoStockNormLevels(stats);
+    const mapped = stats.linkedInventoryId ? byId.get(stats.linkedInventoryId) : null;
+    const stockItem = mapped || byId.get(stats.id) || byName.get(normalizeViKey(stats.name)) || null;
+    const currentStock = stockItem ? Number(stockItem.qty || 0) : null;
+    const unit = stockItem ? String(stockItem.unit || '') : 'phần';
+    let status = 'ok';
+    let statusText = 'Đủ';
+    if (!stockItem) { status = 'unmapped'; statusText = 'Chưa map kho'; }
+    else if (currentStock <= levels.min) { status = 'need'; statusText = 'Cần nhập'; }
+    else if (currentStock > levels.max) { status = 'over'; statusText = 'Dư tồn'; }
+    else if (currentStock <= levels.par) { status = 'watch'; statusText = 'Theo dõi'; }
+    if (stats.daysSold <= 4 && stats.maxDay >= 10) statusText += ' / spike';
+    return { ...stats, ...levels, stockItem, currentStock, unit, status, statusText };
+  }).sort((a, b) => {
+    const rank = { need: 0, watch: 1, over: 2, ok: 3, unmapped: 4 };
+    return (rank[a.status] ?? 9) - (rank[b.status] ?? 9)
+      || 'ABC'.indexOf(a.abc) - 'ABC'.indexOf(b.abc)
+      || b.total - a.total
+      || a.name.localeCompare(b.name, 'vi');
+  });
+
+  return { rows, days: dayKeys.length, ordersInRange, start: dayKeys[0], end: dayKeys[dayKeys.length - 1] };
+}
+
+function renderAutoStockNormBoard() {
+  const board = document.getElementById('auto-stock-norm-board');
+  if (!board) return;
+  const subtitle = document.getElementById('auto-stock-norm-subtitle');
+  const filter = (document.getElementById('auto-stock-norm-filter') || {}).value || 'all';
+  const report = buildAutoStockNormRows(56);
+  let rows = report.rows;
+  if (filter === 'need') rows = rows.filter(r => r.status === 'need' || r.status === 'watch');
+  else if (filter === 'over') rows = rows.filter(r => r.status === 'over');
+  else if (filter === 'unmapped') rows = rows.filter(r => r.status === 'unmapped');
+  else if (['A', 'B', 'C'].includes(filter)) rows = rows.filter(r => r.abc === filter);
+
+  const needCount = report.rows.filter(r => r.status === 'need' || r.status === 'watch').length;
+  const overCount = report.rows.filter(r => r.status === 'over').length;
+  const unmappedCount = report.rows.filter(r => r.status === 'unmapped').length;
+  if (subtitle) subtitle.textContent = `Tự tính ${report.days} ngày (${report.start} → ${report.end}), ${report.ordersInRange} đơn, ${report.rows.length} món. Không ghi dữ liệu kho.`;
+  if (!report.rows.length) {
+    board.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có lịch sử bán để tính định mức.</div></div>';
+    return;
+  }
+
+  const statusBadge = (row) => {
+    const cls = row.status === 'need' ? 'badge-danger' : row.status === 'watch' ? 'badge-warning' : row.status === 'over' ? 'badge-info' : row.status === 'unmapped' ? 'badge-warning' : 'badge-success';
+    return `<span class="badge ${cls}">${row.statusText}</span>`;
+  };
+  const fmtQty = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+  const body = rows.slice(0, 50).map(row => `
+    <tr data-auto-stock-norm-row="${row.abc}">
+      <td><span class="badge badge-primary">${row.abc}</span></td>
+      <td>
+        <div style="font-weight:700;color:var(--text)">${escapeAutoStockNormHtml(row.name)}</div>
+        <div style="font-size:10px;color:var(--text3)">${row.stockItem ? `Kho: ${escapeAutoStockNormHtml(row.stockItem.name)} (${escapeAutoStockNormHtml(row.unit)})` : 'Chưa liên kết tồn kho / recipe'}</div>
+      </td>
+      <td style="text-align:right">${fmtQty(row.total)}</td>
+      <td style="text-align:right">${row.daysSold}</td>
+      <td style="text-align:right">${fmtQty(row.avgDay)}</td>
+      <td style="text-align:right">${fmtQty(row.p90)}</td>
+      <td style="text-align:right;font-weight:700">${row.min} / ${row.par} / ${row.max}</td>
+      <td style="text-align:right">${row.currentStock === null ? '—' : fmtQty(row.currentStock)}</td>
+      <td>${statusBadge(row)}</td>
+    </tr>`).join('');
+
+  board.innerHTML = `
+    <div class="auto-stock-norm-summary" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px">
+      <div class="stat-card" style="padding:10px"><div class="stat-label">Cần nhập/theo dõi</div><div class="stat-value" style="font-size:22px;color:var(--warning)">${needCount}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="stat-label">Dư tồn</div><div class="stat-value" style="font-size:22px;color:var(--info)">${overCount}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="stat-label">Chưa map kho</div><div class="stat-value" style="font-size:22px;color:var(--text2)">${unmappedCount}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="stat-label">Tổng món phân tích</div><div class="stat-value" style="font-size:22px">${report.rows.length}</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Đơn vị là đơn vị bán trên POS. Combo/món chế biến cần map recipe để quy đổi sang nguyên liệu thật.</div>
+    <div style="overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:10px">
+      <table class="auto-stock-norm-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px">
+        <thead style="position:sticky;top:0;background:var(--card);z-index:1">
+          <tr>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Nhóm</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Món / map kho</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Bán</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Ngày</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">TB/ngày</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">P90</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Tối thiểu / Chuẩn / Tối đa</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Tồn hiện tại</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Trạng thái</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderStockList() {
   const inv = _getInventory();
   const search = (document.getElementById('inv-search')||{}).value || '';
@@ -5403,6 +5637,7 @@ function renderStockList() {
   }).join('') || '<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">Không có dữ liệu</div></div>';
 
   document.getElementById('stock-list').innerHTML = html;
+  renderAutoStockNormBoard();
   renderIngredientMergeBoard();
 
   // Alert summary

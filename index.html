@@ -313,6 +313,27 @@
           <div class="card" style="padding:0 16px">
             <div id="stock-list"></div>
           </div>
+          <div class="card auto-stock-norm-card" data-xk-auto-stock-norm="v1" style="padding:12px 16px; margin-top:12px">
+            <div class="card-header" style="margin-bottom:8px;align-items:flex-start;gap:10px;flex-wrap:wrap">
+              <div>
+                <div class="card-title">📊 Định mức tồn kho tự động</div>
+                <div class="card-sub" id="auto-stock-norm-subtitle">Tính từ lịch sử bán live, không ghi dữ liệu kho.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select class="select select-sm" id="auto-stock-norm-filter" style="min-width:130px" data-esm-admin-render="renderAutoStockNormBoard">
+                  <option value="all">Tất cả</option>
+                  <option value="need">Cần nhập</option>
+                  <option value="over">Dư tồn</option>
+                  <option value="unmapped">Chưa map kho</option>
+                  <option value="A">Nhóm A</option>
+                  <option value="B">Nhóm B</option>
+                  <option value="C">Nhóm C</option>
+                </select>
+                <button class="btn btn-sm btn-secondary" type="button" onclick="renderAutoStockNormBoard()">🔄 Tính lại</button>
+              </div>
+            </div>
+            <div id="auto-stock-norm-board"></div>
+          </div>
           <div class="card" style="padding:12px 16px; margin-top:12px">
             <div class="card-header" style="margin-bottom:8px">
               <div class="card-title">🧩 Gợi ý gộp nguyên liệu</div>
@@ -2313,7 +2334,7 @@
   <script src="ai-actions.js?v=20260509-utf8fix"></script>
   <script src="ai-ui.js?v=20260509-utf8fix"></script>
   <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
-  <script src="app.js?v=20260622-inventory-type-save"></script>
+  <script src="app.js?v=20260625-auto-stock-norm"></script>
   <!-- POS Offline Backup: Sprint 19 production with auto sync -->
   <script src="offlineBackup.js?v=20260601-sprint19"></script>
   <script src="offlineSync.js?v=20260601-sprint19"></script>
