@@ -1,3 +1,9 @@
+# 2026-06-25 06:45 +07 - Auto stock norm board relations
+- `index.html#auto-stock-norm-board` renders a read-only `Định mức tồn kho tự động` card in `Kho → TỒN KHO` and loads `app.js?v=20260625-auto-stock-norm`.
+- `db.js` streams `history` and `Inventory_Items`/inventory into `window.appState`; `app.js#buildAutoStockNormRows()` reads them through `_getVisibleHistoryForUi()` and `_getInventory()` without writing Firestore.
+- `app.js#renderAutoStockNormBoard()` computes 56-day POS item demand, ABC class, P75/P90/P95, `Tối thiểu / Chuẩn / Tối đa`, and maps current stock by `linkedInventoryId`, item id, or normalized name.
+- `scripts/verify-auto-stock-norm.js` guards the DOM marker, app logic markers, cache key, and realtime refresh markers.
+
 # 2026-06-19 18:21 +07 - POS chatbot Firestore profit report relations
 - `functions/index.js#getProfitReport()` now reads `history` via Admin SDK read-only, filters visible report orders with existing Telegram report guards, and aggregates item-level qty/revenue/cost/grossProfit for Vietnam-time `today/current_month/last_month` ranges.
 - `buildMockProfitReport()` remains only as a labeled fallback (`mock-firestore-error` / `mock-empty-live-data`) so Gemini does not invent numbers if Firestore is unavailable or the range has no item data.

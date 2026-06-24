@@ -1,3 +1,9 @@
+# 2026-06-25 06:45 +07 - Auto stock norm board
+- `index.html#auto-stock-norm-board`: read-only `Định mức tồn kho tự động` card under `Kho → TỒN KHO`; cache key `app.js?v=20260625-auto-stock-norm`.
+- `app.js#buildAutoStockNormRows`: reads visible completed history + normalized inventory, builds 56-day demand series, ABC class, quantiles, and `Tối thiểu / Chuẩn / Tối đa` recommendations.
+- `app.js#renderAutoStockNormBoard`: renders summary counters, filterable table, and current-stock status without mutating Firestore/POS data.
+- `scripts/verify-auto-stock-norm.js`: source regression guard for the auto stock norm UI and logic markers.
+
 # 2026-06-19 16:58 +07 - Table special-card order source map
 - `app.js#_getOrders`: cloud orders are converted to legacy table map, but cloud `takeaway` is ignored and live local Store `takeaway` is preserved.
 - `app.js#getActiveOnlineOrdersForTables`: active-only filter for `Ban Online` card/modal.
