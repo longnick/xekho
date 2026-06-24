@@ -1,3 +1,12 @@
+# 2026-06-25 06:45 +07 - Auto stock norm board in Kho
+- Added a read-only **Kho → TỒN KHO** card named `Định mức tồn kho tự động`.
+- The board reads visible live order history already streamed in `window.appState.history`, computes a 56-day daily demand series, ABC class, P75/P90/P95, and recommended `Tối thiểu / Chuẩn / Tối đa` per sold item.
+- The UI compares recommended levels to current inventory when it can map by `linkedInventoryId`, item id, or normalized name, and flags `Cần nhập`, `Theo dõi`, `Dư tồn`, or `Chưa map kho`.
+- Kept the feature read-only: no Firestore writes, no auto-changing `minQty`.
+- Added `scripts/verify-auto-stock-norm.js`, bumped `app.js` cache key, and deployed Hosting-only to `https://xe-kho.web.app`.
+- Verification passed: `node --check app.js`, `node scripts/verify-auto-stock-norm.js`, `npm run check`, `npm run build:hosting`, deploy, local/live browser marker smoke.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0645-auto-stock-norm-board.md`
+
 # 2026-06-22 22:18 +07 - Fix Kho inventory type save
 - Fixed the **Kho** inventory edit flow so changing an item between `Nguyên liệu` and `Hàng bán thẳng` persists correctly.
 - `submitInvEdit()` now sends both app-level `itemType` and master/reporting `inv_type`; added a local `_appInventoryTypeToMaster()` helper in `app.js`.

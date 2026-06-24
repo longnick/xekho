@@ -22,15 +22,12 @@
 
 ## Doing
 
-- `REFACTOR_PLAN.md` execution is progressing sprint-by-sprint.
-- Phase 14 COMPLETE: Backend @ts-check + JSDoc for all 8 modules, `tsc --noEmit` in CI, `CODE_MAP.md` expanded and now tracks 33 Cloud Functions after removing obsolete `testDailyReportTelegram`; `DATA_SCHEMA.md` created (855 lines, 33+ Firestore collections). Post-audit tooling cleanup restored local lint/typecheck command reliability. ESM Phase E0/E1/E2/E3/E4/E5.1→E5.11 are complete. Non-ESM Deep Extraction D4 small-utility cleanup is complete; the old `getTelegramReportTestUrl()` helper was removed with the deleted manual test endpoint, `getCurrentOrderActorMetaFromUser()` remains in auth/staff helpers, and unreachable `getFinanceExpenseRows()` fallback code was removed.
-- Current conservative progress estimate:
- - Total long-term plan including optional TypeScript/CI/build tooling: ~85% complete.
- - Core non-optional refactor/security/testing plan: ~90% complete.
- - Near-term safe-execution track: ~99.999% complete.
+None for the auto stock norm board; awaiting user mobile/live review.
 
 ## Next
 
+- User to verify on iPhone/Safari after login: `Kho → TỒN KHO` should show `Định mức tồn kho tự động` under the stock list, with filters for `Cần nhập`, `Dư tồn`, `Chưa map kho`, and `A/B/C`.
+- If accepted, next phase can map menu items/combos through recipe BOM to convert POS selling-unit norms into raw-material norms and optionally suggest admin-approved `minQty` updates.
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
 - ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
 - E5/E6 status: not safe to complete as one-shot work. Current scan shows 129 inline handlers, 34 script src tags, and 2 module script tags after removing obsolete Menu/AI Insights/Media pages. Replace handlers one island at a time with mobile QA; keep root `commonjs` until a separate package strategy sprint.
@@ -76,6 +73,7 @@
 
 ## Done recently
 
+- 2026-06-25 06:45: Added read-only `Định mức tồn kho tự động` board in `Kho → TỒN KHO`, computing 56-day demand, ABC class, P75/P90/P95, and `Tối thiểu / Chuẩn / Tối đa`; deployed Hosting-only. Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0645-auto-stock-norm-board.md`
 - 2026-06-22 22:18: Fixed Kho inventory type saves so `Nguyên liệu` ↔ `Hàng bán thẳng` edits persist through `itemType` + `inv_type`. Task log: `docs/ai-map/TASK_LOGS/2026-06-22-2218-inventory-type-save.md`
 - 2026-06-19 16:35: Fixed Finance tab custom range reports so 2026-06-01 to 2026-06-18 keeps `financePeriod=range` in sync with `financeDateOpts`; expenses/fixed costs/charts/discount details now use the same range. Task log: `docs/ai-map/TASK_LOGS/2026-06-19-1635-finance-date-range.md`
 - 2026-06-17: Fixed Telegram chart button unknown-callback regression by accepting legacy/new chart callback prefixes. Task log: `docs/ai-map/TASK_LOGS/2026-06-17-telegram-chart-callback-prefix-regression.md`
