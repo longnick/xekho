@@ -1,3 +1,11 @@
+# 2026-06-26 02:08 +07 - Android native APK delivery report command Sprint 25
+- Added executable `android-native/scripts/native-apk-report.sh` to print a copyable debug APK report with version, size, SHA256, targeted scan result, and Telegram `MEDIA:` line.
+- Extended `NativeArtifactReporter` and `NativeArtifactReportTest` with delivery script/report path/copyable Telegram markdown metadata.
+- Generated report path: `android-native/app/build/outputs/apk/debug/xekho-native-debug-apk-report.md` (ignored build output).
+- Verification passed: targeted RED/GREEN, shell syntax check, script execution, clean native unit test, debug APK build, APK scan, and legacy web `check/test/build:hosting` regression.
+- Current APK SHA256 remains `f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0208-android-native-apk-delivery-report-command.md`
+
 # 2026-06-26 01:51 +07 - Android native artifact report + expanded smoke Sprint 24
 - Bumped native debug/pre-alpha metadata to `versionCode = 24`, `versionName = 0.24.0-alpha24`.
 - Added test-only `NativeArtifactReporter` and `NativeArtifactReportTest` to report app id/version/debug APK path/scan pattern while keeping release signing and production writes blocked.

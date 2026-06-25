@@ -1,3 +1,8 @@
+# 2026-06-26 02:08 +07 - Android native APK delivery report command Sprint 25
+- `android-native/scripts/native-apk-report.sh`: executable debug APK delivery/report command; reads Gradle metadata, computes SHA256/size, scans APK for forbidden config/secret names, writes markdown report, prints Telegram `MEDIA:` line.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReporter.kt`: test-side reporter now exposes delivery script, report path, and copyable Telegram markdown fields.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReportTest.kt`: guards Sprint 25 report command metadata.
+
 # 2026-06-26 01:51 +07 - Android native artifact report + expanded smoke Sprint 24
 - `android-native/app/build.gradle.kts`: debug/pre-alpha metadata is now `versionCode = 24`, `versionName = 0.24.0-alpha24`.
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReporter.kt`: test-only artifact reporter for app id/version/debug APK path/scan pattern/safety flags.
