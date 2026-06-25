@@ -1,3 +1,9 @@
+# 2026-06-25 15:00 +07 - DONE: Android native skeleton Sprint 1
+- DONE: Installed OpenJDK 17 + Android SDK cmdline tools/platform/build-tools on this machine.
+- DONE: Created `android-native/` Kotlin/Jetpack Compose shell with Gradle wrapper and debug APK build.
+- DONE: Verified native unit test, debug APK build, APK filename secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1500-android-native-skeleton.md`; build notes: `docs/android-native-build.md`.
+
 # 2026-06-19 18:21 +07 - DONE: POS chatbot Firestore profit report fallback
 - DONE: Replace primary mock `getProfitReport()` response with read-only `history` aggregation for item profit ranking.
 - DONE: Keep mock response only as an explicit fallback when Firestore read fails or the selected range has no item rows.
