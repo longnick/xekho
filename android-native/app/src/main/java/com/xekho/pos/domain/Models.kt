@@ -80,6 +80,25 @@ data class PosWriteResult(
     val canWriteToProduction: Boolean = false
 )
 
+enum class PaymentMethod(val displayName: String) {
+    CASH("Tiền mặt"),
+    BANK_TRANSFER("Chuyển khoản")
+}
+
+data class PaymentDraft(
+    val tableId: String,
+    val method: PaymentMethod,
+    val subtotal: Long,
+    val discount: Long,
+    val totalDue: Long,
+    val itemCount: Int,
+    val receiptPreview: String,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+) {
+    val isPayable: Boolean get() = itemCount > 0 && totalDue > 0
+}
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,

@@ -76,6 +76,42 @@ class FakePosWriteRepository {
         canWriteToProduction = false
     )
 
+    fun previewPayment(
+        order: PosLocalOrder,
+        method: PaymentMethod,
+        discount: Long = 0L
+    ): PaymentDraft {
+        val subtotal = order.total
+        val safeDiscount = discount.coerceIn(0L, subtotal)
+        val totalDue = subtotal - safeDiscount
+        val receiptPreview = buildString {
+            appendLine("Bàn: ${order.tableId}")
+            appendLine("Thanh toán: ${method.displayName}")
+            if (order.items.isEmpty()) {
+                appendLine("Chưa có món")
+            } else {
+                order.items.forEach { item ->
+                    appendLine("${item.name} x${item.quantity} = ${item.lineTotal}")
+                }
+            }
+            appendLine("Tạm tính: $subtotal")
+            appendLine("Giảm: $safeDiscount")
+            appendLine("Cần thu: $totalDue")
+            append("LOCAL ONLY - không Firestore, không sync")
+        }
+        return PaymentDraft(
+            tableId = order.tableId,
+            method = method,
+            subtotal = subtotal,
+            discount = safeDiscount,
+            totalDue = totalDue,
+            itemCount = order.itemCount,
+            receiptPreview = receiptPreview,
+            canWriteToProduction = false,
+            canSyncToFirestore = false
+        )
+    }
+
     fun closeOrder(order: PosLocalOrder): PosWriteResult = PosWriteResult(
         order = order.copy(status = PosOrderStatus.CLOSED_LOCAL_ONLY, canWriteToProduction = false),
         message = "closed local-only order; not synced",

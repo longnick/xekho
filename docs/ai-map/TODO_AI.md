@@ -1,3 +1,11 @@
+# 2026-06-25 19:48 +07 - DONE: Android native POS local payment draft Sprint 10C
+- DONE: Added `PaymentMethod` and `PaymentDraft` domain models with `canWriteToProduction = false` and `canSyncToFirestore = false`.
+- DONE: Extended `FakePosWriteRepository.previewPayment(order, method, discount)` with local subtotal/discount/total due/receipt preview; discount clamps to `[0, subtotal]`.
+- DONE: Added `FakePosPaymentDraftRepositoryTest` covering cash preview, bank transfer discount clamp, empty-cart not-payable state, and local-only guards.
+- DONE: Wired Tables UI with `Thanh toán nháp local` card derived from retained local cart state; copy remains no-production-write/no-Firestore-sync.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1948-android-native-pos-payment-draft.md`.
+
 # 2026-06-25 18:58 +07 - DONE: Android native POS local cart edit Sprint 10B
 - DONE: Extended `FakePosWriteRepository` with deterministic local menu, `addMenuItem`, `increaseItem`, `decreaseItem`, `removeItem`, and `clearOrder`.
 - DONE: Added `FakePosCartEditRepositoryTest` covering menu add/edit/remove/clear/unknown-id flows and `canWriteToProduction = false` guard.
