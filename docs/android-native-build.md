@@ -304,4 +304,29 @@ Latest debug APK checksum after Sprint 10D:
 ```text
 1235175909b5c912caf872750aee8d5d49a4c000ca50eba3552f30898998084d  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 11 POS multi-table local orders
+
+Native POS tab now keeps one local order per fake table:
+
+```text
+PosTableOrderState(selectedTableId, ordersByTable, tableLabelsById)
+FakePosTableOrderRepository.initialState/selectTable/replaceSelectedOrder/tableSummaries
+```
+
+Safety state:
+
+- table selection and order replacement are local-only
+- each table has independent `PosLocalOrder`
+- replacing an order only affects the selected table and rejects mismatched table ids
+- `PosTableOrderState.canWriteToProduction = false`
+- `PosTableOrderState.canSyncToFirestore = false`
+- `rememberSaveable` uses `posTableOrderStateSaver`
+- saver delimiters are separated: table row `\u001d`, item `\u001e`, item field `\u001f`
+- UI labels explicitly say no production write and no Firestore sync
+
+Latest debug APK checksum after Sprint 11:
+
+```text
+b5623b2ee8d3766685a1e0a8c9b642db0d21e4778428401535366dafa821b7f2  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
