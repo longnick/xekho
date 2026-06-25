@@ -1,3 +1,9 @@
+# 2026-06-25 15:23 +07 - DONE: Android native fake Auth/PIN Sprint 3
+- DONE: Added local-only fake Auth/PIN state and tests; demo PIN `1234` unlocks fake POS tabs and wrong PIN stays locked.
+- DONE: Updated Compose `AppRoot` to show PIN gate before dashboard and added `Khóa` action; auth state uses `rememberSaveable` after Kilo review flagged plain `remember` state loss.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, APK filename secret scan, Kilo read-only re-review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1523-android-native-fake-auth-pin.md`.
+
 # 2026-06-25 15:09 +07 - DONE: Android native fake tabs Sprint 2
 - DONE: Added native domain models + fake repository for `Bàn`, `Kho`, `Tài chính`, `Cài đặt` without Firebase/POS production access.
 - DONE: Reworked Compose `AppRoot` into a Material 3 tab shell using fake/local-only data.
