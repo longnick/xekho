@@ -1,3 +1,11 @@
+# 2026-06-25 22:45 +07 - DONE: Android native POS queue persistence boundary Sprint 15
+- DONE: Added `OfflineQueuePersistenceMode`, `OfflineQueuePersistenceSnapshot`, and `OfflineQueuePersistenceResult` with fail-closed write/sync and persistent-storage flags.
+- DONE: Added `GuardedOfflineQueuePersistenceBoundary` for local snapshot save/restore, clear snapshot, and a blocked Room/DB boundary result.
+- DONE: Added `OfflineQueuePersistenceBoundaryTest` covering local snapshot counts, restore sanitization, Room/DB blocked behavior, clear snapshot, and no write/sync guards.
+- DONE: Wired Tables UI with `Persistence boundary local-only`, `Lưu snapshot local`, `Nạp snapshot local`, `Thử Room/DB (blocked)`, and `Xóa snapshot local`.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2245-android-native-queue-persistence-boundary.md`.
+
 # 2026-06-25 22:12 +07 - DONE: Android native POS queue detail preview Sprint 14
 - DONE: Added `OfflineQueueDetailType` and `OfflineQueueDetailPreview` with fail-closed write/sync guards.
 - DONE: Added `FakeOfflineQueueRepository.previewDetail(state, localQueueId)` for missing-id errors, blocked-item errors, duplicate-receipt conflict preview, healthy queued info, and retry-preview detail.
