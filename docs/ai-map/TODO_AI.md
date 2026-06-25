@@ -1,3 +1,11 @@
+# 2026-06-26 01:24 +07 - DONE: Android native Firestore read-only approval checklist Sprint 22
+- DONE: Added guarded local-config/read-approval checklist DTOs and evaluator for future Firestore read-only readiness.
+- DONE: Checklist covers owner approval, local `google-services.json`, Firestore SDK marker, contract preview review, and repository preview review.
+- DONE: Even with all modeled flags ready, Sprint 22 remains `APPROVAL_HELD_LOCAL_ONLY` with `canExecuteReads = false`, no Firestore instance/query/listener/`get()`, no production rows, no writes, and no sync.
+- DONE: Wired Tables UI with `Firestore approval checklist Sprint 22` card.
+- DONE: Verified targeted RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0124-android-native-firestore-readonly-approval-checklist.md`.
+
 # 2026-06-26 00:16 +07 - DONE: Android native Firestore read-only UI mapping Sprint 21
 - DONE: Added `PosFirestoreReadOnlyUiSummary`, `PosFirestoreReadOnlyUiRow`, and `PosFirestoreReadOnlyDashboardState`.
 - DONE: Added `FirestoreReadOnlyUiMappingAdapter` for repository summary, collection row, and dashboard-state mapping.

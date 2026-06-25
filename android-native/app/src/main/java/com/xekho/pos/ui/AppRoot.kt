@@ -51,7 +51,9 @@ import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.FirestoreReadOnlySdkMarker
 import com.xekho.pos.domain.FirestoreReadOnlyUiMappingAdapter
+import com.xekho.pos.domain.FirestoreReadOnlyApprovalChecklistRequest
 import com.xekho.pos.domain.GuardedFirestoreReadOnlyRepositoryFactory
+import com.xekho.pos.domain.GuardedFirestoreReadOnlyApprovalChecklist
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
 import com.xekho.pos.domain.GuardedPosReadOnlyDataBoundary
 import com.xekho.pos.domain.GuardedQueueStorageSelectionBoundary
@@ -73,6 +75,7 @@ import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosFirestoreReadOnlyContract
 import com.xekho.pos.domain.PosFirestoreReadOnlyContractPreview
 import com.xekho.pos.domain.PosFirestoreReadOnlyDashboardState
+import com.xekho.pos.domain.FirestoreReadOnlyApprovalChecklistState
 import com.xekho.pos.domain.PosFirestoreReadOnlyRepositoryPreview
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
@@ -368,6 +371,15 @@ private fun MainDashboard(
             collectionPreviews = firestoreReadOnlyContract.collections.map { repository.previewCollection(it.collectionName) }
         )
     }
+    val firestoreReadOnlyApprovalChecklist = remember {
+        GuardedFirestoreReadOnlyApprovalChecklist().evaluate(
+            FirestoreReadOnlyApprovalChecklistRequest(
+                firestoreSdkLinked = true,
+                contractPreviewReviewed = true,
+                repositoryPreviewReviewed = true
+            )
+        )
+    }
     val firebaseReadOnlyPreview = remember {
         posReadOnlyDataBoundary.previewFirebaseReadOnly(
             PosReadOnlyDataRequest(requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY)
@@ -455,6 +467,7 @@ private fun MainDashboard(
                         firestoreReadOnlyContractPreview = firestoreReadOnlyContractPreview,
                         firestoreReadOnlyRepositoryPreview = firestoreReadOnlyRepositoryPreview,
                         firestoreReadOnlyUiState = firestoreReadOnlyUiState,
+                        firestoreReadOnlyApprovalChecklist = firestoreReadOnlyApprovalChecklist,
                         firebaseReadOnlyPreview = firebaseReadOnlyPreview,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
@@ -686,6 +699,7 @@ private fun TablesScreen(
     firestoreReadOnlyContractPreview: PosFirestoreReadOnlyContractPreview,
     firestoreReadOnlyRepositoryPreview: PosFirestoreReadOnlyRepositoryPreview,
     firestoreReadOnlyUiState: PosFirestoreReadOnlyDashboardState,
+    firestoreReadOnlyApprovalChecklist: FirestoreReadOnlyApprovalChecklistState,
     firebaseReadOnlyPreview: PosReadOnlyDataPreview,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
@@ -849,6 +863,17 @@ private fun TablesScreen(
                     firestoreReadOnlyUiState.rows.joinToString("\n") { row ->
                         "${row.collectionName}: ${row.requiredFieldsLabel.ifBlank { "no contract fields" }} · ${row.safetyLabel}"
                     } + "\nNo Firestore execution, no production rows, no writes."
+            )
+        }
+        item {
+            SectionCard(
+                "Firestore approval checklist Sprint 22",
+                "Status: ${firestoreReadOnlyApprovalChecklist.status.displayName} · ${firestoreReadOnlyApprovalChecklist.readyItemCount}/${firestoreReadOnlyApprovalChecklist.requiredItemCount} ready\n" +
+                    firestoreReadOnlyApprovalChecklist.items.joinToString("\n") { item ->
+                        "${if (item.isReady) "✓" else "•"} ${item.label}: ${item.message}"
+                    } + "\n" +
+                    firestoreReadOnlyApprovalChecklist.summaryLines.joinToString("\n") +
+                    "\nNo Firestore instance, no query/get/listener, no production rows, no writes."
             )
         }
         item {
