@@ -607,3 +607,35 @@ Latest debug APK checksum after Sprint 21:
 cb67a557b34f1440e1dff4c17b9a973c75b08bd9f29ab7e84051a29876e71661  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 24 artifact report + expanded server-side smoke
+
+Native debug/pre-alpha metadata now identifies the current artifact as:
+
+```text
+applicationId: com.xekho.pos
+versionCode: 24
+versionName: 0.24.0-alpha24
+```
+
+Sprint 24 added a JVM/server-side artifact report harness:
+
+```text
+android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReporter.kt
+android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReportTest.kt
+```
+
+It reports the debug APK path and safety scan pattern without enabling release signing or production writes. The server-side UI smoke harness now also covers Settings, Inventory, and Finance markers, including Vietnamese labels decoded from `\uXXXX` source escapes.
+
+Latest debug APK after Sprint 24:
+
+```text
+Path: android-native/app/build/outputs/apk/debug/app-debug.apk
+Size: 14M
+SHA256: f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120
+```
+
+Safety state:
+
+- debug artifact only; release signing remains a later explicit gate
+- no `google-services.json` committed or packaged by the targeted scan
+- no service account, `.env`, production POS rows, Firestore write, or sync enabled

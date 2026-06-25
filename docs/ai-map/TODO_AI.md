@@ -1,3 +1,11 @@
+# 2026-06-26 01:51 +07 - DONE: Android native artifact report + expanded smoke Sprint 24
+- DONE: Bumped native debug/pre-alpha metadata to `versionCode = 24`, `versionName = 0.24.0-alpha24`.
+- DONE: Added test-only `NativeArtifactReporter` and `NativeArtifactReportTest` for application id, version, debug APK path, scan pattern, and safety flags.
+- DONE: Expanded `NativeUiServerSmokeHarness` to cover Settings/Inventory/Finance markers and decode `\uXXXX` source escapes for Vietnamese UI text.
+- DONE: Verified targeted RED/GREEN, clean native unit test, debug APK build, APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: APK artifact: `android-native/app/build/outputs/apk/debug/app-debug.apk`, SHA256 `f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120`, size 14M.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0151-android-native-artifact-report-expanded-smoke.md`.
+
 # 2026-06-26 01:37 +07 - DONE: Android native server-side UI smoke harness Sprint 23
 - DONE: Added a test-only `NativeUiServerSmokeHarness` that runs on the server with no emulator and no APK install.
 - DONE: Harness reads native source markers for app brand/login/PIN, core POS cards, Sprint 21 UI mapping, and Sprint 22 Firestore approval checklist.
