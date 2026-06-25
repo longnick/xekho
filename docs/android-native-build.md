@@ -150,4 +150,28 @@ Latest debug APK checksum after Sprint 7:
 ```text
 ab8098bb31bc7658acef978d5d450e68f3baff46031664bf50341a4b4a85ffaa  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 8 auth readiness report
+
+Settings now displays a read-only auth readiness report from `AuthReadinessReporter`.
+
+Default display state:
+
+```text
+Auth: FAKE_LOCAL active
+Firebase: blocked — default fake/local auth
+google-services.json: not present
+```
+
+Safety state:
+
+- report is local/read-only
+- default auth remains `FAKE_LOCAL`
+- no Firebase Auth sign-in is wired
+- no Firestore dependencies or reads/writes are wired
+
+Latest debug APK checksum after Sprint 8:
+
+```text
+c58ab6f07135b138f9026210938db280acd3bd2d1dbb4a68f2a77ac19872913f  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
