@@ -51,6 +51,8 @@ import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
 import com.xekho.pos.domain.OrderItem
+import com.xekho.pos.domain.PaymentDraft
+import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
 import com.xekho.pos.domain.TableOverview
@@ -249,6 +251,7 @@ private fun MainDashboard(
                         tables = snapshot.tables,
                         menuItems = posWriteRepository.fakeMenu(),
                         localOrder = localOrder,
+                        paymentDraft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH),
                         onOpenLocalOrder = { localOrder = posWriteRepository.openOrder("ban-02").order },
                         onAddMenuItem = { itemId -> localOrder = posWriteRepository.addMenuItem(localOrder, itemId).order },
                         onIncreaseItem = { itemId -> localOrder = posWriteRepository.increaseItem(localOrder, itemId).order },
@@ -314,6 +317,7 @@ private fun TablesScreen(
     tables: List<TableOverview>,
     menuItems: List<OrderItem>,
     localOrder: PosLocalOrder,
+    paymentDraft: PaymentDraft,
     onOpenLocalOrder: () -> Unit,
     onAddMenuItem: (String) -> Unit,
     onIncreaseItem: (String) -> Unit,
@@ -344,6 +348,14 @@ private fun TablesScreen(
                     }
                 }
             }
+        }
+        item {
+            SectionCard(
+                "Thanh toán nháp local",
+                "${paymentDraft.method.displayName} · ${paymentDraft.itemCount} món · Tạm tính ${formatVnd(paymentDraft.subtotal)} · Cần thu ${formatVnd(paymentDraft.totalDue)}\n" +
+                    "${if (paymentDraft.isPayable) "Có thể xem nháp thu tiền local" else "Chưa có món để thu"}\n" +
+                    "Không ghi production, không sync Firestore."
+            )
         }
         item {
             SectionCard("Menu mẫu", menuItems.joinToString("\n") { item -> "${item.name} · ${formatVnd(item.unitPrice)}" })
