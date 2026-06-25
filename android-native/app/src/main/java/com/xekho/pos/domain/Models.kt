@@ -179,6 +179,34 @@ data class OfflineQueueDetailPreview(
     val canSyncToFirestore: Boolean = false
 )
 
+enum class OfflineQueuePersistenceMode(val displayName: String) {
+    LOCAL_MEMORY_ONLY("Local snapshot boundary only"),
+    ROOM_BLOCKED_LOCAL_ONLY("Room/DB blocked local-only")
+}
+
+data class OfflineQueuePersistenceSnapshot(
+    val version: Int = 1,
+    val mode: OfflineQueuePersistenceMode,
+    val encodedItems: List<String> = emptyList(),
+    val itemCount: Int = 0,
+    val pendingCount: Int = 0,
+    val blockedCount: Int = 0,
+    val retryPreviewCount: Int = 0,
+    val isPersistentStorageEnabled: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class OfflineQueuePersistenceResult(
+    val state: OfflineQueueState,
+    val snapshot: OfflineQueuePersistenceSnapshot,
+    val mode: OfflineQueuePersistenceMode,
+    val message: String,
+    val didUseRoom: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
