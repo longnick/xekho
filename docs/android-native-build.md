@@ -230,4 +230,28 @@ Latest debug APK checksum after Sprint 10A:
 ```text
 b3c18fe00c33d9a3f797e17bb231ec536ee0f236c0b4c1b8cd2527ac8e4e364d  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 10B POS local cart edit flow
+
+Native POS tab now supports a local-only menu/cart edit flow:
+
+```text
+Thêm      -> add local menu item
++         -> increase local quantity
+-         -> decrease local quantity; zero removes item
+Xóa       -> remove local item
+Xóa giỏ   -> clear local cart
+```
+
+Safety state:
+
+- `FakePosWriteRepository` still has no Firebase/Firestore dependency
+- all cart edit results keep `canWriteToProduction = false`
+- UI labels explicitly say no Firestore, no production write, no sync
+- local order state continues through `rememberSaveable(posLocalOrderSaver)`
+
+Latest debug APK checksum after Sprint 10B:
+
+```text
+4b881b6d9fc8dec0c7354be3241caafae8dcf2cd881deaa701b48945e521a2d0  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

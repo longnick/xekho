@@ -1,6 +1,14 @@
 package com.xekho.pos.domain
 
 class FakePosWriteRepository {
+    private val menuItems = listOf(
+        OrderItem(id = "mien-tron", name = "Miến trộn", quantity = 1, unitPrice = 45000),
+        OrderItem(id = "tra-tac", name = "Trà tắc", quantity = 1, unitPrice = 15000),
+        OrderItem(id = "com-ga", name = "Cơm gà", quantity = 1, unitPrice = 55000)
+    )
+
+    fun fakeMenu(): List<OrderItem> = menuItems
+
     fun openOrder(tableId: String): PosWriteResult {
         val order = PosLocalOrder(
             clientOrderId = "local-$tableId-001",
@@ -16,6 +24,16 @@ class FakePosWriteRepository {
         )
     }
 
+    fun addMenuItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        val menuItem = menuItems.firstOrNull { it.id == itemId }
+            ?: return PosWriteResult(
+                order = order.copy(canWriteToProduction = false),
+                message = "menu item not found; local order unchanged",
+                canWriteToProduction = false
+            )
+        return addItem(order, menuItem)
+    }
+
     fun addItem(order: PosLocalOrder, item: OrderItem): PosWriteResult {
         val mergedItems = mergeItem(order.items, item)
         return PosWriteResult(
@@ -24,6 +42,39 @@ class FakePosWriteRepository {
             canWriteToProduction = false
         )
     }
+
+    fun increaseItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        val existing = order.items.firstOrNull { it.id == itemId }
+            ?: return PosWriteResult(order.copy(canWriteToProduction = false), "item not found; local order unchanged", false)
+        return addItem(order, existing.copy(quantity = 1))
+    }
+
+    fun decreaseItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        val nextItems = order.items.mapNotNull { item ->
+            when {
+                item.id != itemId -> item
+                item.quantity > 1 -> item.copy(quantity = item.quantity - 1)
+                else -> null
+            }
+        }
+        return PosWriteResult(
+            order = order.copy(items = nextItems, canWriteToProduction = false),
+            message = "decreased local-only item",
+            canWriteToProduction = false
+        )
+    }
+
+    fun removeItem(order: PosLocalOrder, itemId: String): PosWriteResult = PosWriteResult(
+        order = order.copy(items = order.items.filterNot { it.id == itemId }, canWriteToProduction = false),
+        message = "removed local-only item",
+        canWriteToProduction = false
+    )
+
+    fun clearOrder(order: PosLocalOrder): PosWriteResult = PosWriteResult(
+        order = order.copy(items = emptyList(), canWriteToProduction = false),
+        message = "cleared local-only order",
+        canWriteToProduction = false
+    )
 
     fun closeOrder(order: PosLocalOrder): PosWriteResult = PosWriteResult(
         order = order.copy(status = PosOrderStatus.CLOSED_LOCAL_ONLY, canWriteToProduction = false),
