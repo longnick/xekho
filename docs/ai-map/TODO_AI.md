@@ -22,11 +22,11 @@
 
 ## Doing
 
-None for the auto stock norm board mobile layout; awaiting owner iPhone/Safari live review.
+None for the auto stock compact ordering summary; awaiting owner iPhone/Safari live review.
 
 ## Next
 
-- User to verify on iPhone/Safari after login: `Kho → TỒN KHO` should show `Định mức tồn kho tự động`; each mobile row should show the status badge beside the dish name and a `Cần nhập` field/column.
+- User to verify on iPhone/Safari after login: `Kho → TỒN KHO` should show one compact `Định mức tồn kho tự động` card; tapping it should show today's suggested order list, whole-case beer conversion, and projected purchase total. Tapping each item should show the detailed reason.
 - If accepted, next phase can map menu items/combos through recipe BOM to convert POS selling-unit norms into raw-material norms and optionally suggest admin-approved `minQty` updates.
 - Review final cleanup commits and continue sprint-by-sprint; the dirty tree cleanup was staged using explicit path groups.
 - ESM Phase E4 image zoom UI island complete: `app/esm/ui/image-zoom.js` is importable and installed by `app/esm/main.js`; classic `ImgZoom` in `app.js` delegates when the module is ready and keeps fallback logic. Current ESM readiness is now ~55%; do not do one-shot ESM conversion.
@@ -73,6 +73,7 @@ None for the auto stock norm board mobile layout; awaiting owner iPhone/Safari l
 
 ## Done recently
 
+- 2026-06-25 07:39: Reworked `Định mức tồn kho tự động` into a compact clickable ordering summary with whole-case beer conversion (24 lon/thùng), projected purchase total, and per-item drill-down; deployed and Playwright-smoked live mobile. Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0739-auto-stock-summary-card.md`
 - 2026-06-25 07:14: Fixed `Định mức tồn kho tự động` mobile layout: status badge now sits beside dish name, added `Cần nhập đề xuất`, responsive card layout verified by Playwright local/live 390×844. Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0714-auto-stock-mobile-layout.md`
 - 2026-06-25 06:45: Added read-only `Định mức tồn kho tự động` board in `Kho → TỒN KHO`, computing 56-day demand, ABC class, P75/P90/P95, and `Tối thiểu / Chuẩn / Tối đa`; deployed Hosting-only. Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0645-auto-stock-norm-board.md`
 - 2026-06-22 22:18: Fixed Kho inventory type saves so `Nguyên liệu` ↔ `Hàng bán thẳng` edits persist through `itemType` + `inv_type`. Task log: `docs/ai-map/TASK_LOGS/2026-06-22-2218-inventory-type-save.md`

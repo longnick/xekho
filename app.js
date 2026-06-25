@@ -5518,76 +5518,118 @@ function buildAutoStockNormRows(days = 56) {
   return { rows, days: dayKeys.length, ordersInRange, start: dayKeys[0], end: dayKeys[dayKeys.length - 1] };
 }
 
+function getAutoStockNormPurchaseInfo(row) {
+  const suggested = Number(row?.suggestedImportQty || 0);
+  if (!Number.isFinite(suggested) || suggested <= 0) return null;
+  const unit = String(row.unit || '').trim() || 'đơn vị';
+  const unitKey = normalizeViKey(unit);
+  const nameKey = normalizeViKey(row.name || '');
+  const isCanBeer = unitKey.includes('lon') || (nameKey.includes('bia') && !unitKey.includes('thung'));
+  const packageSize = isCanBeer ? 24 : 1;
+  const packageName = isCanBeer ? 'thùng' : unit;
+  const packageCount = Math.ceil(suggested / packageSize);
+  const orderQty = packageCount * packageSize;
+  const unitCost = Number(row.stockItem?.costPerUnit || row.stockItem?.cost || row.stockItem?.price || 0);
+  const estimatedCost = Math.max(0, orderQty * (Number.isFinite(unitCost) ? unitCost : 0));
+  return { suggested, unit, isCanBeer, packageSize, packageName, packageCount, orderQty, unitCost, estimatedCost };
+}
+
+function toggleAutoStockNormOverview(event) {
+  if (event && event.target && event.target.closest('button, select, input, a, details, summary')) return;
+  const card = document.querySelector('[data-xk-auto-stock-norm="v1"]');
+  if (!card) return;
+  card.dataset.autoStockExpanded = card.dataset.autoStockExpanded === '1' ? '0' : '1';
+  renderAutoStockNormBoard();
+}
+
 function renderAutoStockNormBoard() {
   const board = document.getElementById('auto-stock-norm-board');
   if (!board) return;
+  const card = document.querySelector('[data-xk-auto-stock-norm="v1"]');
   const subtitle = document.getElementById('auto-stock-norm-subtitle');
-  const filter = (document.getElementById('auto-stock-norm-filter') || {}).value || 'all';
   const report = buildAutoStockNormRows(56);
-  let rows = report.rows;
-  if (filter === 'need') rows = rows.filter(r => r.status === 'need' || r.status === 'watch');
-  else if (filter === 'over') rows = rows.filter(r => r.status === 'over');
-  else if (filter === 'unmapped') rows = rows.filter(r => r.status === 'unmapped');
-  else if (['A', 'B', 'C'].includes(filter)) rows = rows.filter(r => r.abc === filter);
-
-  const needCount = report.rows.filter(r => r.status === 'need' || r.status === 'watch').length;
+  const mappedRows = report.rows.filter(r => r.stockItem && Number(r.suggestedImportQty || 0) > 0);
+  const actionRows = mappedRows.map(row => ({ ...row, purchase: getAutoStockNormPurchaseInfo(row) })).filter(row => row.purchase);
+  const totalEstimatedCost = actionRows.reduce((sum, row) => sum + (row.purchase?.estimatedCost || 0), 0);
+  const totalSuggestedQty = actionRows.reduce((sum, row) => sum + Number(row.purchase?.suggested || 0), 0);
+  const totalPackages = actionRows.reduce((sum, row) => sum + (row.purchase?.isCanBeer ? row.purchase.packageCount : 0), 0);
   const overCount = report.rows.filter(r => r.status === 'over').length;
   const unmappedCount = report.rows.filter(r => r.status === 'unmapped').length;
-  if (subtitle) subtitle.textContent = `Tự tính ${report.days} ngày (${report.start} → ${report.end}), ${report.ordersInRange} đơn, ${report.rows.length} món. Không ghi dữ liệu kho.`;
+  const expanded = card ? card.dataset.autoStockExpanded === '1' : true;
+  const fmtQty = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+  const fmtMoney = (n) => `${Number(n || 0).toLocaleString('vi-VN')}đ`;
+
+  if (card) {
+    card.classList.toggle('auto-stock-norm-expanded', expanded);
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+  }
+  if (subtitle) {
+    subtitle.textContent = actionRows.length
+      ? `Hôm nay cần đặt ${actionRows.length} món • ${totalPackages ? `${totalPackages} thùng bia • ` : ''}dự kiến ${fmtMoney(totalEstimatedCost)}`
+      : `Hôm nay chưa cần đặt thêm. Đã phân tích ${report.rows.length} món trong ${report.days} ngày.`;
+  }
+
   if (!report.rows.length) {
-    board.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có lịch sử bán để tính định mức.</div></div>';
+    board.innerHTML = '<div class="auto-stock-empty">📊 Chưa có lịch sử bán để tính định mức.</div>';
     return;
   }
 
-  const statusBadge = (row) => {
-    const cls = row.status === 'need' ? 'badge-danger' : row.status === 'watch' ? 'badge-warning' : row.status === 'over' ? 'badge-info' : row.status === 'unmapped' ? 'badge-warning' : 'badge-success';
-    return `<span class="badge ${cls}">${row.statusText}</span>`;
-  };
-  const fmtQty = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
-  const body = rows.slice(0, 50).map(row => `
-    <tr data-auto-stock-norm-row="${row.abc}">
-      <td data-label="Nhóm"><span class="badge badge-primary">${row.abc}</span></td>
-      <td data-label="Món / trạng thái" class="auto-stock-norm-name-cell">
-        <div class="auto-stock-norm-name-line">
-          <span class="auto-stock-norm-name">${escapeAutoStockNormHtml(row.name)}</span>
-          ${statusBadge(row)}
+  const itemCards = actionRows.map(row => {
+    const info = row.purchase;
+    const packageLine = info.isCanBeer
+      ? `${fmtQty(info.suggested)} ${escapeAutoStockNormHtml(info.unit)} = ${info.packageCount} ${info.packageName}`
+      : `${fmtQty(info.suggested)} ${escapeAutoStockNormHtml(info.unit)}`;
+    const orderLine = info.isCanBeer && info.orderQty !== info.suggested
+      ? `Đặt chẵn ${info.packageCount} ${info.packageName} (${fmtQty(info.orderQty)} ${escapeAutoStockNormHtml(info.unit)})`
+      : `Đặt ${packageLine}`;
+    return `
+      <details class="auto-stock-order-item" onclick="event.stopPropagation()">
+        <summary>
+          <span class="auto-stock-order-main">
+            <strong>${escapeAutoStockNormHtml(row.name)}</strong>
+            <span>${packageLine}</span>
+          </span>
+          <span class="auto-stock-order-cost">${fmtMoney(info.estimatedCost)}</span>
+        </summary>
+        <div class="auto-stock-order-detail">
+          <div><span>Lý do</span><strong>${row.statusText}</strong></div>
+          <div><span>Tồn hiện tại</span><strong>${row.currentStock === null ? '—' : `${fmtQty(row.currentStock)} ${escapeAutoStockNormHtml(row.unit)}`}</strong></div>
+          <div><span>Mức chuẩn</span><strong>${row.par} ${escapeAutoStockNormHtml(row.unit)}</strong></div>
+          <div><span>Đề xuất nhập</span><strong>${orderLine}</strong></div>
+          <div><span>Giá vốn</span><strong>${info.unitCost ? `${fmtMoney(info.unitCost)}/${escapeAutoStockNormHtml(info.unit)}` : 'Chưa có giá vốn'}</strong></div>
         </div>
-        <div class="auto-stock-norm-subline">${row.stockItem ? `Kho: ${escapeAutoStockNormHtml(row.stockItem.name)} (${escapeAutoStockNormHtml(row.unit)})` : 'Chưa liên kết tồn kho / recipe'}</div>
-      </td>
-      <td data-label="Cần nhập" class="auto-stock-norm-suggest-cell">${row.suggestedImportQty === null ? '—' : `${fmtQty(row.suggestedImportQty)} ${escapeAutoStockNormHtml(row.unit)}`}</td>
-      <td data-label="Bán" style="text-align:right">${fmtQty(row.total)}</td>
-      <td data-label="Ngày" style="text-align:right">${row.daysSold}</td>
-      <td data-label="TB/ngày" style="text-align:right">${fmtQty(row.avgDay)}</td>
-      <td data-label="P90" style="text-align:right">${fmtQty(row.p90)}</td>
-      <td data-label="Tối thiểu / Chuẩn / Tối đa" style="text-align:right;font-weight:700">${row.min} / ${row.par} / ${row.max}</td>
-      <td data-label="Tồn hiện tại" style="text-align:right">${row.currentStock === null ? '—' : fmtQty(row.currentStock)}</td>
-    </tr>`).join('');
+      </details>`;
+  }).join('');
+
+  const emptyAction = actionRows.length ? '' : `
+    <div class="auto-stock-empty">
+      <div style="font-size:24px">✅</div>
+      <strong>Hôm nay chưa cần đặt thêm.</strong>
+      <span>Không có món nào dưới mức chuẩn nhập hàng.</span>
+    </div>`;
 
   board.innerHTML = `
-    <div class="auto-stock-norm-summary" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px">
-      <div class="stat-card" style="padding:10px"><div class="stat-label">Cần nhập/theo dõi</div><div class="stat-value" style="font-size:22px;color:var(--warning)">${needCount}</div></div>
-      <div class="stat-card" style="padding:10px"><div class="stat-label">Dư tồn</div><div class="stat-value" style="font-size:22px;color:var(--info)">${overCount}</div></div>
-      <div class="stat-card" style="padding:10px"><div class="stat-label">Chưa map kho</div><div class="stat-value" style="font-size:22px;color:var(--text2)">${unmappedCount}</div></div>
-      <div class="stat-card" style="padding:10px"><div class="stat-label">Tổng món phân tích</div><div class="stat-value" style="font-size:22px">${report.rows.length}</div></div>
+    <div class="auto-stock-compact ${expanded ? 'is-expanded' : ''}">
+      <div class="auto-stock-compact-top">
+        <div>
+          <div class="auto-stock-eyebrow">Tổng quan nhập hàng hôm nay</div>
+          <div class="auto-stock-headline">${actionRows.length ? `Cần đặt thêm ${actionRows.length} món` : 'Không cần đặt thêm'}</div>
+        </div>
+        <div class="auto-stock-total">${fmtMoney(totalEstimatedCost)}</div>
+      </div>
+      <div class="auto-stock-mini-stats">
+        <span>${fmtQty(totalSuggestedQty)} đơn vị cần bù</span>
+        ${totalPackages ? `<span>${totalPackages} thùng bia chẵn</span>` : ''}
+        <span>${overCount} dư tồn</span>
+        ${unmappedCount ? `<span>${unmappedCount} chưa map</span>` : ''}
+      </div>
+      <div class="auto-stock-tap-hint">${expanded ? 'Thu gọn thẻ' : 'Bấm vào thẻ để xem cần đặt món nào'}</div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Đơn vị là đơn vị bán trên POS. Combo/món chế biến cần map recipe để quy đổi sang nguyên liệu thật.</div>
-    <div class="auto-stock-norm-scroll">
-      <table class="auto-stock-norm-table">
-        <thead>
-          <tr>
-            <th>Nhóm</th>
-            <th>Món / trạng thái</th>
-            <th>Cần nhập đề xuất</th>
-            <th>Bán</th>
-            <th>Ngày</th>
-            <th>TB/ngày</th>
-            <th>P90</th>
-            <th>Tối thiểu / Chuẩn / Tối đa</th>
-            <th>Tồn hiện tại</th>
-          </tr>
-        </thead>
-        <tbody>${body}</tbody>
-      </table>
+    <div class="auto-stock-overview" ${expanded ? '' : 'hidden'}>
+      ${emptyAction}
+      ${itemCards}
+      <div class="auto-stock-note">Số thùng bia được làm tròn theo thùng chẵn 24 lon. Tổng tiền dùng giá vốn hiện tại trong Kho, chỉ để dự kiến nhập hàng.</div>
     </div>`;
 }
 
