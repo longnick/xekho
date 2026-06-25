@@ -304,7 +304,7 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 @Composable
 private fun SettingsScreen() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 4: AuthRepository boundary + Firebase Auth guard. Real Firebase Auth/Firestore v\u1eabn b\u1ecb ch\u1eb7n.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 5: Firebase Auth SDK dependency prepared, but real Firebase Auth/Firestore v\u1eabn b\u1ecb guard ch\u1eb7n.")
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }
