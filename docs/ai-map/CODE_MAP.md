@@ -1,3 +1,9 @@
+# 2026-06-26 02:33 +07 - Android native manual QA result template Sprint 27
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaResultTemplateReporter.kt`: test-side DTO/reporter for manual QA result fields, pass/fail sections, blocked confirmations, and fail-closed flags.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaResultTemplateTest.kt`: guards result template metadata.
+- `android-native/scripts/native-qa-result-template.sh`: creates timestamped manual QA result drafts under `docs/ai-map/MANUAL_QA_RESULTS/` and fills APK SHA256 if `app-debug.apk` exists.
+- `docs/android-native-manual-qa-result-template.md`: human-facing manual QA result capture template.
+
 # 2026-06-26 02:23 +07 - Android native manual QA checklist Sprint 26
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaChecklistReporter.kt`: test-side manual QA DTO/reporter for install steps, smoke checks, blocked items, and fail-closed flags.
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaChecklistTest.kt`: guards manual QA checklist coverage for PIN, tabs, Firestore cards, install instructions, and blocked production/Firestore state.
