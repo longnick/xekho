@@ -1,3 +1,12 @@
+# 2026-06-25 23:59 +07 - DONE: Android native Firestore read-only repository skeleton Sprint 20
+- DONE: Added `PosFirestoreReadOnlyRepositoryMode`, `PosFirestoreReadOnlyRepositoryRequest`, `PosFirestoreReadOnlyCollectionPreview`, and `PosFirestoreReadOnlyRepositoryPreview`.
+- DONE: Added `PosFirestoreReadOnlyRepository`, `BlockedFirestoreReadOnlyRepository`, and `GuardedFirestoreReadOnlyRepositoryFactory`.
+- DONE: Factory returns blocked previews by default and `APPROVAL_HELD_PREVIEW_ONLY` even when all read-only flags are modeled as present.
+- DONE: Added `FirestoreReadOnlyRepositoryFactoryTest` covering default blocked repo, collection preview, all-flags approval-held path, and no Firestore execution flags.
+- DONE: Wired Tables UI with `Firestore repository Sprint 20` card.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2359-android-native-firestore-readonly-repository-skeleton.md`.
+
 # 2026-06-25 23:38 +07 - DONE: Android native Firestore read-only contract gate Sprint 19
 - DONE: Added `firebase-firestore` catalog alias and app dependency under the existing Firebase BoM.
 - DONE: Added `FirestoreReadOnlySdkMarker` for compile-time SDK linkage without executing Firestore reads.
