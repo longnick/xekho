@@ -33,7 +33,7 @@ object FirebaseAuthConfigGuard {
             !config.explicitOwnerApproval -> "missing explicit owner approval"
             !config.googleServicesJsonPresent -> "missing google-services.json"
             !config.firebaseAuthSdkLinked -> "missing Firebase Auth SDK"
-            else -> "real Firebase Auth intentionally blocked in Sprint 4"
+            else -> "real Firebase Auth intentionally blocked in Sprint 5"
         }
 
         return FirebaseAuthReadiness(
