@@ -47,6 +47,7 @@ import com.xekho.pos.auth.AuthSession
 import com.xekho.pos.auth.AuthStage
 import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
+import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
@@ -55,6 +56,7 @@ import com.xekho.pos.domain.PaymentDraft
 import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
+import com.xekho.pos.domain.PosTableOrderState
 import com.xekho.pos.domain.TableOverview
 import com.xekho.pos.ui.theme.XekhoTheme
 
@@ -108,6 +110,71 @@ private val posLocalOrderSaver: Saver<PosLocalOrder, List<String>> = Saver(
             status = saved.getOrNull(2)?.let { PosOrderStatus.valueOf(it) } ?: PosOrderStatus.OPEN,
             canWriteToProduction = saved.getOrNull(3)?.toBooleanStrictOrNull() ?: false,
             items = items
+        )
+    }
+)
+
+private val posTableOrderStateSaver: Saver<PosTableOrderState, List<String>> = Saver(
+    save = { state ->
+        listOf(state.selectedTableId) + state.ordersByTable.map { (tableId, order) ->
+            val itemPayload = order.items.joinToString("\u001e") { item ->
+                listOf(item.id, item.name, item.quantity.toString(), item.unitPrice.toString()).joinToString("\u001f")
+            }
+            listOf(
+                tableId,
+                state.tableLabelsById[tableId] ?: tableId,
+                order.clientOrderId,
+                order.tableId,
+                order.status.name,
+                order.canWriteToProduction.toString(),
+                itemPayload
+            ).joinToString("\u001d")
+        }
+    },
+    restore = { saved ->
+        val rows = saved.drop(1)
+        val orders = rows.mapNotNull { row ->
+            val parts = row.split("\u001d")
+            if (parts.size >= 7) {
+                val items = parts[6].takeIf { it.isNotBlank() }?.split("\u001e")?.mapNotNull { encodedItem ->
+                    val itemParts = encodedItem.split("\u001f")
+                    if (itemParts.size == 4) {
+                        OrderItem(
+                            id = itemParts[0],
+                            name = itemParts[1],
+                            quantity = itemParts[2].toIntOrNull() ?: 0,
+                            unitPrice = itemParts[3].toLongOrNull() ?: 0L
+                        )
+                    } else {
+                        null
+                    }
+                } ?: emptyList()
+                parts[0] to PosLocalOrder(
+                    clientOrderId = parts[2],
+                    tableId = parts[3],
+                    status = parts[4].let { PosOrderStatus.valueOf(it) },
+                    canWriteToProduction = parts[5].toBooleanStrictOrNull() ?: false,
+                    items = items
+                )
+            } else {
+                null
+            }
+        }.toMap()
+        val labels = rows.mapNotNull { row ->
+            val parts = row.split("\u001d")
+            if (parts.size >= 2) parts[0] to parts[1] else null
+        }.toMap()
+        val selected = saved.firstOrNull().takeIf { it != null && orders.containsKey(it) }
+            ?: orders.keys.firstOrNull()
+            ?: "ban-02"
+        PosTableOrderState(
+            selectedTableId = selected,
+            ordersByTable = orders.ifEmpty {
+                mapOf("ban-02" to PosLocalOrder("local-ban-02-001", "ban-02", PosOrderStatus.OPEN))
+            },
+            tableLabelsById = labels.ifEmpty { mapOf("ban-02" to "Bàn 2") },
+            canWriteToProduction = false,
+            canSyncToFirestore = false
         )
     }
 )
@@ -212,9 +279,11 @@ private fun MainDashboard(
 ) {
     var selectedTab by remember { mutableStateOf(NativeTab.TABLES) }
     val posWriteRepository = remember { FakePosWriteRepository() }
-    var localOrder by rememberSaveable(stateSaver = posLocalOrderSaver) {
-        mutableStateOf(posWriteRepository.openOrder("ban-02").order)
+    val tableOrderRepository = remember { FakePosTableOrderRepository(posWriteRepository) }
+    var tableOrderState by rememberSaveable(stateSaver = posTableOrderStateSaver) {
+        mutableStateOf(tableOrderRepository.initialState(snapshot.tables))
     }
+    val localOrder = tableOrderState.selectedOrder
     var localPaymentCloseMessage by rememberSaveable { mutableStateOf("Chưa thu local") }
 
     Scaffold(
@@ -249,27 +318,63 @@ private fun MainDashboard(
                 Spacer(modifier = Modifier.height(16.dp))
                 when (selectedTab) {
                     NativeTab.TABLES -> TablesScreen(
-                        tables = snapshot.tables,
+                        tables = tableOrderRepository.tableSummaries(tableOrderState),
+                        selectedTableId = tableOrderState.selectedTableId,
                         menuItems = posWriteRepository.fakeMenu(),
                         localOrder = localOrder,
                         paymentDraft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH),
                         localPaymentCloseMessage = localPaymentCloseMessage,
-                        onOpenLocalOrder = {
-                            localOrder = posWriteRepository.openOrder("ban-02").order
+                        onSelectTable = { tableId ->
+                            tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
                             localPaymentCloseMessage = "Chưa thu local"
                         },
-                        onAddMenuItem = { itemId -> localOrder = posWriteRepository.addMenuItem(localOrder, itemId).order },
-                        onIncreaseItem = { itemId -> localOrder = posWriteRepository.increaseItem(localOrder, itemId).order },
-                        onDecreaseItem = { itemId -> localOrder = posWriteRepository.decreaseItem(localOrder, itemId).order },
-                        onRemoveItem = { itemId -> localOrder = posWriteRepository.removeItem(localOrder, itemId).order },
-                        onClearOrder = { localOrder = posWriteRepository.clearOrder(localOrder).order },
+                        onOpenLocalOrder = {
+                            val opened = posWriteRepository.openOrder(tableOrderState.selectedTableId).order
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(tableOrderState, opened)
+                            localPaymentCloseMessage = "Chưa thu local"
+                        },
+                        onAddMenuItem = { itemId ->
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.addMenuItem(localOrder, itemId).order
+                            )
+                        },
+                        onIncreaseItem = { itemId ->
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.increaseItem(localOrder, itemId).order
+                            )
+                        },
+                        onDecreaseItem = { itemId ->
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.decreaseItem(localOrder, itemId).order
+                            )
+                        },
+                        onRemoveItem = { itemId ->
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.removeItem(localOrder, itemId).order
+                            )
+                        },
+                        onClearOrder = {
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.clearOrder(localOrder).order
+                            )
+                        },
                         onClosePaymentDraft = {
                             val draft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH)
                             val closeResult = posWriteRepository.closePaymentDraft(localOrder, draft)
-                            localOrder = closeResult.order
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(tableOrderState, closeResult.order)
                             localPaymentCloseMessage = "${closeResult.status.displayName} · ${closeResult.localReceiptNumber.ifBlank { "không có biên nhận" }} · không sync"
                         },
-                        onCloseLocalOrder = { localOrder = posWriteRepository.closeOrder(localOrder).order }
+                        onCloseLocalOrder = {
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(
+                                tableOrderState,
+                                posWriteRepository.closeOrder(localOrder).order
+                            )
+                        }
                     )
                     NativeTab.INVENTORY -> InventoryScreen(snapshot.inventory)
                     NativeTab.FINANCE -> FinanceScreen(snapshot)
@@ -326,10 +431,12 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun TablesScreen(
     tables: List<TableOverview>,
+    selectedTableId: String,
     menuItems: List<OrderItem>,
     localOrder: PosLocalOrder,
     paymentDraft: PaymentDraft,
     localPaymentCloseMessage: String,
+    onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
     onAddMenuItem: (String) -> Unit,
     onIncreaseItem: (String) -> Unit,
@@ -343,13 +450,13 @@ private fun TablesScreen(
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))) {
                 Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("POS local cart edit flow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("POS local multi-table flow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${localOrder.status.displayName} · ${localOrder.clientOrderId} · ${localOrder.itemCount} món · ${formatVnd(localOrder.total)}",
+                        "Bàn đang chọn: $selectedTableId · ${localOrder.status.displayName} · ${localOrder.clientOrderId} · ${localOrder.itemCount} món · ${formatVnd(localOrder.total)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        "Local-only: chọn món, tăng/giảm/xóa giỏ tại máy; không Firestore, không production write, không sync.",
+                        "Local-only: chọn bàn, giữ giỏ riêng từng bàn, tăng/giảm/xóa tại máy; không Firestore, không production write, không sync.",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -405,8 +512,20 @@ private fun TablesScreen(
                 }
             }
         }
+        item {
+            SectionCard("Chọn bàn local", "Mỗi bàn giữ một order local riêng; chọn bàn không ghi server.")
+        }
         items(tables) { table ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            val isSelected = table.id == selectedTableId
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                )
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -414,13 +533,14 @@ private fun TablesScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = table.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(text = "${if (isSelected) "✓ " else ""}${table.label}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(text = table.status.displayName, style = MaterialTheme.typography.bodyMedium)
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(horizontalAlignment = Alignment.End) {
                         Text(text = formatVnd(table.total), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         Text(text = "${table.itemCount} món", style = MaterialTheme.typography.labelMedium)
+                        TextButton(onClick = { onSelectTable(table.id) }) { Text(if (isSelected) "Đang chọn" else "Chọn") }
                     }
                 }
             }
