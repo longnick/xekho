@@ -281,6 +281,46 @@ data class QueueStorageComparison(
     val didOpenDatabase: Boolean = false
 )
 
+enum class PosReadOnlyDataSource(val displayName: String) {
+    FAKE_LOCAL("Fake/local data"),
+    FIREBASE_READ_ONLY("Firebase read-only candidate")
+}
+
+enum class PosReadOnlyDataReadinessStatus(val displayName: String) {
+    FAKE_LOCAL_ACTIVE("Fake/local active"),
+    BLOCKED_LOCAL_ONLY("Blocked local-only"),
+    PREP_ONLY_LOCAL_ONLY("Prep-only local-only")
+}
+
+data class PosReadOnlyDataRequest(
+    val requestedSource: PosReadOnlyDataSource = PosReadOnlyDataSource.FAKE_LOCAL,
+    val ownerApprovedReadOnly: Boolean = false,
+    val googleServicesJsonPresent: Boolean = false,
+    val firestoreSdkLinked: Boolean = false
+)
+
+data class PosReadOnlyDataReadiness(
+    val requestedSource: PosReadOnlyDataSource,
+    val selectedSource: PosReadOnlyDataSource,
+    val status: PosReadOnlyDataReadinessStatus,
+    val lines: List<String>,
+    val canReadFirestore: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosReadOnlyDataPreview(
+    val source: PosReadOnlyDataSource,
+    val tableCount: Int,
+    val inventoryCount: Int,
+    val todayRevenue: Long,
+    val lines: List<String>,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,

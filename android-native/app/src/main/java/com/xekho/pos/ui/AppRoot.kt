@@ -50,6 +50,7 @@ import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
+import com.xekho.pos.domain.GuardedPosReadOnlyDataBoundary
 import com.xekho.pos.domain.GuardedQueueStorageSelectionBoundary
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
@@ -68,6 +69,10 @@ import com.xekho.pos.domain.PaymentDraft
 import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
+import com.xekho.pos.domain.PosReadOnlyDataPreview
+import com.xekho.pos.domain.PosReadOnlyDataReadiness
+import com.xekho.pos.domain.PosReadOnlyDataRequest
+import com.xekho.pos.domain.PosReadOnlyDataSource
 import com.xekho.pos.domain.PosTableOrderState
 import com.xekho.pos.domain.QueueStorageComparison
 import com.xekho.pos.domain.QueueStorageDecision
@@ -341,6 +346,14 @@ private fun MainDashboard(
     val offlineQueueRepository = remember { FakeOfflineQueueRepository() }
     val offlineQueuePersistenceBoundary = remember { GuardedOfflineQueuePersistenceBoundary() }
     val queueStorageBoundary = remember { GuardedQueueStorageSelectionBoundary() }
+    val posReadOnlyDataBoundary = remember { GuardedPosReadOnlyDataBoundary() }
+    val defaultPosReadiness = remember { posReadOnlyDataBoundary.evaluate(PosReadOnlyDataRequest()) }
+    val fakePosPreview = remember(snapshot) { posReadOnlyDataBoundary.previewFakeLocalData(snapshot) }
+    val firebaseReadOnlyPreview = remember {
+        posReadOnlyDataBoundary.previewFirebaseReadOnly(
+            PosReadOnlyDataRequest(requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY)
+        )
+    }
     val defaultStorageDecision = remember { queueStorageBoundary.selectStorage(QueueStorageRequest()) }
     val roomStorageDecision = remember {
         queueStorageBoundary.selectStorage(QueueStorageRequest(requestedBackend = QueueStorageBackend.ROOM))
@@ -418,6 +431,9 @@ private fun MainDashboard(
                         defaultStorageDecision = defaultStorageDecision,
                         roomStorageDecision = roomStorageDecision,
                         storageComparison = storageComparison,
+                        defaultPosReadiness = defaultPosReadiness,
+                        fakePosPreview = fakePosPreview,
+                        firebaseReadOnlyPreview = firebaseReadOnlyPreview,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -643,6 +659,9 @@ private fun TablesScreen(
     defaultStorageDecision: QueueStorageDecision,
     roomStorageDecision: QueueStorageDecision,
     storageComparison: QueueStorageComparison,
+    defaultPosReadiness: PosReadOnlyDataReadiness,
+    fakePosPreview: PosReadOnlyDataPreview,
+    firebaseReadOnlyPreview: PosReadOnlyDataPreview,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -769,6 +788,21 @@ private fun TablesScreen(
                     queueExportPreview.copyableText.take(600)
                 )
             }
+        }
+        item {
+            SectionCard(
+                "POS data prep Sprint 18",
+                "Source: ${defaultPosReadiness.selectedSource.displayName} · ${defaultPosReadiness.status.displayName}\n" +
+                    "Fake preview: ${fakePosPreview.tableCount} bàn · ${fakePosPreview.inventoryCount} kho · ${formatVnd(fakePosPreview.todayRevenue)}\n" +
+                    "Firebase read-only candidate: ${firebaseReadOnlyPreview.lines.first()}\n" +
+                    "No Firestore read, no production POS data returned, no writes."
+            )
+        }
+        item {
+            SectionCard(
+                "Firebase read-only guard",
+                defaultPosReadiness.lines.joinToString("\n") + "\n\n" + firebaseReadOnlyPreview.lines.take(3).joinToString("\n")
+            )
         }
         item {
             SectionCard(

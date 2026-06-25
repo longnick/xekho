@@ -489,3 +489,32 @@ Latest debug APK checksum after Sprint 17:
 6ffb1c3e9748698a991b19e846fe56cd02adfa3a77a04d0bebb8ca2b81a6e3c5  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 18 POS read-only data prep
+
+Native POS now has a guarded read-only Firebase/POS data prep boundary:
+
+```text
+PosReadOnlyDataSource(FAKE_LOCAL, FIREBASE_READ_ONLY)
+PosReadOnlyDataReadinessStatus(FAKE_LOCAL_ACTIVE, BLOCKED_LOCAL_ONLY, PREP_ONLY_LOCAL_ONLY)
+PosReadOnlyDataRequest
+PosReadOnlyDataReadiness
+PosReadOnlyDataPreview
+GuardedPosReadOnlyDataBoundary.evaluate/previewFakeLocalData/previewFirebaseReadOnly
+```
+
+Safety state:
+
+- default app data remains fake/local
+- Firebase read-only request is blocked without owner approval/config/Firestore SDK
+- even when all read-only flags are modeled as present, Sprint 18 remains prep-only and does not read Firestore
+- no Firestore SDK dependency was added
+- no production POS rows were read or returned
+- no writes, sync, background worker, service account, `.env`, customer/payment data, or migrations
+- UI labels explicitly say no Firestore read, no production POS data returned, no writes
+
+Latest debug APK checksum after Sprint 18:
+
+```text
+8fc50747b0a78c9862b08a89dba891a68a1c6c4a6890349eea176940cc1c95c7  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
