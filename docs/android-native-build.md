@@ -383,4 +383,30 @@ Latest debug APK checksum after Sprint 13:
 ```text
 429ffe0bd5bf3a66b952a46b2c070243382da3bd19c0fe7a3c9e403b05751ab6  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 14 POS queue conflict/error detail preview
+
+Native POS queue now supports local-only detail preview:
+
+```text
+OfflineQueueDetailType(INFO_LOCAL_ONLY, ERROR_PREVIEW_LOCAL_ONLY, CONFLICT_PREVIEW_LOCAL_ONLY)
+OfflineQueueDetailPreview
+FakeOfflineQueueRepository.previewDetail(state, localQueueId)
+```
+
+Safety state:
+
+- missing queue id returns local-only error preview
+- blocked queue items show local error detail and recommended action
+- duplicate non-blank local receipts show conflict preview only
+- healthy queued items show info-only preview
+- retry-preview items show retry detail preview
+- no Firestore, no background worker, no persistent database, no production write
+- all detail previews keep `canWriteToProduction = false` and `canSyncToFirestore = false`
+- UI labels explicitly say no production write and no Firestore sync
+
+Latest debug APK checksum after Sprint 14:
+
+```text
+c09b15842112da3b313cc01b66d4c801bb788d41412ef6a9294a8648742f0cd2  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
