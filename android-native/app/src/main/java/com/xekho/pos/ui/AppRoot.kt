@@ -57,6 +57,9 @@ import com.xekho.pos.domain.OfflineQueueFilter
 import com.xekho.pos.domain.OfflineQueueDetailPreview
 import com.xekho.pos.domain.OfflineQueueItem
 import com.xekho.pos.domain.OfflineQueuePersistenceSnapshot
+import com.xekho.pos.domain.OfflineQueueSnapshotExportPreview
+import com.xekho.pos.domain.OfflineQueueSnapshotImportPreview
+import com.xekho.pos.domain.OfflineQueueSnapshotValidationPreview
 import com.xekho.pos.domain.OfflineQueueState
 import com.xekho.pos.domain.OfflineQueueStatus
 import com.xekho.pos.domain.OrderItem
@@ -342,6 +345,10 @@ private fun MainDashboard(
     var selectedQueueFilterName by rememberSaveable { mutableStateOf(OfflineQueueFilter.ALL.name) }
     var selectedQueueDetailId by rememberSaveable { mutableStateOf("") }
     var queuePersistenceMessage by rememberSaveable { mutableStateOf("Chưa lưu snapshot queue local") }
+    var queueImportText by rememberSaveable { mutableStateOf("") }
+    var queueValidationPreview by remember { mutableStateOf<OfflineQueueSnapshotValidationPreview?>(null) }
+    var queueExportPreview by remember { mutableStateOf<OfflineQueueSnapshotExportPreview?>(null) }
+    var queueImportPreview by remember { mutableStateOf<OfflineQueueSnapshotImportPreview?>(null) }
     val selectedQueueFilter = OfflineQueueFilter.valueOf(selectedQueueFilterName)
     val filteredQueueItems = offlineQueueRepository.filterItems(offlineQueueState, selectedQueueFilter)
     val selectedQueueDetail = selectedQueueDetailId.takeIf { it.isNotBlank() }?.let { id ->
@@ -393,6 +400,10 @@ private fun MainDashboard(
                         selectedQueueDetail = selectedQueueDetail,
                         queuePersistenceSnapshot = savedQueueSnapshot,
                         queuePersistenceMessage = queuePersistenceMessage,
+                        queueValidationPreview = queueValidationPreview,
+                        queueExportPreview = queueExportPreview,
+                        queueImportPreview = queueImportPreview,
+                        queueImportText = queueImportText,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -487,7 +498,57 @@ private fun MainDashboard(
                         onClearQueueSnapshot = {
                             val result = offlineQueuePersistenceBoundary.clearLocalSnapshot()
                             savedQueueSnapshot = null
+                            queueValidationPreview = null
+                            queueExportPreview = null
+                            queueImportPreview = null
+                            queueImportText = ""
                             queuePersistenceMessage = result.message
+                        },
+                        onValidateQueueSnapshot = {
+                            val snapshotToValidate = savedQueueSnapshot
+                            if (snapshotToValidate == null) {
+                                queuePersistenceMessage = "Chưa có snapshot local để validate; không đụng Room/DB."
+                            } else {
+                                val validation = offlineQueuePersistenceBoundary.validateSnapshot(snapshotToValidate)
+                                queueValidationPreview = validation
+                                queuePersistenceMessage = "Validate snapshot: ${validation.status.displayName} · corrupt ${validation.corruptRowCount}"
+                            }
+                        },
+                        onPreviewQueueExport = {
+                            val snapshotToExport = savedQueueSnapshot ?: offlineQueuePersistenceBoundary.saveLocalSnapshot(offlineQueueState).snapshot
+                            val exportPreview = offlineQueuePersistenceBoundary.previewExport(snapshotToExport)
+                            savedQueueSnapshot = exportPreview.snapshot
+                            queueExportPreview = exportPreview
+                            queueImportText = exportPreview.copyableText
+                            queueValidationPreview = exportPreview.validation
+                            queuePersistenceMessage = "Export preview local-only · ${exportPreview.itemCount} item · chưa lưu DB"
+                        },
+                        onQueueImportTextChange = { text ->
+                            queueImportText = text
+                        },
+                        onPreviewQueueImport = {
+                            val importPreview = offlineQueuePersistenceBoundary.previewImport(queueImportText)
+                            queueImportPreview = importPreview
+                            queueValidationPreview = importPreview.validation
+                            queuePersistenceMessage = "Import preview local-only · ${importPreview.validation.status.displayName} · ${importPreview.snapshot.itemCount} item"
+                        },
+                        onUseImportSnapshot = {
+                            val preview = queueImportPreview
+                            if (preview == null) {
+                                queuePersistenceMessage = "Chưa có import preview để nạp; không đụng Room/DB."
+                            } else {
+                                savedQueueSnapshot = preview.snapshot
+                                val result = offlineQueuePersistenceBoundary.restoreLocalSnapshot(preview.snapshot)
+                                offlineQueueState = result.state
+                                queuePersistenceMessage = "Dùng import snapshot local-only · ${result.snapshot.itemCount} item · không sync"
+                            }
+                        },
+                        onFillCorruptImportSample = {
+                            queueImportText = "XK_QUEUE_SNAPSHOT_V1\nLOCAL_ONLY\nversion=1\nitems=1\nnot-a-valid-payload"
+                            val importPreview = offlineQueuePersistenceBoundary.previewImport(queueImportText)
+                            queueImportPreview = importPreview
+                            queueValidationPreview = importPreview.validation
+                            queuePersistenceMessage = "Đã tạo mẫu corrupt local-only để xem lỗi restore."
                         },
                         onCloseLocalOrder = {
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(
@@ -561,6 +622,10 @@ private fun TablesScreen(
     selectedQueueDetail: OfflineQueueDetailPreview?,
     queuePersistenceSnapshot: OfflineQueuePersistenceSnapshot?,
     queuePersistenceMessage: String,
+    queueValidationPreview: OfflineQueueSnapshotValidationPreview?,
+    queueExportPreview: OfflineQueueSnapshotExportPreview?,
+    queueImportPreview: OfflineQueueSnapshotImportPreview?,
+    queueImportText: String,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -579,6 +644,12 @@ private fun TablesScreen(
     onRestoreQueueSnapshot: () -> Unit,
     onBlockedRoomPersistence: () -> Unit,
     onClearQueueSnapshot: () -> Unit,
+    onValidateQueueSnapshot: () -> Unit,
+    onPreviewQueueExport: () -> Unit,
+    onQueueImportTextChange: (String) -> Unit,
+    onPreviewQueueImport: () -> Unit,
+    onUseImportSnapshot: () -> Unit,
+    onFillCorruptImportSample: () -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -636,6 +707,50 @@ private fun TablesScreen(
                 TextButton(onClick = onRestoreQueueSnapshot) { Text("Nạp snapshot local") }
                 TextButton(onClick = onBlockedRoomPersistence) { Text("Thử Room/DB (blocked)") }
                 TextButton(onClick = onClearQueueSnapshot) { Text("Xóa snapshot local") }
+                TextButton(onClick = onValidateQueueSnapshot) { Text("Validate snapshot") }
+                TextButton(onClick = onPreviewQueueExport) { Text("Export preview") }
+            }
+        }
+        item {
+            SectionCard(
+                "Import/export preview local-only",
+                "Validation: ${queueValidationPreview?.status?.displayName ?: "Chưa validate"} · corrupt ${queueValidationPreview?.corruptRowCount ?: 0}\n" +
+                    "Export: ${queueExportPreview?.itemCount ?: 0} item · Import: ${queueImportPreview?.snapshot?.itemCount ?: 0} item\n" +
+                    "Preview chỉ để kiểm tra/copy snapshot local; không Room/DB, không Firestore sync, không production write."
+            )
+        }
+        if (queueValidationPreview != null) {
+            item {
+                SectionCard(
+                    "Snapshot validation detail",
+                    "${queueValidationPreview.title}\n" + queueValidationPreview.lines.joinToString("\n")
+                )
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = queueImportText,
+                onValueChange = { onQueueImportTextChange(it.take(4000)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Snapshot import/export text") },
+                minLines = 3,
+                maxLines = 6,
+                supportingText = { Text("Local-only preview; dán snapshot hoặc dùng Export preview để tự điền.") }
+            )
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onPreviewQueueImport) { Text("Preview import") }
+                TextButton(onClick = onUseImportSnapshot) { Text("Dùng import snapshot local") }
+                TextButton(onClick = onFillCorruptImportSample) { Text("Mẫu corrupt") }
+            }
+        }
+        if (queueExportPreview != null) {
+            item {
+                SectionCard(
+                    "Export copy preview",
+                    queueExportPreview.copyableText.take(600)
+                )
             }
         }
         item {

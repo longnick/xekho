@@ -207,6 +207,42 @@ data class OfflineQueuePersistenceResult(
     val canSyncToFirestore: Boolean = false
 )
 
+enum class OfflineQueueSnapshotValidationStatus(val displayName: String) {
+    VALID_LOCAL_ONLY("Valid local-only snapshot"),
+    EMPTY_LOCAL_ONLY("Empty local-only snapshot"),
+    CORRUPT_LOCAL_ONLY("Corrupt local-only snapshot"),
+    UNSUPPORTED_LOCAL_ONLY("Unsupported local-only snapshot")
+}
+
+data class OfflineQueueSnapshotValidationPreview(
+    val status: OfflineQueueSnapshotValidationStatus,
+    val title: String,
+    val lines: List<String>,
+    val itemCount: Int = 0,
+    val corruptRowCount: Int = 0,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class OfflineQueueSnapshotExportPreview(
+    val snapshot: OfflineQueuePersistenceSnapshot,
+    val validation: OfflineQueueSnapshotValidationPreview,
+    val copyableText: String,
+    val itemCount: Int,
+    val didUseRoom: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class OfflineQueueSnapshotImportPreview(
+    val snapshot: OfflineQueuePersistenceSnapshot,
+    val validation: OfflineQueueSnapshotValidationPreview,
+    val rawLineCount: Int,
+    val didUseRoom: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
