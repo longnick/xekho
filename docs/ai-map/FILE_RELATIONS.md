@@ -1,3 +1,10 @@
+# 2026-06-26 01:24 +07 - Android native Firestore approval checklist relations
+- `Models.kt` defines the Sprint 22 Firestore read-only checklist request/item/state DTOs and fail-closed guard flags.
+- `GuardedFirestoreReadOnlyApprovalChecklist.kt#evaluate()` consumes modeled local readiness flags and returns blocked/approval-held local-only state; it does not depend on Firebase SDK runtime calls.
+- `AppRoot.kt#MainDashboard()` creates a default checklist with SDK/contract/repository review modeled ready but owner approval and `google-services.json` missing, so UI remains blocked.
+- `AppRoot.kt#TablesScreen()` renders `Firestore approval checklist Sprint 22` after the Sprint 21 mapping card; it is informational only and cannot trigger reads/writes.
+- `FirestoreReadOnlyApprovalChecklistTest.kt` guards that all checklist paths keep `canExecuteReads`, `didInstantiateFirestore`, `didExecuteRead`, `didReadProductionData`, `canWriteToProduction`, and `canSyncToFirestore` false.
+
 # 2026-06-25 07:39 +07 - Auto stock compact ordering summary relations
 - `index.html#[data-xk-auto-stock-norm="v1"]` is now a compact clickable card; `toggleAutoStockNormOverview(event)` opens/closes the ordering overview and old filter controls were removed.
 - `app.js#getAutoStockNormPurchaseInfo()` converts `suggestedImportQty` into order units; beer/can rows round up to 24-can cases and estimate cost from inventory `costPerUnit`.

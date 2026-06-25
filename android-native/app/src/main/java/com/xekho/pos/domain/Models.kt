@@ -411,6 +411,56 @@ data class PosFirestoreReadOnlyDashboardState(
     val canSyncToFirestore: Boolean = false
 )
 
+enum class FirestoreReadOnlyChecklistItemKey {
+    OWNER_APPROVAL,
+    GOOGLE_SERVICES_JSON,
+    FIRESTORE_SDK_LINKED,
+    CONTRACT_PREVIEW_REVIEWED,
+    REPOSITORY_PREVIEW_REVIEWED
+}
+
+enum class FirestoreReadOnlyChecklistStatus(val displayName: String) {
+    BLOCKED_LOCAL_ONLY("Blocked local-only"),
+    APPROVAL_HELD_LOCAL_ONLY("Approval held local-only")
+}
+
+data class FirestoreReadOnlyApprovalChecklistRequest(
+    val ownerApprovedReadOnly: Boolean = false,
+    val googleServicesJsonPresent: Boolean = false,
+    val firestoreSdkLinked: Boolean = false,
+    val contractPreviewReviewed: Boolean = false,
+    val repositoryPreviewReviewed: Boolean = false,
+    val allowFutureReadExecution: Boolean = false
+)
+
+data class FirestoreReadOnlyChecklistItem(
+    val key: FirestoreReadOnlyChecklistItemKey,
+    val label: String,
+    val isReady: Boolean,
+    val status: FirestoreReadOnlyChecklistStatus,
+    val message: String,
+    val canExecuteReads: Boolean = false,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class FirestoreReadOnlyApprovalChecklistState(
+    val status: FirestoreReadOnlyChecklistStatus,
+    val items: List<FirestoreReadOnlyChecklistItem>,
+    val summaryLines: List<String>,
+    val readyItemCount: Int,
+    val requiredItemCount: Int,
+    val canExecuteReads: Boolean = false,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class PosFirestoreReadOnlyContract(
     val collections: List<PosFirestoreReadOnlyCollectionContract>,
     val canExecuteReads: Boolean = false,

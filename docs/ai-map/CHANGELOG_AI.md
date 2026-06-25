@@ -1,3 +1,10 @@
+# 2026-06-26 01:24 +07 - Android native Firestore read-only approval checklist Sprint 22
+- Added `GuardedFirestoreReadOnlyApprovalChecklist` plus checklist DTOs in `Models.kt` for owner approval/local config/SDK/contract/repository readiness.
+- Added `FirestoreReadOnlyApprovalChecklistTest` covering blocked defaults, missing approval, all-flags approval-held, and fail-closed item guards.
+- Wired `AppRoot.kt` Tables UI with `Firestore approval checklist Sprint 22` while keeping real Firestore execution disabled.
+- Verification passed: targeted RED/GREEN, clean native unit test, debug APK build, APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0124-android-native-firestore-readonly-approval-checklist.md`
+
 # 2026-06-25 07:39 +07 - Auto stock compact ordering summary
 - Reworked `Định mức tồn kho tự động` from a long metrics table into a compact clickable card: collapsed state shows action summary and projected purchase total; clicking opens the item list.
 - Added purchase conversion logic for beer/can items: `lon` recommendations round up to whole 24-can cases and costs use the rounded order quantity.
