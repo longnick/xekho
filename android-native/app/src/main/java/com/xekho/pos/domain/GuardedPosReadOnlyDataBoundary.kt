@@ -64,7 +64,7 @@ class GuardedPosReadOnlyDataBoundary {
             PosReadOnlyDataReadinessStatus.BLOCKED_LOCAL_ONLY
         }
         val firstLine = missingReason
-            ?: "All read-only flags are present, but Sprint 18 is prep-only; Firestore reads stay blocked."
+            ?: "After Sprint 18 prep, Firestore SDK marker is linked, but Sprint 19 is contract/SDK-gate only; Firestore reads stay blocked."
         return PosReadOnlyDataReadiness(
             requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY,
             selectedSource = PosReadOnlyDataSource.FAKE_LOCAL,
