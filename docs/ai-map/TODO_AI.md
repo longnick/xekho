@@ -1,3 +1,12 @@
+# 2026-06-25 21:53 +07 - DONE: Android native POS queue filters/retry preview Sprint 13
+- DONE: Added `OfflineQueueStatus.RETRY_PREVIEW_LOCAL_ONLY` and `OfflineQueueFilter` (`ALL`, `QUEUED`, `BLOCKED`, `RETRY_PREVIEW`).
+- DONE: Added queue derived counts `blockedCount` and `retryPreviewCount`.
+- DONE: Added `FakeOfflineQueueRepository.filterItems(state, filter)` and `retryPreview(state, localQueueId)`; retry preview only affects blocked local items.
+- DONE: Added `FakeOfflineQueueFilterRetryTest` covering filter buckets, blocked retry preview, queued/missing no-op, pending totals, retry count, and no write/sync guards.
+- DONE: Wired Tables UI with retained queue filter, filtered item list, `Retry nháp`, auto-switch to retry-preview filter, and vertical filter controls for mobile safety.
+- DONE: Verified TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, Kilo review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2153-android-native-pos-queue-filters-retry-preview.md`.
+
 # 2026-06-25 21:34 +07 - DONE: Android native POS offline queue draft Sprint 12
 - DONE: Added `OfflineQueueStatus`, `OfflineQueueItem`, and `OfflineQueueState` with fail-closed write/sync guards.
 - DONE: Added `FakeOfflineQueueRepository` for `draftFromPaymentClose`, `appendDraft`, and `clearLocalQueue`.

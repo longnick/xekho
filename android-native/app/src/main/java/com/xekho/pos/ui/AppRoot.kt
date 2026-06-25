@@ -52,6 +52,7 @@ import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
+import com.xekho.pos.domain.OfflineQueueFilter
 import com.xekho.pos.domain.OfflineQueueItem
 import com.xekho.pos.domain.OfflineQueueState
 import com.xekho.pos.domain.OfflineQueueStatus
@@ -333,6 +334,9 @@ private fun MainDashboard(
     var offlineQueueState by rememberSaveable(stateSaver = offlineQueueStateSaver) {
         mutableStateOf(OfflineQueueState())
     }
+    var selectedQueueFilterName by rememberSaveable { mutableStateOf(OfflineQueueFilter.ALL.name) }
+    val selectedQueueFilter = OfflineQueueFilter.valueOf(selectedQueueFilterName)
+    val filteredQueueItems = offlineQueueRepository.filterItems(offlineQueueState, selectedQueueFilter)
     val localOrder = tableOrderState.selectedOrder
     var localPaymentCloseMessage by rememberSaveable { mutableStateOf("Chưa thu local") }
 
@@ -374,6 +378,8 @@ private fun MainDashboard(
                         localOrder = localOrder,
                         paymentDraft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH),
                         offlineQueueState = offlineQueueState,
+                        filteredQueueItems = filteredQueueItems,
+                        selectedQueueFilter = selectedQueueFilter,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -432,6 +438,14 @@ private fun MainDashboard(
                         },
                         onClearOfflineQueue = {
                             offlineQueueState = offlineQueueRepository.clearLocalQueue(offlineQueueState)
+                        },
+                        onSelectQueueFilter = { filter ->
+                            selectedQueueFilterName = filter.name
+                        },
+                        onRetryQueuePreview = { localQueueId ->
+                            offlineQueueState = offlineQueueRepository.retryPreview(offlineQueueState, localQueueId)
+                            selectedQueueFilterName = OfflineQueueFilter.RETRY_PREVIEW.name
+                            localPaymentCloseMessage = "Retry preview local-only · không sync"
                         },
                         onCloseLocalOrder = {
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(
@@ -500,6 +514,8 @@ private fun TablesScreen(
     localOrder: PosLocalOrder,
     paymentDraft: PaymentDraft,
     offlineQueueState: OfflineQueueState,
+    filteredQueueItems: List<OfflineQueueItem>,
+    selectedQueueFilter: OfflineQueueFilter,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -511,6 +527,8 @@ private fun TablesScreen(
     onClosePaymentDraft: () -> Unit,
     onQueueLocalDraft: () -> Unit,
     onClearOfflineQueue: () -> Unit,
+    onSelectQueueFilter: (OfflineQueueFilter) -> Unit,
+    onRetryQueuePreview: (String) -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -550,17 +568,29 @@ private fun TablesScreen(
         item {
             SectionCard(
                 "Offline queue nháp local",
-                "${offlineQueueState.pendingCount} mục chờ local · ${formatVnd(offlineQueueState.pendingTotal)}\n" +
-                    "Chỉ là hàng đợi nháp trong máy: không Firestore, không sync, không production write."
+                "${offlineQueueState.pendingCount} queued · ${offlineQueueState.blockedCount} blocked · ${offlineQueueState.retryPreviewCount} retry nháp · ${formatVnd(offlineQueueState.pendingTotal)}\n" +
+                    "Bộ lọc: ${selectedQueueFilter.displayName}. Chỉ là hàng đợi nháp trong máy: không Firestore, không sync, không production write."
             )
         }
-        if (offlineQueueState.items.isNotEmpty()) {
-            items(offlineQueueState.items) { queueItem ->
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OfflineQueueFilter.entries.forEach { filter ->
+                    TextButton(onClick = { onSelectQueueFilter(filter) }) {
+                        Text(if (filter == selectedQueueFilter) "✓ ${filter.displayName}" else filter.displayName)
+                    }
+                }
+            }
+        }
+        if (filteredQueueItems.isNotEmpty()) {
+            items(filteredQueueItems) { queueItem ->
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))) {
                     Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(queueItem.status.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${queueItem.localQueueId} · ${queueItem.tableId} · ${queueItem.itemCount} món · ${formatVnd(queueItem.totalDue)}")
                         Text("Không sync Firestore, không ghi production.", style = MaterialTheme.typography.labelMedium)
+                        if (queueItem.status == OfflineQueueStatus.BLOCKED_LOCAL_ONLY) {
+                            TextButton(onClick = { onRetryQueuePreview(queueItem.localQueueId) }) { Text("Retry nháp") }
+                        }
                     }
                 }
             }
