@@ -207,4 +207,27 @@ Latest debug APK checksum after Sprint 9:
 ```text
 ed86e63821a63edc70bb1ce7a2a808e624530ba59e67efc2cbbf2bdd3b047d1d  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 10A POS fake write flow
+
+Native POS tab now has a local-only fake write flow:
+
+```text
+Mở lại       -> open local order for ban-02
++ Miến       -> add/merge local demo item
+Đóng local   -> mark order CLOSED_LOCAL_ONLY
+```
+
+Safety state:
+
+- `FakePosWriteRepository` has no Firebase/Firestore dependency
+- `PosLocalOrder.canWriteToProduction = false`
+- `PosWriteResult.canWriteToProduction = false`
+- UI labels explicitly say no Firestore, no production write, no sync
+- local order state uses `rememberSaveable` with `posLocalOrderSaver`
+
+Latest debug APK checksum after Sprint 10A:
+
+```text
+b3c18fe00c33d9a3f797e17bb231ec536ee0f236c0b4c1b8cd2527ac8e4e364d  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

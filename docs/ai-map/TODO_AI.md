@@ -1,3 +1,10 @@
+# 2026-06-25 18:42 +07 - DONE: Android native POS fake write flow Sprint 10A
+- DONE: Added `PosLocalOrder`, `PosOrderStatus`, `PosWriteResult`, and `FakePosWriteRepository` for local-only open/add/close order flow.
+- DONE: Wired Tables screen with local order card/actions (`Mở lại`, `+ Miến`, `Đóng local`) and explicit no-Firestore/no-production-write/no-sync label.
+- DONE: Applied Kilo state-retention fix: local POS order now uses `rememberSaveable` with `posLocalOrderSaver` instead of plain `remember`.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only re-review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1842-android-native-pos-fake-write-flow.md`.
+
 # 2026-06-25 18:01 +07 - DONE: Android native local config metadata Sprint 9
 - DONE: Added BuildConfig metadata for local `google-services.json` presence and source, without applying Google Services plugin.
 - DONE: Added `FirebaseLocalConfigMetadata` and `FirebaseLocalConfigMetadataTest`; Settings readiness now reads metadata via BuildConfig while default auth remains `FAKE_LOCAL`.
