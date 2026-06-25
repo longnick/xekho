@@ -5505,7 +5505,8 @@ function buildAutoStockNormRows(days = 56) {
     else if (currentStock > levels.max) { status = 'over'; statusText = 'Dư tồn'; }
     else if (currentStock <= levels.par) { status = 'watch'; statusText = 'Theo dõi'; }
     if (stats.daysSold <= 4 && stats.maxDay >= 10) statusText += ' / spike';
-    return { ...stats, ...levels, stockItem, currentStock, unit, status, statusText };
+    const suggestedImportQty = stockItem ? Math.max(0, Math.ceil(levels.par - currentStock)) : null;
+    return { ...stats, ...levels, stockItem, currentStock, unit, status, statusText, suggestedImportQty };
   }).sort((a, b) => {
     const rank = { need: 0, watch: 1, over: 2, ok: 3, unmapped: 4 };
     return (rank[a.status] ?? 9) - (rank[b.status] ?? 9)
@@ -5545,18 +5546,21 @@ function renderAutoStockNormBoard() {
   const fmtQty = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
   const body = rows.slice(0, 50).map(row => `
     <tr data-auto-stock-norm-row="${row.abc}">
-      <td><span class="badge badge-primary">${row.abc}</span></td>
-      <td>
-        <div style="font-weight:700;color:var(--text)">${escapeAutoStockNormHtml(row.name)}</div>
-        <div style="font-size:10px;color:var(--text3)">${row.stockItem ? `Kho: ${escapeAutoStockNormHtml(row.stockItem.name)} (${escapeAutoStockNormHtml(row.unit)})` : 'Chưa liên kết tồn kho / recipe'}</div>
+      <td data-label="Nhóm"><span class="badge badge-primary">${row.abc}</span></td>
+      <td data-label="Món / trạng thái" class="auto-stock-norm-name-cell">
+        <div class="auto-stock-norm-name-line">
+          <span class="auto-stock-norm-name">${escapeAutoStockNormHtml(row.name)}</span>
+          ${statusBadge(row)}
+        </div>
+        <div class="auto-stock-norm-subline">${row.stockItem ? `Kho: ${escapeAutoStockNormHtml(row.stockItem.name)} (${escapeAutoStockNormHtml(row.unit)})` : 'Chưa liên kết tồn kho / recipe'}</div>
       </td>
-      <td style="text-align:right">${fmtQty(row.total)}</td>
-      <td style="text-align:right">${row.daysSold}</td>
-      <td style="text-align:right">${fmtQty(row.avgDay)}</td>
-      <td style="text-align:right">${fmtQty(row.p90)}</td>
-      <td style="text-align:right;font-weight:700">${row.min} / ${row.par} / ${row.max}</td>
-      <td style="text-align:right">${row.currentStock === null ? '—' : fmtQty(row.currentStock)}</td>
-      <td>${statusBadge(row)}</td>
+      <td data-label="Cần nhập" class="auto-stock-norm-suggest-cell">${row.suggestedImportQty === null ? '—' : `${fmtQty(row.suggestedImportQty)} ${escapeAutoStockNormHtml(row.unit)}`}</td>
+      <td data-label="Bán" style="text-align:right">${fmtQty(row.total)}</td>
+      <td data-label="Ngày" style="text-align:right">${row.daysSold}</td>
+      <td data-label="TB/ngày" style="text-align:right">${fmtQty(row.avgDay)}</td>
+      <td data-label="P90" style="text-align:right">${fmtQty(row.p90)}</td>
+      <td data-label="Tối thiểu / Chuẩn / Tối đa" style="text-align:right;font-weight:700">${row.min} / ${row.par} / ${row.max}</td>
+      <td data-label="Tồn hiện tại" style="text-align:right">${row.currentStock === null ? '—' : fmtQty(row.currentStock)}</td>
     </tr>`).join('');
 
   board.innerHTML = `
@@ -5567,19 +5571,19 @@ function renderAutoStockNormBoard() {
       <div class="stat-card" style="padding:10px"><div class="stat-label">Tổng món phân tích</div><div class="stat-value" style="font-size:22px">${report.rows.length}</div></div>
     </div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Đơn vị là đơn vị bán trên POS. Combo/món chế biến cần map recipe để quy đổi sang nguyên liệu thật.</div>
-    <div style="overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:10px">
-      <table class="auto-stock-norm-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px">
-        <thead style="position:sticky;top:0;background:var(--card);z-index:1">
+    <div class="auto-stock-norm-scroll">
+      <table class="auto-stock-norm-table">
+        <thead>
           <tr>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Nhóm</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Món / map kho</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Bán</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Ngày</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">TB/ngày</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">P90</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Tối thiểu / Chuẩn / Tối đa</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--border)">Tồn hiện tại</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Trạng thái</th>
+            <th>Nhóm</th>
+            <th>Món / trạng thái</th>
+            <th>Cần nhập đề xuất</th>
+            <th>Bán</th>
+            <th>Ngày</th>
+            <th>TB/ngày</th>
+            <th>P90</th>
+            <th>Tối thiểu / Chuẩn / Tối đa</th>
+            <th>Tồn hiện tại</th>
           </tr>
         </thead>
         <tbody>${body}</tbody>

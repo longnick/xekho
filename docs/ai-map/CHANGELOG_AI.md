@@ -1,3 +1,10 @@
+# 2026-06-25 07:14 +07 - Auto stock norm mobile layout
+- Fixed the `Định mức tồn kho tự động` board mobile layout: status badge now sits inline beside the dish name instead of as a separate trailing column.
+- Added `Cần nhập đề xuất` as a dedicated column/field, computed as `max(0, ceil(par - currentStock))` for mapped inventory rows.
+- Added responsive `.auto-stock-norm-*` CSS: desktop keeps a scrollable table; mobile converts rows into cards to avoid horizontal overflow.
+- Bumped `style.css` and `app.js` cache keys to `20260625-auto-stock-mobile`, deployed Hosting-only, and verified local/live with Playwright at 390×844 (`scrollWidth=innerWidth=390`, no overflowing elements, no console/page errors).
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0714-auto-stock-mobile-layout.md`
+
 # 2026-06-25 06:45 +07 - Auto stock norm board in Kho
 - Added a read-only **Kho → TỒN KHO** card named `Định mức tồn kho tự động`.
 - The board reads visible live order history already streamed in `window.appState.history`, computes a 56-day daily demand series, ABC class, P75/P90/P95, and recommended `Tối thiểu / Chuẩn / Tối đa` per sold item.
