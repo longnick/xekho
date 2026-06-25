@@ -12,13 +12,18 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:hosting": "node scripts/build-hosting-dist.js",
-    "deploy:hosting:fast": "npm run build:hosting && npx firebase-tools deploy --only hosting"
+    "deploy:hosting:fast": "npm run build:hosting && npx firebase-tools deploy --only hosting",
+    "cap:sync": "npm run build:hosting && npx cap sync",
+    "cap:open": "npx cap open android",
+    "cap:build": "npm run cap:sync && cd android && ./gradlew assembleDebug --no-daemon"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase-admin": "^13.8.0",
@@ -27,9 +32,18 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "eslint": "^10.4.1",
     "jest": "^30.3.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/",
+      "/android/",
+      "/android-native/"
+    ]
   }
 }

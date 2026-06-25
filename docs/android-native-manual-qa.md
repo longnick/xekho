@@ -1,4 +1,4 @@
-# XE KHÔ Android Native Manual QA Checklist
+# XE KHÔ Android Native Manual QA Checklist (PAUSED - Capacitor App Adopted)
 
 Sprint: 26
 Artifact type: debug APK only

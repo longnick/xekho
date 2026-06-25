@@ -1,3 +1,11 @@
+# 2026-06-26 03:12 +07 - Capacitor Android app replaces native rewrite direction
+- Paused the separate Kotlin `android-native/` track and added a standard Capacitor `android/` project that packages the existing web UI from `dist`, preserving current `xe-kho.web.app` UI/UX instead of redesigning it.
+- Added Capacitor dependencies/config/scripts: `@capacitor/core`, `@capacitor/android`, `@capacitor/cli`, `capacitor.config.ts`, `npm run cap:sync`, and `npm run cap:build`.
+- Updated `scripts/build-hosting-dist.js` to exclude both `android/` and `android-native/` so generated Android/webview assets are not recursively copied into Hosting or the APK.
+- Added Jest ignore patterns for `dist/`, `android/`, and `android-native/` so copied web assets do not duplicate test execution.
+- Verification passed: Capacitor sync/build, debug APK scan/checksum, legacy syntax check, Jest, and Hosting dist exclusion checks.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1955-capacitor-android-app-path.md`
+
 # 2026-06-26 02:52 +07 - Android native real-data read-only direction gate Sprint 28
 - Added a guarded `Real data direction Sprint 28` domain/UI path to visibly move toward real Firebase/POS data while keeping all execution/write/sync flags false.
 - Added `GuardedRealDataDirectionGate` plus tests for blocked default state, partial prerequisites, all-prerequisite one-time approval-held state, and no writes/sync.

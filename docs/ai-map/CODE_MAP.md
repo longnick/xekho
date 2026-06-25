@@ -1,3 +1,10 @@
+# 2026-06-26 03:12 +07 - Capacitor Android wrapper
+- `capacitor.config.ts`: Capacitor app config for the new Android wrapper (`com.xekho.pos.capacitor`, `Xe Kho POS`, `webDir: dist`). This preserves the existing web UI/UX by packaging the Hosting build output rather than rebuilding screens in Kotlin.
+- `android/`: Standard generated Capacitor Android project. Debug APK builds at `android/app/build/outputs/apk/debug/app-debug.apk`; generated build outputs/assets remain ignored.
+- `package.json`: adds `cap:sync` and `cap:build` scripts. `cap:sync` always runs `build:hosting` first so the app mirrors current web UI.
+- `scripts/build-hosting-dist.js`: excludes `android/` and `android-native/` when preparing `dist` to avoid recursive Android asset copies.
+- `android-native/`: Kotlin native track is paused after Sprint 28; do not continue native UI rewrites unless explicitly re-approved.
+
 # 2026-06-26 02:52 +07 - Android native real-data read-only direction gate Sprint 28
 - `android-native/app/src/main/java/com/xekho/pos/domain/GuardedRealDataDirectionGate.kt`: fail-closed gate for moving toward real Firebase/POS data through read-only prerequisites only.
 - `android-native/app/src/main/java/com/xekho/pos/domain/Models.kt`: adds `RealDataDirection*` DTOs/enums with execution/write/sync flags forced false by default.
