@@ -1,3 +1,9 @@
+# 2026-06-26 02:23 +07 - DONE: Android native manual QA checklist Sprint 26
+- DONE: Added test-only `NativeManualQaChecklistReporter` and `NativeManualQaChecklistTest` for safe real-device install/smoke checklist metadata.
+- DONE: Added `docs/android-native-manual-qa.md` with build/report commands, Telegram `MEDIA:` delivery line, Android install steps, Demo PIN, smoke checklist, blocked items, and pass/fail note template.
+- DONE: Verification passed: targeted RED/GREEN, clean native unit test, debug APK build, APK report/scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0223-android-native-manual-qa-checklist.md`.
+
 # 2026-06-26 02:08 +07 - DONE: Android native APK delivery report command Sprint 25
 - DONE: Added executable `android-native/scripts/native-apk-report.sh` to print a copyable native debug APK report and Telegram `MEDIA:` delivery line.
 - DONE: Script writes generated markdown report to `android-native/app/build/outputs/apk/debug/xekho-native-debug-apk-report.md` and re-checks targeted APK config/secret scan.
