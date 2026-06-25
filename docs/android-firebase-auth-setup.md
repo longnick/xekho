@@ -37,3 +37,19 @@ Real Firebase Auth must remain blocked until all are true and approved:
 - unit tests prove fake/default path remains safe
 - APK scan confirms no config/secrets are bundled unexpectedly beyond approved Android Firebase config resources
 - Firestore reads/writes remain blocked unless separately approved
+## Sprint 6 repository skeleton
+
+`FirebaseAuthRepository` now exists as a skeleton adapter with constructor injection:
+
+```kotlin
+FirebaseAuthRepository(firebaseAuth: FirebaseAuth, readiness: FirebaseAuthReadiness)
+```
+
+It remains blocked:
+
+- `mode = FIREBASE_BLOCKED`
+- `verifyPin()` never unlocks POS tabs
+- no Firebase Auth API call is made
+- `AuthRepositoryFactory.defaultRepository()` still returns `FakeAuthRepository()`
+- `guardedFirebaseRepository()` returns `BlockedFirebaseAuthRepository` while `FirebaseAuthConfigGuard.canUseRealFirebase == false`
+

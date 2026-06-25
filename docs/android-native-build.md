@@ -110,4 +110,21 @@ Latest debug APK checksum after Sprint 5:
 ```text
 2f56eb6faae4b4e7470db4fc834670e86c26b5e9c5043cf0f36fb31638a9f9eb  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 6 FirebaseAuthRepository skeleton
+
+Native app now contains a `FirebaseAuthRepository` class shaped like the future real auth adapter, but it is still guard-blocked and never used by the default app path.
+
+Important safety state:
+
+- `AppRoot` defaults to `AuthRepositoryFactory.defaultRepository()`.
+- `AuthRepositoryFactory.defaultRepository()` returns `FakeAuthRepository()`.
+- `FirebaseAuthRepository` requires injected `FirebaseAuth` and `FirebaseAuthReadiness`, but does not call Firebase APIs.
+- `FirebaseAuthConfigGuard` still returns `canUseRealFirebase = false`.
+- No Firestore dependencies or reads/writes are wired.
+
+Latest debug APK checksum after Sprint 6:
+
+```text
+6bbaaf191a0d18d1654bbaaa8a2d93ae0457671d6f83ea9f79bfe51089e2c32c  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

@@ -1,3 +1,9 @@
+# 2026-06-25 16:47 +07 - DONE: Android native FirebaseAuthRepository skeleton Sprint 6
+- DONE: Added `AuthRepositoryFactory`, guard-only `FirebaseAuthRepository` skeleton, and `FirebaseAuthRepositorySkeletonTest`; app default still resolves to `FakeAuthRepository()`.
+- DONE: Verified the skeleton requires injected `FirebaseAuth` + readiness but never calls Firebase APIs and never unlocks POS tabs while guard remains blocked.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1647-android-native-firebase-auth-repository-skeleton.md`.
+
 # 2026-06-25 16:15 +07 - DONE: Android native Firebase Auth prep Sprint 5
 - DONE: Added Firebase BoM/Auth dependency and Google Services plugin alias registered `apply false`; app module does not apply plugin and no real Firebase Auth call is wired.
 - DONE: Added `FirebaseAuthSdkMarker`, Sprint 5 guard test, and `.gitignore` rule for `android-native/**/google-services.json`; `FirebaseAuthConfigGuard` still blocks real auth even if sdk/config flags look present.

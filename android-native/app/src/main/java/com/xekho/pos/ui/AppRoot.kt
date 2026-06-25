@@ -40,9 +40,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xekho.pos.AppBrand
 import com.xekho.pos.auth.AuthRepository
+import com.xekho.pos.auth.AuthRepositoryFactory
 import com.xekho.pos.auth.AuthSession
 import com.xekho.pos.auth.AuthStage
-import com.xekho.pos.auth.FakeAuthRepository
 import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.InventoryItem
@@ -73,7 +73,7 @@ private val authSessionSaver: Saver<AuthSession, List<String?>> = Saver(
 fun AppRoot(
     modifier: Modifier = Modifier,
     snapshot: DashboardSnapshot = remember { FakeDashboardRepository().loadSnapshot() },
-    authRepository: AuthRepository = remember { FakeAuthRepository() }
+    authRepository: AuthRepository = remember { AuthRepositoryFactory.defaultRepository() }
 ) {
     var authSession by rememberSaveable(stateSaver = authSessionSaver) {
         mutableStateOf(authRepository.initialSession())
@@ -304,7 +304,7 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 @Composable
 private fun SettingsScreen() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 5: Firebase Auth SDK dependency prepared, but real Firebase Auth/Firestore v\u1eabn b\u1ecb guard ch\u1eb7n.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 6: FirebaseAuthRepository skeleton exists behind guard; app default v\u1eabn d\u00f9ng fake/local auth.")
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }
