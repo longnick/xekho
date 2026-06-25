@@ -1,3 +1,11 @@
+# 2026-06-25 23:19 +07 - DONE: Android native POS read-only data prep Sprint 18
+- DONE: Added `PosReadOnlyDataSource`, `PosReadOnlyDataReadinessStatus`, `PosReadOnlyDataRequest`, `PosReadOnlyDataReadiness`, and `PosReadOnlyDataPreview`.
+- DONE: Added `GuardedPosReadOnlyDataBoundary` for fake/local preview and blocked/prep-only Firebase read-only data readiness.
+- DONE: Added `PosReadOnlyDataBoundaryTest` covering fake/default path, blocked Firebase request, prep-only all-flags-present path, fake preview counts, and blocked Firebase preview.
+- DONE: Wired Tables UI with `POS data prep Sprint 18` and `Firebase read-only guard` cards.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2319-android-native-pos-readonly-data-prep.md`.
+
 # 2026-06-25 23:07 +07 - DONE: Android native queue storage selection boundary Sprint 17
 - DONE: Added `QueueStorageBackend`, `QueueStorageReadinessStatus`, `QueueStorageRequest`, `QueueStorageDecision`, and `QueueStorageComparison`.
 - DONE: Added `GuardedQueueStorageSelectionBoundary` for DataStore vs Room candidate selection while keeping actual storage blocked.
