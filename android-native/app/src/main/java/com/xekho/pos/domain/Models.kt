@@ -127,6 +127,32 @@ data class PosTableOrderState(
     val selectedOrder: PosLocalOrder get() = ordersByTable.getValue(selectedTableId)
 }
 
+enum class OfflineQueueStatus(val displayName: String) {
+    QUEUED_LOCAL_ONLY("Đã xếp hàng local-only"),
+    BLOCKED_LOCAL_ONLY("Chưa đủ điều kiện xếp hàng local-only")
+}
+
+data class OfflineQueueItem(
+    val localQueueId: String,
+    val tableId: String,
+    val localReceiptNumber: String,
+    val status: OfflineQueueStatus,
+    val totalDue: Long,
+    val itemCount: Int,
+    val payloadPreview: String,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class OfflineQueueState(
+    val items: List<OfflineQueueItem> = emptyList(),
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+) {
+    val pendingCount: Int get() = items.count { it.status == OfflineQueueStatus.QUEUED_LOCAL_ONLY }
+    val pendingTotal: Long get() = items.filter { it.status == OfflineQueueStatus.QUEUED_LOCAL_ONLY }.sumOf { it.totalDue }
+}
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,

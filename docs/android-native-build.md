@@ -329,4 +329,33 @@ Latest debug APK checksum after Sprint 11:
 ```text
 b5623b2ee8d3766685a1e0a8c9b642db0d21e4778428401535366dafa821b7f2  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 12 POS offline queue draft
+
+Native POS tab now has a guarded local-only offline queue draft:
+
+```text
+OfflineQueueStatus(QUEUED_LOCAL_ONLY, BLOCKED_LOCAL_ONLY)
+OfflineQueueItem(localQueueId, tableId, localReceiptNumber, status, totalDue, itemCount, payloadPreview)
+OfflineQueueState(items)
+FakeOfflineQueueRepository.draftFromPaymentClose/appendDraft/clearLocalQueue
+```
+
+Safety state:
+
+- queue items are generated only from local payment-close results
+- not-payable results become `BLOCKED_LOCAL_ONLY`
+- queued items are in memory/UI only, not Firestore, not background sync, not production write
+- repeated appends dedupe by `localQueueId`
+- `OfflineQueueItem.canWriteToProduction = false`
+- `OfflineQueueItem.canSyncToFirestore = false`
+- `OfflineQueueState.canWriteToProduction = false`
+- `OfflineQueueState.canSyncToFirestore = false`
+- `rememberSaveable` uses `offlineQueueStateSaver`
+- UI labels explicitly say no production write and no Firestore sync
+
+Latest debug APK checksum after Sprint 12:
+
+```text
+1ef44876c8bf86de9a3a12f340d94f593569b1f5765f2043fe1e91c1e1511f96  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

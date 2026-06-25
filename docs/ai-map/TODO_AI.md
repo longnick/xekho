@@ -1,3 +1,12 @@
+# 2026-06-25 21:34 +07 - DONE: Android native POS offline queue draft Sprint 12
+- DONE: Added `OfflineQueueStatus`, `OfflineQueueItem`, and `OfflineQueueState` with fail-closed write/sync guards.
+- DONE: Added `FakeOfflineQueueRepository` for `draftFromPaymentClose`, `appendDraft`, and `clearLocalQueue`.
+- DONE: Added `FakeOfflineQueueRepositoryTest` covering queued paid result, blocked not-payable result, dedupe append, pending totals/counts, and guards.
+- DONE: Wired Tables UI with `Xếp queue`, offline queue summary/items, and `Xóa queue local`.
+- DONE: Added `offlineQueueStateSaver` via `rememberSaveable`; queue remains local-only memory/UI state.
+- DONE: Verified TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, Kilo review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2134-android-native-pos-offline-queue-draft.md`.
+
 # 2026-06-25 20:44 +07 - DONE: Android native POS multi-table local orders Sprint 11
 - DONE: Added `PosTableOrderState` with selected table, per-table local orders, labels, and fail-closed write/sync guards.
 - DONE: Added `FakePosTableOrderRepository` for `initialState`, `selectTable`, `replaceSelectedOrder`, and `tableSummaries`.
