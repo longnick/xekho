@@ -304,7 +304,7 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 @Composable
 private fun SettingsScreen() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 6: FirebaseAuthRepository skeleton exists behind guard; app default v\u1eabn d\u00f9ng fake/local auth.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 7: Runtime auth selection exists; default v\u1eabn l\u00e0 FAKE_LOCAL, Firebase Auth v\u1eabn b\u1ecb guard ch\u1eb7n.")
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }

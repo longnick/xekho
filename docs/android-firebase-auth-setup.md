@@ -52,4 +52,16 @@ It remains blocked:
 - no Firebase Auth API call is made
 - `AuthRepositoryFactory.defaultRepository()` still returns `FakeAuthRepository()`
 - `guardedFirebaseRepository()` returns `BlockedFirebaseAuthRepository` while `FirebaseAuthConfigGuard.canUseRealFirebase == false`
+## Sprint 7 runtime auth selection
+
+Runtime auth selection is now explicit but still safe-by-default:
+
+```kotlin
+AuthRuntimeConfig() // mode = FAKE_LOCAL
+AuthRepositoryFactory.fromRuntimeConfig(AuthRuntimeConfig()) // FakeAuthRepository
+```
+
+If `AuthRuntimeMode.FIREBASE_AUTH` is requested, selection still evaluates `FirebaseAuthConfigGuard`. Because the guard currently returns `canUseRealFirebase = false`, the factory returns `BlockedFirebaseAuthRepository`, not `FirebaseAuthRepository`.
+
+No real Firebase Auth sign-in is wired in Sprint 7.
 
