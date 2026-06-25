@@ -1,3 +1,9 @@
+# 2026-06-26 01:51 +07 - Android native artifact report + expanded smoke Sprint 24
+- `android-native/app/build.gradle.kts`: debug/pre-alpha metadata is now `versionCode = 24`, `versionName = 0.24.0-alpha24`.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReporter.kt`: test-only artifact reporter for app id/version/debug APK path/scan pattern/safety flags.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReportTest.kt`: verifies artifact metadata and no-service-account/no-google-services/no-write/no-sync flags.
+- `android-native/app/src/test/java/com/xekho/pos/ui/NativeUiServerSmokeHarness.kt`: expanded source-marker smoke harness with unicode-escape decoding and Settings/Inventory/Finance coverage.
+
 # 2026-06-26 01:37 +07 - Android native server-side UI smoke harness Sprint 23
 - `android-native/app/src/test/java/com/xekho/pos/ui/NativeUiServerSmokeHarness.kt`: test-only JVM harness that reads source markers and returns a server-only native UI smoke report; no emulator/APK install needed.
 - `android-native/app/src/test/java/com/xekho/pos/ui/NativeUiServerSmokeHarnessTest.kt`: asserts required UI markers, forbidden dangerous copy, and fail-closed read/write/sync flags.
