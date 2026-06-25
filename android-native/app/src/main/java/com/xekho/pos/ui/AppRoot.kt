@@ -53,6 +53,7 @@ import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
 import com.xekho.pos.domain.OfflineQueueFilter
+import com.xekho.pos.domain.OfflineQueueDetailPreview
 import com.xekho.pos.domain.OfflineQueueItem
 import com.xekho.pos.domain.OfflineQueueState
 import com.xekho.pos.domain.OfflineQueueStatus
@@ -335,8 +336,12 @@ private fun MainDashboard(
         mutableStateOf(OfflineQueueState())
     }
     var selectedQueueFilterName by rememberSaveable { mutableStateOf(OfflineQueueFilter.ALL.name) }
+    var selectedQueueDetailId by rememberSaveable { mutableStateOf("") }
     val selectedQueueFilter = OfflineQueueFilter.valueOf(selectedQueueFilterName)
     val filteredQueueItems = offlineQueueRepository.filterItems(offlineQueueState, selectedQueueFilter)
+    val selectedQueueDetail = selectedQueueDetailId.takeIf { it.isNotBlank() }?.let { id ->
+        offlineQueueRepository.previewDetail(offlineQueueState, id)
+    }
     val localOrder = tableOrderState.selectedOrder
     var localPaymentCloseMessage by rememberSaveable { mutableStateOf("Chưa thu local") }
 
@@ -380,6 +385,7 @@ private fun MainDashboard(
                         offlineQueueState = offlineQueueState,
                         filteredQueueItems = filteredQueueItems,
                         selectedQueueFilter = selectedQueueFilter,
+                        selectedQueueDetail = selectedQueueDetail,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -438,6 +444,7 @@ private fun MainDashboard(
                         },
                         onClearOfflineQueue = {
                             offlineQueueState = offlineQueueRepository.clearLocalQueue(offlineQueueState)
+                            selectedQueueDetailId = ""
                         },
                         onSelectQueueFilter = { filter ->
                             selectedQueueFilterName = filter.name
@@ -445,7 +452,11 @@ private fun MainDashboard(
                         onRetryQueuePreview = { localQueueId ->
                             offlineQueueState = offlineQueueRepository.retryPreview(offlineQueueState, localQueueId)
                             selectedQueueFilterName = OfflineQueueFilter.RETRY_PREVIEW.name
+                            selectedQueueDetailId = localQueueId
                             localPaymentCloseMessage = "Retry preview local-only · không sync"
+                        },
+                        onShowQueueDetail = { localQueueId ->
+                            selectedQueueDetailId = localQueueId
                         },
                         onCloseLocalOrder = {
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(
@@ -516,6 +527,7 @@ private fun TablesScreen(
     offlineQueueState: OfflineQueueState,
     filteredQueueItems: List<OfflineQueueItem>,
     selectedQueueFilter: OfflineQueueFilter,
+    selectedQueueDetail: OfflineQueueDetailPreview?,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -529,6 +541,7 @@ private fun TablesScreen(
     onClearOfflineQueue: () -> Unit,
     onSelectQueueFilter: (OfflineQueueFilter) -> Unit,
     onRetryQueuePreview: (String) -> Unit,
+    onShowQueueDetail: (String) -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -581,6 +594,17 @@ private fun TablesScreen(
                 }
             }
         }
+        if (selectedQueueDetail != null) {
+            item {
+                SectionCard(
+                    "Chi tiết queue local",
+                    "${selectedQueueDetail.type.displayName} · ${selectedQueueDetail.title}\n" +
+                        selectedQueueDetail.lines.joinToString("\n") +
+                        "\nHành động gợi ý: ${selectedQueueDetail.recommendedAction}\n" +
+                        "Không ghi production, không sync Firestore."
+                )
+            }
+        }
         if (filteredQueueItems.isNotEmpty()) {
             items(filteredQueueItems) { queueItem ->
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))) {
@@ -588,6 +612,7 @@ private fun TablesScreen(
                         Text(queueItem.status.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${queueItem.localQueueId} · ${queueItem.tableId} · ${queueItem.itemCount} món · ${formatVnd(queueItem.totalDue)}")
                         Text("Không sync Firestore, không ghi production.", style = MaterialTheme.typography.labelMedium)
+                        TextButton(onClick = { onShowQueueDetail(queueItem.localQueueId) }) { Text("Chi tiết lỗi") }
                         if (queueItem.status == OfflineQueueStatus.BLOCKED_LOCAL_ONLY) {
                             TextButton(onClick = { onRetryQueuePreview(queueItem.localQueueId) }) { Text("Retry nháp") }
                         }
