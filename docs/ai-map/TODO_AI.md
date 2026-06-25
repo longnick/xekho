@@ -1,3 +1,12 @@
+# 2026-06-25 20:26 +07 - DONE: Android native POS local payment close Sprint 10D
+- DONE: Added `PosOrderStatus.PAID_LOCAL_ONLY`, `PaymentCloseStatus`, and `PaymentCloseResult` for local-only close/payment transition.
+- DONE: Added `FakePosWriteRepository.closePaymentDraft(order, draft)`; only payable `OPEN` local orders can become paid local-only.
+- DONE: Added terminal-order edit guards for add/increase/decrease/remove/clear and a no closed-to-paid conversion guard.
+- DONE: Added `FakePosPaymentCloseRepositoryTest` covering paid local close, empty/zero rejection, terminal edit guard, and no closed-to-paid conversion.
+- DONE: Wired Tables UI with `Thu local` action and retained local payment close message; copy remains no-production-write/no-Firestore-sync.
+- DONE: Verified TDD RED/GREEN loops, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2026-android-native-pos-payment-close.md`.
+
 # 2026-06-25 19:48 +07 - DONE: Android native POS local payment draft Sprint 10C
 - DONE: Added `PaymentMethod` and `PaymentDraft` domain models with `canWriteToProduction = false` and `canSyncToFirestore = false`.
 - DONE: Extended `FakePosWriteRepository.previewPayment(order, method, discount)` with local subtotal/discount/total due/receipt preview; discount clamps to `[0, subtotal]`.

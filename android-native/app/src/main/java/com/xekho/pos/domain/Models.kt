@@ -60,7 +60,8 @@ data class OrderDraft(
 
 enum class PosOrderStatus(val displayName: String) {
     OPEN("Đang mở local"),
-    CLOSED_LOCAL_ONLY("Đã đóng local-only")
+    CLOSED_LOCAL_ONLY("Đã đóng local-only"),
+    PAID_LOCAL_ONLY("Đã thu local-only")
 }
 
 data class PosLocalOrder(
@@ -97,6 +98,23 @@ data class PaymentDraft(
     val canSyncToFirestore: Boolean = false
 ) {
     val isPayable: Boolean get() = itemCount > 0 && totalDue > 0
+}
+
+enum class PaymentCloseStatus(val displayName: String) {
+    CLOSED_LOCAL_ONLY("Đã thu local-only"),
+    NOT_PAYABLE_LOCAL_ONLY("Chưa thể thu local-only")
+}
+
+data class PaymentCloseResult(
+    val order: PosLocalOrder,
+    val draft: PaymentDraft,
+    val status: PaymentCloseStatus,
+    val localReceiptNumber: String,
+    val message: String,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+) {
+    val isClosedLocal: Boolean get() = status == PaymentCloseStatus.CLOSED_LOCAL_ONLY
 }
 
 data class DashboardSnapshot(

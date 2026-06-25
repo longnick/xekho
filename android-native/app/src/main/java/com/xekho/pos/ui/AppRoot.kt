@@ -215,6 +215,7 @@ private fun MainDashboard(
     var localOrder by rememberSaveable(stateSaver = posLocalOrderSaver) {
         mutableStateOf(posWriteRepository.openOrder("ban-02").order)
     }
+    var localPaymentCloseMessage by rememberSaveable { mutableStateOf("Chưa thu local") }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -252,12 +253,22 @@ private fun MainDashboard(
                         menuItems = posWriteRepository.fakeMenu(),
                         localOrder = localOrder,
                         paymentDraft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH),
-                        onOpenLocalOrder = { localOrder = posWriteRepository.openOrder("ban-02").order },
+                        localPaymentCloseMessage = localPaymentCloseMessage,
+                        onOpenLocalOrder = {
+                            localOrder = posWriteRepository.openOrder("ban-02").order
+                            localPaymentCloseMessage = "Chưa thu local"
+                        },
                         onAddMenuItem = { itemId -> localOrder = posWriteRepository.addMenuItem(localOrder, itemId).order },
                         onIncreaseItem = { itemId -> localOrder = posWriteRepository.increaseItem(localOrder, itemId).order },
                         onDecreaseItem = { itemId -> localOrder = posWriteRepository.decreaseItem(localOrder, itemId).order },
                         onRemoveItem = { itemId -> localOrder = posWriteRepository.removeItem(localOrder, itemId).order },
                         onClearOrder = { localOrder = posWriteRepository.clearOrder(localOrder).order },
+                        onClosePaymentDraft = {
+                            val draft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH)
+                            val closeResult = posWriteRepository.closePaymentDraft(localOrder, draft)
+                            localOrder = closeResult.order
+                            localPaymentCloseMessage = "${closeResult.status.displayName} · ${closeResult.localReceiptNumber.ifBlank { "không có biên nhận" }} · không sync"
+                        },
                         onCloseLocalOrder = { localOrder = posWriteRepository.closeOrder(localOrder).order }
                     )
                     NativeTab.INVENTORY -> InventoryScreen(snapshot.inventory)
@@ -318,12 +329,14 @@ private fun TablesScreen(
     menuItems: List<OrderItem>,
     localOrder: PosLocalOrder,
     paymentDraft: PaymentDraft,
+    localPaymentCloseMessage: String,
     onOpenLocalOrder: () -> Unit,
     onAddMenuItem: (String) -> Unit,
     onIncreaseItem: (String) -> Unit,
     onDecreaseItem: (String) -> Unit,
     onRemoveItem: (String) -> Unit,
     onClearOrder: () -> Unit,
+    onClosePaymentDraft: () -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -344,6 +357,7 @@ private fun TablesScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = onOpenLocalOrder) { Text("Mở lại") }
                         TextButton(onClick = onClearOrder) { Text("Xóa giỏ") }
+                        TextButton(onClick = onClosePaymentDraft) { Text("Thu local") }
                         TextButton(onClick = onCloseLocalOrder) { Text("Đóng local") }
                     }
                 }
@@ -354,6 +368,7 @@ private fun TablesScreen(
                 "Thanh toán nháp local",
                 "${paymentDraft.method.displayName} · ${paymentDraft.itemCount} món · Tạm tính ${formatVnd(paymentDraft.subtotal)} · Cần thu ${formatVnd(paymentDraft.totalDue)}\n" +
                     "${if (paymentDraft.isPayable) "Có thể xem nháp thu tiền local" else "Chưa có món để thu"}\n" +
+                    "Kết quả thu: $localPaymentCloseMessage\n" +
                     "Không ghi production, không sync Firestore."
             )
         }
