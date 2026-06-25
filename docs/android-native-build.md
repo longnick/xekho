@@ -549,3 +549,33 @@ Latest debug APK checksum after Sprint 19:
 529e86bc9b86385b2ff13d03d2b6a4e6ae2bac0a32041f5b4f285b269d942ef1  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 20 Firestore read-only repository skeleton
+
+Native POS now has a guarded Firestore read-only repository/factory skeleton:
+
+```text
+PosFirestoreReadOnlyRepositoryMode(BLOCKED_PREVIEW_ONLY, APPROVAL_HELD_PREVIEW_ONLY)
+PosFirestoreReadOnlyRepositoryRequest
+PosFirestoreReadOnlyCollectionPreview
+PosFirestoreReadOnlyRepositoryPreview
+PosFirestoreReadOnlyRepository
+BlockedFirestoreReadOnlyRepository
+GuardedFirestoreReadOnlyRepositoryFactory.defaultRepository/fromRequest
+```
+
+Safety state:
+
+- default repository returns blocked metadata previews only
+- all-flags-present request still returns `APPROVAL_HELD_PREVIEW_ONLY` in Sprint 20
+- no `FirebaseFirestore.getInstance()`, listener, query, or `get()` is executed
+- no Firestore instance is created by the repository
+- no `google-services.json` was added
+- no production POS rows were read, sampled, returned, written, or synced
+- UI labels explicitly say no Firestore instance, no query/get/listener, no production rows, no writes
+
+Latest debug APK checksum after Sprint 20:
+
+```text
+e7bf2570538e7c17b5bd8c1286e8fe2f765e61863f019f667dcb43ec0614e46b  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+

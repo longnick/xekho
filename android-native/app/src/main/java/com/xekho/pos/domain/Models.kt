@@ -341,6 +341,42 @@ data class PosFirestoreReadOnlyContractPreview(
     val canSyncToFirestore: Boolean = false
 )
 
+enum class PosFirestoreReadOnlyRepositoryMode(val displayName: String) {
+    BLOCKED_PREVIEW_ONLY("Blocked preview only"),
+    APPROVAL_HELD_PREVIEW_ONLY("Approval held preview only")
+}
+
+data class PosFirestoreReadOnlyRepositoryRequest(
+    val ownerApprovedReadOnly: Boolean = false,
+    val googleServicesJsonPresent: Boolean = false,
+    val firestoreSdkLinked: Boolean = false,
+    val allowRealReadExecution: Boolean = false
+)
+
+data class PosFirestoreReadOnlyCollectionPreview(
+    val collectionName: String,
+    val requiredFields: List<String>,
+    val sampleRowCount: Int,
+    val lines: List<String>,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosFirestoreReadOnlyRepositoryPreview(
+    val mode: PosFirestoreReadOnlyRepositoryMode,
+    val collectionCount: Int,
+    val sampleRowCount: Int,
+    val lines: List<String>,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class PosFirestoreReadOnlyContract(
     val collections: List<PosFirestoreReadOnlyCollectionContract>,
     val canExecuteReads: Boolean = false,
