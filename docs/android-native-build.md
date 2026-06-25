@@ -518,3 +518,34 @@ Latest debug APK checksum after Sprint 18:
 8fc50747b0a78c9862b08a89dba891a68a1c6c4a6890349eea176940cc1c95c7  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 19 Firestore read-only contract gate
+
+Native POS now links the Firestore SDK at compile time and exposes a contract-only gate for future read-only data visibility:
+
+```text
+FirestoreReadOnlySdkMarker
+PosFirestoreReadOnlyCollectionContract
+PosFirestoreReadOnlyContractPreview
+PosFirestoreReadOnlyContract.default()
+```
+
+Collection contracts currently modeled:
+
+- `tables`: `id`, `label`, `status`, `total`, `itemCount`
+- `inventory`: `id`, `name`, `currentQty`, `unit`, `status`
+- `history`: `id`, `tableId`, `total`, `closedAt`, `status`
+
+Safety state:
+
+- Firestore SDK dependency is linked, but read execution remains blocked
+- no `FirebaseFirestore.getInstance()`, listener, query, or `get()` is executed
+- no `google-services.json` was added
+- no production POS rows were read, sampled, returned, written, or synced
+- UI labels explicitly say read execution blocked, no production data sampled, no writes
+
+Latest debug APK checksum after Sprint 19:
+
+```text
+529e86bc9b86385b2ff13d03d2b6a4e6ae2bac0a32041f5b4f285b269d942ef1  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+

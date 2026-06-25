@@ -321,6 +321,74 @@ data class PosReadOnlyDataPreview(
     val canSyncToFirestore: Boolean = false
 )
 
+data class PosFirestoreReadOnlyCollectionContract(
+    val collectionName: String,
+    val purpose: String,
+    val requiredFields: List<String>,
+    val sampleRowCount: Int = 0,
+    val canExecuteReads: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosFirestoreReadOnlyContractPreview(
+    val collectionCount: Int,
+    val sampleRowCount: Int,
+    val lines: List<String>,
+    val didReadFirestore: Boolean = false,
+    val canExecuteReads: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosFirestoreReadOnlyContract(
+    val collections: List<PosFirestoreReadOnlyCollectionContract>,
+    val canExecuteReads: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+) {
+    fun preview(): PosFirestoreReadOnlyContractPreview = PosFirestoreReadOnlyContractPreview(
+        collectionCount = collections.size,
+        sampleRowCount = 0,
+        lines = listOf(
+            "Firestore read-only contract only: ${collections.joinToString { it.collectionName }}.",
+            "Read execution blocked; no production POS rows sampled.",
+            "No writes and no sync."
+        ) + collections.map { collection ->
+            "${collection.collectionName}: ${collection.purpose}; fields=${collection.requiredFields.joinToString()}"
+        },
+        didReadFirestore = false,
+        canExecuteReads = false,
+        canWriteToProduction = false,
+        canSyncToFirestore = false
+    )
+
+    companion object {
+        fun default(): PosFirestoreReadOnlyContract = PosFirestoreReadOnlyContract(
+            collections = listOf(
+                PosFirestoreReadOnlyCollectionContract(
+                    collectionName = "tables",
+                    purpose = "read-only table status and current totals contract",
+                    requiredFields = listOf("id", "label", "status", "total", "itemCount")
+                ),
+                PosFirestoreReadOnlyCollectionContract(
+                    collectionName = "inventory",
+                    purpose = "read-only stock quantity/status contract",
+                    requiredFields = listOf("id", "name", "currentQty", "unit", "status")
+                ),
+                PosFirestoreReadOnlyCollectionContract(
+                    collectionName = "history",
+                    purpose = "read-only closed local/POS history contract",
+                    requiredFields = listOf("id", "tableId", "total", "closedAt", "status")
+                )
+            ),
+            canExecuteReads = false,
+            canWriteToProduction = false,
+            canSyncToFirestore = false
+        )
+    }
+}
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
