@@ -1,3 +1,9 @@
+# 2026-06-26 02:52 +07 - Real-data read-only direction relations
+- `GuardedRealDataDirectionGate.kt` depends on `RealDataDirectionRequest`/`RealDataDirectionState` from `Models.kt` and produces a UI-safe checklist state.
+- `AppRoot.kt` evaluates `GuardedRealDataDirectionGate` alongside existing Firestore contract/repository/checklist previews and displays the Sprint 28 real-data direction card.
+- `NativeUiServerSmokeHarness.kt` source-scans `AppRoot.kt` for `Real data direction Sprint 28` and `Chuyển hướng data thật` markers while forbidden Firestore execution markers remain blocked.
+- `RealDataDirectionGateTest.kt` and `NativeUiServerSmokeHarnessTest.kt` guard the domain and renderable-source behavior without emulator/APK install.
+
 # 2026-06-26 02:33 +07 - Android native manual QA result relations
 - `native-qa-result-template.sh` reads `docs/android-native-manual-qa-result-template.md`, optionally reads `android-native/app/build/outputs/apk/debug/app-debug.apk` for SHA256, and writes timestamped drafts under `docs/ai-map/MANUAL_QA_RESULTS/`.
 - `NativeManualQaResultTemplateReporter.kt` mirrors the same result-template paths/fields in JVM tests so the manual result format is guarded without executing shell.

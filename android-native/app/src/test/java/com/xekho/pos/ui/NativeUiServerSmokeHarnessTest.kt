@@ -47,6 +47,16 @@ class NativeUiServerSmokeHarnessTest {
     }
 
     @Test
+    fun serverSmokeCoversRealDataDirectionGate() {
+        val report = harness.evaluate()
+
+        assertTrue(report.requiredMarkers.contains("Real data direction Sprint 28"))
+        assertTrue(report.requiredMarkers.contains("Chuyển hướng data thật"))
+        assertTrue(report.missingMarkers.isEmpty())
+        assertFalse(report.canExecuteReads)
+    }
+
+    @Test
     fun serverSmokeSummarizesRenderableNativeFlow() {
         val report = harness.evaluate()
 

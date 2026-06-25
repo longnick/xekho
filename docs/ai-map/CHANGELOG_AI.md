@@ -1,3 +1,10 @@
+# 2026-06-26 02:52 +07 - Android native real-data read-only direction gate Sprint 28
+- Added a guarded `Real data direction Sprint 28` domain/UI path to visibly move toward real Firebase/POS data while keeping all execution/write/sync flags false.
+- Added `GuardedRealDataDirectionGate` plus tests for blocked default state, partial prerequisites, all-prerequisite one-time approval-held state, and no writes/sync.
+- Updated native server smoke harness to require Sprint 28 real-data gate markers.
+- No Firestore instance/query/get/listener, no `google-services.json`, no production rows, no writes, and no sync added.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0252-android-native-real-data-readonly-gate.md`
+
 # 2026-06-26 02:33 +07 - Android native manual QA result template Sprint 27
 - Added test-only `NativeManualQaResultTemplateReporter` and `NativeManualQaResultTemplateTest` for structured QA result capture metadata.
 - Added `docs/android-native-manual-qa-result-template.md` and executable `android-native/scripts/native-qa-result-template.sh` to create timestamped manual QA result drafts with APK SHA256 prefilled when available.

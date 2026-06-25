@@ -509,6 +509,67 @@ data class PosFirestoreReadOnlyContract(
     }
 }
 
+
+
+enum class RealDataDirectionMode(val displayName: String) {
+    FAKE_LOCAL_ACTIVE("Fake/local active"),
+    FIREBASE_READ_ONLY_CANDIDATE("Firebase read-only candidate")
+}
+
+enum class RealDataDirectionStatus(val displayName: String) {
+    BLOCKED_LOCAL_ONLY("Blocked local-only"),
+    READY_FOR_ONE_TIME_APPROVAL_LOCAL_ONLY("Ready for one-time approval local-only")
+}
+
+enum class RealDataDirectionItemKey {
+    OWNER_APPROVAL,
+    GOOGLE_SERVICES_JSON,
+    FIRESTORE_SDK_LINKED,
+    CONTRACT_PREVIEW_REVIEWED,
+    REPOSITORY_PREVIEW_REVIEWED,
+    MANUAL_QA_RESULT_CAPTURED,
+    USER_REQUESTED_REAL_DATA_DIRECTION
+}
+
+data class RealDataDirectionRequest(
+    val ownerApprovedReadOnly: Boolean = false,
+    val googleServicesJsonPresent: Boolean = false,
+    val firestoreSdkLinked: Boolean = false,
+    val contractPreviewReviewed: Boolean = false,
+    val repositoryPreviewReviewed: Boolean = false,
+    val manualQaResultCaptured: Boolean = false,
+    val userRequestedRealDataDirection: Boolean = false,
+    val allowOneTimeReadExecution: Boolean = false
+)
+
+data class RealDataDirectionItem(
+    val key: RealDataDirectionItemKey,
+    val label: String,
+    val isReady: Boolean,
+    val message: String,
+    val canExecuteReads: Boolean = false,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class RealDataDirectionState(
+    val mode: RealDataDirectionMode,
+    val status: RealDataDirectionStatus,
+    val items: List<RealDataDirectionItem>,
+    val summaryLines: List<String>,
+    val readyItemCount: Int,
+    val requiredItemCount: Int,
+    val canExecuteReads: Boolean = false,
+    val didInstantiateFirestore: Boolean = false,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
