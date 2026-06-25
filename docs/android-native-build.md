@@ -52,3 +52,20 @@ npm run build:hosting
 ```
 
 Do not add Firebase/Firestore write logic until the dry-run and emulator-test phases are approved.
+## Sprint 2 fake UI tabs
+
+The native app currently renders fake/local-only MVP tabs:
+
+- `Bàn`
+- `Kho`
+- `Tài chính`
+- `Cài đặt`
+
+Data is supplied by `FakeDashboardRepository`; there is still no Firebase SDK, Firestore read/write, service account, `.env`, or production POS data access in the APK.
+
+Latest debug APK checksum after Sprint 2:
+
+```text
+460ec55fd3ba38efe3bda4977c2b7e2ad34b35ec8eafc8e0f62b6dcf2f891131  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+

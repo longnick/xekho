@@ -1,3 +1,9 @@
+# 2026-06-25 15:09 +07 - DONE: Android native fake tabs Sprint 2
+- DONE: Added native domain models + fake repository for `Bàn`, `Kho`, `Tài chính`, `Cài đặt` without Firebase/POS production access.
+- DONE: Reworked Compose `AppRoot` into a Material 3 tab shell using fake/local-only data.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, APK filename secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1509-android-native-fake-tabs.md`.
+
 # 2026-06-25 15:00 +07 - DONE: Android native skeleton Sprint 1
 - DONE: Installed OpenJDK 17 + Android SDK cmdline tools/platform/build-tools on this machine.
 - DONE: Created `android-native/` Kotlin/Jetpack Compose shell with Gradle wrapper and debug APK build.
