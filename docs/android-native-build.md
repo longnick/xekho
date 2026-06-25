@@ -127,4 +127,27 @@ Latest debug APK checksum after Sprint 6:
 ```text
 6bbaaf191a0d18d1654bbaaa8a2d93ae0457671d6f83ea9f79bfe51089e2c32c  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 7 runtime auth selection
+
+Native app now has an explicit runtime auth selection model:
+
+```text
+AuthRuntimeMode.FAKE_LOCAL
+AuthRuntimeMode.FIREBASE_AUTH
+AuthRuntimeConfig
+AuthRuntimeSelector
+```
+
+Safety state:
+
+- `AuthRuntimeConfig()` defaults to `FAKE_LOCAL`.
+- `AuthRepositoryFactory.defaultRepository()` calls `fromRuntimeConfig()` with the default config and still returns `FakeAuthRepository()`.
+- Requesting `FIREBASE_AUTH` routes through `FirebaseAuthConfigGuard`; current guard always returns `canUseRealFirebase = false`, so repository selection returns `BlockedFirebaseAuthRepository`.
+- No Firestore dependencies or reads/writes are wired.
+
+Latest debug APK checksum after Sprint 7:
+
+```text
+ab8098bb31bc7658acef978d5d450e68f3baff46031664bf50341a4b4a85ffaa  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

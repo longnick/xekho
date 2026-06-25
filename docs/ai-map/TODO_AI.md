@@ -1,3 +1,9 @@
+# 2026-06-25 17:19 +07 - DONE: Android native runtime auth selection Sprint 7
+- DONE: Added `AuthRuntimeConfig`, `AuthRuntimeMode`, `AuthRuntimeSelection`, and `AuthRuntimeSelector`; default config is `FAKE_LOCAL`.
+- DONE: Updated `AuthRepositoryFactory.fromRuntimeConfig()` so default app path still returns `FakeAuthRepository()` and requested Firebase mode stays blocked by `FirebaseAuthConfigGuard`.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1719-android-native-runtime-auth-selection.md`.
+
 # 2026-06-25 16:47 +07 - DONE: Android native FirebaseAuthRepository skeleton Sprint 6
 - DONE: Added `AuthRepositoryFactory`, guard-only `FirebaseAuthRepository` skeleton, and `FirebaseAuthRepositorySkeletonTest`; app default still resolves to `FakeAuthRepository()`.
 - DONE: Verified the skeleton requires injected `FirebaseAuth` + readiness but never calls Firebase APIs and never unlocks POS tabs while guard remains blocked.
