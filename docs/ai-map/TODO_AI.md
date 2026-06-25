@@ -1,3 +1,10 @@
+# 2026-06-25 18:58 +07 - DONE: Android native POS local cart edit Sprint 10B
+- DONE: Extended `FakePosWriteRepository` with deterministic local menu, `addMenuItem`, `increaseItem`, `decreaseItem`, `removeItem`, and `clearOrder`.
+- DONE: Added `FakePosCartEditRepositoryTest` covering menu add/edit/remove/clear/unknown-id flows and `canWriteToProduction = false` guard.
+- DONE: Wired Tables UI with menu list, cart rows, `Thêm`, `+`, `-`, `Xóa`, `Xóa giỏ`; copy remains no-Firestore/no-production-write/no-sync.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1858-android-native-pos-local-cart-edit.md`.
+
 # 2026-06-25 18:42 +07 - DONE: Android native POS fake write flow Sprint 10A
 - DONE: Added `PosLocalOrder`, `PosOrderStatus`, `PosWriteResult`, and `FakePosWriteRepository` for local-only open/add/close order flow.
 - DONE: Wired Tables screen with local order card/actions (`Mở lại`, `+ Miến`, `Đóng local`) and explicit no-Firestore/no-production-write/no-sync label.

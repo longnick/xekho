@@ -247,14 +247,14 @@ private fun MainDashboard(
                 when (selectedTab) {
                     NativeTab.TABLES -> TablesScreen(
                         tables = snapshot.tables,
+                        menuItems = posWriteRepository.fakeMenu(),
                         localOrder = localOrder,
                         onOpenLocalOrder = { localOrder = posWriteRepository.openOrder("ban-02").order },
-                        onAddDemoItem = {
-                            localOrder = posWriteRepository.addItem(
-                                order = localOrder,
-                                item = OrderItem("mien-tron", "Miến trộn", 1, 45000)
-                            ).order
-                        },
+                        onAddMenuItem = { itemId -> localOrder = posWriteRepository.addMenuItem(localOrder, itemId).order },
+                        onIncreaseItem = { itemId -> localOrder = posWriteRepository.increaseItem(localOrder, itemId).order },
+                        onDecreaseItem = { itemId -> localOrder = posWriteRepository.decreaseItem(localOrder, itemId).order },
+                        onRemoveItem = { itemId -> localOrder = posWriteRepository.removeItem(localOrder, itemId).order },
+                        onClearOrder = { localOrder = posWriteRepository.clearOrder(localOrder).order },
                         onCloseLocalOrder = { localOrder = posWriteRepository.closeOrder(localOrder).order }
                     )
                     NativeTab.INVENTORY -> InventoryScreen(snapshot.inventory)
@@ -312,31 +312,69 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun TablesScreen(
     tables: List<TableOverview>,
+    menuItems: List<OrderItem>,
     localOrder: PosLocalOrder,
     onOpenLocalOrder: () -> Unit,
-    onAddDemoItem: () -> Unit,
+    onAddMenuItem: (String) -> Unit,
+    onIncreaseItem: (String) -> Unit,
+    onDecreaseItem: (String) -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onClearOrder: () -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))) {
                 Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("POS local write flow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("POS local cart edit flow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "${localOrder.status.displayName} · ${localOrder.clientOrderId} · ${localOrder.itemCount} món · ${formatVnd(localOrder.total)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        "Local-only: không Firestore, không production write, không sync.",
+                        "Local-only: chọn món, tăng/giảm/xóa giỏ tại máy; không Firestore, không production write, không sync.",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = onOpenLocalOrder) { Text("Mở lại") }
-                        TextButton(onClick = onAddDemoItem) { Text("+ Miến") }
+                        TextButton(onClick = onClearOrder) { Text("Xóa giỏ") }
                         TextButton(onClick = onCloseLocalOrder) { Text("Đóng local") }
                     }
+                }
+            }
+        }
+        item {
+            SectionCard("Menu mẫu", menuItems.joinToString("\n") { item -> "${item.name} · ${formatVnd(item.unitPrice)}" })
+        }
+        items(menuItems) { item ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(formatVnd(item.unitPrice), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    TextButton(onClick = { onAddMenuItem(item.id) }) { Text("Thêm") }
+                }
+            }
+        }
+        items(localOrder.items) { item ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("${item.name} x${item.quantity}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(formatVnd(item.lineTotal), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    TextButton(onClick = { onDecreaseItem(item.id) }) { Text("-") }
+                    TextButton(onClick = { onIncreaseItem(item.id) }) { Text("+") }
+                    TextButton(onClick = { onRemoveItem(item.id) }) { Text("Xóa") }
                 }
             }
         }
