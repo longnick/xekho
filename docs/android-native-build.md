@@ -94,4 +94,20 @@ Latest debug APK checksum after Sprint 4:
 ```text
 5c5dde993a42d52fea8f9d5d67a667f3236d2760a7b4dd04c990ec03c8f288d9  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 5 Firebase Auth SDK prep
+
+Native app now includes Firebase Auth SDK dependency for compile-time preparation only. Real Firebase Auth remains blocked by `FirebaseAuthConfigGuard`.
+
+Important safety state:
+
+- `android-native/**/google-services.json` is ignored.
+- Google Services Gradle plugin is registered with `apply false` only.
+- `:app` does not apply Google Services plugin yet.
+- No Firebase Auth sign-in calls or Firestore code are wired.
+
+Latest debug APK checksum after Sprint 5:
+
+```text
+2f56eb6faae4b4e7470db4fc834670e86c26b5e9c5043cf0f36fb31638a9f9eb  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
