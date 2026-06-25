@@ -58,6 +58,28 @@ data class OrderDraft(
     val total: Long get() = items.sumOf { it.lineTotal }
 }
 
+enum class PosOrderStatus(val displayName: String) {
+    OPEN("Đang mở local"),
+    CLOSED_LOCAL_ONLY("Đã đóng local-only")
+}
+
+data class PosLocalOrder(
+    val clientOrderId: String,
+    val tableId: String,
+    val status: PosOrderStatus,
+    val items: List<OrderItem> = emptyList(),
+    val canWriteToProduction: Boolean = false
+) {
+    val total: Long get() = items.sumOf { it.lineTotal }
+    val itemCount: Int get() = items.sumOf { it.quantity }
+}
+
+data class PosWriteResult(
+    val order: PosLocalOrder,
+    val message: String,
+    val canWriteToProduction: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
