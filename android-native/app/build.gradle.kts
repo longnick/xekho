@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val googleServicesJsonPresent = file("google-services.json").exists()
+
 android {
     namespace = "com.xekho.pos"
     compileSdk = 35
@@ -14,6 +16,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0-skeleton"
+        buildConfigField("boolean", "GOOGLE_SERVICES_JSON_PRESENT", googleServicesJsonPresent.toString())
+        buildConfigField("String", "FIREBASE_LOCAL_CONFIG_SOURCE", "\"BuildConfig\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +43,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
