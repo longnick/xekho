@@ -1,3 +1,10 @@
+# 2026-06-25 07:14 +07 - Auto stock norm mobile layout relations
+- `app.js#buildAutoStockNormRows()` now computes `suggestedImportQty` from `par - currentStock` for mapped inventory rows.
+- `app.js#renderAutoStockNormBoard()` places `statusBadge(row)` inline inside `.auto-stock-norm-name-cell`, adds the `Cần nhập đề xuất` field, and removes the separate status column.
+- `style.css` owns `.auto-stock-norm-*` responsive layout; mobile turns table rows into cards with `data-label` pseudo-labels and no horizontal overflow.
+- `index.html` cache keys `style.css?v=20260625-auto-stock-mobile` and `app.js?v=20260625-auto-stock-mobile` force mobile Safari/Hosting refresh.
+- `scripts/verify-auto-stock-norm.js` guards the mobile markers, cache keys, and CSS class markers.
+
 # 2026-06-25 06:45 +07 - Auto stock norm board relations
 - `index.html#auto-stock-norm-board` renders a read-only `Định mức tồn kho tự động` card in `Kho → TỒN KHO` and loads `app.js?v=20260625-auto-stock-norm`.
 - `db.js` streams `history` and `Inventory_Items`/inventory into `window.appState`; `app.js#buildAutoStockNormRows()` reads them through `_getVisibleHistoryForUi()` and `_getInventory()` without writing Firestore.
