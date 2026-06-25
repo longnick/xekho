@@ -671,3 +671,32 @@ Safety state:
 - generated report lives in ignored build output
 - release signing remains blocked / not required for debug artifact
 - no `google-services.json`, service account, `.env`, production POS write, Firestore write, or sync enabled
+
+## Sprint 26 manual real-device QA checklist
+
+Manual QA/install instructions now live at:
+
+```text
+docs/android-native-manual-qa.md
+```
+
+Before testing a device build:
+
+```bash
+cd /home/longnick/projects/xekho/android-native
+./gradlew :app:assembleDebug --no-daemon
+scripts/native-apk-report.sh
+```
+
+Current delivery line:
+
+```text
+MEDIA:/home/longnick/projects/xekho/android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Manual smoke focus:
+
+- PIN gate: wrong PIN stays locked; demo PIN `1234` unlocks
+- `Bàn`, `Kho`, `Tài chính`, `Cài đặt` tabs render
+- Firestore UI mapping/checklist cards remain preview-only / blocked
+- no `google-services.json`, service account, `.env`, production POS data, Firestore write, or sync

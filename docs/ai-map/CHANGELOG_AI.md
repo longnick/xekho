@@ -1,3 +1,10 @@
+# 2026-06-26 02:23 +07 - Android native manual QA checklist Sprint 26
+- Added test-only `NativeManualQaChecklistReporter` and `NativeManualQaChecklistTest` to guard safe install steps, core real-device smoke path, and blocked Firestore/production flags.
+- Added `docs/android-native-manual-qa.md` with Android install instructions, Demo PIN, tab/card smoke checklist, blocked items, and pass/fail note template.
+- Verification passed: targeted RED/GREEN, clean native unit test, debug APK build, APK report/scan, and legacy web `check/test/build:hosting` regression.
+- Current APK SHA256 remains `f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0223-android-native-manual-qa-checklist.md`
+
 # 2026-06-26 02:08 +07 - Android native APK delivery report command Sprint 25
 - Added executable `android-native/scripts/native-apk-report.sh` to print a copyable debug APK report with version, size, SHA256, targeted scan result, and Telegram `MEDIA:` line.
 - Extended `NativeArtifactReporter` and `NativeArtifactReportTest` with delivery script/report path/copyable Telegram markdown metadata.
