@@ -49,12 +49,14 @@ import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
+import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
 import com.xekho.pos.domain.OfflineQueueFilter
 import com.xekho.pos.domain.OfflineQueueDetailPreview
 import com.xekho.pos.domain.OfflineQueueItem
+import com.xekho.pos.domain.OfflineQueuePersistenceSnapshot
 import com.xekho.pos.domain.OfflineQueueState
 import com.xekho.pos.domain.OfflineQueueStatus
 import com.xekho.pos.domain.OrderItem
@@ -329,6 +331,8 @@ private fun MainDashboard(
     val posWriteRepository = remember { FakePosWriteRepository() }
     val tableOrderRepository = remember { FakePosTableOrderRepository(posWriteRepository) }
     val offlineQueueRepository = remember { FakeOfflineQueueRepository() }
+    val offlineQueuePersistenceBoundary = remember { GuardedOfflineQueuePersistenceBoundary() }
+    var savedQueueSnapshot by remember { mutableStateOf<OfflineQueuePersistenceSnapshot?>(null) }
     var tableOrderState by rememberSaveable(stateSaver = posTableOrderStateSaver) {
         mutableStateOf(tableOrderRepository.initialState(snapshot.tables))
     }
@@ -337,6 +341,7 @@ private fun MainDashboard(
     }
     var selectedQueueFilterName by rememberSaveable { mutableStateOf(OfflineQueueFilter.ALL.name) }
     var selectedQueueDetailId by rememberSaveable { mutableStateOf("") }
+    var queuePersistenceMessage by rememberSaveable { mutableStateOf("Chưa lưu snapshot queue local") }
     val selectedQueueFilter = OfflineQueueFilter.valueOf(selectedQueueFilterName)
     val filteredQueueItems = offlineQueueRepository.filterItems(offlineQueueState, selectedQueueFilter)
     val selectedQueueDetail = selectedQueueDetailId.takeIf { it.isNotBlank() }?.let { id ->
@@ -386,6 +391,8 @@ private fun MainDashboard(
                         filteredQueueItems = filteredQueueItems,
                         selectedQueueFilter = selectedQueueFilter,
                         selectedQueueDetail = selectedQueueDetail,
+                        queuePersistenceSnapshot = savedQueueSnapshot,
+                        queuePersistenceMessage = queuePersistenceMessage,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -458,6 +465,30 @@ private fun MainDashboard(
                         onShowQueueDetail = { localQueueId ->
                             selectedQueueDetailId = localQueueId
                         },
+                        onSaveQueueSnapshot = {
+                            val result = offlineQueuePersistenceBoundary.saveLocalSnapshot(offlineQueueState)
+                            savedQueueSnapshot = result.snapshot
+                            queuePersistenceMessage = "${result.message} · ${result.snapshot.itemCount} item"
+                        },
+                        onRestoreQueueSnapshot = {
+                            val snapshotToRestore = savedQueueSnapshot
+                            if (snapshotToRestore == null) {
+                                queuePersistenceMessage = "Chưa có snapshot local để nạp lại; không đụng Room/DB."
+                            } else {
+                                val result = offlineQueuePersistenceBoundary.restoreLocalSnapshot(snapshotToRestore)
+                                offlineQueueState = result.state
+                                queuePersistenceMessage = "${result.message} · nạp ${result.snapshot.itemCount} item"
+                            }
+                        },
+                        onBlockedRoomPersistence = {
+                            val result = offlineQueuePersistenceBoundary.blockedRoomPersistence(offlineQueueState)
+                            queuePersistenceMessage = result.message
+                        },
+                        onClearQueueSnapshot = {
+                            val result = offlineQueuePersistenceBoundary.clearLocalSnapshot()
+                            savedQueueSnapshot = null
+                            queuePersistenceMessage = result.message
+                        },
                         onCloseLocalOrder = {
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(
                                 tableOrderState,
@@ -528,6 +559,8 @@ private fun TablesScreen(
     filteredQueueItems: List<OfflineQueueItem>,
     selectedQueueFilter: OfflineQueueFilter,
     selectedQueueDetail: OfflineQueueDetailPreview?,
+    queuePersistenceSnapshot: OfflineQueuePersistenceSnapshot?,
+    queuePersistenceMessage: String,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -542,6 +575,10 @@ private fun TablesScreen(
     onSelectQueueFilter: (OfflineQueueFilter) -> Unit,
     onRetryQueuePreview: (String) -> Unit,
     onShowQueueDetail: (String) -> Unit,
+    onSaveQueueSnapshot: () -> Unit,
+    onRestoreQueueSnapshot: () -> Unit,
+    onBlockedRoomPersistence: () -> Unit,
+    onClearQueueSnapshot: () -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -584,6 +621,22 @@ private fun TablesScreen(
                 "${offlineQueueState.pendingCount} queued · ${offlineQueueState.blockedCount} blocked · ${offlineQueueState.retryPreviewCount} retry nháp · ${formatVnd(offlineQueueState.pendingTotal)}\n" +
                     "Bộ lọc: ${selectedQueueFilter.displayName}. Chỉ là hàng đợi nháp trong máy: không Firestore, không sync, không production write."
             )
+        }
+        item {
+            SectionCard(
+                "Persistence boundary local-only",
+                "Snapshot: ${queuePersistenceSnapshot?.itemCount ?: 0} item · Room/DB: blocked · persistent storage: off\n" +
+                    "$queuePersistenceMessage\n" +
+                    "Boundary chỉ encode/decode snapshot local; chưa Room, chưa DB thật, chưa sync Firestore."
+            )
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onSaveQueueSnapshot) { Text("Lưu snapshot local") }
+                TextButton(onClick = onRestoreQueueSnapshot) { Text("Nạp snapshot local") }
+                TextButton(onClick = onBlockedRoomPersistence) { Text("Thử Room/DB (blocked)") }
+                TextButton(onClick = onClearQueueSnapshot) { Text("Xóa snapshot local") }
+            }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

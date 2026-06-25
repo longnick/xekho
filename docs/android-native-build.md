@@ -410,3 +410,28 @@ Latest debug APK checksum after Sprint 14:
 c09b15842112da3b313cc01b66d4c801bb788d41412ef6a9294a8648742f0cd2  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 15 POS queue persistence boundary
+
+Native POS queue now has a guarded local persistence boundary:
+
+```text
+OfflineQueuePersistenceMode(LOCAL_MEMORY_ONLY, ROOM_BLOCKED_LOCAL_ONLY)
+OfflineQueuePersistenceSnapshot
+OfflineQueuePersistenceResult
+GuardedOfflineQueuePersistenceBoundary.saveLocalSnapshot/restoreLocalSnapshot/blockedRoomPersistence/clearLocalSnapshot
+```
+
+Safety state:
+
+- local queue snapshot save/restore only encodes/decodes local in-memory queue state
+- restore sanitizes `canWriteToProduction` and `canSyncToFirestore` back to `false`
+- Room/DB persistence is represented by a fail-closed `ROOM_BLOCKED_LOCAL_ONLY` result
+- no Room dependency, no database file, no Firestore sync, no background worker, no production write
+- UI labels explicitly say `Room/DB: blocked`, `persistent storage: off`, and no Firestore sync
+
+Latest debug APK checksum after Sprint 15:
+
+```text
+c4d2d8edd08208e7e4d24de6035129eb1596c976f118032cdc98983dd9a2578e  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
