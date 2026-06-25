@@ -1,3 +1,9 @@
+# 2026-06-26 01:24 +07 - Android native Firestore read-only approval checklist Sprint 22
+- `android-native/app/src/main/java/com/xekho/pos/domain/Models.kt`: adds `FirestoreReadOnlyApprovalChecklistRequest`, `FirestoreReadOnlyChecklistItem`, and `FirestoreReadOnlyApprovalChecklistState` DTOs.
+- `android-native/app/src/main/java/com/xekho/pos/domain/GuardedFirestoreReadOnlyApprovalChecklist.kt`: local-only readiness evaluator; never instantiates Firestore and forces read/write/sync flags false.
+- `android-native/app/src/main/java/com/xekho/pos/ui/AppRoot.kt`: Tables screen now includes `Firestore approval checklist Sprint 22` card after the Sprint 21 UI mapping card.
+- `android-native/app/src/test/java/com/xekho/pos/domain/FirestoreReadOnlyApprovalChecklistTest.kt`: targeted guard tests for Sprint 22.
+
 # 2026-06-25 07:39 +07 - Auto stock compact ordering summary
 - `index.html#[data-xk-auto-stock-norm="v1"]`: compact clickable `Định mức tồn kho tự động` card; old filter select removed; cache keys bumped to `20260625-auto-stock-summary`.
 - `app.js#getAutoStockNormPurchaseInfo`: converts suggested import quantity into ordering quantity/cost; beer/can items are rounded to whole 24-lon cases.
