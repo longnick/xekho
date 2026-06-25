@@ -639,3 +639,35 @@ Safety state:
 - debug artifact only; release signing remains a later explicit gate
 - no `google-services.json` committed or packaged by the targeted scan
 - no service account, `.env`, production POS rows, Firestore write, or sync enabled
+
+## Sprint 25 APK delivery report command
+
+After building the debug APK, refresh a Telegram-ready delivery report with:
+
+```bash
+cd /home/longnick/projects/xekho/android-native
+scripts/native-apk-report.sh
+```
+
+The command prints and writes:
+
+```text
+app/build/outputs/apk/debug/xekho-native-debug-apk-report.md
+```
+
+Current output includes:
+
+```text
+APK: /home/longnick/projects/xekho/android-native/app/build/outputs/apk/debug/app-debug.apk
+Size: 14M (14508094 bytes)
+SHA256: f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120
+Secret/config scan: APK_SCAN_NO_MATCHES
+Telegram: MEDIA:/home/longnick/projects/xekho/android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Safety state:
+
+- script is release/report tooling only; it does not change app runtime code
+- generated report lives in ignored build output
+- release signing remains blocked / not required for debug artifact
+- no `google-services.json`, service account, `.env`, production POS write, Firestore write, or sync enabled

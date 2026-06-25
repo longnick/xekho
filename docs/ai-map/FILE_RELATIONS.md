@@ -1,3 +1,8 @@
+# 2026-06-26 02:08 +07 - Android native APK delivery command relations
+- `scripts/native-apk-report.sh` reads `app/build.gradle.kts` for `applicationId`, `versionCode`, and `versionName`, reads `app/build/outputs/apk/debug/app-debug.apk` for SHA256/size/scan, and writes `app/build/outputs/apk/debug/xekho-native-debug-apk-report.md`.
+- `NativeArtifactReporter.kt` mirrors the same script/report paths in JVM tests so metadata stays discoverable without executing shell.
+- `NativeArtifactReportTest.kt` prevents accidental removal of the Telegram-ready `MEDIA:` delivery metadata.
+
 # 2026-06-26 01:51 +07 - Android native artifact/smoke relations
 - `app/build.gradle.kts` provides `applicationId`, `versionCode`, and `versionName`; `NativeArtifactReporter.kt` reads those values in JVM tests to produce a debug artifact report.
 - `NativeArtifactReportTest.kt` guards that Sprint 24 version metadata and debug APK path stay explicit while release signing, service accounts, google-services config, writes, and sync remain blocked.

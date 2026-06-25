@@ -31,4 +31,15 @@ class NativeArtifactReportTest {
         assertFalse(report.includesServiceAccount)
         assertFalse(report.includesGoogleServicesJson)
     }
+
+    @Test
+    fun reportProvidesCopyableDeliveryCommandAndMarkdown() {
+        val report = reporter.buildReport()
+
+        assertTrue(report.deliveryScript.endsWith("scripts/native-apk-report.sh"))
+        assertTrue(report.reportPath.endsWith("app/build/outputs/apk/debug/xekho-native-debug-apk-report.md"))
+        assertTrue(report.copyableTelegramMarkdown.any { it.contains("MEDIA:") })
+        assertTrue(report.copyableTelegramMarkdown.any { it.contains("SHA256") })
+        assertTrue(report.summaryLines.any { it.contains("Sprint 25") })
+    }
 }
