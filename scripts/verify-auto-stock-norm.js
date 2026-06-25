@@ -19,15 +19,17 @@ const requiredAppMarkers = [
   'function getAutoStockNormLevels(row)',
   'function autoStockNormQuantile(values, q)',
   'function escapeAutoStockNormHtml(value)',
+  'function getAutoStockNormPurchaseInfo(row)',
+  'function toggleAutoStockNormOverview(event)',
   'const history = _getVisibleHistoryForUi();',
   'const inventory = _getInventory();',
-  'Đơn vị là đơn vị bán trên POS',
-  'renderAutoStockNormBoard();',
-  "if (filter === 'need') rows = rows.filter(r => r.status === 'need' || r.status === 'watch');",
   'suggestedImportQty',
-  'data-label="Cần nhập"',
-  'Món / trạng thái',
-  'Cần nhập đề xuất',
+  "const packageSize = isCanBeer ? 24 : 1;",
+  "const packageName = isCanBeer ? 'thùng' : unit;",
+  'Tổng quan nhập hàng hôm nay',
+  'Hôm nay cần đặt',
+  'Số thùng bia được làm tròn theo thùng chẵn 24 lon',
+  'renderAutoStockNormBoard();',
 ];
 for (const marker of requiredAppMarkers) assert(app.includes(marker), `missing app marker: ${marker}`);
 
@@ -35,18 +37,20 @@ const requiredIndexMarkers = [
   'data-xk-auto-stock-norm="v1"',
   'Định mức tồn kho tự động',
   'id="auto-stock-norm-board"',
-  'id="auto-stock-norm-filter"',
-  'app.js?v=20260625-auto-stock-mobile',
-  'style.css?v=20260625-auto-stock-mobile',
+  'toggleAutoStockNormOverview(event)',
+  'app.js?v=20260625-auto-stock-summary',
+  'style.css?v=20260625-auto-stock-summary',
 ];
 for (const marker of requiredIndexMarkers) assert(index.includes(marker), `missing index marker: ${marker}`);
+assert(!index.includes('id="auto-stock-norm-filter"'), 'old verbose filter should not remain in compact card');
 
 const requiredStyleMarkers = [
-  '.auto-stock-norm-table td::before',
+  '.auto-stock-compact',
+  '.auto-stock-overview',
+  '.auto-stock-order-item',
+  '.auto-stock-order-detail',
+  '.auto-stock-total',
   '@media (max-width: 640px)',
-  '.auto-stock-norm-name-line',
-  '.auto-stock-norm-suggest-cell',
-  '.auto-stock-norm-scroll',
 ];
 for (const marker of requiredStyleMarkers) assert(style.includes(marker), `missing style marker: ${marker}`);
 

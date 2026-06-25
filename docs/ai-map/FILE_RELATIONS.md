@@ -1,3 +1,10 @@
+# 2026-06-25 07:39 +07 - Auto stock compact ordering summary relations
+- `index.html#[data-xk-auto-stock-norm="v1"]` is now a compact clickable card; `toggleAutoStockNormOverview(event)` opens/closes the ordering overview and old filter controls were removed.
+- `app.js#getAutoStockNormPurchaseInfo()` converts `suggestedImportQty` into order units; beer/can rows round up to 24-can cases and estimate cost from inventory `costPerUnit`.
+- `app.js#renderAutoStockNormBoard()` now shows projected purchase total first, then expandable per-item `<details>` cards for reasons/current stock/par/cost.
+- `style.css` adds `.auto-stock-compact`, `.auto-stock-overview`, and `.auto-stock-order-item` classes for the mobile-first summary/drill-down UI.
+- `scripts/verify-auto-stock-norm.js` guards compact-summary markers, case conversion markers, removed old filter, and cache keys `20260625-auto-stock-summary`.
+
 # 2026-06-25 07:14 +07 - Auto stock norm mobile layout relations
 - `app.js#buildAutoStockNormRows()` now computes `suggestedImportQty` from `par - currentStock` for mapped inventory rows.
 - `app.js#renderAutoStockNormBoard()` places `statusBadge(row)` inline inside `.auto-stock-norm-name-cell`, adds the `Cần nhập đề xuất` field, and removes the separate status column.

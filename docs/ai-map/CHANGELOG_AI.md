@@ -1,3 +1,10 @@
+# 2026-06-25 07:39 +07 - Auto stock compact ordering summary
+- Reworked `Định mức tồn kho tự động` from a long metrics table into a compact clickable card: collapsed state shows action summary and projected purchase total; clicking opens the item list.
+- Added purchase conversion logic for beer/can items: `lon` recommendations round up to whole 24-can cases and costs use the rounded order quantity.
+- Example verified by Playwright seeded data: `Bia Heineken 45 Lon = 2 thùng 770.016đ`, `Bia Tiger Bạc 20 Lon = 1 thùng 295.008đ`, total `1.065.024đ`.
+- Removed the old filter dropdown/table from the compact card, added per-item `<details>` for drill-down, bumped cache keys to `20260625-auto-stock-summary`, deployed Hosting-only, and live-smoked mobile 390×844 with no overflow/errors.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-25-0739-auto-stock-summary-card.md`
+
 # 2026-06-25 07:14 +07 - Auto stock norm mobile layout
 - Fixed the `Định mức tồn kho tự động` board mobile layout: status badge now sits inline beside the dish name instead of as a separate trailing column.
 - Added `Cần nhập đề xuất` as a dedicated column/field, computed as `max(0, ceil(par - currentStock))` for mapped inventory rows.
