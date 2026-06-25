@@ -435,3 +435,29 @@ Latest debug APK checksum after Sprint 15:
 c4d2d8edd08208e7e4d24de6035129eb1596c976f118032cdc98983dd9a2578e  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 16 POS queue import/export restore preview
+
+Native POS queue snapshot UX now validates and previews local-only import/export text:
+
+```text
+OfflineQueueSnapshotValidationStatus
+OfflineQueueSnapshotValidationPreview
+OfflineQueueSnapshotExportPreview
+OfflineQueueSnapshotImportPreview
+GuardedOfflineQueuePersistenceBoundary.validateSnapshot/previewExport/previewImport
+```
+
+Safety state:
+
+- restore validates first and blocks corrupt/unsupported snapshots
+- corrupt import text is shown as local-only validation error and does not restore rows
+- export preview uses copyable `XK_QUEUE_SNAPSHOT_V1` / `LOCAL_ONLY` text only
+- import/export preview does not write files, Room/DB, Firestore, or production POS data
+- UI labels explicitly say preview/local-only, no Room/DB, no Firestore sync, no production write
+
+Latest debug APK checksum after Sprint 16:
+
+```text
+d497c6585e7b6136e2e6c3f743675f2278d3959874285857b797766ae09bd754  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
