@@ -117,6 +117,16 @@ data class PaymentCloseResult(
     val isClosedLocal: Boolean get() = status == PaymentCloseStatus.CLOSED_LOCAL_ONLY
 }
 
+data class PosTableOrderState(
+    val selectedTableId: String,
+    val ordersByTable: Map<String, PosLocalOrder>,
+    val tableLabelsById: Map<String, String>,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+) {
+    val selectedOrder: PosLocalOrder get() = ordersByTable.getValue(selectedTableId)
+}
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,

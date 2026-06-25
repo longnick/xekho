@@ -1,3 +1,12 @@
+# 2026-06-25 20:44 +07 - DONE: Android native POS multi-table local orders Sprint 11
+- DONE: Added `PosTableOrderState` with selected table, per-table local orders, labels, and fail-closed write/sync guards.
+- DONE: Added `FakePosTableOrderRepository` for `initialState`, `selectTable`, `replaceSelectedOrder`, and `tableSummaries`.
+- DONE: Added `FakePosTableOrderRepositoryTest` covering initial table state, per-table isolation, unknown table selection, local summaries, and no production write/sync.
+- DONE: Wired Tables UI with selectable local table cards and per-table local order/cart/payment state.
+- DONE: Added `posTableOrderStateSaver` for multi-table `rememberSaveable`; fixed Kilo-flagged delimiter collision by using row `\\u001d`, item `\\u001e`, item-field `\\u001f`.
+- DONE: Verified TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, Kilo review/re-review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2044-android-native-pos-multi-table-local-orders.md`.
+
 # 2026-06-25 20:26 +07 - DONE: Android native POS local payment close Sprint 10D
 - DONE: Added `PosOrderStatus.PAID_LOCAL_ONLY`, `PaymentCloseStatus`, and `PaymentCloseResult` for local-only close/payment transition.
 - DONE: Added `FakePosWriteRepository.closePaymentDraft(order, draft)`; only payable `OPEN` local orders can become paid local-only.
