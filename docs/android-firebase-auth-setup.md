@@ -64,4 +64,16 @@ AuthRepositoryFactory.fromRuntimeConfig(AuthRuntimeConfig()) // FakeAuthReposito
 If `AuthRuntimeMode.FIREBASE_AUTH` is requested, selection still evaluates `FirebaseAuthConfigGuard`. Because the guard currently returns `canUseRealFirebase = false`, the factory returns `BlockedFirebaseAuthRepository`, not `FirebaseAuthRepository`.
 
 No real Firebase Auth sign-in is wired in Sprint 7.
+## Sprint 8 read-only readiness report
+
+`AuthReadinessReporter.report()` now summarizes current auth readiness for the Settings screen.
+
+It reports:
+
+- active runtime mode
+- Firebase Auth blocked/ready label
+- block reason
+- `google-services.json` local presence flag
+
+Sprint 8 remains display-only. It does not call Firebase Auth, does not read Firestore, and does not enable real auth.
 

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xekho.pos.AppBrand
+import com.xekho.pos.auth.AuthReadinessReporter
 import com.xekho.pos.auth.AuthRepository
 import com.xekho.pos.auth.AuthRepositoryFactory
 import com.xekho.pos.auth.AuthSession
@@ -303,8 +304,10 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 
 @Composable
 private fun SettingsScreen() {
+    val authReport = AuthReadinessReporter.report()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 7: Runtime auth selection exists; default v\u1eabn l\u00e0 FAKE_LOCAL, Firebase Auth v\u1eabn b\u1ecb guard ch\u1eb7n.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 8: Readiness report read-only; app default v\u1eabn l\u00e0 FAKE_LOCAL.")
+        SectionCard("Auth readiness", authReport.displayLines.joinToString("\n"))
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }
