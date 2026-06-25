@@ -14,8 +14,8 @@ android {
         applicationId = "com.xekho.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-skeleton"
+        versionCode = 24
+        versionName = "0.24.0-alpha24"
         buildConfigField("boolean", "GOOGLE_SERVICES_JSON_PRESENT", googleServicesJsonPresent.toString())
         buildConfigField("String", "FIREBASE_LOCAL_CONFIG_SOURCE", "\"BuildConfig\"")
 

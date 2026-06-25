@@ -1,3 +1,8 @@
+# 2026-06-26 01:51 +07 - Android native artifact/smoke relations
+- `app/build.gradle.kts` provides `applicationId`, `versionCode`, and `versionName`; `NativeArtifactReporter.kt` reads those values in JVM tests to produce a debug artifact report.
+- `NativeArtifactReportTest.kt` guards that Sprint 24 version metadata and debug APK path stay explicit while release signing, service accounts, google-services config, writes, and sync remain blocked.
+- `NativeUiServerSmokeHarness.kt` reads `AppBrand.kt`, `AppRoot.kt`, and `GuardedFirestoreReadOnlyApprovalChecklist.kt`; it now decodes Kotlin source unicode escapes so Vietnamese labels in Settings/Inventory/Finance are guarded by readable markers.
+
 # 2026-06-26 01:37 +07 - Android native server UI smoke harness relations
 - `NativeUiServerSmokeHarness.kt` reads `AppBrand.kt`, `AppRoot.kt`, and `GuardedFirestoreReadOnlyApprovalChecklist.kt` as source text during JVM unit tests.
 - `NativeUiServerSmokeHarnessTest.kt` guards that source-visible UI markers for login/PIN, POS local flow, payment/queue cards, Sprint 21 mapping, and Sprint 22 checklist remain present.
