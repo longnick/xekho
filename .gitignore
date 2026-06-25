@@ -24,6 +24,7 @@ functions-list.json
 # Android native local/build outputs
 android-native/local.properties
 android-native/.gradle/
+android-native/.kotlin/
 android-native/**/build/
 android-native/captures/
 
