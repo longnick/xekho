@@ -47,10 +47,14 @@ import com.xekho.pos.auth.AuthSession
 import com.xekho.pos.auth.AuthStage
 import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
+import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
+import com.xekho.pos.domain.OfflineQueueItem
+import com.xekho.pos.domain.OfflineQueueState
+import com.xekho.pos.domain.OfflineQueueStatus
 import com.xekho.pos.domain.OrderItem
 import com.xekho.pos.domain.PaymentDraft
 import com.xekho.pos.domain.PaymentMethod
@@ -179,6 +183,48 @@ private val posTableOrderStateSaver: Saver<PosTableOrderState, List<String>> = S
     }
 )
 
+private val offlineQueueStateSaver: Saver<OfflineQueueState, List<String>> = Saver(
+    save = { state ->
+        state.items.map { item ->
+            listOf(
+                item.localQueueId,
+                item.tableId,
+                item.localReceiptNumber,
+                item.status.name,
+                item.totalDue.toString(),
+                item.itemCount.toString(),
+                item.payloadPreview,
+                item.canWriteToProduction.toString(),
+                item.canSyncToFirestore.toString()
+            ).joinToString("\u001d")
+        }
+    },
+    restore = { saved ->
+        OfflineQueueState(
+            items = saved.mapNotNull { row ->
+                val parts = row.split("\u001d")
+                if (parts.size >= 9) {
+                    OfflineQueueItem(
+                        localQueueId = parts[0],
+                        tableId = parts[1],
+                        localReceiptNumber = parts[2],
+                        status = parts[3].let { OfflineQueueStatus.valueOf(it) },
+                        totalDue = parts[4].toLongOrNull() ?: 0L,
+                        itemCount = parts[5].toIntOrNull() ?: 0,
+                        payloadPreview = parts[6],
+                        canWriteToProduction = false,
+                        canSyncToFirestore = false
+                    )
+                } else {
+                    null
+                }
+            },
+            canWriteToProduction = false,
+            canSyncToFirestore = false
+        )
+    }
+)
+
 @Composable
 fun AppRoot(
     modifier: Modifier = Modifier,
@@ -280,8 +326,12 @@ private fun MainDashboard(
     var selectedTab by remember { mutableStateOf(NativeTab.TABLES) }
     val posWriteRepository = remember { FakePosWriteRepository() }
     val tableOrderRepository = remember { FakePosTableOrderRepository(posWriteRepository) }
+    val offlineQueueRepository = remember { FakeOfflineQueueRepository() }
     var tableOrderState by rememberSaveable(stateSaver = posTableOrderStateSaver) {
         mutableStateOf(tableOrderRepository.initialState(snapshot.tables))
+    }
+    var offlineQueueState by rememberSaveable(stateSaver = offlineQueueStateSaver) {
+        mutableStateOf(OfflineQueueState())
     }
     val localOrder = tableOrderState.selectedOrder
     var localPaymentCloseMessage by rememberSaveable { mutableStateOf("Chưa thu local") }
@@ -323,6 +373,7 @@ private fun MainDashboard(
                         menuItems = posWriteRepository.fakeMenu(),
                         localOrder = localOrder,
                         paymentDraft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH),
+                        offlineQueueState = offlineQueueState,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -368,6 +419,19 @@ private fun MainDashboard(
                             val closeResult = posWriteRepository.closePaymentDraft(localOrder, draft)
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(tableOrderState, closeResult.order)
                             localPaymentCloseMessage = "${closeResult.status.displayName} · ${closeResult.localReceiptNumber.ifBlank { "không có biên nhận" }} · không sync"
+                        },
+                        onQueueLocalDraft = {
+                            val draft = posWriteRepository.previewPayment(localOrder, PaymentMethod.CASH)
+                            val closeResult = posWriteRepository.closePaymentDraft(localOrder, draft)
+                            tableOrderState = tableOrderRepository.replaceSelectedOrder(tableOrderState, closeResult.order)
+                            offlineQueueState = offlineQueueRepository.appendDraft(
+                                offlineQueueState,
+                                offlineQueueRepository.draftFromPaymentClose(closeResult)
+                            )
+                            localPaymentCloseMessage = "${closeResult.status.displayName} · xếp hàng local-only · không sync"
+                        },
+                        onClearOfflineQueue = {
+                            offlineQueueState = offlineQueueRepository.clearLocalQueue(offlineQueueState)
                         },
                         onCloseLocalOrder = {
                             tableOrderState = tableOrderRepository.replaceSelectedOrder(
@@ -435,6 +499,7 @@ private fun TablesScreen(
     menuItems: List<OrderItem>,
     localOrder: PosLocalOrder,
     paymentDraft: PaymentDraft,
+    offlineQueueState: OfflineQueueState,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -444,6 +509,8 @@ private fun TablesScreen(
     onRemoveItem: (String) -> Unit,
     onClearOrder: () -> Unit,
     onClosePaymentDraft: () -> Unit,
+    onQueueLocalDraft: () -> Unit,
+    onClearOfflineQueue: () -> Unit,
     onCloseLocalOrder: () -> Unit
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -465,6 +532,7 @@ private fun TablesScreen(
                         TextButton(onClick = onOpenLocalOrder) { Text("Mở lại") }
                         TextButton(onClick = onClearOrder) { Text("Xóa giỏ") }
                         TextButton(onClick = onClosePaymentDraft) { Text("Thu local") }
+                        TextButton(onClick = onQueueLocalDraft) { Text("Xếp queue") }
                         TextButton(onClick = onCloseLocalOrder) { Text("Đóng local") }
                     }
                 }
@@ -478,6 +546,27 @@ private fun TablesScreen(
                     "Kết quả thu: $localPaymentCloseMessage\n" +
                     "Không ghi production, không sync Firestore."
             )
+        }
+        item {
+            SectionCard(
+                "Offline queue nháp local",
+                "${offlineQueueState.pendingCount} mục chờ local · ${formatVnd(offlineQueueState.pendingTotal)}\n" +
+                    "Chỉ là hàng đợi nháp trong máy: không Firestore, không sync, không production write."
+            )
+        }
+        if (offlineQueueState.items.isNotEmpty()) {
+            items(offlineQueueState.items) { queueItem ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(queueItem.status.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("${queueItem.localQueueId} · ${queueItem.tableId} · ${queueItem.itemCount} món · ${formatVnd(queueItem.totalDue)}")
+                        Text("Không sync Firestore, không ghi production.", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            item {
+                TextButton(onClick = onClearOfflineQueue) { Text("Xóa queue local") }
+            }
         }
         item {
             SectionCard("Menu mẫu", menuItems.joinToString("\n") { item -> "${item.name} · ${formatVnd(item.unitPrice)}" })
