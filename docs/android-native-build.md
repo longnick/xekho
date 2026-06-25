@@ -254,4 +254,28 @@ Latest debug APK checksum after Sprint 10B:
 ```text
 4b881b6d9fc8dec0c7354be3241caafae8dcf2cd881deaa701b48945e521a2d0  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 10C POS local payment draft preview
+
+Native POS tab now shows a local-only payment draft preview derived from local cart state:
+
+```text
+PaymentMethod.CASH
+PaymentMethod.BANK_TRANSFER
+PaymentDraft(subtotal, discount, totalDue, itemCount, receiptPreview)
+```
+
+Safety state:
+
+- `previewPayment()` has no Firebase/Firestore dependency
+- discount clamps to `[0, subtotal]`
+- `PaymentDraft.canWriteToProduction = false`
+- `PaymentDraft.canSyncToFirestore = false`
+- UI labels explicitly say no production write and no Firestore sync
+- payment draft is derived from `rememberSaveable` local order state
+
+Latest debug APK checksum after Sprint 10C:
+
+```text
+0d0dbd14b15e8e90bda786a1906ef54b814a53ea991b14651a946d5ce2665eaf  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
