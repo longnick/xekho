@@ -21,6 +21,12 @@ functions-list.json
 *.json.bak
 *.backup-*
 
+# Android native local/build outputs
+android-native/local.properties
+android-native/.gradle/
+android-native/**/build/
+android-native/captures/
+
 # Firebase generated
 .firebase/
 firebase-debug.log
