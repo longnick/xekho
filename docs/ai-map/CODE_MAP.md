@@ -1,3 +1,9 @@
+# 2026-06-25 07:14 +07 - Auto stock norm mobile layout
+- `app.js#buildAutoStockNormRows`: adds `suggestedImportQty = max(0, ceil(par - currentStock))` for mapped inventory rows.
+- `app.js#renderAutoStockNormBoard`: renders `Món / trạng thái` with the badge inline beside the dish name and adds the `Cần nhập đề xuất` column/field; mobile rows include `data-label` attributes.
+- `style.css`: adds `.auto-stock-norm-*` table/card responsive rules, including mobile stacked rows under `@media (max-width: 640px)`.
+- `scripts/verify-auto-stock-norm.js`: now validates mobile layout markers, suggested import markers, style markers, and cache keys.
+
 # 2026-06-25 06:45 +07 - Auto stock norm board
 - `index.html#auto-stock-norm-board`: read-only `Định mức tồn kho tự động` card under `Kho → TỒN KHO`; cache key `app.js?v=20260625-auto-stock-norm`.
 - `app.js#buildAutoStockNormRows`: reads visible completed history + normalized inventory, builds 56-day demand series, ABC class, quantiles, and `Tối thiểu / Chuẩn / Tối đa` recommendations.
