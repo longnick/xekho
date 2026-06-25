@@ -1,4 +1,4 @@
-# Android Native Build Notes
+# Android Native Build Notes (PAUSED - Capacitor App Adopted)
 
 Native Android work lives in:
 

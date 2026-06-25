@@ -18,6 +18,8 @@ const EXCLUDED_DIRS = new Set([
   'scripts',
   'backups',
   'dist',
+  'android',
+  'android-native',
   'coverage',
 ]);
 
