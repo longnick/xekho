@@ -1,3 +1,10 @@
+# 2026-06-26 03:12 +07 - Capacitor Android relations
+- `package.json#cap:sync` runs `npm run build:hosting` before `npx cap sync`, so the Android WebView receives the latest current web UI bundle.
+- `package.json#cap:build` runs `cap:sync`, then `android/gradlew assembleDebug --no-daemon` to produce `android/app/build/outputs/apk/debug/app-debug.apk`.
+- `capacitor.config.ts` maps `appId = com.xekho.pos.capacitor`, `appName = Xe Kho POS`, and `webDir = dist`.
+- `scripts/build-hosting-dist.js` excludes `android/` and `android-native/` while copying static root runtime files into `dist`, preventing recursive Capacitor/Android asset copies.
+- `android/` is the new Capacitor Android wrapper path; `android-native/` remains paused and should not receive new UI work unless explicitly re-approved.
+
 # 2026-06-26 02:52 +07 - Real-data read-only direction relations
 - `GuardedRealDataDirectionGate.kt` depends on `RealDataDirectionRequest`/`RealDataDirectionState` from `Models.kt` and produces a UI-safe checklist state.
 - `AppRoot.kt` evaluates `GuardedRealDataDirectionGate` alongside existing Firestore contract/repository/checklist previews and displays the Sprint 28 real-data direction card.

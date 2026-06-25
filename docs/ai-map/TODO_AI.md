@@ -1,3 +1,12 @@
+# 2026-06-26 03:12 +07 - DONE: Capacitor Android App Path Added
+- DONE: Paused `android-native` Kotlin project (marked manual QA checklists and build notes as paused).
+- DONE: Added `@capacitor/core`, `@capacitor/android` to dependencies, and `@capacitor/cli` to devDependencies.
+- DONE: Configured `capacitor.config.ts` mapping appId to `com.xekho.pos.capacitor` and webDir to `dist`.
+- DONE: Generated standard `android/` project using Capacitor CLI.
+- DONE: Updated `scripts/build-hosting-dist.js` and Jest ignores so generated Android/assets are not recursively copied/tested.
+- DONE: Verified `npm run cap:build`, debug APK forbidden-name scan, `npm run check`, `npm test -- --runInBand`, and Hosting dist exclusion checks.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1955-capacitor-android-app-path.md`.
+
 # 2026-06-26 02:52 +07 - DONE: Android native real-data read-only direction gate Sprint 28
 - DONE: Added RED/GREEN `RealDataDirectionGateTest` for the read-only real-data direction gate.
 - DONE: Added `GuardedRealDataDirectionGate` and fail-closed real-data direction DTOs.
