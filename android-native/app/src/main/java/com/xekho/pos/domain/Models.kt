@@ -129,7 +129,15 @@ data class PosTableOrderState(
 
 enum class OfflineQueueStatus(val displayName: String) {
     QUEUED_LOCAL_ONLY("Đã xếp hàng local-only"),
-    BLOCKED_LOCAL_ONLY("Chưa đủ điều kiện xếp hàng local-only")
+    BLOCKED_LOCAL_ONLY("Chưa đủ điều kiện xếp hàng local-only"),
+    RETRY_PREVIEW_LOCAL_ONLY("Đang xem thử retry local-only")
+}
+
+enum class OfflineQueueFilter(val displayName: String) {
+    ALL("Tất cả"),
+    QUEUED("Đã xếp hàng"),
+    BLOCKED("Bị chặn"),
+    RETRY_PREVIEW("Retry nháp")
 }
 
 data class OfflineQueueItem(
@@ -151,6 +159,8 @@ data class OfflineQueueState(
 ) {
     val pendingCount: Int get() = items.count { it.status == OfflineQueueStatus.QUEUED_LOCAL_ONLY }
     val pendingTotal: Long get() = items.filter { it.status == OfflineQueueStatus.QUEUED_LOCAL_ONLY }.sumOf { it.totalDue }
+    val blockedCount: Int get() = items.count { it.status == OfflineQueueStatus.BLOCKED_LOCAL_ONLY }
+    val retryPreviewCount: Int get() = items.count { it.status == OfflineQueueStatus.RETRY_PREVIEW_LOCAL_ONLY }
 }
 
 data class DashboardSnapshot(
