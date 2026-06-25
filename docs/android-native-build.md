@@ -579,3 +579,31 @@ Latest debug APK checksum after Sprint 20:
 e7bf2570538e7c17b5bd8c1286e8fe2f765e61863f019f667dcb43ec0614e46b  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 21 Firestore read-only UI mapping
+
+Native POS now maps blocked Firestore read-only repository previews into native UI DTOs:
+
+```text
+PosFirestoreReadOnlyUiSummary
+PosFirestoreReadOnlyUiRow
+PosFirestoreReadOnlyDashboardState
+FirestoreReadOnlyUiMappingAdapter.fromRepositoryPreview/fromCollectionPreview/dashboardState
+```
+
+Safety state:
+
+- adapter consumes blocked preview DTOs only
+- UI rows show collection names and required fields only
+- `sampleRowCount = 0` remains enforced
+- no `FirebaseFirestore.getInstance()`, listener, query, or `get()` is executed
+- no Firestore instance is created by the adapter
+- no `google-services.json` was added
+- no production POS rows were read, sampled, returned, written, or synced
+- UI labels explicitly say no Firestore execution, no production rows, no writes
+
+Latest debug APK checksum after Sprint 21:
+
+```text
+cb67a557b34f1440e1dff4c17b9a973c75b08bd9f29ab7e84051a29876e71661  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+

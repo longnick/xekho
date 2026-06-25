@@ -1,3 +1,12 @@
+# 2026-06-26 00:16 +07 - DONE: Android native Firestore read-only UI mapping Sprint 21
+- DONE: Added `PosFirestoreReadOnlyUiSummary`, `PosFirestoreReadOnlyUiRow`, and `PosFirestoreReadOnlyDashboardState`.
+- DONE: Added `FirestoreReadOnlyUiMappingAdapter` for repository summary, collection row, and dashboard-state mapping.
+- DONE: Mapping consumes blocked preview DTOs only and keeps sample rows/read/write/sync flags fail-closed.
+- DONE: Added `FirestoreReadOnlyUiMappingAdapterTest` covering summary mapping, collection row mapping, dashboard mapping, and unknown collection handling.
+- DONE: Wired Tables UI with `Firestore UI mapping Sprint 21` card.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0016-android-native-firestore-readonly-ui-mapping.md`.
+
 # 2026-06-25 23:59 +07 - DONE: Android native Firestore read-only repository skeleton Sprint 20
 - DONE: Added `PosFirestoreReadOnlyRepositoryMode`, `PosFirestoreReadOnlyRepositoryRequest`, `PosFirestoreReadOnlyCollectionPreview`, and `PosFirestoreReadOnlyRepositoryPreview`.
 - DONE: Added `PosFirestoreReadOnlyRepository`, `BlockedFirestoreReadOnlyRepository`, and `GuardedFirestoreReadOnlyRepositoryFactory`.

@@ -50,6 +50,7 @@ import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.FirestoreReadOnlySdkMarker
+import com.xekho.pos.domain.FirestoreReadOnlyUiMappingAdapter
 import com.xekho.pos.domain.GuardedFirestoreReadOnlyRepositoryFactory
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
 import com.xekho.pos.domain.GuardedPosReadOnlyDataBoundary
@@ -71,6 +72,7 @@ import com.xekho.pos.domain.PaymentDraft
 import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosFirestoreReadOnlyContract
 import com.xekho.pos.domain.PosFirestoreReadOnlyContractPreview
+import com.xekho.pos.domain.PosFirestoreReadOnlyDashboardState
 import com.xekho.pos.domain.PosFirestoreReadOnlyRepositoryPreview
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
@@ -359,6 +361,13 @@ private fun MainDashboard(
     val firestoreReadOnlyRepositoryPreview = remember(firestoreReadOnlyContract) {
         GuardedFirestoreReadOnlyRepositoryFactory.defaultRepository(firestoreReadOnlyContract).previewCollections()
     }
+    val firestoreReadOnlyUiState = remember(firestoreReadOnlyContract, firestoreReadOnlyRepositoryPreview) {
+        val repository = GuardedFirestoreReadOnlyRepositoryFactory.defaultRepository(firestoreReadOnlyContract)
+        FirestoreReadOnlyUiMappingAdapter().dashboardState(
+            repositoryPreview = firestoreReadOnlyRepositoryPreview,
+            collectionPreviews = firestoreReadOnlyContract.collections.map { repository.previewCollection(it.collectionName) }
+        )
+    }
     val firebaseReadOnlyPreview = remember {
         posReadOnlyDataBoundary.previewFirebaseReadOnly(
             PosReadOnlyDataRequest(requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY)
@@ -445,6 +454,7 @@ private fun MainDashboard(
                         fakePosPreview = fakePosPreview,
                         firestoreReadOnlyContractPreview = firestoreReadOnlyContractPreview,
                         firestoreReadOnlyRepositoryPreview = firestoreReadOnlyRepositoryPreview,
+                        firestoreReadOnlyUiState = firestoreReadOnlyUiState,
                         firebaseReadOnlyPreview = firebaseReadOnlyPreview,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
@@ -675,6 +685,7 @@ private fun TablesScreen(
     fakePosPreview: PosReadOnlyDataPreview,
     firestoreReadOnlyContractPreview: PosFirestoreReadOnlyContractPreview,
     firestoreReadOnlyRepositoryPreview: PosFirestoreReadOnlyRepositoryPreview,
+    firestoreReadOnlyUiState: PosFirestoreReadOnlyDashboardState,
     firebaseReadOnlyPreview: PosReadOnlyDataPreview,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
@@ -828,6 +839,16 @@ private fun TablesScreen(
                     "Collections: ${firestoreReadOnlyRepositoryPreview.collectionCount} · sample rows ${firestoreReadOnlyRepositoryPreview.sampleRowCount}\n" +
                     firestoreReadOnlyRepositoryPreview.lines.take(4).joinToString("\n") + "\n" +
                     "No Firestore instance, no query/get/listener, no production rows, no writes."
+            )
+        }
+        item {
+            SectionCard(
+                "Firestore UI mapping Sprint 21",
+                "${firestoreReadOnlyUiState.summary.title} · ${firestoreReadOnlyUiState.summary.modeLabel}\n" +
+                    "Rows: ${firestoreReadOnlyUiState.rows.size} · sample rows ${firestoreReadOnlyUiState.rows.sumOf { it.sampleRowCount }}\n" +
+                    firestoreReadOnlyUiState.rows.joinToString("\n") { row ->
+                        "${row.collectionName}: ${row.requiredFieldsLabel.ifBlank { "no contract fields" }} · ${row.safetyLabel}"
+                    } + "\nNo Firestore execution, no production rows, no writes."
             )
         }
         item {

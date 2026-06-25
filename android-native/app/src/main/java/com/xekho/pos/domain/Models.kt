@@ -377,6 +377,40 @@ data class PosFirestoreReadOnlyRepositoryPreview(
     val canSyncToFirestore: Boolean = false
 )
 
+data class PosFirestoreReadOnlyUiSummary(
+    val title: String,
+    val modeLabel: String,
+    val collectionCount: Int,
+    val sampleRowCount: Int,
+    val lines: List<String>,
+    val isBlocked: Boolean = true,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosFirestoreReadOnlyUiRow(
+    val collectionName: String,
+    val requiredFieldsLabel: String,
+    val sampleRowCount: Int,
+    val safetyLabel: String,
+    val isEmptyPreview: Boolean = true,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class PosFirestoreReadOnlyDashboardState(
+    val summary: PosFirestoreReadOnlyUiSummary,
+    val rows: List<PosFirestoreReadOnlyUiRow>,
+    val didExecuteRead: Boolean = false,
+    val didReadProductionData: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class PosFirestoreReadOnlyContract(
     val collections: List<PosFirestoreReadOnlyCollectionContract>,
     val canExecuteReads: Boolean = false,
