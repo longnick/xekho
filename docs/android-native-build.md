@@ -68,4 +68,19 @@ Latest debug APK checksum after Sprint 2:
 ```text
 460ec55fd3ba38efe3bda4977c2b7e2ad34b35ec8eafc8e0f62b6dcf2f891131  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 3 fake Auth/PIN
+
+Native app now starts behind a fake/local-only PIN gate:
+
+```text
+Demo PIN: 1234
+```
+
+The gate is local-only and does not use Firebase Auth, Firestore, service accounts, `.env`, or production POS data. Unlocking exposes the existing fake `Bàn` / `Kho` / `Tài chính` / `Cài đặt` tabs. Locking returns to the PIN screen.
+
+Latest debug APK checksum after Sprint 3:
+
+```text
+564f1a4cf569e070937f0c84fd3be1887f9b43e5a8a88f63963f5ed76fe3a53a  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

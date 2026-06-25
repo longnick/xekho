@@ -12,25 +12,36 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xekho.pos.AppBrand
+import com.xekho.pos.auth.AuthSession
+import com.xekho.pos.auth.AuthStage
+import com.xekho.pos.auth.FakeAuthRepository
 import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.InventoryItem
@@ -38,10 +49,122 @@ import com.xekho.pos.domain.NativeTab
 import com.xekho.pos.domain.TableOverview
 import com.xekho.pos.ui.theme.XekhoTheme
 
+private val authSessionSaver: Saver<AuthSession, List<String?>> = Saver(
+    save = { session ->
+        listOf(
+            session.stage.name,
+            session.staffName,
+            session.errorMessage,
+            session.isLocalOnly.toString()
+        )
+    },
+    restore = { saved ->
+        AuthSession(
+            stage = AuthStage.valueOf(saved[0] ?: AuthStage.LOCKED.name),
+            staffName = saved[1],
+            errorMessage = saved[2],
+            isLocalOnly = saved.getOrNull(3)?.toBooleanStrictOrNull() ?: true
+        )
+    }
+)
+
 @Composable
 fun AppRoot(
     modifier: Modifier = Modifier,
-    snapshot: DashboardSnapshot = remember { FakeDashboardRepository().loadSnapshot() }
+    snapshot: DashboardSnapshot = remember { FakeDashboardRepository().loadSnapshot() },
+    authRepository: FakeAuthRepository = remember { FakeAuthRepository() }
+) {
+    var authSession by rememberSaveable(stateSaver = authSessionSaver) {
+        mutableStateOf(authRepository.initialSession())
+    }
+
+    if (!authSession.canAccessPosTabs) {
+        AuthGateScreen(
+            modifier = modifier,
+            authSession = authSession,
+            onPinSubmit = { pin -> authSession = authRepository.verifyPin(pin, authSession) }
+        )
+        return
+    }
+
+    MainDashboard(
+        modifier = modifier,
+        snapshot = snapshot,
+        authSession = authSession,
+        onLock = { authSession = authRepository.lock(authSession) }
+    )
+}
+
+@Composable
+private fun AuthGateScreen(
+    modifier: Modifier = Modifier,
+    authSession: AuthSession,
+    onPinSubmit: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = AppBrand.appName,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Kh\u00f3a POS native \u00b7 fake auth local-only",
+                color = MaterialTheme.colorScheme.onBackground,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { pin = it.take(8) },
+                label = { Text("PIN demo") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                supportingText = { Text("Demo PIN: 1234. Ch\u01b0a k\u1ebft n\u1ed1i Firebase Auth.") }
+            )
+            if (authSession.errorMessage != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = authSession.errorMessage,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { onPinSubmit(pin) }) {
+                Text("M\u1edf kh\u00f3a local")
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "An to\u00e0n: m\u00e0n n\u00e0y kh\u00f4ng \u0111\u1ecdc .env, service account, Firestore hay POS production data.",
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun MainDashboard(
+    modifier: Modifier = Modifier,
+    snapshot: DashboardSnapshot,
+    authSession: AuthSession,
+    onLock: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(NativeTab.TABLES) }
 
@@ -73,7 +196,7 @@ fun AppRoot(
                     .background(MaterialTheme.colorScheme.background)
                     .padding(20.dp)
             ) {
-                Header(snapshot = snapshot)
+                Header(snapshot = snapshot, authSession = authSession, onLock = onLock)
                 Spacer(modifier = Modifier.height(16.dp))
                 when (selectedTab) {
                     NativeTab.TABLES -> TablesScreen(snapshot.tables)
@@ -87,19 +210,26 @@ fun AppRoot(
 }
 
 @Composable
-private fun Header(snapshot: DashboardSnapshot) {
+private fun Header(snapshot: DashboardSnapshot, authSession: AuthSession, onLock: () -> Unit) {
     Column {
-        Text(
-            text = AppBrand.appName,
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Native MVP \u00b7 fake data only \u00b7 no Firebase writes",
-            color = MaterialTheme.colorScheme.onBackground,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = AppBrand.appName,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${authSession.staffName ?: "Local staff"} \u00b7 fake data only \u00b7 no Firebase writes",
+                    color = MaterialTheme.colorScheme.onBackground,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            TextButton(onClick = onLock) {
+                Text("Kh\u00f3a")
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Doanh thu", formatVnd(snapshot.finance.todayRevenue), Modifier.weight(1f))
@@ -173,7 +303,7 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 @Composable
 private fun SettingsScreen() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 2: fake UI tabs. Firebase/Auth/Firestore b\u1ecb ch\u1eb7n \u0111\u1ebfn sprint ri\u00eang.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 3: fake Auth/PIN local-only. Firebase Auth/Firestore b\u1ecb ch\u1eb7n \u0111\u1ebfn sprint ri\u00eang.")
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }
