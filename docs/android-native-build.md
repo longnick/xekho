@@ -461,3 +461,31 @@ Latest debug APK checksum after Sprint 16:
 d497c6585e7b6136e2e6c3f743675f2278d3959874285857b797766ae09bd754  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Sprint 17 POS queue storage selection boundary
+
+Native POS queue now has a storage-selection/design boundary for future real local persistence:
+
+```text
+QueueStorageBackend(NONE_LOCAL_ONLY, DATASTORE, ROOM)
+QueueStorageReadinessStatus(BLOCKED_LOCAL_ONLY, PREP_ONLY_LOCAL_ONLY, APPROVAL_HELD_LOCAL_ONLY)
+QueueStorageRequest
+QueueStorageDecision
+QueueStorageComparison
+GuardedQueueStorageSelectionBoundary.selectStorage/compareBackends
+```
+
+Safety state:
+
+- default remains `NONE_LOCAL_ONLY`
+- Room/DataStore candidates are compared but blocked today
+- even explicit approval in the model stays held in Sprint 17; no database/storage is opened
+- no Room/DataStore dependency was added
+- no database file, persistence write, Firestore sync, background worker, or production write
+- UI labels explicitly say no Room/DataStore file opened, no production write, no Firestore sync
+
+Latest debug APK checksum after Sprint 17:
+
+```text
+6ffb1c3e9748698a991b19e846fe56cd02adfa3a77a04d0bebb8ca2b81a6e3c5  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
+
