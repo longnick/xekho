@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xekho.pos.AppBrand
+import com.xekho.pos.auth.AuthRepository
 import com.xekho.pos.auth.AuthSession
 import com.xekho.pos.auth.AuthStage
 import com.xekho.pos.auth.FakeAuthRepository
@@ -72,7 +73,7 @@ private val authSessionSaver: Saver<AuthSession, List<String?>> = Saver(
 fun AppRoot(
     modifier: Modifier = Modifier,
     snapshot: DashboardSnapshot = remember { FakeDashboardRepository().loadSnapshot() },
-    authRepository: FakeAuthRepository = remember { FakeAuthRepository() }
+    authRepository: AuthRepository = remember { FakeAuthRepository() }
 ) {
     var authSession by rememberSaveable(stateSaver = authSessionSaver) {
         mutableStateOf(authRepository.initialSession())
@@ -303,7 +304,7 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 @Composable
 private fun SettingsScreen() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 3: fake Auth/PIN local-only. Firebase Auth/Firestore b\u1ecb ch\u1eb7n \u0111\u1ebfn sprint ri\u00eang.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 4: AuthRepository boundary + Firebase Auth guard. Real Firebase Auth/Firestore v\u1eabn b\u1ecb ch\u1eb7n.")
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }
 }
