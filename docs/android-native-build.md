@@ -358,4 +358,29 @@ Latest debug APK checksum after Sprint 12:
 ```text
 1ef44876c8bf86de9a3a12f340d94f593569b1f5765f2043fe1e91c1e1511f96  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 13 POS queue filters / retry preview
+
+Native POS queue now supports local-only filters and retry preview:
+
+```text
+OfflineQueueStatus.RETRY_PREVIEW_LOCAL_ONLY
+OfflineQueueFilter(ALL, QUEUED, BLOCKED, RETRY_PREVIEW)
+FakeOfflineQueueRepository.filterItems/retryPreview
+```
+
+Safety state:
+
+- filters only read local queue state
+- retry preview only changes `BLOCKED_LOCAL_ONLY` items to `RETRY_PREVIEW_LOCAL_ONLY`
+- queued or missing retry attempts do not create sync/write side effects
+- no Firestore, no background worker, no persistent database, no production write
+- all queue items/states keep `canWriteToProduction = false` and `canSyncToFirestore = false`
+- UI labels explicitly say no production write and no Firestore sync
+- filter controls are vertical to avoid mobile overflow
+
+Latest debug APK checksum after Sprint 13:
+
+```text
+429ffe0bd5bf3a66b952a46b2c070243382da3bd19c0fe7a3c9e403b05751ab6  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
