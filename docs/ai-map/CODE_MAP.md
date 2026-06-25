@@ -1,3 +1,8 @@
+# 2026-06-26 02:23 +07 - Android native manual QA checklist Sprint 26
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaChecklistReporter.kt`: test-side manual QA DTO/reporter for install steps, smoke checks, blocked items, and fail-closed flags.
+- `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaChecklistTest.kt`: guards manual QA checklist coverage for PIN, tabs, Firestore cards, install instructions, and blocked production/Firestore state.
+- `docs/android-native-manual-qa.md`: human-facing real-device manual QA/install checklist.
+
 # 2026-06-26 02:08 +07 - Android native APK delivery report command Sprint 25
 - `android-native/scripts/native-apk-report.sh`: executable debug APK delivery/report command; reads Gradle metadata, computes SHA256/size, scans APK for forbidden config/secret names, writes markdown report, prints Telegram `MEDIA:` line.
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeArtifactReporter.kt`: test-side reporter now exposes delivery script, report path, and copyable Telegram markdown fields.
