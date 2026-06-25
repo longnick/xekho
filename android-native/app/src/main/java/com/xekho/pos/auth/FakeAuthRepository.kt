@@ -17,15 +17,16 @@ data class AuthSession(
 class FakeAuthRepository(
     private val acceptedPin: String = "1234",
     private val demoStaffName: String = "Nh\u00e2n vi\u00ean demo"
-) {
-    fun initialSession(): AuthSession = AuthSession(
+) : AuthRepository {
+    override val mode: AuthRepositoryMode = AuthRepositoryMode.FAKE_LOCAL
+    override fun initialSession(): AuthSession = AuthSession(
         stage = AuthStage.LOCKED,
         staffName = null,
         errorMessage = null,
         isLocalOnly = true
     )
 
-    fun verifyPin(pin: String, current: AuthSession): AuthSession {
+    override fun verifyPin(pin: String, current: AuthSession): AuthSession {
         val normalizedPin = pin.trim()
         return if (normalizedPin == acceptedPin) {
             current.copy(
@@ -44,7 +45,7 @@ class FakeAuthRepository(
         }
     }
 
-    fun lock(current: AuthSession): AuthSession = current.copy(
+    override fun lock(current: AuthSession): AuthSession = current.copy(
         stage = AuthStage.LOCKED,
         staffName = null,
         errorMessage = null,

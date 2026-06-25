@@ -1,3 +1,9 @@
+# 2026-06-25 15:39 +07 - DONE: Android native AuthRepository boundary Sprint 4
+- DONE: Added `AuthRepository` interface, `AuthRepositoryMode`, Firebase Auth guard/readiness models, and a fail-closed `BlockedFirebaseAuthRepository` placeholder.
+- DONE: Updated `FakeAuthRepository` to implement the interface and `AppRoot` to depend on `AuthRepository` instead of concrete fake auth.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, APK filename secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1539-android-native-auth-boundary.md`.
+
 # 2026-06-25 15:23 +07 - DONE: Android native fake Auth/PIN Sprint 3
 - DONE: Added local-only fake Auth/PIN state and tests; demo PIN `1234` unlocks fake POS tabs and wrong PIN stays locked.
 - DONE: Updated Compose `AppRoot` to show PIN gate before dashboard and added `Khóa` action; auth state uses `rememberSaveable` after Kilo review flagged plain `remember` state loss.
