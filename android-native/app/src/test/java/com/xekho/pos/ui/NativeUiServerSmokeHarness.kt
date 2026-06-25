@@ -35,6 +35,8 @@ class NativeUiServerSmokeHarness(
             "Offline queue nháp local",
             "Firestore UI mapping Sprint 21",
             "Firestore approval checklist Sprint 22",
+            "Real data direction Sprint 28",
+            "Chuyển hướng data thật",
             "Auth readiness",
             "Tài chính hôm nay",
             "POS dry-run",

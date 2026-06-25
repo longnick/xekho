@@ -725,3 +725,26 @@ docs/ai-map/MANUAL_QA_RESULTS/
 It fills the current debug APK SHA256 automatically when `app/build/outputs/apk/debug/app-debug.apk` exists. The result template records device, Android version, APK SHA256, install result, PIN/tabs/Firestore-card PASS/FAIL, blocked confirmations, issues, and final verdict.
 
 Safety state remains unchanged: no runtime code change, no Firebase config, no service account, no production POS data, no Firestore read/write/sync, and no release signing.
+
+## Sprint 28 real-data read-only direction gate
+
+The app now has a visible `Real data direction Sprint 28` card that moves the migration toward real Firebase/POS data through a guarded checklist only.
+
+Current behavior is still fail-closed:
+
+- no `google-services.json` committed
+- no `FirebaseFirestore.getInstance()`
+- no query/listener/`get()` execution
+- no production POS rows returned
+- no writes
+- no sync/background worker
+- `canExecuteReads = false`
+
+Targeted verification:
+
+```bash
+cd /home/longnick/projects/xekho/android-native
+./gradlew :app:testDebugUnitTest --no-daemon   --tests 'com.xekho.pos.domain.RealDataDirectionGateTest'   --tests 'com.xekho.pos.ui.NativeUiServerSmokeHarnessTest'
+```
+
+Future real read work must be a separate, explicitly approved one-time read sprint. Firestore writes/sync remain separately blocked.

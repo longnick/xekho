@@ -57,6 +57,9 @@ import com.xekho.pos.domain.GuardedFirestoreReadOnlyApprovalChecklist
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
 import com.xekho.pos.domain.GuardedPosReadOnlyDataBoundary
 import com.xekho.pos.domain.GuardedQueueStorageSelectionBoundary
+import com.xekho.pos.domain.RealDataDirectionState
+import com.xekho.pos.domain.RealDataDirectionRequest
+import com.xekho.pos.domain.GuardedRealDataDirectionGate
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
@@ -380,6 +383,16 @@ private fun MainDashboard(
             )
         )
     }
+    val realDataDirectionState = remember {
+        GuardedRealDataDirectionGate().evaluate(
+            RealDataDirectionRequest(
+                firestoreSdkLinked = true,
+                contractPreviewReviewed = true,
+                repositoryPreviewReviewed = true,
+                userRequestedRealDataDirection = true
+            )
+        )
+    }
     val firebaseReadOnlyPreview = remember {
         posReadOnlyDataBoundary.previewFirebaseReadOnly(
             PosReadOnlyDataRequest(requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY)
@@ -468,6 +481,7 @@ private fun MainDashboard(
                         firestoreReadOnlyRepositoryPreview = firestoreReadOnlyRepositoryPreview,
                         firestoreReadOnlyUiState = firestoreReadOnlyUiState,
                         firestoreReadOnlyApprovalChecklist = firestoreReadOnlyApprovalChecklist,
+                        realDataDirectionState = realDataDirectionState,
                         firebaseReadOnlyPreview = firebaseReadOnlyPreview,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
@@ -700,6 +714,7 @@ private fun TablesScreen(
     firestoreReadOnlyRepositoryPreview: PosFirestoreReadOnlyRepositoryPreview,
     firestoreReadOnlyUiState: PosFirestoreReadOnlyDashboardState,
     firestoreReadOnlyApprovalChecklist: FirestoreReadOnlyApprovalChecklistState,
+    realDataDirectionState: RealDataDirectionState,
     firebaseReadOnlyPreview: PosReadOnlyDataPreview,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
@@ -874,6 +889,18 @@ private fun TablesScreen(
                     } + "\n" +
                     firestoreReadOnlyApprovalChecklist.summaryLines.joinToString("\n") +
                     "\nNo Firestore instance, no query/get/listener, no production rows, no writes."
+            )
+        }
+        item {
+            SectionCard(
+                "Real data direction Sprint 28",
+                "Mode: ${realDataDirectionState.mode.displayName} · ${realDataDirectionState.status.displayName}\n" +
+                    "Checklist: ${realDataDirectionState.readyItemCount}/${realDataDirectionState.requiredItemCount} ready\n" +
+                    realDataDirectionState.items.joinToString("\n") { item ->
+                        "${if (item.isReady) "✓" else "•"} ${item.label}: ${item.message}"
+                    } + "\n" +
+                    realDataDirectionState.summaryLines.joinToString("\n") +
+                    "\nChuyển hướng data thật chỉ là read-only gate: no Firestore execution, no production rows, no write, no sync."
             )
         }
         item {

@@ -1,3 +1,9 @@
+# 2026-06-26 02:52 +07 - Android native real-data read-only direction gate Sprint 28
+- `android-native/app/src/main/java/com/xekho/pos/domain/GuardedRealDataDirectionGate.kt`: fail-closed gate for moving toward real Firebase/POS data through read-only prerequisites only.
+- `android-native/app/src/main/java/com/xekho/pos/domain/Models.kt`: adds `RealDataDirection*` DTOs/enums with execution/write/sync flags forced false by default.
+- `android-native/app/src/test/java/com/xekho/pos/domain/RealDataDirectionGateTest.kt`: guards blocked default, partial prerequisites, one-time approval-held status, and no write/sync.
+- `android-native/app/src/main/java/com/xekho/pos/ui/AppRoot.kt`: renders `Real data direction Sprint 28` card in Tables screen.
+
 # 2026-06-26 02:33 +07 - Android native manual QA result template Sprint 27
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaResultTemplateReporter.kt`: test-side DTO/reporter for manual QA result fields, pass/fail sections, blocked confirmations, and fail-closed flags.
 - `android-native/app/src/test/java/com/xekho/pos/release/NativeManualQaResultTemplateTest.kt`: guards result template metadata.

@@ -1,3 +1,11 @@
+# 2026-06-26 02:52 +07 - DONE: Android native real-data read-only direction gate Sprint 28
+- DONE: Added RED/GREEN `RealDataDirectionGateTest` for the read-only real-data direction gate.
+- DONE: Added `GuardedRealDataDirectionGate` and fail-closed real-data direction DTOs.
+- DONE: Added `Real data direction Sprint 28` native UI card and server-smoke markers.
+- DONE: Full clean native test, debug APK build/report/scan, legacy web regression passed; commit prepared.
+- BLOCKED FOR FUTURE: any actual Firestore read execution still requires explicit one-time approval; writes/sync remain separately blocked.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0252-android-native-real-data-readonly-gate.md`
+
 # 2026-06-26 02:33 +07 - DONE: Android native manual QA result template Sprint 27
 - DONE: Added test-only `NativeManualQaResultTemplateReporter` and `NativeManualQaResultTemplateTest` for structured real-device QA result fields/sections/blocked confirmations.
 - DONE: Added `docs/android-native-manual-qa-result-template.md` for recording device, Android version, APK SHA256, PASS/FAIL sections, blocked confirmations, issues, and final verdict.
