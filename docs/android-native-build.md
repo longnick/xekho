@@ -700,3 +700,28 @@ Manual smoke focus:
 - `Bàn`, `Kho`, `Tài chính`, `Cài đặt` tabs render
 - Firestore UI mapping/checklist cards remain preview-only / blocked
 - no `google-services.json`, service account, `.env`, production POS data, Firestore write, or sync
+
+## Sprint 27 manual QA result capture
+
+Manual QA result template source:
+
+```text
+docs/android-native-manual-qa-result-template.md
+```
+
+Generate a timestamped result draft after real-device testing:
+
+```bash
+cd /home/longnick/projects/xekho/android-native
+scripts/native-qa-result-template.sh
+```
+
+The command writes drafts under:
+
+```text
+docs/ai-map/MANUAL_QA_RESULTS/
+```
+
+It fills the current debug APK SHA256 automatically when `app/build/outputs/apk/debug/app-debug.apk` exists. The result template records device, Android version, APK SHA256, install result, PIN/tabs/Firestore-card PASS/FAIL, blocked confirmations, issues, and final verdict.
+
+Safety state remains unchanged: no runtime code change, no Firebase config, no service account, no production POS data, no Firestore read/write/sync, and no release signing.

@@ -1,3 +1,11 @@
+# 2026-06-26 02:33 +07 - Android native manual QA result template Sprint 27
+- Added test-only `NativeManualQaResultTemplateReporter` and `NativeManualQaResultTemplateTest` for structured QA result capture metadata.
+- Added `docs/android-native-manual-qa-result-template.md` and executable `android-native/scripts/native-qa-result-template.sh` to create timestamped manual QA result drafts with APK SHA256 prefilled when available.
+- Updated `docs/android-native-manual-qa.md` to use the structured Sprint 27 pass/fail capture template.
+- Verification passed: targeted RED/GREEN, shell syntax check, template generation, clean native unit test, debug APK build, APK report/scan, and legacy web `check/test/build:hosting` regression.
+- Current APK SHA256 remains `f583466d09c3b47fef5b7094585a2eef50b52edd6c67115b99fc20080c73b120`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0233-android-native-manual-qa-result-template.md`
+
 # 2026-06-26 02:23 +07 - Android native manual QA checklist Sprint 26
 - Added test-only `NativeManualQaChecklistReporter` and `NativeManualQaChecklistTest` to guard safe install steps, core real-device smoke path, and blocked Firestore/production flags.
 - Added `docs/android-native-manual-qa.md` with Android install instructions, Demo PIN, tab/card smoke checklist, blocked items, and pass/fail note template.
