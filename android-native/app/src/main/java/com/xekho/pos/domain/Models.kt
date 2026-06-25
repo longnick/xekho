@@ -243,6 +243,44 @@ data class OfflineQueueSnapshotImportPreview(
     val canSyncToFirestore: Boolean = false
 )
 
+enum class QueueStorageBackend(val displayName: String) {
+    NONE_LOCAL_ONLY("No real storage local-only"),
+    DATASTORE("DataStore candidate"),
+    ROOM("Room candidate")
+}
+
+enum class QueueStorageReadinessStatus(val displayName: String) {
+    BLOCKED_LOCAL_ONLY("Blocked local-only"),
+    PREP_ONLY_LOCAL_ONLY("Prep-only local-only"),
+    APPROVAL_HELD_LOCAL_ONLY("Approval held local-only")
+}
+
+data class QueueStorageRequest(
+    val requestedBackend: QueueStorageBackend = QueueStorageBackend.NONE_LOCAL_ONLY,
+    val dependencyDeclared: Boolean = false,
+    val ownerApprovedRealPersistence: Boolean = false
+)
+
+data class QueueStorageDecision(
+    val requestedBackend: QueueStorageBackend,
+    val selectedBackend: QueueStorageBackend,
+    val status: QueueStorageReadinessStatus,
+    val lines: List<String>,
+    val isDependencyDeclared: Boolean = false,
+    val canPersist: Boolean = false,
+    val didOpenDatabase: Boolean = false,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
+data class QueueStorageComparison(
+    val options: List<QueueStorageDecision>,
+    val recommendedFutureBackend: QueueStorageBackend,
+    val summary: String,
+    val canPersist: Boolean = false,
+    val didOpenDatabase: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,

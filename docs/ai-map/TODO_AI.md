@@ -1,3 +1,11 @@
+# 2026-06-25 23:07 +07 - DONE: Android native queue storage selection boundary Sprint 17
+- DONE: Added `QueueStorageBackend`, `QueueStorageReadinessStatus`, `QueueStorageRequest`, `QueueStorageDecision`, and `QueueStorageComparison`.
+- DONE: Added `GuardedQueueStorageSelectionBoundary` for DataStore vs Room candidate selection while keeping actual storage blocked.
+- DONE: Added `QueueStorageSelectionBoundaryTest` covering default blocked path, Room dependency missing, DataStore prep-only, approval-held path, and backend comparison.
+- DONE: Wired Tables UI with `Storage prep boundary Sprint 17` and `Storage options blocked today` cards.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2307-android-native-queue-storage-selection-boundary.md`.
+
 # 2026-06-25 22:57 +07 - DONE: Android native queue import/export restore preview Sprint 16
 - DONE: Added snapshot validation/import/export preview models for local-only queue snapshots.
 - DONE: Extended `GuardedOfflineQueuePersistenceBoundary` with `validateSnapshot`, corrupt restore blocking, `previewExport`, and `previewImport`.
