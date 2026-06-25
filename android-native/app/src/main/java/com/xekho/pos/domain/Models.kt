@@ -163,6 +163,22 @@ data class OfflineQueueState(
     val retryPreviewCount: Int get() = items.count { it.status == OfflineQueueStatus.RETRY_PREVIEW_LOCAL_ONLY }
 }
 
+enum class OfflineQueueDetailType(val displayName: String) {
+    INFO_LOCAL_ONLY("Thông tin local-only"),
+    ERROR_PREVIEW_LOCAL_ONLY("Lỗi nháp local-only"),
+    CONFLICT_PREVIEW_LOCAL_ONLY("Xung đột nháp local-only")
+}
+
+data class OfflineQueueDetailPreview(
+    val localQueueId: String,
+    val type: OfflineQueueDetailType,
+    val title: String,
+    val lines: List<String>,
+    val recommendedAction: String,
+    val canWriteToProduction: Boolean = false,
+    val canSyncToFirestore: Boolean = false
+)
+
 data class DashboardSnapshot(
     val tabs: List<NativeTab>,
     val tables: List<TableOverview>,
