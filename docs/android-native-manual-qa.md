@@ -64,16 +64,21 @@ MEDIA:/home/longnick/projects/xekho/android-native/app/build/outputs/apk/debug/a
 
 ## Pass/fail note template
 
+Use the structured Sprint 27 template:
+
+```bash
+cd /home/longnick/projects/xekho/android-native
+scripts/native-qa-result-template.sh
+```
+
+Template source:
+
 ```text
-Device:
-Android version:
-APK SHA256:
-Install result: PASS/FAIL
-PIN gate: PASS/FAIL
-Bàn: PASS/FAIL
-Kho: PASS/FAIL
-Tài chính: PASS/FAIL
-Cài đặt: PASS/FAIL
-Firestore cards blocked: PASS/FAIL
-Notes:
+docs/android-native-manual-qa-result-template.md
+```
+
+Generated result drafts are written under:
+
+```text
+docs/ai-map/MANUAL_QA_RESULTS/
 ```

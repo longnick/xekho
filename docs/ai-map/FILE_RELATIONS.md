@@ -1,3 +1,8 @@
+# 2026-06-26 02:33 +07 - Android native manual QA result relations
+- `native-qa-result-template.sh` reads `docs/android-native-manual-qa-result-template.md`, optionally reads `android-native/app/build/outputs/apk/debug/app-debug.apk` for SHA256, and writes timestamped drafts under `docs/ai-map/MANUAL_QA_RESULTS/`.
+- `NativeManualQaResultTemplateReporter.kt` mirrors the same result-template paths/fields in JVM tests so the manual result format is guarded without executing shell.
+- `docs/android-native-manual-qa.md` links manual testers to `scripts/native-qa-result-template.sh` for structured pass/fail capture.
+
 # 2026-06-26 02:23 +07 - Android native manual QA checklist relations
 - `NativeManualQaChecklistReporter.kt` mirrors the manual install/smoke flow documented in `docs/android-native-manual-qa.md` so critical QA steps are covered by JVM tests.
 - `NativeManualQaChecklistTest.kt` checks the checklist includes `scripts/native-apk-report.sh`, the Telegram `MEDIA:` delivery line, Demo PIN, core native tabs/cards, and blocked Firebase/production items.
