@@ -1,3 +1,11 @@
+# 2026-06-25 07:39 +07 - Auto stock compact ordering summary
+- `index.html#[data-xk-auto-stock-norm="v1"]`: compact clickable `Định mức tồn kho tự động` card; old filter select removed; cache keys bumped to `20260625-auto-stock-summary`.
+- `app.js#getAutoStockNormPurchaseInfo`: converts suggested import quantity into ordering quantity/cost; beer/can items are rounded to whole 24-lon cases.
+- `app.js#toggleAutoStockNormOverview`: expands/collapses the card summary without needing a separate page/table.
+- `app.js#renderAutoStockNormBoard`: renders projected purchase total first and item-level `<details>` cards for drill-down instead of a long metric table.
+- `style.css`: compact summary/drill-down classes `.auto-stock-compact`, `.auto-stock-overview`, `.auto-stock-order-item`, `.auto-stock-total`.
+- `scripts/verify-auto-stock-norm.js`: validates compact summary, removed old filter, case conversion markers, and cache keys.
+
 # 2026-06-25 07:14 +07 - Auto stock norm mobile layout
 - `app.js#buildAutoStockNormRows`: adds `suggestedImportQty = max(0, ceil(par - currentStock))` for mapped inventory rows.
 - `app.js#renderAutoStockNormBoard`: renders `Món / trạng thái` with the badge inline beside the dish name and adds the `Cần nhập đề xuất` column/field; mobile rows include `data-label` attributes.
