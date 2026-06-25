@@ -1,3 +1,8 @@
+# 2026-06-26 01:37 +07 - Android native server UI smoke harness relations
+- `NativeUiServerSmokeHarness.kt` reads `AppBrand.kt`, `AppRoot.kt`, and `GuardedFirestoreReadOnlyApprovalChecklist.kt` as source text during JVM unit tests.
+- `NativeUiServerSmokeHarnessTest.kt` guards that source-visible UI markers for login/PIN, POS local flow, payment/queue cards, Sprint 21 mapping, and Sprint 22 checklist remain present.
+- The harness is test-only under `src/test`; it is not packaged into app runtime and does not require emulator, ADB device, APK install, Firebase config, Firestore reads, or production data.
+
 # 2026-06-26 01:24 +07 - Android native Firestore approval checklist relations
 - `Models.kt` defines the Sprint 22 Firestore read-only checklist request/item/state DTOs and fail-closed guard flags.
 - `GuardedFirestoreReadOnlyApprovalChecklist.kt#evaluate()` consumes modeled local readiness flags and returns blocked/approval-held local-only state; it does not depend on Firebase SDK runtime calls.

@@ -1,3 +1,8 @@
+# 2026-06-26 01:37 +07 - Android native server-side UI smoke harness Sprint 23
+- `android-native/app/src/test/java/com/xekho/pos/ui/NativeUiServerSmokeHarness.kt`: test-only JVM harness that reads source markers and returns a server-only native UI smoke report; no emulator/APK install needed.
+- `android-native/app/src/test/java/com/xekho/pos/ui/NativeUiServerSmokeHarnessTest.kt`: asserts required UI markers, forbidden dangerous copy, and fail-closed read/write/sync flags.
+- No app runtime source or Gradle dependency changes were required for Sprint 23.
+
 # 2026-06-26 01:24 +07 - Android native Firestore read-only approval checklist Sprint 22
 - `android-native/app/src/main/java/com/xekho/pos/domain/Models.kt`: adds `FirestoreReadOnlyApprovalChecklistRequest`, `FirestoreReadOnlyChecklistItem`, and `FirestoreReadOnlyApprovalChecklistState` DTOs.
 - `android-native/app/src/main/java/com/xekho/pos/domain/GuardedFirestoreReadOnlyApprovalChecklist.kt`: local-only readiness evaluator; never instantiates Firestore and forces read/write/sync flags false.

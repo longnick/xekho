@@ -1,3 +1,10 @@
+# 2026-06-26 01:37 +07 - Android native server-side UI smoke harness Sprint 23
+- Added test-only `NativeUiServerSmokeHarness` and `NativeUiServerSmokeHarnessTest` so core native UI markers can be checked on this server without emulator or APK install.
+- Smoke coverage includes brand/PIN, POS local multi-table flow, payment/queue cards, Sprint 21 Firestore UI mapping, and Sprint 22 Firestore approval checklist.
+- Added forbidden marker checks for Firestore/write/sync enabled copy and retained fail-closed read/write/sync report flags.
+- Verification passed: targeted RED/GREEN, clean native unit test, debug APK build, APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0137-android-native-server-ui-smoke-harness.md`
+
 # 2026-06-26 01:24 +07 - Android native Firestore read-only approval checklist Sprint 22
 - Added `GuardedFirestoreReadOnlyApprovalChecklist` plus checklist DTOs in `Models.kt` for owner approval/local config/SDK/contract/repository readiness.
 - Added `FirestoreReadOnlyApprovalChecklistTest` covering blocked defaults, missing approval, all-flags approval-held, and fail-closed item guards.
