@@ -50,6 +50,7 @@ import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
+import com.xekho.pos.domain.GuardedQueueStorageSelectionBoundary
 import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
@@ -68,6 +69,10 @@ import com.xekho.pos.domain.PaymentMethod
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
 import com.xekho.pos.domain.PosTableOrderState
+import com.xekho.pos.domain.QueueStorageComparison
+import com.xekho.pos.domain.QueueStorageDecision
+import com.xekho.pos.domain.QueueStorageRequest
+import com.xekho.pos.domain.QueueStorageBackend
 import com.xekho.pos.domain.TableOverview
 import com.xekho.pos.ui.theme.XekhoTheme
 
@@ -335,6 +340,12 @@ private fun MainDashboard(
     val tableOrderRepository = remember { FakePosTableOrderRepository(posWriteRepository) }
     val offlineQueueRepository = remember { FakeOfflineQueueRepository() }
     val offlineQueuePersistenceBoundary = remember { GuardedOfflineQueuePersistenceBoundary() }
+    val queueStorageBoundary = remember { GuardedQueueStorageSelectionBoundary() }
+    val defaultStorageDecision = remember { queueStorageBoundary.selectStorage(QueueStorageRequest()) }
+    val roomStorageDecision = remember {
+        queueStorageBoundary.selectStorage(QueueStorageRequest(requestedBackend = QueueStorageBackend.ROOM))
+    }
+    val storageComparison = remember { queueStorageBoundary.compareBackends() }
     var savedQueueSnapshot by remember { mutableStateOf<OfflineQueuePersistenceSnapshot?>(null) }
     var tableOrderState by rememberSaveable(stateSaver = posTableOrderStateSaver) {
         mutableStateOf(tableOrderRepository.initialState(snapshot.tables))
@@ -404,6 +415,9 @@ private fun MainDashboard(
                         queueExportPreview = queueExportPreview,
                         queueImportPreview = queueImportPreview,
                         queueImportText = queueImportText,
+                        defaultStorageDecision = defaultStorageDecision,
+                        roomStorageDecision = roomStorageDecision,
+                        storageComparison = storageComparison,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
                             tableOrderState = tableOrderRepository.selectTable(tableOrderState, tableId)
@@ -626,6 +640,9 @@ private fun TablesScreen(
     queueExportPreview: OfflineQueueSnapshotExportPreview?,
     queueImportPreview: OfflineQueueSnapshotImportPreview?,
     queueImportText: String,
+    defaultStorageDecision: QueueStorageDecision,
+    roomStorageDecision: QueueStorageDecision,
+    storageComparison: QueueStorageComparison,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
     onOpenLocalOrder: () -> Unit,
@@ -752,6 +769,24 @@ private fun TablesScreen(
                     queueExportPreview.copyableText.take(600)
                 )
             }
+        }
+        item {
+            SectionCard(
+                "Storage prep boundary Sprint 17",
+                "Default: ${defaultStorageDecision.status.displayName} · selected ${defaultStorageDecision.selectedBackend.displayName}\n" +
+                    "Room candidate: ${roomStorageDecision.status.displayName} · dependency ${if (roomStorageDecision.isDependencyDeclared) "declared" else "missing"}\n" +
+                    "Future recommendation: ${storageComparison.recommendedFutureBackend.displayName}\n" +
+                    "${storageComparison.summary}\n" +
+                    "No Room/DataStore file opened, no production write, no Firestore sync."
+            )
+        }
+        item {
+            SectionCard(
+                "Storage options blocked today",
+                storageComparison.options.joinToString("\n\n") { option ->
+                    "${option.requestedBackend.displayName}: ${option.status.displayName}\n" + option.lines.joinToString("\n")
+                }
+            )
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
