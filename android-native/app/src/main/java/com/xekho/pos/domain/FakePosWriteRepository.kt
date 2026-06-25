@@ -25,6 +25,7 @@ class FakePosWriteRepository {
     }
 
     fun addMenuItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
         val menuItem = menuItems.firstOrNull { it.id == itemId }
             ?: return PosWriteResult(
                 order = order.copy(canWriteToProduction = false),
@@ -35,6 +36,7 @@ class FakePosWriteRepository {
     }
 
     fun addItem(order: PosLocalOrder, item: OrderItem): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
         val mergedItems = mergeItem(order.items, item)
         return PosWriteResult(
             order = order.copy(items = mergedItems, canWriteToProduction = false),
@@ -44,12 +46,14 @@ class FakePosWriteRepository {
     }
 
     fun increaseItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
         val existing = order.items.firstOrNull { it.id == itemId }
             ?: return PosWriteResult(order.copy(canWriteToProduction = false), "item not found; local order unchanged", false)
         return addItem(order, existing.copy(quantity = 1))
     }
 
     fun decreaseItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
         val nextItems = order.items.mapNotNull { item ->
             when {
                 item.id != itemId -> item
@@ -64,17 +68,23 @@ class FakePosWriteRepository {
         )
     }
 
-    fun removeItem(order: PosLocalOrder, itemId: String): PosWriteResult = PosWriteResult(
-        order = order.copy(items = order.items.filterNot { it.id == itemId }, canWriteToProduction = false),
-        message = "removed local-only item",
-        canWriteToProduction = false
-    )
+    fun removeItem(order: PosLocalOrder, itemId: String): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
+        return PosWriteResult(
+            order = order.copy(items = order.items.filterNot { it.id == itemId }, canWriteToProduction = false),
+            message = "removed local-only item",
+            canWriteToProduction = false
+        )
+    }
 
-    fun clearOrder(order: PosLocalOrder): PosWriteResult = PosWriteResult(
-        order = order.copy(items = emptyList(), canWriteToProduction = false),
-        message = "cleared local-only order",
-        canWriteToProduction = false
-    )
+    fun clearOrder(order: PosLocalOrder): PosWriteResult {
+        if (!order.isEditableLocal()) return unchanged(order, "order is closed local-only; local order unchanged")
+        return PosWriteResult(
+            order = order.copy(items = emptyList(), canWriteToProduction = false),
+            message = "cleared local-only order",
+            canWriteToProduction = false
+        )
+    }
 
     fun previewPayment(
         order: PosLocalOrder,
@@ -112,9 +122,44 @@ class FakePosWriteRepository {
         )
     }
 
+    fun closePaymentDraft(order: PosLocalOrder, draft: PaymentDraft): PaymentCloseResult {
+        if (order.status != PosOrderStatus.OPEN || !draft.isPayable) {
+            return PaymentCloseResult(
+                order = order.copy(canWriteToProduction = false),
+                draft = draft,
+                status = PaymentCloseStatus.NOT_PAYABLE_LOCAL_ONLY,
+                localReceiptNumber = "",
+                message = "payment draft is not payable; local order remains open or already closed",
+                canWriteToProduction = false,
+                canSyncToFirestore = false
+            )
+        }
+        val closedOrder = order.copy(
+            status = PosOrderStatus.PAID_LOCAL_ONLY,
+            canWriteToProduction = false
+        )
+        return PaymentCloseResult(
+            order = closedOrder,
+            draft = draft,
+            status = PaymentCloseStatus.CLOSED_LOCAL_ONLY,
+            localReceiptNumber = "local-paid-${order.tableId}-${draft.totalDue}",
+            message = "closed payment local-only; not synced",
+            canWriteToProduction = false,
+            canSyncToFirestore = false
+        )
+    }
+
     fun closeOrder(order: PosLocalOrder): PosWriteResult = PosWriteResult(
         order = order.copy(status = PosOrderStatus.CLOSED_LOCAL_ONLY, canWriteToProduction = false),
         message = "closed local-only order; not synced",
+        canWriteToProduction = false
+    )
+
+    private fun PosLocalOrder.isEditableLocal(): Boolean = status == PosOrderStatus.OPEN
+
+    private fun unchanged(order: PosLocalOrder, message: String): PosWriteResult = PosWriteResult(
+        order = order.copy(canWriteToProduction = false),
+        message = message,
         canWriteToProduction = false
     )
 

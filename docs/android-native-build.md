@@ -278,4 +278,30 @@ Latest debug APK checksum after Sprint 10C:
 ```text
 0d0dbd14b15e8e90bda786a1906ef54b814a53ea991b14651a946d5ce2665eaf  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 10D POS local payment close transition
+
+Native POS tab can now close a payment draft locally:
+
+```text
+PaymentCloseStatus.CLOSED_LOCAL_ONLY
+PaymentCloseStatus.NOT_PAYABLE_LOCAL_ONLY
+PaymentCloseResult(order, draft, localReceiptNumber)
+PosOrderStatus.PAID_LOCAL_ONLY
+```
+
+Safety state:
+
+- `closePaymentDraft()` only pays an `OPEN` order with payable local draft
+- empty, zero, already closed, or already paid local orders stay not-payable local-only
+- terminal local orders cannot be edited by add/increase/decrease/remove/clear
+- `PaymentCloseResult.canWriteToProduction = false`
+- `PaymentCloseResult.canSyncToFirestore = false`
+- UI labels explicitly say no production write and no Firestore sync
+- local close message is retained with `rememberSaveable`
+
+Latest debug APK checksum after Sprint 10D:
+
+```text
+1235175909b5c912caf872750aee8d5d49a4c000ca50eba3552f30898998084d  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 
