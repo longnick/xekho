@@ -1,3 +1,11 @@
+# 2026-06-25 22:57 +07 - DONE: Android native queue import/export restore preview Sprint 16
+- DONE: Added snapshot validation/import/export preview models for local-only queue snapshots.
+- DONE: Extended `GuardedOfflineQueuePersistenceBoundary` with `validateSnapshot`, corrupt restore blocking, `previewExport`, and `previewImport`.
+- DONE: Added tests for corrupt encoded rows, export copyable markers, valid import parse, tampered import rejection, and no Room/DB/Firestore/write guards.
+- DONE: Wired Tables UI with `Validate snapshot`, `Export preview`, import/export text field, `Preview import`, `Dùng import snapshot local`, `Mẫu corrupt`, validation detail, and export preview cards.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2257-android-native-queue-import-export-restore-preview.md`.
+
 # 2026-06-25 22:45 +07 - DONE: Android native POS queue persistence boundary Sprint 15
 - DONE: Added `OfflineQueuePersistenceMode`, `OfflineQueuePersistenceSnapshot`, and `OfflineQueuePersistenceResult` with fail-closed write/sync and persistent-storage flags.
 - DONE: Added `GuardedOfflineQueuePersistenceBoundary` for local snapshot save/restore, clear snapshot, and a blocked Room/DB boundary result.

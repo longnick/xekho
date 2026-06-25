@@ -116,4 +116,85 @@ class OfflineQueuePersistenceBoundaryTest {
         assertFalse(result.snapshot.isPersistentStorageEnabled)
         assertFalse(result.didUseRoom)
     }
+
+    @Test
+    fun validateSnapshotRejectsCorruptEncodedRowsWithoutRestoringThem() {
+        val corruptSnapshot = OfflineQueuePersistenceSnapshot(
+            mode = OfflineQueuePersistenceMode.LOCAL_MEMORY_ONLY,
+            encodedItems = listOf("not-base64-row", "also-corrupt"),
+            itemCount = 2,
+            pendingCount = 2
+        )
+
+        val validation = boundary.validateSnapshot(corruptSnapshot)
+        val restored = boundary.restoreLocalSnapshot(corruptSnapshot)
+
+        assertEquals(OfflineQueueSnapshotValidationStatus.CORRUPT_LOCAL_ONLY, validation.status)
+        assertEquals(2, validation.corruptRowCount)
+        assertTrue(validation.lines.any { it.contains("corrupt") })
+        assertTrue(restored.state.items.isEmpty())
+        assertTrue(restored.message.contains("khong hop le"))
+        assertFalse(validation.canWriteToProduction)
+        assertFalse(validation.canSyncToFirestore)
+    }
+
+    @Test
+    fun exportPreviewShowsCopyableLocalOnlyPayloadWithoutEnablingPersistence() {
+        val snapshot = boundary.saveLocalSnapshot(
+            OfflineQueueState(
+                items = listOf(
+                    OfflineQueueItem(
+                        localQueueId = "queue-export",
+                        tableId = "ban-05",
+                        localReceiptNumber = "receipt-export",
+                        status = OfflineQueueStatus.QUEUED_LOCAL_ONLY,
+                        totalDue = 90_000L,
+                        itemCount = 3,
+                        payloadPreview = "export preview only"
+                    )
+                )
+            )
+        ).snapshot
+
+        val exportPreview = boundary.previewExport(snapshot)
+
+        assertEquals(OfflineQueueSnapshotValidationStatus.VALID_LOCAL_ONLY, exportPreview.validation.status)
+        assertTrue(exportPreview.copyableText.contains("XK_QUEUE_SNAPSHOT_V1"))
+        assertTrue(exportPreview.copyableText.contains("LOCAL_ONLY"))
+        assertEquals(1, exportPreview.itemCount)
+        assertFalse(exportPreview.didUseRoom)
+        assertFalse(exportPreview.canWriteToProduction)
+        assertFalse(exportPreview.canSyncToFirestore)
+    }
+
+    @Test
+    fun importPreviewParsesValidExportAndRejectsTamperedText() {
+        val snapshot = boundary.saveLocalSnapshot(
+            OfflineQueueState(
+                items = listOf(
+                    OfflineQueueItem(
+                        localQueueId = "queue-import",
+                        tableId = "ban-06",
+                        localReceiptNumber = "receipt-import",
+                        status = OfflineQueueStatus.QUEUED_LOCAL_ONLY,
+                        totalDue = 70_000L,
+                        itemCount = 1,
+                        payloadPreview = "import preview only"
+                    )
+                )
+            )
+        ).snapshot
+        val exportPreview = boundary.previewExport(snapshot)
+
+        val importPreview = boundary.previewImport(exportPreview.copyableText)
+        val tamperedPreview = boundary.previewImport("XK_QUEUE_SNAPSHOT_V1\nLOCAL_ONLY\nnot-a-valid-payload")
+
+        assertEquals(OfflineQueueSnapshotValidationStatus.VALID_LOCAL_ONLY, importPreview.validation.status)
+        assertEquals(1, importPreview.snapshot.itemCount)
+        assertFalse(importPreview.canWriteToProduction)
+        assertFalse(importPreview.canSyncToFirestore)
+        assertEquals(OfflineQueueSnapshotValidationStatus.CORRUPT_LOCAL_ONLY, tamperedPreview.validation.status)
+        assertEquals(0, tamperedPreview.snapshot.itemCount)
+        assertFalse(tamperedPreview.didUseRoom)
+    }
 }
