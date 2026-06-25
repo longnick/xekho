@@ -47,8 +47,12 @@ import com.xekho.pos.auth.AuthSession
 import com.xekho.pos.auth.AuthStage
 import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
+import com.xekho.pos.domain.FakePosWriteRepository
 import com.xekho.pos.domain.InventoryItem
 import com.xekho.pos.domain.NativeTab
+import com.xekho.pos.domain.OrderItem
+import com.xekho.pos.domain.PosLocalOrder
+import com.xekho.pos.domain.PosOrderStatus
 import com.xekho.pos.domain.TableOverview
 import com.xekho.pos.ui.theme.XekhoTheme
 
@@ -67,6 +71,41 @@ private val authSessionSaver: Saver<AuthSession, List<String?>> = Saver(
             staffName = saved[1],
             errorMessage = saved[2],
             isLocalOnly = saved.getOrNull(3)?.toBooleanStrictOrNull() ?: true
+        )
+    }
+)
+
+private val posLocalOrderSaver: Saver<PosLocalOrder, List<String>> = Saver(
+    save = { order ->
+        listOf(
+            order.clientOrderId,
+            order.tableId,
+            order.status.name,
+            order.canWriteToProduction.toString()
+        ) + order.items.map { item ->
+            listOf(item.id, item.name, item.quantity.toString(), item.unitPrice.toString()).joinToString("\t")
+        }
+    },
+    restore = { saved ->
+        val items = saved.drop(4).mapNotNull { encoded ->
+            val parts = encoded.split("\t")
+            if (parts.size == 4) {
+                OrderItem(
+                    id = parts[0],
+                    name = parts[1],
+                    quantity = parts[2].toIntOrNull() ?: 0,
+                    unitPrice = parts[3].toLongOrNull() ?: 0L
+                )
+            } else {
+                null
+            }
+        }
+        PosLocalOrder(
+            clientOrderId = saved.getOrNull(0) ?: "local-restored",
+            tableId = saved.getOrNull(1) ?: "ban-02",
+            status = saved.getOrNull(2)?.let { PosOrderStatus.valueOf(it) } ?: PosOrderStatus.OPEN,
+            canWriteToProduction = saved.getOrNull(3)?.toBooleanStrictOrNull() ?: false,
+            items = items
         )
     }
 )
@@ -170,6 +209,10 @@ private fun MainDashboard(
     onLock: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(NativeTab.TABLES) }
+    val posWriteRepository = remember { FakePosWriteRepository() }
+    var localOrder by rememberSaveable(stateSaver = posLocalOrderSaver) {
+        mutableStateOf(posWriteRepository.openOrder("ban-02").order)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -202,7 +245,18 @@ private fun MainDashboard(
                 Header(snapshot = snapshot, authSession = authSession, onLock = onLock)
                 Spacer(modifier = Modifier.height(16.dp))
                 when (selectedTab) {
-                    NativeTab.TABLES -> TablesScreen(snapshot.tables)
+                    NativeTab.TABLES -> TablesScreen(
+                        tables = snapshot.tables,
+                        localOrder = localOrder,
+                        onOpenLocalOrder = { localOrder = posWriteRepository.openOrder("ban-02").order },
+                        onAddDemoItem = {
+                            localOrder = posWriteRepository.addItem(
+                                order = localOrder,
+                                item = OrderItem("mien-tron", "Miến trộn", 1, 45000)
+                            ).order
+                        },
+                        onCloseLocalOrder = { localOrder = posWriteRepository.closeOrder(localOrder).order }
+                    )
                     NativeTab.INVENTORY -> InventoryScreen(snapshot.inventory)
                     NativeTab.FINANCE -> FinanceScreen(snapshot)
                     NativeTab.SETTINGS -> SettingsScreen()
@@ -256,8 +310,36 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun TablesScreen(tables: List<TableOverview>) {
+private fun TablesScreen(
+    tables: List<TableOverview>,
+    localOrder: PosLocalOrder,
+    onOpenLocalOrder: () -> Unit,
+    onAddDemoItem: () -> Unit,
+    onCloseLocalOrder: () -> Unit
+) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))) {
+                Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text("POS local write flow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${localOrder.status.displayName} · ${localOrder.clientOrderId} · ${localOrder.itemCount} món · ${formatVnd(localOrder.total)}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Local-only: không Firestore, không production write, không sync.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onOpenLocalOrder) { Text("Mở lại") }
+                        TextButton(onClick = onAddDemoItem) { Text("+ Miến") }
+                        TextButton(onClick = onCloseLocalOrder) { Text("Đóng local") }
+                    }
+                }
+            }
+        }
         items(tables) { table ->
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Row(
@@ -273,7 +355,7 @@ private fun TablesScreen(tables: List<TableOverview>) {
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(horizontalAlignment = Alignment.End) {
                         Text(text = formatVnd(table.total), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text(text = "${table.itemCount} m\u00f3n", style = MaterialTheme.typography.labelMedium)
+                        Text(text = "${table.itemCount} món", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
