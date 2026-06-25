@@ -49,6 +49,7 @@ import com.xekho.pos.domain.DashboardSnapshot
 import com.xekho.pos.domain.FakeDashboardRepository
 import com.xekho.pos.domain.FakeOfflineQueueRepository
 import com.xekho.pos.domain.FakePosTableOrderRepository
+import com.xekho.pos.domain.FirestoreReadOnlySdkMarker
 import com.xekho.pos.domain.GuardedOfflineQueuePersistenceBoundary
 import com.xekho.pos.domain.GuardedPosReadOnlyDataBoundary
 import com.xekho.pos.domain.GuardedQueueStorageSelectionBoundary
@@ -67,6 +68,8 @@ import com.xekho.pos.domain.OfflineQueueStatus
 import com.xekho.pos.domain.OrderItem
 import com.xekho.pos.domain.PaymentDraft
 import com.xekho.pos.domain.PaymentMethod
+import com.xekho.pos.domain.PosFirestoreReadOnlyContract
+import com.xekho.pos.domain.PosFirestoreReadOnlyContractPreview
 import com.xekho.pos.domain.PosLocalOrder
 import com.xekho.pos.domain.PosOrderStatus
 import com.xekho.pos.domain.PosReadOnlyDataPreview
@@ -349,6 +352,8 @@ private fun MainDashboard(
     val posReadOnlyDataBoundary = remember { GuardedPosReadOnlyDataBoundary() }
     val defaultPosReadiness = remember { posReadOnlyDataBoundary.evaluate(PosReadOnlyDataRequest()) }
     val fakePosPreview = remember(snapshot) { posReadOnlyDataBoundary.previewFakeLocalData(snapshot) }
+    val firestoreReadOnlyContract = remember { PosFirestoreReadOnlyContract.default() }
+    val firestoreReadOnlyContractPreview = remember { firestoreReadOnlyContract.preview() }
     val firebaseReadOnlyPreview = remember {
         posReadOnlyDataBoundary.previewFirebaseReadOnly(
             PosReadOnlyDataRequest(requestedSource = PosReadOnlyDataSource.FIREBASE_READ_ONLY)
@@ -433,6 +438,7 @@ private fun MainDashboard(
                         storageComparison = storageComparison,
                         defaultPosReadiness = defaultPosReadiness,
                         fakePosPreview = fakePosPreview,
+                        firestoreReadOnlyContractPreview = firestoreReadOnlyContractPreview,
                         firebaseReadOnlyPreview = firebaseReadOnlyPreview,
                         localPaymentCloseMessage = localPaymentCloseMessage,
                         onSelectTable = { tableId ->
@@ -661,6 +667,7 @@ private fun TablesScreen(
     storageComparison: QueueStorageComparison,
     defaultPosReadiness: PosReadOnlyDataReadiness,
     fakePosPreview: PosReadOnlyDataPreview,
+    firestoreReadOnlyContractPreview: PosFirestoreReadOnlyContractPreview,
     firebaseReadOnlyPreview: PosReadOnlyDataPreview,
     localPaymentCloseMessage: String,
     onSelectTable: (String) -> Unit,
@@ -796,6 +803,15 @@ private fun TablesScreen(
                     "Fake preview: ${fakePosPreview.tableCount} bàn · ${fakePosPreview.inventoryCount} kho · ${formatVnd(fakePosPreview.todayRevenue)}\n" +
                     "Firebase read-only candidate: ${firebaseReadOnlyPreview.lines.first()}\n" +
                     "No Firestore read, no production POS data returned, no writes."
+            )
+        }
+        item {
+            SectionCard(
+                "Firestore contract Sprint 19",
+                "SDK marker: ${FirestoreReadOnlySdkMarker.className}\n" +
+                    "Collections: ${firestoreReadOnlyContractPreview.collectionCount} · sample rows ${firestoreReadOnlyContractPreview.sampleRowCount}\n" +
+                    firestoreReadOnlyContractPreview.lines.take(4).joinToString("\n") + "\n" +
+                    "Read execution blocked, no production data sampled, no writes."
             )
         }
         item {

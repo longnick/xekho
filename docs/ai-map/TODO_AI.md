@@ -1,3 +1,12 @@
+# 2026-06-25 23:38 +07 - DONE: Android native Firestore read-only contract gate Sprint 19
+- DONE: Added `firebase-firestore` catalog alias and app dependency under the existing Firebase BoM.
+- DONE: Added `FirestoreReadOnlySdkMarker` for compile-time SDK linkage without executing Firestore reads.
+- DONE: Added `PosFirestoreReadOnlyCollectionContract`, `PosFirestoreReadOnlyContractPreview`, and `PosFirestoreReadOnlyContract` for `tables`, `inventory`, and `history` collection contracts.
+- DONE: Added `FirestoreReadOnlyContractTest` covering SDK marker linkage, blocked execution flags, collection contracts, local-only preview, and boundary gating.
+- DONE: Wired Tables UI with `Firestore contract Sprint 19` card.
+- DONE: Verified targeted TDD RED/GREEN, clean native unit test, debug APK build, targeted APK config/secret scan, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-2338-android-native-firestore-readonly-contract-gate.md`.
+
 # 2026-06-25 23:19 +07 - DONE: Android native POS read-only data prep Sprint 18
 - DONE: Added `PosReadOnlyDataSource`, `PosReadOnlyDataReadinessStatus`, `PosReadOnlyDataRequest`, `PosReadOnlyDataReadiness`, and `PosReadOnlyDataPreview`.
 - DONE: Added `GuardedPosReadOnlyDataBoundary` for fake/local preview and blocked/prep-only Firebase read-only data readiness.
