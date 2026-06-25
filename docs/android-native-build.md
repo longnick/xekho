@@ -174,4 +174,37 @@ Latest debug APK checksum after Sprint 8:
 ```text
 c58ab6f07135b138f9026210938db280acd3bd2d1dbb4a68f2a77ac19872913f  android-native/app/build/outputs/apk/debug/app-debug.apk
 ```
+## Sprint 9 local config metadata
+
+Native build now exposes local `google-services.json` presence through BuildConfig metadata:
+
+```text
+BuildConfig.GOOGLE_SERVICES_JSON_PRESENT
+BuildConfig.FIREBASE_LOCAL_CONFIG_SOURCE = "BuildConfig"
+```
+
+The value is derived from:
+
+```kotlin
+val googleServicesJsonPresent = file("google-services.json").exists()
+```
+
+Settings reads it through:
+
+```kotlin
+FirebaseLocalConfigMetadata.fromBuildConfig()
+```
+
+Safety state:
+
+- `google-services.json` remains untracked/ignored and absent from committed repo
+- Google Services plugin is still not applied to `:app`
+- default auth remains `FAKE_LOCAL`
+- Firebase Auth sign-in and Firestore remain unwired
+
+Latest debug APK checksum after Sprint 9:
+
+```text
+ed86e63821a63edc70bb1ce7a2a808e624530ba59e67efc2cbbf2bdd3b047d1d  android-native/app/build/outputs/apk/debug/app-debug.apk
+```
 

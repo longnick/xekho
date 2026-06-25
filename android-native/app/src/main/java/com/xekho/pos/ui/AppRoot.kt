@@ -40,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xekho.pos.AppBrand
 import com.xekho.pos.auth.AuthReadinessReporter
+import com.xekho.pos.auth.FirebaseLocalConfigMetadata
 import com.xekho.pos.auth.AuthRepository
 import com.xekho.pos.auth.AuthRepositoryFactory
 import com.xekho.pos.auth.AuthSession
@@ -304,9 +305,11 @@ private fun FinanceScreen(snapshot: DashboardSnapshot) {
 
 @Composable
 private fun SettingsScreen() {
-    val authReport = AuthReadinessReporter.report()
+    val authReport = AuthReadinessReporter.report(
+        localConfigStatus = FirebaseLocalConfigMetadata.fromBuildConfig()
+    )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 8: Readiness report read-only; app default v\u1eabn l\u00e0 FAKE_LOCAL.")
+        SectionCard("Tr\u1ea1ng th\u00e1i", "Sprint 9: Metadata reads local config presence; app default v\u1eabn l\u00e0 FAKE_LOCAL.")
         SectionCard("Auth readiness", authReport.displayLines.joinToString("\n"))
         SectionCard("An to\u00e0n", "Kh\u00f4ng service account, kh\u00f4ng .env, kh\u00f4ng POS production data trong APK n\u00e0y.")
     }

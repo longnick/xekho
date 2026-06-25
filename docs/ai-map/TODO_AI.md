@@ -1,3 +1,9 @@
+# 2026-06-25 18:01 +07 - DONE: Android native local config metadata Sprint 9
+- DONE: Added BuildConfig metadata for local `google-services.json` presence and source, without applying Google Services plugin.
+- DONE: Added `FirebaseLocalConfigMetadata` and `FirebaseLocalConfigMetadataTest`; Settings readiness now reads metadata via BuildConfig while default auth remains `FAKE_LOCAL`.
+- DONE: Verified TDD RED/GREEN, native unit test, debug APK build, targeted APK config/secret scan, Kilo read-only review, and legacy web `check/test/build:hosting` regression.
+- DONE: Task log: `docs/ai-map/TASK_LOGS/2026-06-25-1801-android-native-local-config-metadata.md`.
+
 # 2026-06-25 17:40 +07 - DONE: Android native auth readiness report Sprint 8
 - DONE: Added `AuthReadinessReport`, `FirebaseLocalConfigStatus`, and `AuthReadinessReporter.report()` for read-only auth/Firebase status reporting.
 - DONE: Settings now displays local readiness lines while default auth remains `FAKE_LOCAL` and Firebase remains blocked.

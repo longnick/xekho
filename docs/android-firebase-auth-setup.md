@@ -76,4 +76,16 @@ It reports:
 - `google-services.json` local presence flag
 
 Sprint 8 remains display-only. It does not call Firebase Auth, does not read Firestore, and does not enable real auth.
+## Sprint 9 local config metadata
+
+`FirebaseLocalConfigMetadata.fromBuildConfig()` now maps build-time local config metadata into `FirebaseLocalConfigStatus`.
+
+Build-time metadata:
+
+```text
+GOOGLE_SERVICES_JSON_PRESENT = file("google-services.json").exists()
+FIREBASE_LOCAL_CONFIG_SOURCE = "BuildConfig"
+```
+
+This is reporting only. It does not apply the Google Services plugin, does not call Firebase Auth, and does not enable Firestore.
 
