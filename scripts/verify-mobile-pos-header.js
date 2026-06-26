@@ -45,8 +45,8 @@ assert(
   'user chip is bounded and ellipsized'
 );
 assert(
-  css.includes('@media (max-width: 430px)') && css.includes('max-width: 35%;') && css.includes('flex-basis: 32px;'),
-  'mobile breakpoint tightens brand/actions for iPhone widths'
+  css.includes('@media (max-width: 430px)') && css.includes('max-width: 26%;') && css.includes('flex-basis: 28px;') && css.includes('flex-basis: 44px;'),
+  'mobile breakpoint tightens brand/actions for iPhone widths using current compact header sizing'
 );
 assert(
   offlineStatusUi.includes("return 'OK';") && !offlineStatusUi.includes("return 'Offline: OK';"),
