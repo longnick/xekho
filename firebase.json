@@ -3,7 +3,7 @@
     "site": "xe-kho",
     "public": "dist",
     "predeploy": [
-      "npm run build:hosting"
+      "npm run cap:ota:bundle"
     ],
     "ignore": [
       "firebase.json",
