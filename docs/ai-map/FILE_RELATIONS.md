@@ -1,3 +1,13 @@
+# 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon relations
+- `package.json` installs `@capgo/capacitor-updater@6.45.10` for Capacitor 6 live-update foundation.
+- `capacitor.config.ts` sets `autoUpdate: false` inside `plugins.CapacitorUpdater` as a safe default to prevent untrusted background updates.
+- `android/variables.gradle` raises `compileSdkVersion = 35` and `minSdkVersion = 23` to meet new plugin AAR dependencies.
+- `android/app/src/main/res/values/ic_launcher_background.xml` and `drawable/ic_launcher_background.xml` specify `#7A2B18` brand color.
+- `drawable/ic_launcher_foreground.xml` and `drawable-v24/ic_launcher_foreground.xml` specify the Xe Khô bowl mark matching `kitchen-icon.svg`.
+- `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` reference `@drawable/ic_launcher_foreground` for vector/adaptive rendering.
+- `scripts/verify-android-capacitor.js` checks OTA configuration, no raw secret keywords, brand color markers, and recursive assets exclusions.
+- `scripts/build-capacitor-ota-bundle.py` packages `dist/` into `android/app/build/outputs/ota/` with a SHA256 manifest for manual Capgo/self-hosted upload; it excludes `android/`, `android-native/`, `functions/`, `node_modules/`, and dot-env/secret-looking filenames.
+
 # 2026-06-26 03:12 +07 - Capacitor Android relations
 - `package.json#cap:sync` runs `npm run build:hosting` before `npx cap sync`, so the Android WebView receives the latest current web UI bundle.
 - `package.json#cap:build` runs `cap:sync`, then `android/gradlew assembleDebug --no-daemon` to produce `android/app/build/outputs/apk/debug/app-debug.apk`.
