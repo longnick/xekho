@@ -39,7 +39,7 @@ const requiredIndexMarkers = [
   'id="auto-stock-norm-board"',
   'toggleAutoStockNormOverview(event)',
   'app.js?v=20260625-auto-stock-summary',
-  'style.css?v=20260625-auto-stock-summary',
+  'style.css?v=20260626-order-actionbar',
 ];
 for (const marker of requiredIndexMarkers) assert(index.includes(marker), `missing index marker: ${marker}`);
 assert(!index.includes('id="auto-stock-norm-filter"'), 'old verbose filter should not remain in compact card');
