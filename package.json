@@ -12,11 +12,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:hosting": "node scripts/build-hosting-dist.js",
-    "deploy:hosting:fast": "npm run build:hosting && npx firebase-tools deploy --only hosting",
+    "deploy:hosting:fast": "npx firebase-tools deploy --only hosting",
     "cap:sync": "npm run build:hosting && npx cap sync",
     "cap:open": "npx cap open android",
     "cap:build": "npm run cap:sync && cd android && ./gradlew assembleDebug --no-daemon",
-    "cap:ota:bundle": "npm run build:hosting && python3 scripts/build-capacitor-ota-bundle.py"
+    "cap:ota:bundle": "npm run build:hosting && python3 scripts/build-capacitor-ota-bundle.py",
+    "cap:ota:verify": "node scripts/verify-ota-firebase.js"
   },
   "keywords": [],
   "author": "",
