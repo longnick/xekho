@@ -577,3 +577,10 @@ Related files:
 - `functions/kitchenDeviceFeed.js` contains the read-only Firestore `orders` -> ready item feed builder.
 - `scripts/verify-kitchen-device-feed.js` checks endpoint security markers and feed filtering.
 - Firmware lives outside this repo at `/home/longnick/echoear/xekho_kitchen_notifier`.
+
+
+## 2026-06-26 - Mobile order action bar
+
+- `index.html` order page `#order-cart-pill` now exposes two explicit action buttons: cart sheet and bill modal.
+- `style.css` owns the approved mobile action-bar geometry above the persistent bottom nav (`48px` bar, `40px` buttons, `8px` nav gap, `72px` menu reserve).
+- `scripts/verify-order-actionbar-ui.js` guards the markup/cache key/mobile sizing and prevents the old centered 52px floating pill from returning.

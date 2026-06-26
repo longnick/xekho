@@ -624,3 +624,8 @@ node import_migrated_history_purchases.js
 ### Mobile table grid verifier — 2026-06-03
 
 - `scripts/verify-mobile-table-grid.js`: source-level guard for the mobile table screen. Verifies that `renderTables()` filters persisted `takeaway` table records out of the physical table grid, keeps the dedicated `table-card-takeaway` card, uses shared `table-card-wide` summary rows, and keeps CSS shrink/ellipsis rules that prevent mobile horizontal overflow.
+
+
+## 2026-06-26 - Mobile order action bar verifier
+
+- `scripts/verify-order-actionbar-ui.js`: deterministic source verifier for the mobile order cart/bill action bar. Guards explicit cart/bill buttons, full-width iPhone-tested mobile sizing, bottom-nav spacing, menu bottom reserve, and stylesheet cache bust.
