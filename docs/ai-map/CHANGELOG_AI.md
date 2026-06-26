@@ -1910,3 +1910,15 @@ Repo: `/home/longnick/projects/xekho`
 
 - CI/CD: GitHub Actions workflow (Node 20/22 matrix, Jest, ESLint). Added .nvmrc, npm scripts (lint, check).
 - Vite spike: `spike/vite-build-tooling` branch with vite.config.mjs, npm scripts (dev, build, preview). Config validated. Not merged — spike only.
+
+
+## 2026-06-26 11:35 - Mobile order action bar redesign
+
+Repo: `/home/longnick/projects/xekho`
+Branch: `task/kilo-fix-20260623-050807`
+
+- Replaced the mobile order screen's small centered floating cart/bill pill with a full-width action bar positioned above the bottom navigation.
+- Added explicit cart and bill buttons with approved iPhone 13 sizing: action bar `366 x 48 px`, buttons `161/189 x 40 px`, `8 px` gap to the `70 px` bottom nav.
+- Added `72 px` bottom reserve to the mobile menu pane/grid so dish cards do not sit underneath the action bar.
+- Added `scripts/verify-order-actionbar-ui.js` and verified with Puppeteer iPhone measurement plus repo checks.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-1135-order-actionbar-mobile.md`

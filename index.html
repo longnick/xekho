@@ -16,7 +16,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
-  <link rel="stylesheet" href="style.css?v=20260625-auto-stock-summary">
+  <link rel="stylesheet" href="style.css?v=20260626-order-actionbar">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     @keyframes target-bounce {
@@ -181,15 +181,16 @@
               placeholder="Tên bàn / ghi chú..." autocomplete="off"
               oninput="handleOrderTableNoteInput(this.value)">
           </div>
-          <div class="order-cart-pill" id="order-cart-pill" style="padding:0; gap:0; overflow:hidden;">
-            <button onclick="openCartSheet()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+          <div class="order-cart-pill" id="order-cart-pill" aria-label="Giỏ hàng và xuất bill nhanh">
+            <button class="order-cart-pill-btn order-cart-pill-btn-cart" type="button" onclick="openCartSheet()" aria-label="Mở giỏ hàng">
               <span class="order-cart-pill-icon">🛒</span>
+              <span class="order-cart-pill-label">Giỏ</span>
               <span class="order-cart-pill-count" id="order-cart-pill-count">0</span>
             </button>
-            <div style="width:1.5px; height:20px; background:var(--border); opacity:0.8;"></div>
-            <button onclick="openBillModal()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+            <div class="order-cart-pill-divider" aria-hidden="true"></div>
+            <button class="order-cart-pill-btn order-cart-pill-btn-bill" type="button" onclick="openBillModal()" aria-label="Xuất bill thanh toán">
+              <span class="order-cart-pill-label">Xuất bill</span>
               <span class="order-cart-pill-total" id="order-cart-pill-total">0đ</span>
-              <span style="font-size:16px;">🧾</span>
             </button>
           </div>
           <button id="btn-clear-table" class="btn btn-sm btn-secondary" onclick="clearTable()"
