@@ -425,3 +425,6 @@ None for the auto stock compact ordering summary; awaiting owner iPhone/Safari l
 
 
 - 2026-06-03 19:15: Removed obsolete `testDailyReportTelegram` endpoint and frontend test button. Production Telegram daily reports continue through `scheduledTelegramReport`; manual test endpoint is no longer a deploy target. Task log: `docs/ai-map/TASK_LOGS/2026-06-03-1915-remove-test-daily-report.md`
+
+
+- 2026-06-26 11:35: Mobile order action bar implemented after owner approved Mockup A sizing. Host opened on port 4175 for owner QA before deploy. If approved, next step is deploy readiness gate and hosting deploy. Task log: `docs/ai-map/TASK_LOGS/2026-06-26-1135-order-actionbar-mobile.md`
