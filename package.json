@@ -15,7 +15,8 @@
     "deploy:hosting:fast": "npm run build:hosting && npx firebase-tools deploy --only hosting",
     "cap:sync": "npm run build:hosting && npx cap sync",
     "cap:open": "npx cap open android",
-    "cap:build": "npm run cap:sync && cd android && ./gradlew assembleDebug --no-daemon"
+    "cap:build": "npm run cap:sync && cd android && ./gradlew assembleDebug --no-daemon",
+    "cap:ota:bundle": "npm run build:hosting && python3 scripts/build-capacitor-ota-bundle.py"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +25,7 @@
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/core": "^6.2.0",
+    "@capgo/capacitor-updater": "^6.45.10",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase-admin": "^13.8.0",

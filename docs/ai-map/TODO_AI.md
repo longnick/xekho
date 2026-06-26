@@ -1,3 +1,11 @@
+# 2026-06-26 05:00 +07 - DONE: Capacitor Android OTA and brand icon
+- DONE: Configured Capgo live update foundation with `autoUpdate: false` inside `capacitor.config.ts`.
+- DONE: Adjusted Android Gradle `compileSdkVersion` to 35 and `minSdkVersion` to 23 for compatibility.
+- DONE: Replaced default adaptive icon resources with Xe Khô brand colors (#7A2B18) and bowl vector graphics.
+- DONE: Added `scripts/verify-android-capacitor.js` to verify configurations, secret scans, and exclusions.
+- DONE: Added `npm run cap:ota:bundle` to produce a local OTA zip + SHA256 manifest for later Capgo/self-hosted upload without repo secrets.
+- Task log: `docs/ai-map/TASK_LOGS/2026-06-26-0500-capacitor-android-ota-icon.md`.
+
 # 2026-06-26 03:12 +07 - DONE: Capacitor Android App Path Added
 - DONE: Paused `android-native` Kotlin project (marked manual QA checklists and build notes as paused).
 - DONE: Added `@capacitor/core`, `@capacitor/android` to dependencies, and `@capacitor/cli` to devDependencies.
