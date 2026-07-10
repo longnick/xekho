@@ -1,0 +1,16 @@
+{
+  "allowlist": [
+    {
+      "graph": "functions",
+      "package": "protobufjs",
+      "severity": "critical",
+      "advisories": [
+        "GHSA-h755-8qp9-cq85",
+        "GHSA-xq3m-2v4x-88gg"
+      ],
+      "expires": "2026-08-31",
+      "owner": "XE KHÔ owner",
+      "justification": "Transitive through firebase-admin@11/google-gax. The compatible fix requires a dedicated firebase-admin + firebase-functions emulator-backed migration; force upgrades are prohibited."
+    }
+  ]
+}
