@@ -29,6 +29,12 @@ const telegramOrders = require('./telegram/orders');
 const telegramOnlineOrders = require('./telegram/online-orders');
 const generalUtils = require('./utils/general');
 const kitchenDeviceFeed = require('./kitchenDeviceFeed');
+const {
+  authorizeRequest,
+  isContentLengthAllowed,
+  validateBase64Media,
+  createRateLimiter,
+} = require('./utils/httpSecurity');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -4113,6 +4119,44 @@ function json(res, code, data) {
   return generalUtils.json(res, code, data);
 }
 
+const HTTP_JSON_MAX_BYTES = 64 * 1024;
+const OCR_REQUEST_MAX_BYTES = 8 * 1024 * 1024;
+const AI_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const AI_AUDIO_MAX_BYTES = 8 * 1024 * 1024;
+const VOICE_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
+const AI_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
+const OCR_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
+const ADMIN_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
+const voiceRateLimiter = createRateLimiter({ limit: 30, windowMs: 60 * 1000 });
+const aiRateLimiter = createRateLimiter({ limit: 20, windowMs: 60 * 1000 });
+
+async function authorizePosHttpRequest(req, allowedRoles) {
+  return authorizeRequest(req, {
+    verifyIdToken: token => admin.auth().verifyIdToken(token),
+    getRole: async decoded => {
+      const uid = String(decoded?.uid || '').trim();
+      const userSnap = uid ? await db.collection('users').doc(uid).get().catch(() => null) : null;
+      return String(userSnap?.exists ? (userSnap.data()?.role || '') : (decoded?.role || '')).trim().toLowerCase();
+    },
+    allowedRoles,
+  });
+}
+
+function rejectHttpAuthorization(res, authResult) {
+  return json(res, authResult?.status || 401, {
+    ok: false,
+    error: authResult?.status === 403 ? 'forbidden' : 'unauthenticated',
+  });
+}
+
+function rejectOversizedRequest(res) {
+  return json(res, 413, { ok: false, error: 'payload_too_large' });
+}
+
+function rejectRateLimitedRequest(res) {
+  return json(res, 429, { ok: false, error: 'rate_limited' });
+}
+
 exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
@@ -5032,11 +5076,16 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
 exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, VOICE_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+    if (!voiceRateLimiter.take(`uid:${authResult.actor.uid}`)) return rejectRateLimitedRequest(res);
 
     const text = String(req.body?.text || '').trim();
     if (!text) return json(res, 400, { error: 'No text provided' });
 
-    logger.info('Voice command received', { text });
+    logger.info('Voice command accepted', { uid: authResult.actor.uid, role: authResult.actor.role, textLength: text.length });
 
     try {
       const manager = await ensureNlp();
@@ -5706,44 +5755,11 @@ exports.telegramOnCompletedOrderCreated = onDocumentCreated(
 );
 
 async function verifyAdminRequest(req) {
-  const authHeader = String(req.headers?.authorization || '');
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) throw new Error('Missing bearer token');
-
-  const bearerToken = match[1];
-  let decoded = null;
-  let email = '';
-  let uid = '';
-  let role = '';
-
-  try {
-    decoded = await admin.auth().verifyIdToken(bearerToken);
-    email = String(decoded.email || '').trim().toLowerCase();
-    uid = String(decoded.uid || '').trim();
-    const userSnap = await db.collection('users').doc(uid).get().catch(() => null);
-    role = String(userSnap?.exists ? (userSnap.data()?.role || '') : '').trim().toLowerCase();
-  } catch (_) {
-    const profileRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${bearerToken}` },
-      timeout: 15000,
-    }).catch(() => null);
-    email = String(profileRes?.data?.email || '').trim().toLowerCase();
-    if (email) {
-      const userQuery = await db.collection('users').where('email', '==', email).limit(1).get().catch(() => null);
-      const userDoc = userQuery?.docs?.[0];
-      uid = String(userDoc?.id || '').trim();
-      role = String(userDoc?.data()?.role || '').trim().toLowerCase();
-    }
-    if (!role && email === OWNER_EMAIL) role = 'admin';
+  const authResult = await authorizePosHttpRequest(req, ADMIN_ALLOWED_ROLES);
+  if (!authResult.ok) {
+    throw new Error(authResult.status === 403 ? 'Permission denied' : 'Missing or invalid Firebase ID token');
   }
-
-  const isAdmin = ['admin', 'owner', 'superadmin', 'manager'].includes(role) || email === OWNER_EMAIL;
-  if (!isAdmin) throw new Error('Permission denied');
-  return {
-    uid,
-    email,
-    role: role || (email === OWNER_EMAIL ? 'admin' : ''),
-  };
+  return authResult.actor;
 }
 
 exports.adminProbeVertex = onRequest({
@@ -6366,9 +6382,24 @@ exports.purchaseOcr = onRequest({
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, OCR_REQUEST_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, OCR_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+
     try {
       const dataUrl = String(req.body?.dataUrl || '').trim();
-      if (!dataUrl.startsWith('data:')) return json(res, 400, { ok: false, error: 'Missing dataUrl image payload' });
+      const dataUrlMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+      if (!dataUrlMatch) return json(res, 400, { ok: false, error: 'Missing dataUrl image payload' });
+      const imageCheck = validateBase64Media({
+        value: dataUrlMatch[2],
+        mimeType: dataUrlMatch[1],
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
       const parsed = await runVertexPurchaseOcr({ dataUrl });
       return json(res, 200, { ok: true, ...parsed });
     } catch (error) {
@@ -6379,8 +6410,10 @@ exports.purchaseOcr = onRequest({
 });
 
 exports.aiStatus = onRequest({ region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
-  cors(req, res, () => {
+  cors(req, res, async () => {
     if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    const authResult = await authorizePosHttpRequest(req, AI_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
     try {
       const vertexConfig = getVertexRuntimeConfig();
       const vertexCreds = getVertexCredentials(vertexConfig.secretJson);
@@ -6388,16 +6421,12 @@ exports.aiStatus = onRequest({ region: 'asia-southeast1', serviceAccount: FUNCTI
         ok: true,
         provider: pickProvider(),
         vertexOk: !!vertexCreds,
-        projectId: vertexCreds?.project_id || vertexConfig.projectId,
-        region: 'asia-southeast1',
       });
-    } catch (error) {
+    } catch (_) {
       return json(res, 200, {
         ok: false,
         provider: 'vertex',
         vertexOk: false,
-        error: error?.message || String(error),
-        region: 'asia-southeast1',
       });
     }
   });
@@ -6410,15 +6439,43 @@ exports.aiRouter = onRequest({
 }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, AI_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+    if (!aiRateLimiter.take(`uid:${authResult.actor.uid}`)) return rejectRateLimitedRequest(res);
 
     const text = String(req.body?.text || '').trim();
     const imageBase64 = String(req.body?.imageBase64 || req.body?.image || '').trim();
     const audioBase64 = String(req.body?.audioBase64 || req.body?.audio || '').trim();
-    const mimeType = String(req.body?.mimeType || '').trim();
+    const mimeType = String(req.body?.mimeType || '').trim().toLowerCase();
     const previewOnly = req.body?.previewOnly !== false;
 
     if (!text && !imageBase64 && !audioBase64) {
       return json(res, 400, { ok: false, error: 'No input provided' });
+    }
+
+    if (imageBase64) {
+      const imageCheck = validateBase64Media({
+        value: imageBase64,
+        mimeType: mimeType || 'image/jpeg',
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
+    }
+    if (audioBase64) {
+      const audioCheck = validateBase64Media({
+        value: audioBase64,
+        mimeType,
+        allowedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/webm'],
+        maxBytes: AI_AUDIO_MAX_BYTES,
+      });
+      if (!audioCheck.ok) return audioCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_audio_payload' });
     }
 
     try {
