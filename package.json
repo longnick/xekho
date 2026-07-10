@@ -4,7 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "test": "jest",
+    "test": "jest --testPathIgnorePatterns '/tests/firestore-rules/' '/dist/' '/android/' '/android-native/'",
     "backfill:history-costs": "node backfill_history_costs.js",
     "lint": "eslint app.js app/utils/ app/ui/ app/auth/ app/order/ app/report/",
     "check": "node --check app.js && for f in app/utils/*.js app/ui/*.js app/auth/*.js app/order/*.js app/report/*.js; do node --check \"$f\"; done",
@@ -17,7 +17,11 @@
     "cap:open": "npx cap open android",
     "cap:build": "npm run cap:sync && cd android && ./gradlew assembleDebug --no-daemon",
     "cap:ota:bundle": "npm run build:hosting && python3 scripts/build-capacitor-ota-bundle.py",
-    "cap:ota:verify": "node scripts/verify-ota-firebase.js"
+    "cap:ota:verify": "node scripts/verify-ota-firebase.js",
+    "test:rules:emulator": "jest --runInBand tests/firestore-rules/harness.rules.test.js tests/firestore-rules/users.rules.test.js tests/firestore-rules/pos-data.rules.test.js tests/firestore-rules/attendance.rules.test.js",
+    "test:rules": "npx firebase-tools emulators:exec --project xekho-rules-test --only firestore \"npm run test:rules:emulator\"",
+    "test:rules:red-evidence:emulator": "jest --runInBand --testMatch '**/red-vulnerabilities.evidence.js'",
+    "test:rules:red-evidence": "npx firebase-tools emulators:exec --project xekho-rules-test --only firestore \"npm run test:rules:red-evidence:emulator\""
   },
   "keywords": [],
   "author": "",
@@ -39,7 +43,8 @@
     "eslint": "^10.4.1",
     "jest": "^30.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "@firebase/rules-unit-testing": "5.0.1"
   },
   "jest": {
     "testPathIgnorePatterns": [
