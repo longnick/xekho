@@ -33,7 +33,7 @@
     "@capgo/capacitor-updater": "^6.45.10",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "firebase-admin": "^13.8.0",
+    "firebase-admin": "^13.10.0",
     "iconv-lite": "^0.7.2",
     "node-nlp": "^5.0.0-alpha.5",
     "socket.io": "^4.8.3"

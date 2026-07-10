@@ -2761,7 +2761,7 @@ async function ensureNlp() {
   const catalog = await getProductCatalog();
   const itemSamples = catalog.slice(0, 25).map(x => x.name);
   const manager = new NlpManager({ languages: ['vi'], autoSave: false, forceNER: false });
-  manager.nlp.settings.autoSave = false;
+  manager.settings.autoSave = false;
 
   const intents = training?.intents || {};
   Object.entries(intents).forEach(([intent, meta]) => {
