@@ -140,7 +140,12 @@ function getAIServerBaseUrl() {
 
 async function refreshAIServerStatus() {
   try {
-    const res = await fetch(`${getAIServerBaseUrl()}/aiStatus`, { cache: 'no-store' });
+    const token = await window.DB?.currentUser?.getIdToken();
+    if (!token) throw new Error('Firebase session required');
+    const res = await fetch(`${getAIServerBaseUrl()}/aiStatus`, {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const data = await res.json();
     aiServerOnline = !!(res.ok && data?.ok);
   } catch (_) {
