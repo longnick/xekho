@@ -335,9 +335,14 @@ async function callServerAIRouter(input, previewOnly = true) {
   const payload = (input && typeof input === 'object' && !Array.isArray(input))
     ? { ...input, previewOnly }
     : { text: String(input || ''), previewOnly };
+  const token = await window.DB?.currentUser?.getIdToken();
+  if (!token) throw new Error('Cần đăng nhập Firebase để dùng AI Server.');
   const res = await fetch(`${getAIRouterBaseUrl()}/aiRouter`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(payload),
   });
   const data = await res.json();
