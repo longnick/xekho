@@ -419,6 +419,33 @@ function _escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+function _escapeJsString(text) {
+  return JSON.stringify(String(text ?? ''));
+}
+
+function _safeImageUrl(value) {
+  const safeImageUrl = window.XekhoApp?.utils?.dom?.safeImageUrl;
+  return typeof safeImageUrl === 'function' ? safeImageUrl(value) : null;
+}
+
+function _setSafeImageSource(image, imageUrl) {
+  const setSafeImageSource = window.XekhoApp?.utils?.dom?.setSafeImageSource;
+  return typeof setSafeImageSource === 'function' && setSafeImageSource(image, imageUrl);
+}
+
+function _replaceWithSafeImage(container, imageUrl, altText, styleValues = {}) {
+  if (!container || typeof document?.createElement !== 'function') return false;
+  const image = document.createElement('img');
+  if (!_setSafeImageSource(image, imageUrl)) return false;
+  image.alt = String(altText || 'Ảnh');
+  Object.entries(styleValues).forEach(([property, value]) => {
+    image.style[property] = value;
+  });
+  container.textContent = '';
+  container.appendChild(image);
+  return true;
+}
+
 function _normalizeStaffRole(role) {
   // Sprint 1.6: delegate to app/auth/staff.js
   if (window.XekhoApp?.auth?.normalizeStaffRole) return window.XekhoApp.auth.normalizeStaffRole(role);
@@ -2049,12 +2076,17 @@ function applyStoreSettings() {
   if(logoText) logoText.textContent = s.storeName || 'XE KHÔ CHỮA LÀNH';
 
   const logoIcon = document.querySelector('.logo-icon');
-  if(logoIcon) {
-    if(s.storeLogo) {
-      logoIcon.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+  if (logoIcon) {
+    const didRenderLogo = _replaceWithSafeImage(logoIcon, s.storeLogo, 'Logo cửa hàng', {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      borderRadius: '8px',
+    });
+    if (didRenderLogo) {
       logoIcon.style.background = 'transparent';
     } else {
-      logoIcon.innerHTML = '🧡';
+      logoIcon.textContent = '🧡';
       logoIcon.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
     }
   }
@@ -4212,9 +4244,11 @@ function renderMenuItems() {
     const activeQty = items
       .filter(i => i.id === m.id && !isKitchenFinalStatus(i.kitchenStatus))
       .reduce((sum, item) => sum + Number(item.qty || 0), 0);
-    return `<div class="menu-item ${activeQty > 0 ? 'in-order' : ''}" onclick="addToOrder('${m.id}')">
+    const safeMenuId = _escapeHtml(_escapeJsString(m.id));
+    const safeMenuName = _escapeHtml(m.name || '');
+    return `<div class="menu-item ${activeQty > 0 ? 'in-order' : ''}" onclick="addToOrder(${safeMenuId})">
       ${activeQty > 0 ? `<div class="menu-item-qty">${activeQty}</div>` : ''}
-      <div class="menu-item-name">${m.name}</div>
+      <div class="menu-item-name">${safeMenuName}</div>
       <div class="menu-item-price">${fmt(m.price)}đ</div>
     </div>`;
   }).join('') || `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>`;
@@ -4574,12 +4608,16 @@ function openBillModal() {
       <div class="bill-photo-page">
         <h3 style="font-size:14px;margin:12px 0 6px;">📸 Ảnh ghi nhận bàn</h3>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${limited.map(ph => `
-            <div style="flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);">
-              <div style="font-size:9px;color:#666;margin-bottom:2px;">${ph.takenAt ? fmtDateTime(ph.takenAt) : ''}</div>
-              <img src="${ph.dataUrl}" alt="Ảnh bàn" style="width:100%;max-height:220px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
-            </div>
-          `).join('')}
+          ${limited.map(ph => {
+            const safeDataUrl = _safeImageUrl(ph.dataUrl);
+            if (!safeDataUrl) return '';
+            return `
+              <div style="flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);">
+                <div style="font-size:9px;color:#666;margin-bottom:2px;">${_escapeHtml(ph.takenAt ? fmtDateTime(ph.takenAt) : '')}</div>
+                <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh bàn" style="width:100%;max-height:220px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>`;
     }
@@ -5018,11 +5056,15 @@ function updateOrderPhotoUI() {
       wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh nào.</div>';
       return;
     }
-    wrap.innerHTML = limited.map(ph => `
-      <div style="position:relative;flex:0 0 auto;width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
-        <img src="${ph.dataUrl}" alt="Ảnh bàn" style="width:100%;height:100%;object-fit:cover;">
-      </div>
-    `).join('');
+    wrap.innerHTML = limited.map(ph => {
+      const safeDataUrl = _safeImageUrl(ph.dataUrl);
+      if (!safeDataUrl) return '';
+      return `
+        <div style="position:relative;flex:0 0 auto;width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
+          <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh bàn" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+      `;
+    }).join('');
   } catch(e) {
     console.warn('updateOrderPhotoUI error', e);
   }
@@ -5096,12 +5138,17 @@ function renderPurchasePhotoThumbs() {
     if(viewer) viewer.style.display = 'none';
     return;
   }
-  wrap.innerHTML = currentPurchasePhotos.map(ph => `
-    <div style="position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:6px;overflow:hidden;border:1px solid var(--border);cursor:pointer;"
-         onclick="setPurchasePhotoViewerById('${ph.id}')">
-      <img src="${ph.dataUrl}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
-    </div>
-  `).join('');
+  wrap.innerHTML = currentPurchasePhotos.map(ph => {
+    const safeDataUrl = _safeImageUrl(ph.dataUrl);
+    if (!safeDataUrl) return '';
+    const safePhotoId = _escapeHtml(_escapeJsString(ph.id));
+    return `
+      <div style="position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:6px;overflow:hidden;border:1px solid var(--border);cursor:pointer;"
+           onclick="setPurchasePhotoViewerById(${safePhotoId})">
+        <img src="${_escapeHtml(safeDataUrl)}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+      </div>
+    `;
+  }).join('');
 }
 
 function setPurchasePhotoViewerById(id) {
@@ -5112,8 +5159,11 @@ function setPurchasePhotoViewerById(id) {
 function setPurchasePhotoViewer(photo) {
   const box = document.getElementById('pur-photo-viewer');
   const img = document.getElementById('pur-photo-viewer-img');
-  if(!box || !img || !photo) return;
-  img.src = photo.dataUrl;
+  if (!box || !img || !photo) return;
+  if (!_setSafeImageSource(img, photo.dataUrl)) {
+    box.style.display = 'none';
+    return;
+  }
   box.style.display = 'block';
   window._currentPurchaseViewerPhoto = photo;
 }
@@ -5128,7 +5178,10 @@ function openCurrentPurchasePhotoViewerFull() {
   if(!modal || !img) return;
 
   ImgZoom.detach();
-  img.src = p.dataUrl;
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
   if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
   modal.classList.add('active');
   img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
@@ -5258,9 +5311,14 @@ async function runOfflineOcr(dataUrl) {
 
 async function runOnlinePurchaseOcr(dataUrl) {
   const endpoint = 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/purchaseOcr';
+  const token = await window.DB?.currentUser?.getIdToken();
+  if (!token) throw new Error('Cần đăng nhập Firebase để dùng OCR Online.');
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ dataUrl }),
   });
   const data = await res.json().catch(() => ({}));
@@ -5949,12 +6007,16 @@ function viewPurchasePhotoBatch(batchId) {
     meta.textContent = `Batch: ${batchId} · Ảnh: ${photos.length} · Thời gian: ${fmtDateTime(entry.createdAt || photos[0].takenAt)} · Dùng cho: ${used.length} lần nhập${used.length ? ` (${names}${more})` : ''}`;
   }
   if(gallery) {
-    gallery.innerHTML = photos.map((ph, idx) => `
-      <div style="flex:0 0 auto;width:96px;height:96px;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;"
-           onclick="openPurchasePhotoBatchFull(${idx})">
-        <img src="${ph.dataUrl}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
-      </div>
-    `).join('');
+    gallery.innerHTML = photos.map((ph, idx) => {
+      const safeDataUrl = _safeImageUrl(ph.dataUrl);
+      if (!safeDataUrl) return '';
+      return `
+        <div style="flex:0 0 auto;width:96px;height:96px;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;"
+             onclick="openPurchasePhotoBatchFull(${idx})">
+          <img src="${_escapeHtml(safeDataUrl)}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+      `;
+    }).join('');
   }
 
   document.getElementById('purchase-photo-batch-modal')?.classList.add('active');
@@ -5974,7 +6036,10 @@ function openPurchasePhotoFullFromBatch(batchId, photoIdx) {
   if(!modal || !img) return;
 
   ImgZoom.detach();
-  img.src = p.dataUrl;
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
   if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : `Batch: ${batchId}`;
   modal.classList.add('active');
   // Attach zoom after image loads
@@ -5993,7 +6058,10 @@ function openPurchasePhotoBatchFull(photoIdx) {
   if(!modal || !img) return;
 
   ImgZoom.detach();
-  img.src = p.dataUrl;
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
   if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
   modal.classList.add('active');
   img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
@@ -9102,12 +9170,16 @@ async function viewOrderDetail(orderId) {
     ? `<div style="margin-top:12px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:6px">📸 Ảnh ghi nhận đơn</div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
-          ${photos.map((p, idx) => `
-            <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
-                 onclick="openOrderDetailPhotoFull(${idx})" title="Xem ảnh full">
-              <img src="${p.dataUrl}" alt="Ảnh đơn" style="width:100%;height:100%;object-fit:cover;">
-            </div>
-          `).join('')}
+          ${photos.map((p, idx) => {
+            const safeDataUrl = _safeImageUrl(p.dataUrl);
+            if (!safeDataUrl) return '';
+            return `
+              <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
+                   onclick="openOrderDetailPhotoFull(${idx})" title="Xem ảnh full">
+                <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh đơn" style="width:100%;height:100%;object-fit:cover;">
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>`
     : '';
@@ -9150,7 +9222,10 @@ function openOrderDetailPhotoFull(idx) {
   const wrap = document.getElementById('order-detail-photo-full-wrap');
   if(!modal || !img) return;
   ImgZoom.detach();
-  img.src = p.dataUrl;
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
   const meta = document.getElementById('order-detail-photo-full-meta');
   if(meta) meta.textContent = p.takenAt ? `Thời gian: ${fmtDateTime(p.takenAt)}` : '';
   modal.classList.add('active');
@@ -9197,10 +9272,10 @@ function renderMenuAdmin() {
   const totalPrice = filtered.reduce((sum, item) => sum + (Number(item.price || 0) || 0), 0);
   const avgCogsPercent = totalPrice > 0 ? (totalCost / totalPrice) * 100 : 0;
   const renderThumb = (item) => {
-    const imageUrl = _escapeHtml(getMenuItemImageUrl(item));
+    const imageUrl = _safeImageUrl(getMenuItemImageUrl(item));
     if (imageUrl) {
       return '<div class="list-item-icon" style="padding:0;background:#2a2230;overflow:hidden">' +
-        '<img src="' + imageUrl + '" alt="' + _escapeHtml(item.name || 'Món ăn') + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
+        '<img src="' + _escapeHtml(imageUrl) + '" alt="' + _escapeHtml(item.name || 'Món ăn') + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
       '</div>';
     }
     return '<div class="list-item-icon" style="background:rgba(255,107,53,0.1)">MÓN</div>';
@@ -9252,11 +9327,15 @@ function syncMenuItemImagePreview(imageUrl) {
   const safeUrl = String(imageUrl || '').trim();
   if (imageUrlEl) imageUrlEl.value = safeUrl;
   if (!previewEl) return;
-  if (safeUrl) {
-    previewEl.innerHTML = '<img src="' + _escapeHtml(safeUrl) + '" alt="Ảnh món ăn" style="width:100%;height:100%;object-fit:cover;display:block">';
+  if (_replaceWithSafeImage(previewEl, safeUrl, 'Ảnh món ăn', {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  })) {
     return;
   }
-  previewEl.innerHTML = '<span style="font-size:20px">🖼️</span>';
+  previewEl.textContent = '🖼️';
 }
 
 async function handleMenuImageChange(event) {
@@ -10123,11 +10202,16 @@ function renderSettings() {
   const logoPreview = document.getElementById('set-logo-preview');
   const removeBtn = document.getElementById('set-logo-remove');
   if (logoPreview) {
-    if (s.storeLogo) {
-      logoPreview.innerHTML = `<img src="${s.storeLogo}" style="width:100%;height:100%;object-fit:cover;">`;
+    const didRenderPreview = _replaceWithSafeImage(logoPreview, s.storeLogo, 'Logo cửa hàng', {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+    });
+    if (didRenderPreview) {
       if(removeBtn) removeBtn.style.display = 'inline-block';
     } else {
-      logoPreview.innerHTML = '<span style="font-size:20px;">🏪</span>';
+      logoPreview.textContent = '🏪';
+      logoPreview.style.fontSize = '20px';
       if(removeBtn) removeBtn.style.display = 'none';
     }
   }
