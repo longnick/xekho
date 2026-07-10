@@ -8,6 +8,17 @@
 
 This manifest separates the completed local security remediation from an already broad dirty tree. It is a staging/review map, not an authorization to deploy Rules, Functions, Hosting, credentials, or production data.
 
+## Packaged commit series (local only)
+
+| SHA | Unit | Release constraint |
+|---|---|---|
+| `d909b58` | R2 Rules harness/containment | Rules remains last; do not deploy alone |
+| `f399924` | R2b managed-user provisioning | Requires owner-reviewed live UID/role/staffId mappings |
+| `55e70d9` | R3 Functions HTTP containment | Deploy only with compatible Hosting auth callers |
+| `e66f5b3` | R4 Hosting render containment | Requires authenticated mobile/POS QA |
+| `8dd9377` | R5 dependency compatibility | Residual allowlist expires 2026-08-31 |
+| `994b76f` | R1 CI/audit/artifact/browser gates | CI only; no runtime deployment |
+
 ## Verified release units
 
 | Unit | Intended scope | Required local evidence | Deployment constraint |
