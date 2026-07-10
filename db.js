@@ -1052,23 +1052,50 @@ function _listen() {
     }
   }, _snapErr('inventory')));
 
-  // 5f. Users
-  _unsubs.push(onSnapshot(_col('users'), snap => {
-    window.appState.users = snap.docs.map(_fromDoc).filter(Boolean);
-    _markSnapshotReady();
-    _dispatchEvent('db:update', { key: 'users' });
-  }, _snapErr('users')));
+  // 5f. Users: personnel directory is manager/admin-only. Other authenticated
+  // users may listen only to their own profile, matching the Firestore Rules.
+  const sessionRole = String(window.appState?.userDoc?.role || '').trim().toLowerCase();
+  const canReadUserDirectory = ['admin', 'manager'].includes(sessionRole);
+  const mappedStaffId = String(window.appState?.userDoc?.staffId || '').trim();
+  const usersListener = canReadUserDirectory
+    ? onSnapshot(_col('users'), snap => {
+      window.appState.users = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'users' });
+    }, _snapErr('users'))
+    : onSnapshot(_doc('users', window.appState.uid), snap => {
+      window.appState.users = snap.exists() ? [_fromDoc(snap)].filter(Boolean) : [];
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'users' });
+    }, _snapErr('users.self'));
+  _unsubs.push(usersListener);
 
-  // 5f+. Staff (PIN login + personnel management)
-  _unsubs.push(onSnapshot(query(_col('Staff'), orderBy('full_name')), snap => {
-    window.appState.staff = snap.docs.map(_fromDoc).filter(Boolean);
-    _markSnapshotReady();
-    _dispatchEvent('db:update', { key: 'staff' });
-  }, _snapErr('Staff')));
+  // 5f+. Staff: manager/admin reads the directory; a staff account gets only
+  // its server-mapped personnel record.
+  const staffListener = canReadUserDirectory
+    ? onSnapshot(query(_col('Staff'), orderBy('full_name')), snap => {
+      window.appState.staff = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'staff' });
+    }, _snapErr('Staff'))
+    : onSnapshot(_doc('Staff', mappedStaffId), snap => {
+      window.appState.staff = snap.exists() ? [_fromDoc(snap)].filter(Boolean) : [];
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'staff' });
+    }, _snapErr('Staff.self'));
+  _unsubs.push(staffListener);
 
-  // 5f++. Attendance (Telegram checkin/checkout + daily payroll)
+  // 5f++. Attendance (Telegram checkin/checkout + daily payroll). Staff
+  // identities are mapped server-side in users/{uid}. Avoid a directory query
+  // for staff because Rules intentionally permit only their own rows.
+  const attendanceDailyQuery = canReadUserDirectory
+    ? query(_col('attendance_daily'), orderBy('dateKey', 'desc'), limit(180))
+    : query(_col('attendance_daily'), where('staffId', '==', mappedStaffId), limit(180));
+  const attendanceShiftQuery = canReadUserDirectory
+    ? query(_col('attendance_shifts'), orderBy('checkInAtMs', 'desc'), limit(240))
+    : query(_col('attendance_shifts'), where('staffId', '==', mappedStaffId), limit(240));
   _unsubs.push(onSnapshot(
-    query(_col('attendance_daily'), orderBy('dateKey', 'desc'), limit(180)),
+    attendanceDailyQuery,
     snap => {
       window.appState.attendanceDaily = snap.docs.map(_fromDoc).filter(Boolean);
       _markSnapshotReady();
@@ -1077,7 +1104,7 @@ function _listen() {
   ));
 
   _unsubs.push(onSnapshot(
-    query(_col('attendance_shifts'), orderBy('checkInAtMs', 'desc'), limit(240)),
+    attendanceShiftQuery,
     snap => {
       window.appState.attendanceShifts = snap.docs.map(_fromDoc).filter(Boolean);
       _markSnapshotReady();
@@ -1221,34 +1248,19 @@ onAuthStateChanged(_auth, async user => {
   _snapshotReadyCount = 0;
   window.appState.ready = false;
 
-  // Đọc / tạo document users/{uid}
-  const uRef  = _doc('users', user.uid);
-  const uSnap = await getDoc(uRef);
-
-  let role        = 'staff';
-  let displayName = user.displayName || user.email;
-  let username    = user.email.split('@')[0];
-
-  if (uSnap.exists()) {
-    const d = uSnap.data();
-    role        = d.role        || 'staff';
-    displayName = d.displayName || displayName;
-    username    = d.username    || username;
-  } else {
-    // Lần đầu đăng nhập → tạo doc
-    role = (user.email === OWNER_EMAIL) ? 'admin' : 'staff';
-    await setDoc(uRef, sanitize({
-      uid:         user.uid,
-      email:       user.email,
-      displayName,
-      username,
-      role,
-      createdAt:   serverTimestamp(),
-    }));
+  // User profiles and roles are provisioned server-side. A browser must never
+  // create its own profile or infer an elevated role from an email address.
+  if (!uSnap.exists()) {
+    console.warn('[DB] Thiếu hồ sơ quyền server-side; đăng xuất an toàn.', user.uid);
+    _dispatchEvent('db:authProfileMissing', { uid: user.uid });
+    await signOut(_auth);
+    return;
   }
 
-  // Email chủ quán luôn là admin (bảo đảm không bị hạ quyền)
-  if (user.email === OWNER_EMAIL) role = 'admin';
+  const d = uSnap.data();
+  let role = d.role || 'staff';
+  let displayName = d.displayName || user.displayName || user.email;
+  let username = d.username || user.email.split('@')[0];
 
   // Tài khoản bị vô hiệu hóa → đăng xuất ngay
   if (role === 'disabled') {
@@ -1286,9 +1298,12 @@ const Auth = {
     return signOut(_auth);
   },
 
-  /** Tạo tài khoản Firebase Auth mới (dùng từ màn hình quản lý nhân viên) */
-  async createUser(email, password) {
-    return createUserWithEmailAndPassword(_auth, email, password);
+  /**
+   * Client-side account creation is disabled. Personnel accounts must be
+   * provisioned through `DB.Users.add`, which calls the authenticated backend.
+   */
+  async createUser() {
+    throw new Error('Client-side account creation is disabled; use DB.Users.add.');
   },
 
   get currentUser() { return _auth.currentUser; },
@@ -2056,84 +2071,58 @@ const Settings = {
 // ============================================================
 // §13  USERS API  –  thay Store.getUsers / setUsers
 // ============================================================
+const _manageUserAccountCallable = httpsCallable(_functions, 'manageUserAccount');
+const SELF_SERVICE_USER_FIELDS = new Set([
+  'displayName',
+  'username',
+  'photoURL',
+  'fcmTokens',
+  'pushPermission',
+  'pushTokenUpdatedAt',
+]);
+
 const Users = {
-  /** Lấy danh sách users – thay Store.getUsers() */
+  /** Lấy danh sách users – manager/admin see directory; other roles see self. */
   getAll() { return window.appState.users; },
 
-  /** Sửa thông tin user (role, displayName, password...) */
-  async update(uid, data) {
-    await _safeUpdateDoc(_doc('users', uid), data, `users.update(${uid})`);
+  /** Only the currently authenticated user may update the self-profile allowlist. */
+  async update(uid, data = {}) {
+    const currentUid = String(_auth.currentUser?.uid || '');
+    if (!currentUid || String(uid) !== currentUid) {
+      throw new Error('Chỉ được cập nhật hồ sơ của chính mình.');
+    }
+    const keys = Object.keys(data);
+    if (keys.some(key => !SELF_SERVICE_USER_FIELDS.has(key))) {
+      throw new Error('Trường hồ sơ này phải được quản lý bởi máy chủ.');
+    }
+    await _safeUpdateDoc(_doc('users', currentUid), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), 'users.updateSelfProfile');
   },
 
-  /** Đặt role cho user */
-  async setRole(uid, role) {
-    await _safeUpdateDoc(_doc('users', uid), { role }, `users.setRole(${uid})`);
+  /** Direct role mutation is intentionally unavailable in the browser. */
+  async setRole() {
+    throw new Error('Role phải được quản lý qua backend có xác thực.');
   },
 
-  /** Vô hiệu hóa user */
-  async disable(uid) {
-    await _safeUpdateDoc(_doc('users', uid), { role: 'disabled' }, `users.disable(${uid})`);
+  /** Direct account disabling is intentionally unavailable in the browser. */
+  async disable() {
+    throw new Error('Vô hiệu hóa tài khoản phải được quản lý qua backend có xác thực.');
   },
 
   /**
-   * FIX 3: Tạo tài khoản nhân viên mới MÀ KHÔNG văng phiên Admin.
-   * Dùng Secondary Firebase App ("GhostApp") để createUser,
-   * sau đó đăng xuất app phụ và xóa nó. Admin không bị ảnh hưởng.
-   * @param {string} email
-   * @param {string} password
-   * @param {string} displayName
-   * @param {string} role - 'staff' | 'admin'
+   * Creates a Firebase Auth account and its role-bearing users document through
+   * the authenticated callable. Passwords never enter Firestore or logs.
    */
   async add(email, password, displayName, role = 'staff') {
-    let ghostApp;
-    try {
-      // Khởi tạo Firebase App phụ (ghost) tạm thời
-      const { initializeApp: _initApp, deleteApp } = await import(
-        'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'
-      );
-      const { getAuth: _getAuth,
-              createUserWithEmailAndPassword: _createUser,
-              signOut: _signOut } = await import(
-        'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'
-      );
-
-      ghostApp  = _initApp(FIREBASE_CONFIG, `GhostApp_${Date.now()}`);
-      const ghostAuth = _getAuth(ghostApp);
-
-      // Tạo tài khoản trên Ghost app
-      const cred = await _createUser(ghostAuth, email, password);
-      const newUid = cred.user.uid;
-
-      // Đăng xuất ngay khỏi ghost auth (không ảnh hưởng _auth chính)
-      await _signOut(ghostAuth);
-
-      // Ghi document user vào Firestore bằng app chính (Admin)
-      const username = displayName || email.split('@')[0];
-      await setDoc(_doc('users', newUid), sanitize({
-        uid: newUid,
-        email,
-        displayName: displayName || username,
-        username,
-        role,
-        createdAt: serverTimestamp(),
-      }));
-
-      // Dọn sạch Ghost App
-      await deleteApp(ghostApp);
-      ghostApp = null;
-
-      console.log('[DB] Users.add: Tạo thành công nhân viên', email, '| role:', role);
-      return { success: true, uid: newUid };
-    } catch (err) {
-      if (ghostApp) {
-        try {
-          const { deleteApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-          await deleteApp(ghostApp);
-        } catch(_) {}
-      }
-      console.error('[DB] Users.add error:', err);
-      throw err;
-    }
+    const response = await _manageUserAccountCallable({
+      email,
+      password,
+      displayName,
+      role,
+    });
+    return { success: true, ...(response?.data || {}) };
   },
 };
 

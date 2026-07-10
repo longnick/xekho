@@ -29,6 +29,7 @@ const telegramOrders = require('./telegram/orders');
 const telegramOnlineOrders = require('./telegram/online-orders');
 const generalUtils = require('./utils/general');
 const kitchenDeviceFeed = require('./kitchenDeviceFeed');
+const { createManagedUser } = require('./userManagementService');
 const {
   authorizeRequest,
   isContentLengthAllowed,
@@ -3490,6 +3491,31 @@ async function cancelCustomerPaymentTelegram(requestId) {
   }));
   return { ok: true, request: current, nextStatus: 'cancelled' };
 }
+
+exports.manageUserAccount = onCall({
+  region: 'asia-southeast1',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, async (request) => {
+  try {
+    return await createManagedUser(request, {
+      auth: admin.auth(),
+      db,
+      now: () => admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    const allowedCodes = new Set(['unauthenticated', 'permission-denied', 'invalid-argument', 'already-exists']);
+    const code = allowedCodes.has(error?.code) ? error.code : 'internal';
+    if (code === 'internal') {
+      logger.error('manageUserAccount failed', {
+        code: error?.code || 'unknown',
+        message: error?.message || String(error),
+        uid: request.auth?.uid || '',
+      });
+      throw new HttpsError(code, 'Không thể quản lý tài khoản nhân viên.');
+    }
+    throw new HttpsError(code, error.message);
+  }
+});
 
 exports.askPosChatbot = onCall({
   region: 'asia-southeast1',
