@@ -18,6 +18,7 @@ This manifest separates the completed local security remediation from an already
 | `e66f5b3` | R4 Hosting render containment | Requires authenticated mobile/POS QA |
 | `8dd9377` | R5 dependency compatibility | Residual allowlist expires 2026-08-31 |
 | `994b76f` | R1 CI/audit/artifact/browser gates | CI only; no runtime deployment |
+| `336fd1b` | R6 authenticated provisioning emulator compatibility | Local-only evidence; no production authority |
 
 ## Verified release units
 
@@ -66,7 +67,7 @@ This manifest separates the completed local security remediation from an already
 
 ## Production blockers retained
 
-- Authenticated synthetic-safe Functions E2E is not yet evidenced.
+- Authenticated synthetic-safe Functions E2E is evidenced locally in the dedicated temporary Emulator harness; it is not production validation.
 - Real mobile/POS authenticated QA is not yet evidenced.
 - Live role/staff mapping must be reviewed before Rules deployment.
 - `protobufjs` Functions residual is allowlisted only until 2026-08-31.
