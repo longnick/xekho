@@ -7,6 +7,7 @@ const { defineSecret, defineString } = require('firebase-functions/params');
 const axios = require('axios');
 const cors = require('cors')({ origin: true });
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { GoogleGenAI, Type } = require('@google/genai');
@@ -3500,7 +3501,7 @@ exports.manageUserAccount = onCall({
     return await createManagedUser(request, {
       auth: admin.auth(),
       db,
-      now: () => admin.firestore.FieldValue.serverTimestamp(),
+      now: () => FieldValue.serverTimestamp(),
     });
   } catch (error) {
     const allowedCodes = new Set(['unauthenticated', 'permission-denied', 'invalid-argument', 'already-exists']);
