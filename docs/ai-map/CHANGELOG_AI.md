@@ -1,3 +1,12 @@
+# 2026-07-11 - Release Readiness Sprint 1: Telegram webhook authenticity + callback owner authorization
+- Added `functions/telegram/webhookSecurity.js` pure helpers: `safeEqualString` (constant-time, fail-closed), `extractTelegramWebhookSecret` (case-insensitive `x-telegram-bot-api-secret-token`), `isAuthenticTelegramWebhook` (both-non-empty + match, fail-closed), `isTelegramWebhookBodySizeAllowed` (reuses `httpSecurity.isContentLengthAllowed`, 256 KiB default), `isAuthorizedTelegramWriteActor` (allowlist by chat/user id), `isTelegramWriteCallbackData` (mutating-prefix classifier); re-exports `createRateLimiter`.
+- Added unit tests `functions/telegram/webhookSecurity.test.js` (7) and source-wiring tests `functions/telegram/webhookWiring.test.js` (5).
+- Wired `exports.telegramWebhook` in `functions/index.js` (minimal hunks only): `TELEGRAM_WEBHOOK_SECRET` param (empty default; `process.env` fallback for local/emulator), a module-scope 120/min per-IP rate limiter, and an ordered start-of-POST gate — authenticity `401` → body-size `413` → rate-limit `429` — before any logging or DB work; plus an owner guard before every write callback (online-order approve/reject, draft confirm/edit/cancel, customer payment/order/service callbacks, pending AI confirm/cancel) that answers a denial and returns `200 skipped:'unauthorized-write-callback'` without mutating.
+- Updated `package.json` `test:functions-security` and `check:functions` to include the new files.
+- No real secret values committed; no deploy, no `setWebhook`, no secret rotation. Not committed (parent commits after reviews).
+- Verification: `check:functions` OK; webhookSecurity 7/7; webhookWiring 5/5; `test:functions-security` file set 43/43 tests across 9 suites; `git diff --check` clean.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-1.md`
+
 # 2026-07-11 10:06 +07 - Release Readiness Sprint 0 documentation
 - Copied the approved `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` from `/home/longnick/projects/xekho` into the clean integration worktree at `/home/longnick/projects/xekho-release-readiness`.
 - Created/corrected `docs/ai-map/RELEASE_UNIT_LEDGER.md` for reviewed base `5b103bfc853639d1b237084c42fc9ab23a0d9900`, branch `task/release-readiness-20260711`, R0-R8 unit boundaries, mixed-file hunk-staging constraints, excluded workstreams, explicit P0 callback mutation paths, gates, rollback prerequisites, dirty-source rescan evidence, accurate Sprint 0 gate evidence, R7 blocker, commit placeholders, and no-deploy authority.

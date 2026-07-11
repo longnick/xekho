@@ -1,3 +1,10 @@
+# 2026-07-11 - Release Readiness Sprint 1 relations
+- `functions/telegram/webhookSecurity.js` provides pure webhook-security helpers with no Firebase imports; it re-exports `createRateLimiter` and reuses `isContentLengthAllowed` from `functions/utils/httpSecurity.js`.
+- `functions/telegram/webhookSecurity.test.js` unit-tests those helpers; `functions/telegram/webhookWiring.test.js` asserts the guard order inside `functions/index.js` `exports.telegramWebhook`.
+- `functions/index.js` `exports.telegramWebhook` imports these helpers and declares `TELEGRAM_WEBHOOK_SECRET` (empty default) to authenticate deliveries (401), cap body size (413), rate-limit per IP (429), and require `isTelegramOwnerContext` before every write callback mutation; owner-id source remains `getTelegramOwnerChatIds()`.
+- `package.json` `test:functions-security` and `check:functions` now include the new webhook-security files.
+- `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-1.md` is the Sprint 1 task log; `docs/ai-map/RELEASE_UNIT_LEDGER.md` R1 status reflects Sprint 1 evidence.
+
 # 2026-07-11 10:06 +07 - Release readiness Sprint 0 relations
 - `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` is the approved sprint-by-sprint release readiness plan copied from the source dirty tree; it defines target scope, P0/P1 policy, Sprint 0-Sprint 12, full gate stack, and release-ready criteria.
 - `docs/ai-map/RELEASE_MANIFEST_SECURITY_REMEDIATION.md` remains the historical packaging manifest for prior candidate security units; candidate units are inherited only as unverified context until rechecked against new P0 findings.

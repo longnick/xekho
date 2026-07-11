@@ -37,6 +37,15 @@ const {
   validateBase64Media,
   createRateLimiter,
 } = require('./utils/httpSecurity');
+const {
+  isAuthenticTelegramWebhook,
+  extractTelegramWebhookSecret,
+  isTelegramWebhookBodySizeAllowed,
+  isTelegramWriteCallbackData,
+  isAuthorizedTelegramWriteActor,
+  createRateLimiter: createTelegramRateLimiter,
+  DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES,
+} = require('./telegram/webhookSecurity');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -127,6 +136,8 @@ const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
+const TELEGRAM_WEBHOOK_SECRET = defineString('TELEGRAM_WEBHOOK_SECRET', { default: '' });
+const telegramWebhookRateLimiter = createTelegramRateLimiter({ limit: 120, windowMs: 60000 });
 const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
@@ -4328,6 +4339,29 @@ exports.telegramWebhook = onRequest({
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
 
+    // Sprint 1 security: reject forged/oversized webhook calls before any logging or DB work.
+    const configuredWebhookSecret = String(
+      TELEGRAM_WEBHOOK_SECRET.value() || process.env.TELEGRAM_WEBHOOK_SECRET || ''
+    ).trim();
+    const providedWebhookSecret = extractTelegramWebhookSecret(req);
+    if (!isAuthenticTelegramWebhook({
+      configuredSecret: configuredWebhookSecret,
+      providedSecret: providedWebhookSecret,
+    })) {
+      return json(res, 401, { ok: false, error: 'Unauthorized' });
+    }
+    if (!isTelegramWebhookBodySizeAllowed(req, DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES)) {
+      return json(res, 413, { ok: false, error: 'Payload too large' });
+    }
+    const rateLimitKey = String(
+      (req.headers?.['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0] : '')
+      || req.ip
+      || 'unknown'
+    ).trim();
+    if (!telegramWebhookRateLimiter.take(`ip:${rateLimitKey}`)) {
+      return json(res, 429, { ok: false, error: 'Too many requests' });
+    }
+
     const botToken = getTelegramAssistantBotToken();
     const callbackQuery = req.body?.callback_query || null;
     const message = req.body?.message || req.body?.edited_message || null;
@@ -4383,6 +4417,21 @@ exports.telegramWebhook = onRequest({
         const chartIdFromCallback = parseTelegramChartCallbackData(callbackData);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
+
+        // Sprint 1 security: mutating callbacks require an authorized owner context
+        // (allowlist = owner chat/user IDs; fail-closed when allowlist empty).
+        if (isTelegramWriteCallbackData(callbackData) && !isAuthorizedTelegramWriteActor({
+          allowlist: getTelegramOwnerChatIds(),
+          chatId: userContext.chatId,
+          userId: userContext.userId,
+        })) {
+          await answerTelegramCallback({
+            callbackQueryId: callbackQuery.id,
+            text: 'Không có quyền thực hiện thao tác này.',
+            botToken,
+          }).catch(() => {});
+          return json(res, 200, { ok: false, skipped: 'unauthorized-write-callback' });
+        }
 
         if (chartIdFromCallback) {
           const chartId = chartIdFromCallback;

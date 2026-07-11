@@ -1,3 +1,13 @@
+# 2026-07-11 - DONE: Release Readiness Sprint 1 - Telegram webhook authenticity + callback owner authorization
+- DONE: Added `functions/telegram/webhookSecurity.js` pure helpers (constant-time secret compare fail-closed, header extraction, authenticity check, body-size guard, write-actor allowlist, write-callback classifier) with unit tests (7) and source-wiring tests (5).
+- DONE: Wired `exports.telegramWebhook` in `functions/index.js` with an ordered start-of-POST security gate (authenticity 401 → body-size 413 → per-IP rate-limit 429) before any logging/DB work, plus an owner guard before every write callback (online-order, draft, customer payment/order/service, pending AI confirm/cancel).
+- DONE: `TELEGRAM_WEBHOOK_SECRET` param declared with empty default (+ `process.env` fallback for local); no real secret values committed.
+- DONE: Extended `package.json` `test:functions-security` and `check:functions` to cover the new files.
+- DONE: Verification — `check:functions` OK; webhookSecurity 7/7; webhookWiring 5/5; `test:functions-security` file set 43/43 across 9 suites; `git diff --check` clean.
+- NOT COMMITTED: parent commits after reviews.
+- NEXT: R2 Firestore Rules containment; separately fix R7 canonical Capacitor wrapper/file-mode before claiming release-ready.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-1.md`.
+
 # 2026-07-11 10:06 +07 - Sprint 0 docs scope passed; release gate blocked
 - DONE: Copied approved `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` from the source dirty tree into the clean integration worktree without changing runtime source.
 - DONE: Created/corrected `docs/ai-map/RELEASE_UNIT_LEDGER.md` covering reviewed base SHA, release target, R0-R8 units, mixed-file hunk-staging rules, excluded workstreams, explicit P0 callback mutation paths, gate commands, rollback prerequisites, SHA placeholders, dirty-source rescan evidence, accurate gate evidence, R7 blocker, and no-deploy authority.
