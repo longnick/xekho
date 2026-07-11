@@ -1,3 +1,12 @@
+# 2026-07-11 10:06 +07 - Sprint 0 docs scope passed; release gate blocked
+- DONE: Copied approved `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` from the source dirty tree into the clean integration worktree without changing runtime source.
+- DONE: Created/corrected `docs/ai-map/RELEASE_UNIT_LEDGER.md` covering reviewed base SHA, release target, R0-R8 units, mixed-file hunk-staging rules, excluded workstreams, explicit P0 callback mutation paths, gate commands, rollback prerequisites, SHA placeholders, dirty-source rescan evidence, accurate gate evidence, R7 blocker, and no-deploy authority.
+- DONE: Recorded dirty-source rescan evidence: 86 entries, 22 tracked, 64 untracked, 13 tracked paths differ from the clean candidate; excluded `.hermes/`, `.understand-anything/`, and `firestore-debug.log`.
+- DONE: Added `.hermes/`, `.understand-anything/`, and `firestore-debug.log` to `.gitignore` only.
+- BLOCKED: Overall release gate is not all-green. P0 security items remain, and R7 canonical `npm run cap:build` is blocked by tracked `android/gradlew` mode `100644` even though the Java 17 direct bash wrapper build produced the debug APK.
+- NEXT: Sprint 1 may start only after review; focus on P0 Telegram webhook authenticity/owner callback authorization and approve/reject callable auth/role containment. Separately fix R7 canonical Capacitor wrapper/file-mode before claiming release-ready.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-0.md`.
+
 # 2026-06-26 05:00 +07 - DONE: Capacitor Android OTA and brand icon
 - DONE: Configured Capgo live update foundation with `autoUpdate: false` inside `capacitor.config.ts`.
 - DONE: Adjusted Android Gradle `compileSdkVersion` to 35 and `minSdkVersion` to 23 for compatibility.

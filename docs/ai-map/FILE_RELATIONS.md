@@ -1,3 +1,11 @@
+# 2026-07-11 10:06 +07 - Release readiness Sprint 0 relations
+- `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` is the approved sprint-by-sprint release readiness plan copied from the source dirty tree; it defines target scope, P0/P1 policy, Sprint 0-Sprint 12, full gate stack, and release-ready criteria.
+- `docs/ai-map/RELEASE_MANIFEST_SECURITY_REMEDIATION.md` remains the historical packaging manifest for prior candidate security units; candidate units are inherited only as unverified context until rechecked against new P0 findings.
+- `docs/ai-map/INTEGRATION_DIRTY_TREE_CLASSIFICATION.md` records the dirty source tree classification and excluded workstreams that must not be copied wholesale into the clean integration branch.
+- `docs/ai-map/RELEASE_UNIT_LEDGER.md` ties the master plan, manifest, and dirty classification to the clean integration branch `task/release-readiness-20260711`, reviewed base `5b103bfc853639d1b237084c42fc9ab23a0d9900`, R0-R8 release units, included/future paths, mixed-file hunk-staging rules, P0 blockers, gate commands, rollback prerequisites, commit SHA placeholders, and no-deploy authority.
+- `.gitignore` now excludes local agent/cache/debug artifacts (`.hermes/`, `.understand-anything/`, `firestore-debug.log`) without altering runtime ignore policy.
+- `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-0.md` is the Sprint 0 documentation task log.
+
 # 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon relations
 - `package.json` installs `@capgo/capacitor-updater@6.45.10` for Capacitor 6 live-update foundation.
 - `capacitor.config.ts` sets `autoUpdate: false` inside `plugins.CapacitorUpdater` as a safe default to prevent untrusted background updates.

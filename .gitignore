@@ -17,9 +17,14 @@ project-*.json
 
 # Generated/debug artifacts
 firebase-debug.log
+firestore-debug.log
 functions-list.json
 *.json.bak
 *.backup-*
+
+# Local agent/cache metadata
+.hermes/
+.understand-anything/
 
 # Android native local/build outputs
 android-native/local.properties

@@ -1,3 +1,13 @@
+# 2026-07-11 10:06 +07 - Release Readiness Sprint 0 documentation
+- Copied the approved `docs/ai-map/RELEASE_READINESS_MASTER_PLAN.md` from `/home/longnick/projects/xekho` into the clean integration worktree at `/home/longnick/projects/xekho-release-readiness`.
+- Created/corrected `docs/ai-map/RELEASE_UNIT_LEDGER.md` for reviewed base `5b103bfc853639d1b237084c42fc9ab23a0d9900`, branch `task/release-readiness-20260711`, R0-R8 unit boundaries, mixed-file hunk-staging constraints, excluded workstreams, explicit P0 callback mutation paths, gates, rollback prerequisites, dirty-source rescan evidence, accurate Sprint 0 gate evidence, R7 blocker, commit placeholders, and no-deploy authority.
+- Updated `.gitignore` only for local/generated paths: `.hermes/`, `.understand-anything/`, and `firestore-debug.log`.
+- Updated AI-map status/relations and task log `docs/ai-map/TASK_LOGS/2026-07-11-release-readiness-sprint-0.md`.
+- Verification evidence recorded: clean root/functions install and all gates before canonical `cap:build` passed under `set -e`; canonical `npm run cap:build` failed on tracked `android/gradlew` mode `100644`; direct Java 21 bash wrapper failed missing `jlink`; Java 17 bash wrapper `assembleDebug` passed with 108 actionable tasks and APK size `7,096,863` bytes.
+- Dirty-source rescan recorded 86 entries total: 22 tracked, 64 untracked, 13 tracked paths differ from the clean candidate; excluded `.hermes/`, `.understand-anything/`, and `firestore-debug.log`.
+- Sprint 0 docs scope passed, but overall release gate remains blocked by P0 security items and R7 canonical Capacitor wrapper/file-mode issue; no all-green claim.
+- No application behavior, dependencies, Rules, Functions, Hosting config, Capacitor config, production state, deploy, staging, or commit performed.
+
 # 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon
 - Added `@capgo/capacitor-updater@6.45.10` live update foundation for Capacitor 6 and configured `autoUpdate: false` in `capacitor.config.ts`.
 - Changed `compileSdkVersion` to `35` and `minSdkVersion` to `23` in `android/variables.gradle` to resolve dependency requirements.
