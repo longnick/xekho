@@ -1,0 +1,735 @@
+# 2026-07-14 23:01 +07 - Attendance status-bar checkout relations
+- `index.html` no longer includes `#tables-checkout-panel`; the old Bàn renderer/action and their calls were removed so status card is the sole in-app checkout surface.
+- `app.js#applyRoleRights`, the attendance `db:update` path, and check-in/check-out completion all call `updateShiftBtnUI()` so the status action follows login and realtime attendance state.
+- `app.js#updateShiftBtnUI()` first restores the legacy POS shift card state, then calls `renderStatusBarAttendanceCheckout()` to replace that button only for a logged-in staff member with an open same-day `attendance_daily` row.
+- `statusBarAttendanceCheckoutAction()` uses `_webAttendanceCheckOutForActor(actor, { suppressSuccessToast: true })`; it does not introduce a new Firestore write path.
+- The status-card button stops propagation before checkout so its parent `manageShift()` handler cannot open the POS close-shift modal.
+- `index.html` cache-busts `app.js` with `20260714-attendance-status-checkout`; `scripts/verify-attendance-webapp.js` verifies the UI wiring and cache key.
+
+# 2026-07-12 - Zalo Bot command admin relations
+- `index.html#set-tab-zalo-bot` exposes only a text-reply command form, admin-managed list, and a no-send simulator; `app.js#renderZaloBotCommandAdmin` uses DOM node/textContent rendering for persisted trigger/alias/reply values.
+- `db.js#ZaloBotCommands` is the browser persistence adapter for `zalo_bot_commands`; `firestore.rules` permits read/write only to `isAdmin()` (manager/admin).
+- `functions/zalo/commandCatalog.js` is the pure Vietnamese normalization/validation/matching contract shared by webhook runtime tests; it accepts only `actionType: text_reply` and whole phrases.
+- `functions/index.js#zaloWebhook` preserves built-in staff command precedence, then reads enabled custom rows transiently and never logs message/reply text.
+- `tests/zaloCommandAdminWiring.test.js`, `functions/zalo/commandCatalog*.test.js`, and Rules `pos-data.rules.test.js` cover source/runtime/authorization boundaries. No live dispatch exists until scoped deploy approval.
+
+# 2026-07-11 02:32 +07 - Security remediation release-rehearsal relations
+- `.github/workflows/ci.yml` independently runs frontend, Rules Emulator, Functions security, Hosting artifact/browser, and dual-lockfile audit gates without production credentials.
+- `scripts/check-dependency-audit.js` consumes `scripts/dependency-audit-allowlist.json`; its documented Functions residual must be reviewed before the expiry date and cannot be silently accepted after expiry.
+- `scripts/build-hosting-dist.js` generates `dist/`; `scripts/verify-hosting-dist.js` validates its runtime/forbidden-path boundary; `scripts/ci-browser-smoke.js` serves that same local artifact for signed-out, non-destructive UI verification.
+- `tests/firestore-rules/*` always run through the Firebase Emulator project `xekho-rules-test`; `functions/*Security*.test.js` and syntax checks validate handler containment without real endpoint calls.
+- Sprint 6 verification does not authorize production deployment. A reviewed commit per component plus authenticated Function and real-device POS evidence are prerequisites for owner release selection.
+
+# 2026-07-04 01:18 +07 - Attendance rounding relations
+- `attendance_shifts.durationMinutes` remains actual elapsed minutes per shift.
+- `attendance_daily.totalMinutes` remains actual accumulated daily minutes.
+- `attendance_daily.payableMinutes/payableHours/totalWage` are derived from rounded daily total minutes via `_roundAttendancePayableMinutes()`.
+- `expenses.amount` for category `Lương nhân viên` uses the rounded `totalWage`, while expense note shows rounded `payableHours`.
+
+# 2026-07-04 00:45 +07 - PIN-screen attendance geofence relations
+- `index.html#web-attendance-card` is now inside `#lock-screen`, not `#page-tables`, so employees can chấm công at the same moment they enter the 4-digit PIN.
+- `index.html#pin-code-input` triggers `renderWebAttendancePanel()` on input; the renderer resolves the entered PIN through `_findStaffByPin()` without unlocking the POS session.
+- `app.js#webAttendanceCheckInFromPin()` / `#webAttendanceCheckOutFromPin()` call the shared attendance write helpers with a PIN-resolved actor.
+- `_requireAttendanceLocationGate()` must run before `DB.Attendance.setDaily/createShift/updateShift/updateDaily` and before `DB.Expenses.add/update`; failed/denied/far geolocation blocks writes.
+- Geofence uses the canonical shop coordinates from memory: latitude `11.537108`, longitude `107.823279`, radius `< 15m`.
+- `scripts/verify-attendance-webapp.js` guards that the card stays on the PIN screen, not page-tables, and that the geolocation gate remains present.
+
+# 2026-07-04 00:05 +07 - Phase D web attendance relations
+- `index.html#web-attendance-card` originally lived on `page-tables`; superseded by the 00:45 entry moving it into `#lock-screen`.
+- `app.js#renderTables()` and the `db:update` handler both call `renderWebAttendancePanel()` so attendance status updates after realtime `attendanceDaily` / `attendanceShifts` changes.
+- `app.js#webAttendanceCheckIn()` uses `currentUser` only, derives `dailyId` from `staffId + dateKey`, calls `DB.Attendance.setDaily()` and `DB.Attendance.createShift()`, and never exposes a staff selector for writes.
+- `app.js#webAttendanceCheckOut()` depends on `window.appState.attendanceShifts` to find the latest open shift, then writes `DB.Attendance.updateShift()`, `DB.Expenses.add/update()`, and `DB.Attendance.updateDaily()`.
+- `db.js#Attendance.setDaily()` uses merge semantics so multiple same-day web shifts preserve the daily document identity.
+- `firestore.rules` must keep `attendance_daily` and `attendance_shifts` delete admin-only even though staff create/update is allowed for the direct web path.
+- `scripts/verify-attendance-webapp.js` supersedes the old no-web-check-in/out guard with Phase D positive assertions plus the no-geolocation/photo guard.
+
+# 2026-07-03 23:45 +07 - Attendance QA sample-data relations
+- `app.js#_isQaAttendanceMode()` gates QA controls from `window.location.search`; normal production URL remains unchanged.
+- `app.js#renderAttendanceManagement()` owns the QA banner because the banner belongs inside the admin attendance section and must remain hidden from non-admin flows.
+- `app.js#_loadQaAttendanceSample()` mutates only `window.appState.staff`, `window.appState.attendanceDaily`, and `window.appState.attendanceShifts`; these are the same arrays rendered by the Phase A/B dashboard and shift drilldown.
+- `app.js#_resetQaAttendanceSample()` filters `qaSample` rows out of those three appState arrays without touching real Firestore-backed data already present in memory.
+- `app.js#_confirmAdjustAttendanceDaily()` must keep the `qaSample` guard before `DB.Attendance.updateDaily` and `DB.Expenses.update`; this preserves the local-only safety boundary when users test the adjustment modal on fake rows.
+- `scripts/verify-attendance-webapp.js` source-checks the QA boundary so future edits cannot accidentally add DB/fetch/localStorage/Firebase SDK calls to the sample loader.
+
+# 2026-07-03 23:15 +07 - Phase B attendance drilldown + adjustment relations
+- `app.js#renderAttendanceManagement()` row cards call `toggleAttendanceShiftDetail(dailyId)` and allocate a hidden panel id from `_attendanceDetailPanelId(dailyId)`.
+- `app.js#_renderAttendanceShiftDetailHtml(dailyId)` reads `window.appState.attendanceShifts` from `db.js` and matches shifts by `dailyId` OR `staffId + dateKey` against the selected `attendance_daily` row.
+- `app.js#adjustAttendanceDaily(dailyId)` now opens a modal and delegates writes to `_confirmAdjustAttendanceDaily(dailyId)`; it still uses `DB.Attendance.updateDaily` and only updates `DB.Expenses.update` when a linked `expenseId` exists.
+- `app.js#_escapeJsString(text)` is used for attendance inline handler arguments; `_escapeHtml()` remains for HTML content/attributes.
+- `scripts/verify-attendance-webapp.js` now asserts Phase A + Phase B behavior, including no `prompt()` inside adjustment flow, required reason validation, wage preview, expense note reason, shift detail matching, and no web check-in/out scope creep.
+
+# 2026-07-03 23:00 +07 - Phase A attendance dashboard relations
+- `index.html#settings-attendance-management` now contains two filter rows: date (existing) + staff/status (new). All four filter inputs carry `data-esm-render-refresh="renderAttendanceManagement"` so ESM event delegation re-renders on change.
+- `app.js#renderAttendanceManagement()` reads `#attendance-staff-filter` and `#attendance-status-filter` values and populates the staff select from `_getManagedStaff(true)` from `window.appState.staff`.
+- `app.js#renderAttendanceManagement()` reads `window.appState.attendanceDaily` (populated by `db.js` `attendance_daily` listener) and `window.appState.staff` (populated by `db.js` `Staff` listener).
+- `db.js#Attendance.updateDaily` and `db.js#Attendance.updateShift` remain the sole write paths for attendance adjustments; `app.js#adjustAttendanceDaily()` calls them unchanged.
+- `scripts/verify-attendance-webapp.js` source-reads `index.html`, `app.js`, and `db.js` to assert Phase A DOM markers, listener/helper presence, filter/summary/empty-state logic markers, scope-creep guard, and absence of `process.env` in browser files.
+- `eslint.config.mjs` ignores generated/build folders; this keeps the lint gate from evaluating Android generated assets while preserving existing source-file warnings.
+
+# 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon relations
+- `package.json` installs `@capgo/capacitor-updater@6.45.10` for Capacitor 6 live-update foundation.
+- `capacitor.config.ts` sets `autoUpdate: false` inside `plugins.CapacitorUpdater` as a safe default to prevent untrusted background updates.
+- `android/variables.gradle` raises `compileSdkVersion = 35` and `minSdkVersion = 23` to meet new plugin AAR dependencies.
+- `android/app/src/main/res/values/ic_launcher_background.xml` and `drawable/ic_launcher_background.xml` specify `#7A2B18` brand color.
+- `drawable/ic_launcher_foreground.xml` and `drawable-v24/ic_launcher_foreground.xml` specify the Xe Khô bowl mark matching `kitchen-icon.svg`.
+- `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` reference `@drawable/ic_launcher_foreground` for vector/adaptive rendering.
+- `scripts/verify-android-capacitor.js` checks OTA configuration, no raw secret keywords, brand color markers, and recursive assets exclusions.
+- `scripts/build-capacitor-ota-bundle.py` packages `dist/` into `android/app/build/outputs/ota/` with a SHA256 manifest for manual Capgo/self-hosted upload; it excludes `android/`, `android-native/`, `functions/`, `node_modules/`, and dot-env/secret-looking filenames.
+
+# 2026-06-26 03:12 +07 - Capacitor Android relations
+- `package.json#cap:sync` runs `npm run build:hosting` before `npx cap sync`, so the Android WebView receives the latest current web UI bundle.
+- `package.json#cap:build` runs `cap:sync`, then `android/gradlew assembleDebug --no-daemon` to produce `android/app/build/outputs/apk/debug/app-debug.apk`.
+- `capacitor.config.ts` maps `appId = com.xekho.pos.capacitor`, `appName = Xe Kho POS`, and `webDir = dist`.
+- `scripts/build-hosting-dist.js` excludes `android/` and `android-native/` while copying static root runtime files into `dist`, preventing recursive Capacitor/Android asset copies.
+- `android/` is the new Capacitor Android wrapper path; `android-native/` remains paused and should not receive new UI work unless explicitly re-approved.
+
+# 2026-06-26 02:52 +07 - Real-data read-only direction relations
+- `GuardedRealDataDirectionGate.kt` depends on `RealDataDirectionRequest`/`RealDataDirectionState` from `Models.kt` and produces a UI-safe checklist state.
+- `AppRoot.kt` evaluates `GuardedRealDataDirectionGate` alongside existing Firestore contract/repository/checklist previews and displays the Sprint 28 real-data direction card.
+- `NativeUiServerSmokeHarness.kt` source-scans `AppRoot.kt` for `Real data direction Sprint 28` and `Chuyển hướng data thật` markers while forbidden Firestore execution markers remain blocked.
+- `RealDataDirectionGateTest.kt` and `NativeUiServerSmokeHarnessTest.kt` guard the domain and renderable-source behavior without emulator/APK install.
+
+# 2026-06-26 02:33 +07 - Android native manual QA result relations
+- `native-qa-result-template.sh` reads `docs/android-native-manual-qa-result-template.md`, optionally reads `android-native/app/build/outputs/apk/debug/app-debug.apk` for SHA256, and writes timestamped drafts under `docs/ai-map/MANUAL_QA_RESULTS/`.
+- `NativeManualQaResultTemplateReporter.kt` mirrors the same result-template paths/fields in JVM tests so the manual result format is guarded without executing shell.
+- `docs/android-native-manual-qa.md` links manual testers to `scripts/native-qa-result-template.sh` for structured pass/fail capture.
+
+# 2026-06-26 02:23 +07 - Android native manual QA checklist relations
+- `NativeManualQaChecklistReporter.kt` mirrors the manual install/smoke flow documented in `docs/android-native-manual-qa.md` so critical QA steps are covered by JVM tests.
+- `NativeManualQaChecklistTest.kt` checks the checklist includes `scripts/native-apk-report.sh`, the Telegram `MEDIA:` delivery line, Demo PIN, core native tabs/cards, and blocked Firebase/production items.
+- `docs/android-native-manual-qa.md` uses the APK/report path generated by `android-native/scripts/native-apk-report.sh` and remains documentation only.
+
+# 2026-06-26 02:08 +07 - Android native APK delivery command relations
+- `scripts/native-apk-report.sh` reads `app/build.gradle.kts` for `applicationId`, `versionCode`, and `versionName`, reads `app/build/outputs/apk/debug/app-debug.apk` for SHA256/size/scan, and writes `app/build/outputs/apk/debug/xekho-native-debug-apk-report.md`.
+- `NativeArtifactReporter.kt` mirrors the same script/report paths in JVM tests so metadata stays discoverable without executing shell.
+- `NativeArtifactReportTest.kt` prevents accidental removal of the Telegram-ready `MEDIA:` delivery metadata.
+
+# 2026-06-26 01:51 +07 - Android native artifact/smoke relations
+- `app/build.gradle.kts` provides `applicationId`, `versionCode`, and `versionName`; `NativeArtifactReporter.kt` reads those values in JVM tests to produce a debug artifact report.
+- `NativeArtifactReportTest.kt` guards that Sprint 24 version metadata and debug APK path stay explicit while release signing, service accounts, google-services config, writes, and sync remain blocked.
+- `NativeUiServerSmokeHarness.kt` reads `AppBrand.kt`, `AppRoot.kt`, and `GuardedFirestoreReadOnlyApprovalChecklist.kt`; it now decodes Kotlin source unicode escapes so Vietnamese labels in Settings/Inventory/Finance are guarded by readable markers.
+
+# 2026-06-26 01:37 +07 - Android native server UI smoke harness relations
+- `NativeUiServerSmokeHarness.kt` reads `AppBrand.kt`, `AppRoot.kt`, and `GuardedFirestoreReadOnlyApprovalChecklist.kt` as source text during JVM unit tests.
+- `NativeUiServerSmokeHarnessTest.kt` guards that source-visible UI markers for login/PIN, POS local flow, payment/queue cards, Sprint 21 mapping, and Sprint 22 checklist remain present.
+- The harness is test-only under `src/test`; it is not packaged into app runtime and does not require emulator, ADB device, APK install, Firebase config, Firestore reads, or production data.
+
+# 2026-06-26 01:24 +07 - Android native Firestore approval checklist relations
+- `Models.kt` defines the Sprint 22 Firestore read-only checklist request/item/state DTOs and fail-closed guard flags.
+- `GuardedFirestoreReadOnlyApprovalChecklist.kt#evaluate()` consumes modeled local readiness flags and returns blocked/approval-held local-only state; it does not depend on Firebase SDK runtime calls.
+- `AppRoot.kt#MainDashboard()` creates a default checklist with SDK/contract/repository review modeled ready but owner approval and `google-services.json` missing, so UI remains blocked.
+- `AppRoot.kt#TablesScreen()` renders `Firestore approval checklist Sprint 22` after the Sprint 21 mapping card; it is informational only and cannot trigger reads/writes.
+- `FirestoreReadOnlyApprovalChecklistTest.kt` guards that all checklist paths keep `canExecuteReads`, `didInstantiateFirestore`, `didExecuteRead`, `didReadProductionData`, `canWriteToProduction`, and `canSyncToFirestore` false.
+
+# 2026-06-25 07:39 +07 - Auto stock compact ordering summary relations
+- `index.html#[data-xk-auto-stock-norm="v1"]` is now a compact clickable card; `toggleAutoStockNormOverview(event)` opens/closes the ordering overview and old filter controls were removed.
+- `app.js#getAutoStockNormPurchaseInfo()` converts `suggestedImportQty` into order units; beer/can rows round up to 24-can cases and estimate cost from inventory `costPerUnit`.
+- `app.js#renderAutoStockNormBoard()` now shows projected purchase total first, then expandable per-item `<details>` cards for reasons/current stock/par/cost.
+- `style.css` adds `.auto-stock-compact`, `.auto-stock-overview`, and `.auto-stock-order-item` classes for the mobile-first summary/drill-down UI.
+- `scripts/verify-auto-stock-norm.js` guards compact-summary markers, case conversion markers, removed old filter, and cache keys `20260625-auto-stock-summary`.
+
+# 2026-06-25 07:14 +07 - Auto stock norm mobile layout relations
+- `app.js#buildAutoStockNormRows()` now computes `suggestedImportQty` from `par - currentStock` for mapped inventory rows.
+- `app.js#renderAutoStockNormBoard()` places `statusBadge(row)` inline inside `.auto-stock-norm-name-cell`, adds the `Cần nhập đề xuất` field, and removes the separate status column.
+- `style.css` owns `.auto-stock-norm-*` responsive layout; mobile turns table rows into cards with `data-label` pseudo-labels and no horizontal overflow.
+- `index.html` cache keys `style.css?v=20260625-auto-stock-mobile` and `app.js?v=20260625-auto-stock-mobile` force mobile Safari/Hosting refresh.
+- `scripts/verify-auto-stock-norm.js` guards the mobile markers, cache keys, and CSS class markers.
+
+# 2026-06-25 06:45 +07 - Auto stock norm board relations
+- `index.html#auto-stock-norm-board` renders a read-only `Định mức tồn kho tự động` card in `Kho → TỒN KHO` and loads `app.js?v=20260625-auto-stock-norm`.
+- `db.js` streams `history` and `Inventory_Items`/inventory into `window.appState`; `app.js#buildAutoStockNormRows()` reads them through `_getVisibleHistoryForUi()` and `_getInventory()` without writing Firestore.
+- `app.js#renderAutoStockNormBoard()` computes 56-day POS item demand, ABC class, P75/P90/P95, `Tối thiểu / Chuẩn / Tối đa`, and maps current stock by `linkedInventoryId`, item id, or normalized name.
+- `scripts/verify-auto-stock-norm.js` guards the DOM marker, app logic markers, cache key, and realtime refresh markers.
+
+# 2026-06-19 18:21 +07 - POS chatbot Firestore profit report relations
+- `functions/index.js#getProfitReport()` now reads `history` via Admin SDK read-only, filters visible report orders with existing Telegram report guards, and aggregates item-level qty/revenue/cost/grossProfit for Vietnam-time `today/current_month/last_month` ranges.
+- `buildMockProfitReport()` remains only as a labeled fallback (`mock-firestore-error` / `mock-empty-live-data`) so Gemini does not invent numbers if Firestore is unavailable or the range has no item data.
+- `runAskPosChatbot()` exposes returned tool data as `toolData` rather than `mockData`; Telegram owner route keeps this data inside `toolResults` for internal traceability.
+
+# 2026-06-19 18:09 +07 - Telegram POS chatbot function-calling route
+- `telegramWebhook` owner text branch now checks deterministic menu/proactive/finance/smart-report handlers first, then uses `tryAnswerTelegramPosChatbotFunctionCalling()` for natural report questions before the generic `askGeminiWithFirestoreTools()` fallback.
+- `tryAnswerTelegramPosChatbotFunctionCalling()` delegates to `runAskPosChatbot()` and sends the resulting natural Gemini answer back through the normal Telegram message path.
+- `getPosChatbotAi()` supports Gemini API-key runtime and Vertex AI runtime fallback for Cloud Functions deploys.
+
+# 2026-06-19 17:26 +07 - POS chatbot Gemini function-calling relations
+- `functions/index.js#askPosChatbot` is an authenticated callable entrypoint for POS report chat questions.
+- `getProfitReportTool` lets Gemini request `timeframe` (`today/current_month/last_month`) plus optional `sort` (`highest/lowest`) instead of inventing numbers.
+- `getProfitReport()` currently returns mock data only; replace it with read-only Firestore/BigQuery reporting before exposing real financial answers broadly.
+- `scripts/verify-pos-chatbot-function-calling.js` guards the SDK import, tool schema, auth gate, function-response turn, and mock data markers.
+
+# 2026-06-19 16:58 +07 - Table special-card file relations
+- `index.html` cache keys -> loads fresh `db.js` and `app.js` for table special-card cleanup.
+- `db.js` online-order listener -> `window.appState.onlineOrders` -> `app.js#renderTables` / `renderOnlineOrdersPanel`.
+- `Store.orders.takeaway` remains canonical for local-only `Khach Mang Ve`; stale cloud `orders.takeaway` is ignored by `app.js#_getOrders` and `syncLocalOrderCacheFromCloud`.
+
+# File Relations
+
+## 2026-07-11 release readiness planning
+
+- `RELEASE_READINESS_MASTER_PLAN.md` orchestrates security containment, Rules/HTTP/dependency hardening, clean release packaging, E2E/QA, deployment and rollback.
+- `RELEASE_MANIFEST_SECURITY_REMEDIATION.md` supplies the current R1–R5 remediation boundaries consumed by Sprint 0/8 of the master plan.
+- `SECURITY_ACCESS_MATRIX.md`, `SECURITY_HTTP_ENDPOINT_MATRIX.md`, `DEPENDENCY_SECURITY_BASELINE.md`, and `FRONTEND_RENDER_BOUNDARIES.md` provide the audit baselines and acceptance evidence.
+- `TODO_AI.md` points execution to Sprint 0 only; `TASK_LOGS/2026-07-11-release-readiness-master-plan.md` records the planning decision.
+
+## Module: POS frontend
+
+Purpose:
+
+Run the main restaurant point-of-sale workflow: table/order state, menu interactions, checkout, and staff/admin UI.
+
+Related files:
+
+- `index.html`
+  - role: main POS document / UI shell.
+  - depends on: root JS/CSS assets such as `app.js`, `db.js`, `style.css`.
+  - used by: Firebase Hosting / local server users.
+  - notes: verify script tags before changing frontend module names; obsolete top-level Menu, AI Insights, and Media pages/navigation entries were removed in the 2026-06-03 deploy cleanup.
+
+- `app.js`
+  - role: main POS client-side application logic.
+  - depends on: Firebase wrapper/data helpers and DOM structure in `index.html`.
+  - used by: POS page.
+  - notes: now explicitly denies stale `menu` / `insights` / `media` navigation after those obsolete pages were removed; `submitMenuItem()` uses Vietnamese money parsing for menu prices and an id-aware recipe gate so existing menu items can save price edits even if they currently have no recipe rows; `openBillModal()` uses `formatBillUnitPrice()` for the bill `Đ.Giá` column so fractional-thousand prices such as `17.500đ` display as `17,5K` instead of rounded `18K`; order header `#order-table-note` syncs quick table notes with cart/order extras and table notes; `renderTables()` also displays escaped full-width note text inside physical table cards; purchase/stocktake inventory modals now use searchable item pickers guarded by `scripts/verify-inventory-item-search.js`; `submitInvEdit()` must send both `itemType` and `inv_type` so Kho edits persist Nguyên liệu/Hàng bán thẳng through `DB.Inventory.update()` and master/reporting compatibility; Finance custom date ranges persist `financePeriod=range` before rendering so revenue, expenses, fixed costs, charts, and discount details share the selected dates; the stocktake modal keeps a fixed-height sheet with a top search panel and a shorter result-scroll region for iPhone keyboard safety; inspect diff before editing.
+
+- `app/esm/main.js`
+  - role: Phase E1/E2/E3 browser-module compatibility harness for future ESM migration.
+  - depends on: existing classic runtime being loaded first; imports DOM/format/date/Excel/staff ESM facades plus DOM/Store/DB runtime adapters; reads/creates `window.XekhoApp.esm` and installs compatibility globals/adapters.
+  - used by: `index.html` as `<script type="module">` after offline/classic scripts and before inline DOM helpers.
+  - notes: does not import `app.js`, does not change POS behavior, and is verified by `scripts/verify-esm-entry.js`.
+
+- `app/esm/utils/dom.js`
+  - role: Phase E2 importable DOM utility facade.
+  - depends on: no app state; pure `escapeHtml()` plus optional global installer.
+  - used by: `app/esm/main.js` and future ESM consumers.
+  - notes: preserves `window.XekhoApp.utils.dom.escapeHtml()` compatibility and is verified by `scripts/verify-esm-dom-utils.js`.
+
+- `app/esm/utils/format.js`, `app/esm/utils/date.js`, `app/esm/utils/excel.js`, `app/esm/auth/staff.js`
+  - role: Phase E2 importable leaf facades for already-extracted pure helpers.
+  - depends on: no app state; installer functions write only compatibility namespaces/globals.
+  - used by: `app/esm/main.js`, `scripts/verify-esm-leaf-facades.js`, and future ESM consumers.
+  - notes: preserves current IIFE/global API while allowing direct ESM imports for format/date/Excel/staff helpers.
+
+- `app/esm/adapters/dom.js`, `app/esm/adapters/store.js`, `app/esm/adapters/db.js`
+  - role: Phase E3 runtime adapters for future UI islands and state/data readiness without importing `app.js`.
+  - depends on: existing browser globals (`document`, `window.Store`, `window.appState`, `window.DB`) only at call/install time.
+  - used by: `app/esm/main.js`, `scripts/verify-esm-runtime-adapters.js`, and future ESM UI islands.
+  - notes: adapters are non-mutating except for installing `window.XekhoApp.esm.adapters.*`; DB adapter observes `db:ready` and does not import Firebase directly.
+
+- `app/esm/README.md`
+  - role: ESM migration guardrails, completed facade inventory, and next safe dual-export candidates.
+  - depends on: ESM audit plan in `docs/ai-map/ESM_AUDIT.md`.
+  - used by: future ESM conversion sprints.
+  - notes: keep root `package.json` as `commonjs` until a later package-type strategy sprint.
+
+
+- `app/utils/storage.js`
+  - role: extracted browser storage/upload utility module.
+  - depends on: browser localStorage/FileReader/fetch only at call time.
+  - used by: `app.js` compatibility wrappers and report/upload flows.
+  - notes: owns storage/Drive helpers; the old Telegram daily report test URL helper was removed with the deleted test endpoint.
+
+- `app/auth/staff.js`
+  - role: extracted pure auth/staff helper module.
+  - depends on: no app state; wrappers pass state-derived values in from `app.js`.
+  - used by: login/session helpers and order actor metadata wrapper.
+  - notes: now exports `getCurrentOrderActorMetaFromUser(posUser)` while `app.js` remains responsible for reading `getCurrentPosUser()`.
+
+- `db.js`
+  - role: Firestore/Firebase data access helper.
+  - depends on: Firebase SDK/config.
+  - used by: POS/KDS/AI modules.
+  - notes: do not hardcode secrets; treat Firestore schema changes carefully; Menu add/update mirrors selling price into both `sell_price` and `price`.
+
+- `offlineBackup.js`
+  - role: POS offline backup queue foundation for pending order actions.
+  - depends on: browser IndexedDB/localStorage when used in POS; can use in-memory storage for Node verification.
+  - used by: future offline-safe order adapter and sync engine.
+  - notes: stores/lists/marks queue actions, including Sprint 11 explicit `remove_item`; it does not alter live POS flow by itself.
+
+- `offlineSync.js`
+  - role: adapter-based sync engine for pending/failed offline queue actions.
+  - depends on: `offlineBackup.js` backup API and an injected sync adapter.
+  - used by: Firestore sync adapter and future POS offline-safe order integration.
+  - notes: verifies idempotency by `clientOrderId`, retry/backoff, offline skip, and single-flight lock using an in-memory adapter.
+
+- `offlineFirestoreAdapter.js`
+  - role: Firestore/POS adapter foundation for `offlineSync.js`.
+  - depends on: injected operations or existing `window.DB`/`appState`; does not import Firebase directly.
+  - used by: future live Firestore sync and POS integration.
+  - notes: maps `close_order` to completed history payloads, applies Sprint 11 `remove_item` through `removeItem`, and checks `history`/`orders`/`online_orders` by `clientOrderId`; verified with memory operations only.
+
+- `offlineRuntime.js`
+  - role: browser runtime installer for offline backup status.
+  - depends on: `offlineBackup.js`; can optionally use `offlineSync.js` and `offlineFirestoreAdapter.js` when sync is explicitly enabled.
+  - used by: `index.html` and offline status UI.
+  - notes: auto-installs `window.XekhoOfflineBackupRuntime` with sync disabled by default, so it does not write Firestore or wrap order actions.
+
+- `offlineStatusUI.js`
+  - role: visible POS offline backup status badge/panel.
+  - depends on: `offlineRuntime.js` runtime summary API and browser DOM.
+  - used by: `index.html` header actions.
+  - notes: read-only UI; displays online/offline, pending/failed/synced counts, and sync-disabled status without enabling sync or changing order flow.
+
+- `offlineOrderFallback.js`
+  - role: disabled/dry-run POS order fallback wrapper and payload builder.
+  - depends on: `offlineBackup.js` helpers and optionally `window.XekhoOfflineBackupRuntime` for explicit enabled queue writes.
+  - used by: `index.html` as a safe disabled controller; `offlineOrderFallbackDevTools.js` can explicitly install dry-run wrapping around `window.DB.Orders` for manual browser testing.
+  - notes: builds actions for `open_order`, `add_item`, `change_qty`, `remove_item`, `update_item`, `update_meta`, `close_order`, and `cancel_order`; Sprint 11 adds stable localStorage-backed device IDs and removes the old quantity-sentinel remove surrogate. Auto-install is disabled mode and does not wrap live order methods.
+
+- `offlineOrderFallbackDevTools.js`
+  - role: Sprint 7 explicit browser/manual dry-run helpers for POS order fallback, extended in Sprint 9/9B/10/11 for payload review reports, mobile UI, validation warnings, stable device IDs, and safe remove-item semantics; Sprint 12 adds guarded queue-write enablement.
+  - depends on: `offlineOrderFallback.js`, browser `window.DB.Orders` when manually enabling dry-run or guarded queue-write, optional `appState` table lookup, and `window.XekhoOfflineBackupRuntime.savePendingOrderAction` for guarded queue writes.
+  - used by: browser console/manual QA via `window.XekhoOfflineOrderFallbackDevTools`; iPhone/mobile QA via `?xkPayloadReview=1` and guarded queue-write UI via `?xkQueueWriteGuard=1`.
+  - notes: safe by default; loading the script only installs helper methods. `buildPayloadReviewReport()` and `printPayloadReviewReport()` generate sample payloads without wrapping or queue writes. Sprint 10 adds `warnings` for unresolved device/table/history risks, fills dry-run table IDs, and lets `close_order` include `payInfo.items`. Sprint 11 expects no `device_unknown` when localStorage works and warns if `removeItem` regresses to delta-based semantics. `enableDryRun()` wraps `DB.Orders` in dry-run mode, captures only offline/server-like failures, rethrows errors, and never writes the queue. Sprint 12 `enableQueueWriteGuarded({ confirmation: 'ENABLE_OFFLINE_QUEUE_WRITE' })` can explicitly wrap `DB.Orders` in enabled mode and enqueue offline/server failures while auto sync remains disabled. `disable()` unwraps methods.
+
+- `scripts/verify-offline-backup.js`
+  - role: safe local verification for the offline backup queue API.
+  - depends on: `offlineBackup.js` CommonJS exports and Node `assert`.
+  - used by: development/AI verification; does not read or write production data.
+
+- `scripts/verify-offline-sync.js`
+  - role: safe local verification for offline sync engine behavior.
+  - depends on: `offlineBackup.js`, `offlineSync.js`, in-memory storage/adapter, and Node `assert`.
+  - used by: development/AI verification; does not read or write Firestore/POS data.
+
+- `scripts/verify-offline-firestore-adapter.js`
+  - role: safe local verification for Firestore adapter mapping/idempotency behavior.
+  - depends on: `offlineBackup.js`, `offlineSync.js`, `offlineFirestoreAdapter.js`, memory operations, and Node `assert`.
+  - used by: development/AI verification; does not read or write live Firebase/POS data. Sprint 11 covers explicit `remove_item` routing to memory `removeItem`.
+
+- `scripts/verify-offline-runtime.js`
+  - role: safe local verification for browser runtime behavior.
+  - depends on: `offlineBackup.js`, `offlineSync.js`, `offlineFirestoreAdapter.js`, `offlineRuntime.js`, memory storage/operations, and Node `assert`.
+  - used by: development/AI verification; confirms sync-disabled mode does not apply queued actions.
+
+- `scripts/verify-offline-status-ui.js`
+  - role: safe local verification for offline status badge/panel formatting.
+  - depends on: `offlineStatusUI.js` and Node `assert`.
+  - used by: development/AI verification; confirms state/text mapping for ok, pending, failed, and offline conditions.
+
+- `scripts/verify-offline-order-fallback.js`
+  - role: safe local verification for POS order fallback payload shapes and safe modes.
+  - depends on: `offlineBackup.js`, `offlineOrderFallback.js`, memory storage, and Node `assert`.
+  - used by: development/AI verification; confirms disabled mode does not wrap, stable device IDs are generated without `device_unknown`, `removeItem` uses explicit `remove_item`, dry-run captures actions without queue writes, and enabled mode can save to memory queue when explicitly invoked.
+
+- `scripts/verify-offline-order-fallback-devtools.js`
+  - role: safe local verification for Sprint 7 browser dry-run helper behavior and Sprint 9 payload review reporting, extended in Sprint 12 for guarded queue-write checks.
+  - depends on: `offlineBackup.js`, `offlineOrderFallback.js`, `offlineOrderFallbackDevTools.js`, fake `DB.Orders`, fake runtime queue, and Node `assert`.
+  - used by: development/AI verification; confirms explicit dry-run wrapping, offline/server-only capture, unwrap behavior, simulated payload generation, stable device IDs, explicit `remove_item`, side-effect-free review reports, guarded queue-write confirmation requirement, queue-save behavior, and auto-sync-disabled reporting without Firestore/POS data.
+
+- `style.css`
+  - role: shared styling.
+  - depends on: HTML classes/IDs.
+  - used by: POS/KDS and mockup pages.
+  - notes: currently modified before AI map initialization.
+
+## Module: Kitchen Display System
+
+Purpose:
+
+Show kitchen orders and status updates in realtime.
+
+Related files:
+
+- `kitchen.html`
+  - role: kitchen UI entry page.
+  - depends on: Firestore order data and style/assets.
+  - used by: kitchen staff.
+  - notes: coordinate changes with order status schema.
+
+- `firebase-messaging-sw.js`
+  - role: service worker for FCM web push.
+  - depends on: Firebase Messaging config.
+  - used by: notification flow.
+  - notes: changing this can affect browser notification behavior.
+
+- `KDS_PLAN.md`, `KITCHEN_GUIDE.md`
+  - role: KDS planning/operator documentation.
+  - depends on: current KDS behavior.
+  - used by: future AI agents and human operators.
+
+## Module: Firebase Functions backend
+
+Purpose:
+
+Provide server-side triggers, HTTP endpoints, integrations, and automation logic.
+
+Related files:
+
+- `functions/index.js`
+  - role: Firebase Functions entry point.
+  - depends on: Firebase Admin, functions SDK, helper modules, environment/secrets.
+  - used by: deployed Cloud Functions.
+  - notes: currently modified before AI map initialization; do not deploy without review. After tooling cleanup it explicitly injects ads report data-loader dependencies into `functions/telegram/ads.js`.
+
+- `functions/telegram/ads.js`
+  - role: extracted Telegram ads/date/report helper module.
+  - depends on: `functions/telegram/reports.js`, `functions/utils/text.js`, and injected stateful data loaders from `functions/index.js` via `setAdsRevenueDataDependencies()`.
+  - used by: ads report endpoints/webhook flows through thin wrappers in `functions/index.js`.
+  - notes: keep Firestore/API access outside the extracted module; inject loaders rather than relying on implicit globals so backend `@ts-check` remains green.
+
+- `functions/telegram/send.js`
+  - role: Telegram send/edit/photo HTTP helper module.
+  - depends on: axios and `functions/utils/text.js`.
+  - used by: Telegram webhook/report/notification flows through `functions/index.js` wrappers.
+  - notes: axios CommonJS import is typed as `any` to avoid false-positive TypeScript CJS namespace diagnostics.
+
+- `functions/firestoreMegaTools.js`
+  - role: Firestore utility/tool layer.
+  - depends on: Firebase Admin/Firestore.
+  - used by: functions and AI tooling.
+  - notes: changes may affect data writes.
+
+- `functions/geminiTools.js`
+  - role: Gemini/function-calling support.
+  - depends on: AI service config and Firestore helpers.
+  - used by: AI workflows.
+
+- `functions/vertexAi.js`
+  - role: Vertex AI integration.
+  - depends on: Google Cloud credentials/environment.
+  - used by: AI assistant and media/automation features.
+
+- `firestore.rules`
+  - role: Firestore security rules.
+  - depends on: collection schema and auth roles.
+  - used by: Firebase deployments.
+  - notes: security-sensitive; test before deploy.
+
+## Module: AI assistant and business automation
+
+Purpose:
+
+Provide AI-assisted operations, routing, action execution, and model integrations.
+
+Related files:
+
+- `ai-core.js`
+  - role: AI core orchestration.
+  - depends on: action definitions and model/router modules.
+  - used by: AI UI/actions.
+
+- `ai-actions.js`
+  - role: executable actions for AI assistant.
+  - depends on: app/db/business functions.
+  - used by: AI core/UI.
+  - notes: currently modified before AI map initialization.
+
+- `ai-ui.js`
+  - role: frontend UI for AI assistant.
+  - depends on: DOM and AI core/actions.
+  - used by: operator-facing AI interface.
+
+- `DeepSeekRouter.js`
+  - role: model/router integration.
+  - depends on: provider configuration/secrets.
+  - used by: AI core/actions.
+  - notes: currently modified before AI map initialization.
+
+- `prompts/`
+  - role: prompt assets/AI workflow notes.
+  - depends on: AI feature design.
+  - used by: future AI agents and runtime logic if referenced.
+
+## Module: Data import / maintenance
+
+Purpose:
+
+Load, sync, audit, or backfill operational data.
+
+Related files:
+
+- `import_master.js`
+  - role: import master data.
+  - depends on: data JSON and Firebase access.
+  - used by: maintenance workflows.
+  - notes: may write to database; do not run without explicit confirmation.
+
+- `import_migrated_history_purchases.js`
+  - role: import migrated purchase history.
+  - depends on: migrated history data and Firebase access.
+  - used by: migration/maintenance.
+  - notes: may affect historical/POS data.
+
+- `sync_master_to_app.js`
+  - role: sync master data to app structures.
+  - depends on: master data and app schema.
+  - used by: maintenance workflows.
+
+- `backfill_history_costs.js`
+  - role: backfill costs into history.
+  - depends on: history data and database access.
+  - used by: one-off maintenance.
+  - notes: do not run unless user explicitly approves data mutation.
+
+## Cross-repo relations
+
+- `xekho` owns POS/business/KDS/backend logic and may provide business/menu/order data.
+- `webapp-menu` owns menu web app and online menu/admin UI; README warns feature overlap with `xekho`.
+- `VIDEO AI TOOL` may generate media assets used by marketing workflows or `webapp-menu`/Facebook content.
+
+
+## ESM Phase E4 relations
+
+- `app/esm/ui/image-zoom.js`
+  - role: Phase E4 importable image zoom/pan UI island.
+  - depends on: DOM-like wrapper/image elements passed to `attach()`; no Store/DB/Firebase dependency.
+  - used by: `app/esm/main.js`, classic `ImgZoom` wrappers in `app.js`, `scripts/verify-esm-ui-image-zoom.js`.
+  - notes: preserves classic fallback logic in `app.js`; only delegates at call time when `window.XekhoApp.esm.ui.imageZoom` is ready.
+
+
+## ESM Phase E5.1 relations
+
+- `app/esm/ui/header-actions.js`
+  - role: delegated click handler island for static header buttons.
+  - depends on: browser `document` and existing global handlers (`openAIAssistant`, `openStockAlertPopup`, `hardReloadApp`, `handleLogout`).
+  - used by: `app/esm/main.js`, `index.html` header buttons with `data-esm-header-action`, `scripts/verify-esm-header-actions.js`.
+  - notes: removes inline handlers only from the four static header buttons; other inline handlers remain for later E5 islands.
+
+
+## ESM Phase E5.2 relations
+
+- `app/esm/ui/report-tabs.js`
+  - role: delegated click handler island for static report tab buttons.
+  - depends on: browser `document` and existing global `switchReportTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` report buttons with `data-esm-report-tab`, `scripts/verify-esm-report-tabs.js`.
+  - notes: removes inline handlers only from the four static report tab buttons; report filters and other report actions remain for later E5 islands.
+
+
+## ESM Phase E5.3 relations
+
+- `app/esm/ui/settings-tabs.js`
+  - role: delegated click handler island for static settings tab buttons.
+  - depends on: browser `document` and existing global `switchSettingsTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` settings tab buttons with `data-esm-settings-tab`, `scripts/verify-esm-settings-tabs.js`.
+  - notes: removes inline handlers only from the seven static settings tab buttons; settings forms/toggles/buttons remain delegated later because they touch config save/reset flows.
+
+
+## ESM Phase E5.4 relations
+
+- `app/esm/ui/report-date-controls.js`
+  - role: delegated click handler island for report period and report date mode buttons.
+  - depends on: browser `document`, existing global `setReportPeriod(period)`, and existing global `setDateMode(page, mode, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` report controls with `data-esm-report-period` / `data-esm-report-date-mode`, `scripts/verify-esm-report-date-controls.js`.
+  - notes: removes inline handlers only from low-risk report date navigation; date input changes and report export/action buttons remain delegated later.
+
+
+## ESM Phase E5.5 relations
+
+- `app/esm/ui/inventory-tabs.js`
+  - role: delegated click handler island for inventory tab buttons.
+  - depends on: browser `document` and existing global `switchInvTab(tab, trigger)`.
+  - used by: `app/esm/main.js`, `index.html` inventory tab buttons with `data-esm-inventory-tab`, `scripts/verify-esm-inventory-tabs.js`.
+  - notes: removes inline handlers only from the five primary inventory tabs; the inventory more modal button remains inline for a later modal/action island.
+
+
+## ESM Phase E5.6 relations
+
+- `app/esm/ui/finance-period.js`
+  - role: delegated click handler island for finance period buttons.
+  - depends on: browser `document` and existing global `setFinancePeriod(period)`.
+  - used by: `app/esm/main.js`, `index.html` finance period buttons with `data-esm-finance-period`, `scripts/verify-esm-finance-period.js`.
+  - notes: removes inline handlers only from the five finance period buttons; finance rendering logic remains in the legacy global function.
+
+
+## ESM Phase E5.7 relations
+
+- `app/esm/ui/report-transaction-filters.js`
+  - role: delegated change handler island for report transaction filter checkboxes.
+  - depends on: browser `document` and existing global `setReportTransactionFilter(type, checked)`.
+  - used by: `app/esm/main.js`, `index.html` report transaction filter inputs with `data-esm-report-transaction-filter`, `scripts/verify-esm-report-transaction-filters.js`.
+  - notes: removes inline handlers from both duplicated report filter layouts; report filter state/rendering remains in the legacy global function.
+
+
+## ESM Phase E5.8 relations
+
+- `app/esm/ui/report-filter-controls.js`
+  - role: delegated change/click handler island for report menu filters and reset buttons.
+  - depends on: browser `document`, existing global `setReportMenuFilter(value)`, and existing global `resetReportFilters()`.
+  - used by: `app/esm/main.js`, `index.html` report menu selects with `data-esm-report-menu-filter`, reset buttons with `data-esm-report-filter-reset`, `scripts/verify-esm-report-filter-controls.js`.
+  - notes: report filter state/rendering remains in legacy global functions.
+
+
+## ESM Phase E5.9 relations
+
+- `app/esm/ui/modal-overlay-controls.js`
+  - role: delegated click handler island for low-risk modal overlay self-dismiss, modal close buttons, and image-zoom modal controls.
+  - depends on: browser `document`, modal element IDs in `index.html`, and existing global `ImgZoom` for reset/detach.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-modal-self-dismiss`, `data-esm-modal-close`, `data-esm-modal-close-self`, and `data-esm-image-zoom-*`, `scripts/verify-esm-modal-overlay-controls.js`.
+  - notes: modal business logic remains in legacy globals; this island only preserves existing close/dismiss behavior.
+
+
+## ESM Phase E5.10 relations
+
+- `app/esm/ui/render-refresh-controls.js`
+  - role: delegated input/change/click handler island for low-risk render/filter refresh controls.
+  - depends on: browser `document`, existing legacy globals `renderLedger`, `renderMediaRefinery`, `renderAttendanceManagement`, and `applyStocktakeHistoryFilter`.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-render-refresh`, `scripts/verify-esm-render-refresh-controls.js`, and `scripts/verify-esm-entry.js`.
+  - notes: allowlisted only; it does not expose submit/save/reset/POS/payment/import/export flows.
+
+
+## ESM Phase E5.11 relations
+
+- `app/esm/ui/admin-render-controls.js`
+  - role: delegated click/input/change handler island for low-risk table/menu/inventory admin render controls.
+  - depends on: browser `document`, existing legacy globals `renderTables`, `renderStockList`, `renderMenuAdmin`, `renderMenuItems`, and legacy `menuSearch`.
+  - used by: `app/esm/main.js`, `index.html` elements with `data-esm-admin-render` / `data-esm-menu-items-search`, `scripts/verify-esm-admin-render-controls.js`, and `scripts/verify-esm-entry.js`.
+  - notes: allowlisted only; it does not expose submit/save/delete/reset/import/export/POS/payment/media flows.
+## 2026-06-03 bugfix relations
+
+- POS order search: `index.html` `#order-search[data-esm-menu-items-search]` → `app/esm/ui/admin-render-controls.js` input delegation → `app.js#renderMenuItems()`, which now reads the live input value directly before filtering menu cards.
+- Completed-order Telegram: Firestore/history payload → `functions/index.js#sendCompletedOrderTelegram()` → wrapper `normalizeCompletedOrderForTelegram(historyId, order)` → `functions/telegram/orders.js` normalization helpers → `buildTelegramCompletedOrderMessage()`. Wrappers must pass real arguments; resetting to `{}`/`[]` drops table/payment/items/totals.
+## 2026-06-03 - Mobile table screen overflow/takeaway fix
+
+- `app.js#renderTables()` owns the table-screen markup. It now excludes persisted `takeaway` table records from the physical table grid while preserving the dedicated `#table-card-takeaway` summary card and `openTakeaway()` flow.
+- `style.css` owns `.table-grid`, `.table-card-wide`, and `.table-summary-*` mobile layout constraints. The grid uses `minmax(0, 1fr)` and summary rows use `min-width: 0` + ellipsis to prevent long labels/totals from overflowing the mobile viewport.
+- `scripts/verify-mobile-table-grid.js` protects this relationship with deterministic source assertions.
+
+## xekho_v2 Kho vận Cloud Function parity — 2026-06-14 20:06 +0700
+
+- Legacy `db.js` / `app.js` KHO surfaces remain the schema reference for `xekho_v2` inventory writes.
+- `xekho_v2/functions/src/inventory/inventoryOperationsCore.js` writes collection/field pairs compatible with this repo: `Inventory_Items.current_stock`/`stockQty`, `purchases.qty/unit/total/supplier/date`, `stocktakes.systemQty/countedQty/varianceQty`, `suppliers.name/contact`, and `Product_Catalog.cost`.
+- No code in this legacy repo was changed for the bridge; this note is the cross-repo contract so future legacy edits do not unknowingly break xekho_v2 Kho vận operations.
+
+## xekho_v2 item-scoped inventory actions — 2026-06-14 21:11 +0700
+
+- Follow-up to the Function bridge: `xekho_v2` actions are now row-scoped, not global.
+- Soft-delete/hide semantics map to common legacy-compatible flags (`active:false`, `deleted:true`, `hidden:true`) rather than hard deleting legacy collections.
+- Legacy repo code was not changed.
+
+## 2026-06-17 - Telegram owner assistant guard
+
+- `functions/index.js#telegramWebhook` now resolves the assistant/report bot token with `getTelegramAssistantBotToken()` (`TELEGRAM_REPORT_BOT_TOKEN` -> `TELEGRAM_BOT_TOKEN`) so the open AI/revenue/report assistant path does not fall back to the kitchen-ready bot token.
+- Owner-only assistant gates use `isTelegramOwnerContext()` with `TELEGRAM_OWNER_CHAT_ID` plus pinned owner Telegram ID `6496387732`.
+- Guarded paths: open text AI/smart report, voice/audio AI, non-order photo OCR/import AI, and ads/revenue report commands.
+- Operational Telegram order-photo draft context remains available for the configured group flow.
+- `scripts/verify-telegram-owner-assistant-guard.js` protects the token separation and owner-only markers.
+
+## 2026-06-17 - Gemini function-call thought signatures
+
+- `functions/vertexAi.js#collectFunctionCalls()` returns the original model `part` with each parsed function call.
+- `functions/index.js#runVertexToolLoop()` must append those original function-call parts before tool responses so Gemini/Vertex thought-signature metadata is preserved.
+- `scripts/verify-gemini-function-call-thought-signature.js` guards against regressions.
+
+## 2026-06-17 - Telegram smart report range parsing
+
+- `functions/telegram/reports.js#parseTelegramSmartReportIntent()` parses `từ ... đến bây giờ` ranges and derives optional `itemName` only from text before the range marker. Range-only revenue queries such as `Doanh thu từ 18h hôm qua đến bây giờ?` must keep `itemName: ''`.
+- `functions/index.js#askGeminiWithFirestoreTools()` prompt must use the exact shop name `Xe Khô Chữa Lành`.
+- `scripts/verify-telegram-reports.js` and `scripts/verify-telegram-owner-assistant-guard.js` protect these cases.
+
+## 2026-06-17 - Telegram open-ended Firebase assistant
+
+- `functions/telegram/reports.js#parseTelegramSmartReportIntent()` now handles relative-date natural quantity questions such as `Hôm qua bán bao nhiêu bia?` and extracts `metric=quantity`, `itemName=bia`.
+- `functions/index.js#tryAnswerTelegramSmartReportQuestion()` formats quantity answers from `report.itemSummary` returned by `executeReportQuery()`.
+- `functions/index.js#isTelegramAssistantCapabilityQuestion()` and `#buildTelegramAssistantCapabilityResponse()` provide deterministic answers for assistant capability questions.
+- Gemini prompt remains the fallback for non-fixed questions and must call read tools before returning data-backed numbers.
+
+## 2026-06-17 - Telegram owner assistant proactive/menu/chart expansion
+
+- `functions/index.js#tryAnswerTelegramProactiveOwnerInsight()` handles owner-analysis questions, compares current month-to-date vs comparable previous-month period, and attaches chart buttons.
+- `functions/index.js#tryAnswerTelegramMenuDataQuestion()` reads `Product_Catalog` and `Inventory_Items` for menu price/image answers and sends stored dish images when present.
+- `functions/index.js#createTelegramChartRequest()` stores chart payloads in `telegram_chart_requests`; `#handleTelegramChartCallback()` renders and sends charts when `chart_<id>` callback is pressed.
+- `functions/telegram/send.js#sendTelegramPhotoBuffer()` uploads generated PNG buffers to Telegram via multipart `sendPhoto`.
+- `scripts/verify-telegram-chart-menu-features.js` guards the proactive/menu/chart feature wiring.
+
+## 2026-06-17 - Telegram webhook drift guard
+
+- `scripts/check-telegram-webhook-target.js` checks the deployed Telegram bot webhook is pointed at the XE KHO `telegramwebhook` Cloud Run service, not a foreign service such as `aidirectorbrieftelegramwebhook`, and fails on Telegram `last_error_message`.
+- `scripts/verify-telegram-owner-assistant-regressions.js` guards deterministic routing for owner questions seen in the incident: month revenue, month order summary, and menu price lookup before Gemini fallback.
+- Incident notes live in `docs/ai-map/TASK_LOGS/2026-06-17-telegram-webhook-drift-chatbot-silence.md`.
+
+## 2026-06-17 - Telegram BigQuery reporting + month revenue fix
+
+- `functions/index.js#getBigQueryRuntimeConfig()` exposes optional read-only BigQuery runtime env config to deterministic reports and Gemini tool calls.
+- `functions/firestoreMegaTools.js#executeBigQueryReportQuery()` queries BigQuery with Standard SQL SELECT summaries and no write operations.
+- `functions/geminiTools.js` declares `truy_van_bigquery_pos` for Gemini fallback data questions.
+- `scripts/verify-telegram-bigquery-reporting.js` verifies `doanh thu tháng này?` parsing and BigQuery read-only wiring.
+
+## 2026-06-17 - Telegram month revenue zero regression
+
+- `functions/index.js#tryAnswerTelegramSmartReportQuestion()` uses Firestore/POS-first reports for direct owner questions such as `Doanh thu tháng này?`.
+- `functions/firestoreMegaTools.js#executeReportQuery()` requires explicit `allowEmptyFirestoreBigQueryFallback` before BigQuery can replace an empty Firestore report.
+- `scripts/verify-telegram-bigquery-reporting.js` prevents future `preferBigQuery: true` regressions in direct Telegram report paths.
+
+## 2026-06-17 - Telegram chart callback prefix regression
+
+- `functions/index.js#parseTelegramChartCallbackData()` normalizes chart callback payloads from current and legacy inline buttons.
+- `functions/index.js#telegramWebhook` routes parsed chart callbacks to `handleTelegramChartCallback()` before generic unknown callback handling.
+- `scripts/verify-telegram-chart-menu-features.js` asserts chart callback parser coverage.
+## EchoEar kitchen-ready notifier
+
+- `functions/index.js` exports the `kitchenDeviceFeed` HTTP endpoint for device polling.
+- `functions/kitchenDeviceFeed.js` contains the read-only Firestore `orders` -> ready item feed builder.
+- `scripts/verify-kitchen-device-feed.js` checks endpoint security markers and feed filtering.
+- Firmware lives outside this repo at `/home/longnick/echoear/xekho_kitchen_notifier`.
+
+
+## 2026-06-26 - Mobile order action bar
+
+- `index.html` order page `#order-cart-pill` now exposes two explicit action buttons: cart sheet and bill modal.
+- `style.css` owns the approved mobile action-bar geometry above the persistent bottom nav (`48px` bar, `40px` buttons, `8px` nav gap, `72px` menu reserve).
+- `scripts/verify-order-actionbar-ui.js` guards the markup/cache key/mobile sizing and prevents the old centered 52px floating pill from returning.
+
+## Attendance geofence + Bàn checkout + Telegram report bot — 2026-07-08
+
+- `index.html#page-tables` contains `#tables-checkout-panel`; `app.js#renderTablesCheckoutPanel()` renders this card only for the logged-in staff member with an open `attendance_daily` row today.
+- `app.js#tablesCheckoutAction()` calls `_webAttendanceCheckOutForActor(actor, { suppressSuccessToast: true })`, then displays the required checkout-success copy with the returned `durationMinutes`.
+- `app.js#_requireAttendanceLocationGate()` is the pre-write geofence guard for web attendance; out-of-range now shows exactly “bạn đang ở quá xa vị trí chấm công cho phép”.
+- `functions/index.js#TELEGRAM_ATTENDANCE_BOT_TOKEN` is a config-only token reference for the attendance report bot; raw token values must live outside source.
+- `functions/index.js#telegramAttendanceWebhook` is owner-only and calls `_buildAttendanceSummaryText(dateKey)` after `isTelegramOwnerContext(userContext)` passes.
+- `scripts/verify-attendance-webapp.js` includes Phase I assertions for the UI/copy changes.
+- `scripts/verify-telegram-attendance-report.js` checks attendance bot source markers, owner guard, read-only behavior, and secret hygiene.
+
+## Attendance Telegram production deploy — 2026-07-08
+
+- Production webhook URL: `https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/telegramAttendanceWebhook`.
+- `functions/index.js#telegramAttendanceWebhook` runs with `HEAVY_FUNCTION_MEMORY` because 256MiB was insufficient at Cloud Run startup.
+- `functions/index.js#telegramAttendanceWebhook` uses `invoker: 'public'` so Telegram can POST unauthenticated; owner-only authorization remains enforced inside the handler before attendance reads.
+- Runtime token is configured as deployed environment/parameter `TELEGRAM_ATTENDANCE_BOT_TOKEN`; no source/docs file should contain the raw token.
+
+## Attendance Telegram indexless report query — 2026-07-08
+
+- `functions/index.js#_buildAttendanceSummaryText(dateKey)` intentionally queries `attendance_daily` with `where('dateKey', '==', dateKey)` only and sorts in memory; do not re-add `.orderBy('staffName')` unless a composite Firestore index is deployed.
+- `scripts/verify-telegram-attendance-report.js` asserts that `/chamcong` report code avoids the `dateKey + staffName` composite-index requirement.
+
+## Attendance Telegram real-time notifications — 2026-07-09
+
+- `app.js#_webAttendanceCheckInForActor()` writes `attendance_shifts/{shiftId}` with open check-in details; `functions/index.js#telegramAttendanceOnShiftCreated` sends the check-in Telegram notification from that create event.
+- `app.js#_webAttendanceCheckOutForActor()` updates `attendance_daily/{dailyId}` to closed with payroll totals; `functions/index.js#telegramAttendanceOnDailyClosed` sends the checkout notification with checkout time, total minutes/payable hours, and estimated wage.
+- `functions/index.js#_loadLatestAttendanceShiftForDaily()` intentionally queries `attendance_shifts` by `dateKey` only and filters `staffId` in memory to avoid Firestore composite-index requirements.
+- `scripts/verify-telegram-attendance-report.js` guards both report-bot behavior and realtime notification message fields.
+- `functions/index.js#telegramAttendanceWebhook` now also handles owner-only `/testchamcong` to send one sample check-in + checkout notification without Firestore writes.
+
+### Live smoke note: temporary test docs — 2026-07-09
+
+- Approved production smoke created temporary docs in `attendance_daily` and `attendance_shifts` only; both were deleted after function logs showed Telegram sends.
+- No `Expenses`, `orders`, `history`, customer, or payment collections were written by the smoke.
+
+## Scriptable finance widget — 2026-07-09
+
+- `functions/index.js#scriptableFinanceWidgetData`
+  - HTTPS Cloud Function exported in `asia-southeast1`.
+  - Guards access with `SCRIPTABLE_FINANCE_WIDGET_TOKEN`.
+  - Delegates payload building to `functions/scriptableFinanceWidget.js`.
+- `functions/scriptableFinanceWidget.js`
+  - Read-only Firestore aggregation for `history`, `expenses`, `purchases`, and `settings/financial_profile`.
+  - Formula: `netSales = grossSales - discountTotal`, `grossProfit = netSales - cogs`, `profit = grossProfit - operatingExpense - fixedCost`.
+  - Returns `purchaseTotal` as cash-flow context but does not subtract purchases twice from profit.
+- `scripts/scriptable/xekho-finance-widget.js`
+  - iOS Scriptable Variant A Owner glance UI.
+  - Consumes the Cloud Function JSON via Bearer token or widget parameter `endpoint|token|range`.
+- `scripts/verify-scriptable-finance-widget.js`
+  - Tests pure formula behavior, endpoint wiring markers, small/medium/large Scriptable support, and no literal token in source.
+
+## Scriptable finance large widget UI — 2026-07-09
+
+- `scripts/scriptable/xekho-finance-widget.js#buildLarge()` is the iOS large-widget layout for the finance dashboard. It now uses a two-column `ListWidget`/`Stack` composition rather than the old vertical grid rows.
+- `scripts/scriptable/xekho-finance-widget.js#drawSparkline()` renders the large-widget trend chart with Scriptable `DrawContext`, replacing the previous disconnected stack-bar appearance.
+- `scripts/verify-scriptable-finance-widget.js` verifies backend formula guards, Scriptable source guards, balanced large-layout markers, forbidden old layout patterns, and a Node Scriptable runtime stub for the large widget.
+- `scripts/scriptable/README.md` remains the install guide for pasting/updating the widget in iOS Scriptable.
+
+## Scriptable finance widget private-token mode — 2026-07-09
+
+- `scripts/scriptable/xekho-finance-widget.js#CONFIG.token` is intentionally prefilled for the owner’s private Scriptable copy so the widget can call `scriptableFinanceWidgetData` directly.
+- `scripts/scriptable/README.md` documents that the prefilled-token copy must not be shared publicly without rotating/removing the token.
+- `scripts/verify-scriptable-finance-widget.js` now expects the prefilled private token while still guarding against embedded Firebase admin/private-key credentials.

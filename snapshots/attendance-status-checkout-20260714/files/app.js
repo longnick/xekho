@@ -1,0 +1,14153 @@
+// ============================================================
+// WASTAGE (Xuất hủy / Hao hụt)
+// ============================================================
+function renderWastageTab() {
+  const expenses = Store.getExpenses().filter(e => e.category === 'Chi phí hao hụt');
+  const listEl = document.getElementById('wastage-list');
+  if(!listEl) return;
+
+  listEl.innerHTML = expenses.map(e => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">🗑️</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${e.name}</div>
+        <div class="list-item-sub">Lý do: ${e.note || 'Không có'}</div>
+        <div class="list-item-sub" style="font-size:10px;color:var(--text3)">${fmtDateTime(e.date)}</div>
+      </div>
+      <div class="list-item-right" style="flex-direction:row; gap:4px; align-items:center;">
+        <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.amount)}đ</div>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-icon">🗑️</div><div class="empty-text">Chưa có phiếu xuất hủy nào</div></div>';
+}
+
+function submitWastage(e) {
+  e.preventDefault();
+  const itemId = document.getElementById('wastage-name').value;
+  const qty = parseFloat(document.getElementById('wastage-qty').value);
+  const reason = document.getElementById('wastage-reason').value;
+  const note = document.getElementById('wastage-note').value.trim();
+
+  if(!itemId || isNaN(qty) || qty <= 0) return;
+
+  const liveInv = _getInventory();
+  const item = liveInv.find(i => i.id === itemId);
+
+  if(!item) {
+    showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
+    return;
+  }
+  if(item.qty < qty) {
+    showToast(`⚠️ Trong kho chỉ còn ${item.qty} ${item.unit}. Không thể hủy ${qty}.`, 'warning');
+    return;
+  }
+
+  const cost = (item.costPerUnit || 0) * qty;
+  const exp = {
+    id: uid(),
+    name: `Hủy: ${qty} ${item.unit} ${item.name}`,
+    amount: cost,
+    category: 'Chi phí hao hụt',
+    date: new Date().toISOString(),
+    note: reason + (note ? ` - ${note}` : '')
+  };
+
+  if (window.DB && window.DB.Inventory) {
+    window.DB.Inventory.update(item.id, { qty: item.qty - qty })
+      .then(() => {
+        Store.addExpense(exp);
+        if (window.DB.Expenses?.add) window.DB.Expenses.add(exp).catch(() => {});
+        document.getElementById('wastage-form').reset();
+        refreshIngredientDependentViews();
+        renderWastageTab();
+        showToast('✅ Đã ghi nhận xuất hủy!', 'success');
+      }).catch(err => showToast('Lỗi xuất hủy: ' + err.message, 'danger'));
+  } else {
+    const inv = Store.getInventory();
+    const localItem = inv.find(i => i.id === itemId);
+    if (!localItem) {
+      showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
+      return;
+    }
+    localItem.qty -= qty;
+    Store.setInventory(inv);
+    Store.addExpense(exp);
+    document.getElementById('wastage-form').reset();
+    refreshIngredientDependentViews();
+    renderWastageTab();
+    showToast('✅ Đã ghi nhận xuất hủy!', 'success');
+  }
+}
+
+// ============================================================
+// APP.JS - Main Application Controller
+// ============================================================
+
+// ---- Global State ----
+let currentPage = 'tables';
+let currentTable = null;
+let orderItems = {};  // tableId -> [{id,name,price,qty,cost}]
+let orderExtras = {}; // tableId -> {discount, shipping}
+let chartInstances = {};
+
+// Photos & OCR state
+let orderPhotoCache = null;           // lazy: Store.getOrderPhotos()
+let currentPurchasePhotos = [];       // ảnh chứng từ cho lần nhập hàng đang làm
+let currentPurchasePhotosBatchId = null; // id "lần nhập/chứng từ" để gom ảnh
+let purchasePhotoCache = null;        // RAM cache cho bộ nhớ thiết bị
+let currentPurchaseOcrMode = null;    // 'auto' | 'offline' | 'online' (override settings)
+let tesseractWorker = null;           // Tesseract.js worker (offline OCR)
+const ORDER_HISTORY_PHOTO_RETENTION_DAYS = 3; // giữ ảnh order trong lịch sử 3 ngày
+
+function applyTheme(themeName) {
+  // Sprint 1.4: delegate to app/ui/theme.js IIFE
+  if (window.XekhoApp?.ui?.applyTheme) return window.XekhoApp.ui.applyTheme(themeName);
+  // Fallback: inline if IIFE not loaded
+  const body = document.body;
+  if (!body) return;
+
+  body.classList.remove('theme-nang-dong', 'theme-nhe-nhang', 'theme-chill', 'theme-ruc-ro', 'theme-hien-dai');
+  body.classList.add(`theme-${themeName || 'hien-dai'}`);
+}
+
+// ============================================================
+// IMAGE ZOOM/PAN VIEWER
+// Supports pinch-to-zoom & drag/pan for mobile image viewing
+// ============================================================
+
+const ImgZoom = (() => {
+  let _img = null;
+  let _wrap = null;
+  let _scale = 1;
+  let _translateX = 0;
+  let _translateY = 0;
+  let _startX = 0;
+  let _startY = 0;
+  let _lastDist = null;
+  let _lastScale = 1;
+  let _isDragging = false;
+  let _originX = 0;
+  let _originY = 0;
+  const MIN_SCALE = 1;
+  const MAX_SCALE = 5;
+
+  function _applyTransform() {
+    if (!_img) return;
+    _img.style.transform = `scale(${_scale}) translate(${_translateX / _scale}px, ${_translateY / _scale}px)`;
+    _img.style.cursor = _scale > 1 ? 'grab' : 'default';
+  }
+
+  function _clampTranslate() {
+    if (!_img || !_wrap) return;
+    const ww = _wrap.clientWidth;
+    const wh = _wrap.clientHeight;
+    const iw = _img.naturalWidth || _img.clientWidth;
+    const ih = _img.naturalHeight || _img.clientHeight;
+    // Compute visible bounds
+    const scaledW = Math.min(iw, ww) * _scale;
+    const scaledH = Math.min(ih, wh) * _scale;
+    const maxX = Math.max(0, (scaledW - ww) / 2);
+    const maxY = Math.max(0, (scaledH - wh) / 2);
+    _translateX = Math.max(-maxX, Math.min(maxX, _translateX));
+    _translateY = Math.max(-maxY, Math.min(maxY, _translateY));
+  }
+
+  function _onTouchStart(e) {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      _lastDist = Math.hypot(dx, dy);
+      _lastScale = _scale;
+      _isDragging = false;
+    } else if (e.touches.length === 1) {
+      _startX = e.touches[0].clientX - _translateX;
+      _startY = e.touches[0].clientY - _translateY;
+      _isDragging = true;
+    }
+  }
+
+  function _onTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 2 && _lastDist !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const ratio = dist / _lastDist;
+      _scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _lastScale * ratio));
+      if (_scale <= MIN_SCALE) { _translateX = 0; _translateY = 0; }
+      _clampTranslate();
+      _applyTransform();
+    } else if (e.touches.length === 1 && _isDragging && _scale > 1) {
+      _translateX = e.touches[0].clientX - _startX;
+      _translateY = e.touches[0].clientY - _startY;
+      _clampTranslate();
+      _applyTransform();
+    }
+  }
+
+  function _onTouchEnd(e) {
+    if (e.touches.length < 2) _lastDist = null;
+    if (e.touches.length === 0) _isDragging = false;
+    if (_scale < 1.05) { _scale = 1; _translateX = 0; _translateY = 0; _applyTransform(); }
+  }
+
+  // Double-tap to toggle zoom
+  let _lastTap = 0;
+  function _onTouchEndTap(e) {
+    _onTouchEnd(e);
+    if (e.changedTouches.length !== 1) return;
+    const now = Date.now();
+    if (now - _lastTap < 300) {
+      if (_scale > 1) { _scale = 1; _translateX = 0; _translateY = 0; }
+      else { _scale = 2.5; }
+      _applyTransform();
+    }
+    _lastTap = now;
+  }
+
+  // Mouse drag for desktop
+  function _onMouseDown(e) {
+    if (_scale <= 1) return;
+    _isDragging = true;
+    _startX = e.clientX - _translateX;
+    _startY = e.clientY - _translateY;
+    _img.style.cursor = 'grabbing';
+  }
+  function _onMouseMove(e) {
+    if (!_isDragging || _scale <= 1) return;
+    _translateX = e.clientX - _startX;
+    _translateY = e.clientY - _startY;
+    _clampTranslate();
+    _applyTransform();
+  }
+  function _onMouseUp() {
+    _isDragging = false;
+    if (_img) _img.style.cursor = _scale > 1 ? 'grab' : 'default';
+  }
+  // Mouse wheel zoom
+  function _onWheel(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.85 : 1.2;
+    _scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _scale * delta));
+    if (_scale <= MIN_SCALE) { _translateX = 0; _translateY = 0; }
+    _clampTranslate();
+    _applyTransform();
+  }
+
+  function attach(wrapEl, imgEl) {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.attach) return window.XekhoApp.esm.ui.imageZoom.attach(wrapEl, imgEl);
+    detach();
+    _img = imgEl;
+    _wrap = wrapEl;
+    _scale = 1; _translateX = 0; _translateY = 0;
+    _applyTransform();
+    _img.style.transformOrigin = 'center center';
+    _img.style.transition = 'none';
+    _img.style.willChange = 'transform';
+    _img.style.maxWidth = '100%';
+    _img.style.maxHeight = '100%';
+    _img.style.userSelect = 'none';
+    _img.style.webkitUserSelect = 'none';
+    _img.draggable = false;
+
+    _wrap.addEventListener('touchstart', _onTouchStart, { passive: false });
+    _wrap.addEventListener('touchmove', _onTouchMove, { passive: false });
+    _wrap.addEventListener('touchend', _onTouchEndTap, { passive: false });
+    _wrap.addEventListener('mousedown', _onMouseDown);
+    _wrap.addEventListener('mousemove', _onMouseMove);
+    _wrap.addEventListener('mouseup', _onMouseUp);
+    _wrap.addEventListener('mouseleave', _onMouseUp);
+    _wrap.addEventListener('wheel', _onWheel, { passive: false });
+  }
+
+  function detach() {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.detach) return window.XekhoApp.esm.ui.imageZoom.detach();
+    if (_wrap) {
+      _wrap.removeEventListener('touchstart', _onTouchStart);
+      _wrap.removeEventListener('touchmove', _onTouchMove);
+      _wrap.removeEventListener('touchend', _onTouchEndTap);
+      _wrap.removeEventListener('mousedown', _onMouseDown);
+      _wrap.removeEventListener('mousemove', _onMouseMove);
+      _wrap.removeEventListener('mouseup', _onMouseUp);
+      _wrap.removeEventListener('mouseleave', _onMouseUp);
+      _wrap.removeEventListener('wheel', _onWheel);
+    }
+    _img = null; _wrap = null;
+    _scale = 1; _translateX = 0; _translateY = 0;
+  }
+
+  function reset() {
+    // ESM Phase E4: delegate to app/esm/ui/image-zoom.js when the module is ready.
+    if (window.XekhoApp?.esm?.ui?.imageZoom?.reset) return window.XekhoApp.esm.ui.imageZoom.reset();
+    _scale = 1; _translateX = 0; _translateY = 0;
+    if (_img) _applyTransform();
+  }
+
+  return { attach, detach, reset };
+})();
+
+// ============================================================
+// LOGIN & USER MANAGEMENT
+// ============================================================
+const POS_IDLE_LOCK_MS = 3 * 60 * 1000;
+const STAFF_ALLOWED_PAGES = new Set(['tables', 'orders']);
+
+let currentUser = null;
+let masterAuthUser = null;
+let posIdleTimer = null;
+let posActivityBound = false;
+let kitchenNotifUnsub = null;
+let kitchenNotifSeenDocIds = new Set();
+let kitchenPushForegroundUnsub = null;
+let kitchenPushInitTimer = null;
+
+function syncAuthScrollLock() {
+  const locked = !!document.querySelector('.login-screen.active');
+  document.documentElement?.classList.toggle('auth-locked', locked);
+  document.body?.classList.toggle('auth-locked', locked);
+}
+
+function showLoginScreen(show) {
+  const loginScreen = document.getElementById('login-screen');
+  if (!loginScreen) return;
+  loginScreen.classList.toggle('active', !!show);
+  syncAuthScrollLock();
+}
+
+function showLockScreen(show) {
+  const lockScreen = document.getElementById('lock-screen');
+  if (!lockScreen) return;
+  lockScreen.classList.toggle('active', !!show);
+  syncAuthScrollLock();
+  try { renderWebAttendancePanel(); } catch(_) {}
+}
+
+syncAuthScrollLock();
+
+function updateLockScreenUI(reason = '') {
+  const masterLabel = document.getElementById('lock-screen-master-label');
+  const sessionHint = document.getElementById('pin-session-hint');
+  const pinInput = document.getElementById('pin-code-input');
+  const authName = masterAuthUser?.displayName || masterAuthUser?.username || masterAuthUser?.email || 'Chưa có Firebase Auth';
+  if (masterLabel) masterLabel.textContent = `Firebase: ${authName}`;
+  if (sessionHint) sessionHint.textContent = reason || 'Chọn nhân viên bằng mã PIN để bắt đầu order.';
+  if (pinInput) {
+    pinInput.value = '';
+    setTimeout(() => pinInput.focus(), 0);
+  }
+  try { renderWebAttendancePanel(); } catch(_) {}
+}
+
+function ensureHeaderLockButton() {
+  const headerActions = document.querySelector('.header-actions');
+  const logoutBtn = document.getElementById('header-logout-btn');
+  if (!headerActions || !logoutBtn || document.getElementById('header-lock-btn')) return;
+
+  const lockBtn = document.createElement('button');
+  lockBtn.className = 'header-btn';
+  lockBtn.id = 'header-lock-btn';
+  lockBtn.title = 'Khóa màn hình';
+  lockBtn.style.display = 'none';
+  lockBtn.onclick = handleLockScreen;
+  lockBtn.innerHTML = `
+    <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>`;
+  headerActions.insertBefore(lockBtn, logoutBtn);
+}
+
+function syncMenuCostFieldText() {
+  const costEl = document.getElementById('menu-item-cost');
+  if (!costEl) return;
+  const group = costEl.closest('.input-group');
+  const labelEl = group?.querySelector('.input-label');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
+  if (labelEl) labelEl.textContent = 'Giá vốn tự tính (đ)';
+  if (formulaEl && !String(formulaEl.textContent || '').trim()) {
+    formulaEl.textContent = 'Giá vốn sẽ tự động cộng từ các nguyên liệu trong công thức.';
+  }
+}
+
+function hasMasterAuthSession() {
+  return !!(window.DB?.currentUser || masterAuthUser?.uid);
+}
+
+function isMasterAdminAccount() {
+  const role = String(masterAuthUser?.role || window.appState?.userDoc?.role || '').trim().toLowerCase();
+  return role === 'admin' || role === 'manager' || role === 'owner' || role === 'superadmin';
+}
+
+function checkLoginState() {
+  const hasAuth = hasMasterAuthSession();
+  if (!hasAuth) {
+    showLoginScreen(true);
+    showLockScreen(false);
+    return false;
+  }
+  showLoginScreen(false);
+  showLockScreen(!currentUser);
+  return !!currentUser;
+}
+
+function getCurrentPosUser() {
+  return currentUser ? { ...currentUser } : null;
+}
+
+function syncCurrentPosUserToAppState() {
+  if (!window.appState) return;
+  window.appState.currentUser = currentUser ? { ...currentUser } : null;
+}
+
+window.getCurrentPosUser = getCurrentPosUser;
+
+function getCurrentPosUserName() {
+  return currentUser?.name || currentUser?.username || 'Chưa chọn nhân viên';
+}
+
+function _escapeHtml(text) {
+  const escapeHtml = window.XekhoApp?.utils?.dom?.escapeHtml;
+  if (typeof escapeHtml === 'function') {
+    return escapeHtml(text);
+  }
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function _escapeJsString(text) {
+  return JSON.stringify(String(text ?? ''));
+}
+
+function _safeImageUrl(value) {
+  const safeImageUrl = window.XekhoApp?.utils?.dom?.safeImageUrl;
+  return typeof safeImageUrl === 'function' ? safeImageUrl(value) : null;
+}
+
+function _setSafeImageSource(image, imageUrl) {
+  const setSafeImageSource = window.XekhoApp?.utils?.dom?.setSafeImageSource;
+  return typeof setSafeImageSource === 'function' && setSafeImageSource(image, imageUrl);
+}
+
+function _replaceWithSafeImage(container, imageUrl, altText, styleValues = {}) {
+  if (!container || typeof document?.createElement !== 'function') return false;
+  const image = document.createElement('img');
+  if (!_setSafeImageSource(image, imageUrl)) return false;
+  image.alt = String(altText || 'Ảnh');
+  Object.entries(styleValues).forEach(([property, value]) => {
+    image.style[property] = value;
+  });
+  container.textContent = '';
+  container.appendChild(image);
+  return true;
+}
+
+function _normalizeStaffRole(role) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.normalizeStaffRole) return window.XekhoApp.auth.normalizeStaffRole(role);
+  return String(role || 'staff').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
+}
+
+function _normalizeStaffStatus(status) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.normalizeStaffStatus) return window.XekhoApp.auth.normalizeStaffStatus(status);
+  return String(status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
+}
+
+function _getManagedStaff(includeInactive = false) {
+  const staff = (window.appState && Array.isArray(window.appState.staff))
+    ? window.appState.staff
+    : [];
+  if (includeInactive) return staff;
+  return staff.filter(item => _normalizeStaffStatus(item?.status) === 'active');
+}
+
+function _getStaffIdentity(staff = {}) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.getStaffIdentity) return window.XekhoApp.auth.getStaffIdentity(staff);
+  return String(staff.staff_id || staff.id || '');
+}
+
+function _findStaffByPin(pin, options = {}) {
+  const code = String(pin || '').trim();
+  if (!/^\d{4}$/.test(code)) return null;
+  const includeInactive = options.includeInactive === true;
+  return _getManagedStaff(includeInactive).find(item => String(item.pin_code || '') === code) || null;
+}
+
+function _buildCurrentUserFromStaff(staff, pin) {
+  // Sprint 1.6: delegate to app/auth/staff.js
+  if (window.XekhoApp?.auth?.buildCurrentUserFromStaff) return window.XekhoApp.auth.buildCurrentUserFromStaff(staff, pin);
+  if (!staff) return null;
+  const normalizedRole = _normalizeStaffRole(staff.role);
+  return {
+    id: _getStaffIdentity(staff),
+    staff_id: _getStaffIdentity(staff),
+    pin: String(pin || staff.pin_code || '').trim(),
+    name: staff.full_name || staff.username || 'Nhân viên',
+    username: staff.full_name || staff.username || 'Nhân viên',
+    role: normalizedRole,
+    status: _normalizeStaffStatus(staff.status),
+  };
+}
+
+function _hasActiveAdminStaff() {
+  return _getManagedStaff(true).some(item =>
+    _normalizeStaffRole(item?.role) === 'admin' &&
+    _normalizeStaffStatus(item?.status) === 'active'
+  );
+}
+
+function bootstrapStaffSetupSessionIfNeeded(showNotice = false) {
+  const staff = Array.isArray(window.appState?.staff) ? window.appState.staff : null;
+  if (!hasMasterAuthSession() || currentUser || !isMasterAdminAccount() || !Array.isArray(staff) || staff.length > 0) {
+    return false;
+  }
+
+  const displayName = masterAuthUser?.displayName || masterAuthUser?.username || masterAuthUser?.email || 'Admin';
+  currentUser = {
+    id: masterAuthUser?.uid || 'bootstrap-admin',
+    staff_id: 'bootstrap-admin',
+    pin: null,
+    name: displayName,
+    username: displayName,
+    role: 'admin',
+    status: 'active',
+    bootstrap: true,
+  };
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  showLoginScreen(false);
+  showLockScreen(false);
+  if (showNotice) {
+    showToast('Da vao giao dien admin. Ban co the tao user va PIN sau.', 'success');
+    return true;
+  }
+  return true;
+}
+
+async function ensureEmergencyAdminStaffIfNeeded() {
+  return false;
+  if (!hasMasterAuthSession() || !isMasterAdminAccount()) return false;
+  if (!Array.isArray(window.appState?.staff) || _hasActiveAdminStaff()) return false;
+  if (!window.DB?.Staff?.add || !window.DB?.Staff?.update) return false;
+
+  const emergencyPin = '8899';
+  const existingPinStaff = _findStaffByPin(emergencyPin, { includeInactive: true });
+
+  try {
+    if (existingPinStaff) {
+      const nextStaff = {
+        ...existingPinStaff,
+        full_name: existingPinStaff.full_name || 'Admin POS',
+        pin_code: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      };
+      await window.DB.Staff.update(_getStaffIdentity(existingPinStaff), {
+        full_name: nextStaff.full_name,
+        pin_code: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      });
+      currentUser = _buildCurrentUserFromStaff(nextStaff, emergencyPin);
+      syncCurrentPosUserToAppState();
+      applyRoleRights();
+      showLockScreen(false);
+      showLoginScreen(false);
+      showToast('Đã nâng quyền admin cho PIN 8899.', 'success');
+      return true;
+    }
+
+    const newId = await window.DB.Staff.add({
+      full_name: 'Admin POS',
+      pin_code: emergencyPin,
+      role: 'admin',
+      status: 'active',
+    });
+
+    try {
+      await window.DB?.logAction?.('staff_bootstrap_admin', {
+        message: 'Hệ thống đã tạo Staff admin khẩn cấp Admin POS',
+        staff_id: newId,
+        full_name: 'Admin POS',
+        pin_code_hint: emergencyPin,
+        role: 'admin',
+        status: 'active',
+      });
+    } catch (err) {
+      console.warn('[Audit] staff_bootstrap_admin', err);
+    }
+
+    currentUser = _buildCurrentUserFromStaff({
+      staff_id: newId,
+      full_name: 'Admin POS',
+      pin_code: emergencyPin,
+      role: 'admin',
+      status: 'active',
+    }, emergencyPin);
+    syncCurrentPosUserToAppState();
+    applyRoleRights();
+    showLockScreen(false);
+    showLoginScreen(false);
+    showToast('Đã tạo Staff admin mới với PIN 8899.', 'success');
+    return true;
+  } catch (err) {
+    console.error('[Staff bootstrap]', err);
+    showToast('Không thể tự tạo admin 8899. Hãy kiểm tra quyền Firebase Admin.', 'danger');
+    return false;
+  }
+}
+
+function resetPosIdleTimer() {
+  if (posIdleTimer) clearTimeout(posIdleTimer);
+  if (!currentUser) return;
+  posIdleTimer = setTimeout(() => {
+    lockPosSession('Tự động khóa sau 3 phút không thao tác');
+  }, POS_IDLE_LOCK_MS);
+}
+
+function bindPosActivityWatchers() {
+  if (posActivityBound) return;
+  posActivityBound = true;
+  ['click', 'keydown', 'touchstart', 'mousemove'].forEach(eventName => {
+    window.addEventListener(eventName, () => {
+      if (!currentUser) return;
+      resetPosIdleTimer();
+    }, { passive: true });
+  });
+}
+
+function unlockPosSession(pin) {
+  if (!hasMasterAuthSession()) return false;
+  const profile = _findStaffByPin(pin);
+  if (!profile) return false;
+  currentUser = _buildCurrentUserFromStaff(profile, pin);
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  showLockScreen(false);
+  showLoginScreen(false);
+  updateLockScreenUI(`Đã mở máy cho ${profile.full_name}`);
+  resetPosIdleTimer();
+  try {
+    if (currentPage === 'orders' && currentTable) {
+      renderCatTabs();
+      renderMenuItems();
+      renderCart();
+    }
+  } catch (_) {}
+  showToast(`✅ Xin chào ${profile.full_name}`, 'success');
+  return true;
+}
+
+function lockPosSession(reason = 'Máy POS đã được khóa') {
+  if (posIdleTimer) {
+    clearTimeout(posIdleTimer);
+    posIdleTimer = null;
+  }
+  currentUser = null;
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  if (hasMasterAuthSession()) {
+    updateLockScreenUI(reason);
+    showLoginScreen(false);
+    showLockScreen(true);
+  } else {
+    showLockScreen(false);
+    showLoginScreen(true);
+  }
+}
+
+async function handlePinSubmit(e) {
+  e.preventDefault();
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  if (!/^\d{4}$/.test(pin)) {
+    showToast('PIN phải gồm đúng 4 số.', 'warning');
+    return;
+  }
+  if (!unlockPosSession(pin)) {
+    try {
+      await window.DB?.logAction?.('pin_login_failed', {
+        attemptedPinLength: pin.length,
+        reason: 'invalid_pin',
+      });
+    } catch (err) {
+      console.warn('[Audit] pin_login_failed', err);
+    }
+    showToast('PIN không đúng.', 'danger');
+    updateLockScreenUI('PIN không đúng. Vui lòng thử lại.');
+    return;
+  }
+  try {
+    await window.DB?.logAction?.('pin_login_success', {
+      user: getCurrentPosUser(),
+    });
+  } catch (err) {
+    console.warn('[Audit] pin_login_success', err);
+  }
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const username = (document.getElementById('login-username')?.value || '').trim();
+  const password = (document.getElementById('login-password')?.value || '').trim();
+  if (!username || !password) {
+    showToast('Vui lòng nhập đầy đủ tài khoản và mật khẩu.', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('login-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang đăng nhập...';
+  }
+
+  try {
+    const email = username;
+    if (window.DB?.login) {
+      const result = await window.DB.login(email, password);
+      if (!result.success) throw new Error(result.error || 'Đăng nhập thất bại');
+    }
+    showToast('✅ Đăng nhập Firebase thành công. Vui lòng nhập PIN.', 'success');
+  } catch (err) {
+    showToast(`Lỗi đăng nhập: ${err.message || err}`, 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Đăng nhập';
+    }
+  }
+}
+
+function continueLocalMode() {
+  showToast('Chế độ nội bộ đã bị tắt. Hãy đăng nhập Firebase rồi nhập PIN.', 'warning');
+}
+
+function handleLockScreen() {
+  if (!hasMasterAuthSession()) return;
+  lockPosSession('Đã khóa màn hình. Vui lòng nhập PIN 4 số để tiếp tục.');
+  showToast('Đã khóa màn hình. Vui lòng nhập PIN để mở lại.', 'info');
+}
+
+function handleLogout() {
+  const ok = confirm('Bạn có chắc muốn đăng xuất không');
+  if (!ok) return;
+
+  currentUser = null;
+  syncCurrentPosUserToAppState();
+  masterAuthUser = null;
+  if (posIdleTimer) {
+    clearTimeout(posIdleTimer);
+    posIdleTimer = null;
+  }
+  showLockScreen(false);
+  showLoginScreen(true);
+
+  const userInp = document.getElementById('login-username');
+  const passInp = document.getElementById('login-password');
+  if (userInp) userInp.value = '';
+  if (passInp) passInp.value = '';
+
+  if (window.DB && window.DB.logout) {
+    window.DB.logout().catch(() => {});
+  }
+}
+
+function canAccessPage(page) {
+  const target = String(page || '').trim().toLowerCase();
+  if (['menu', 'insights', 'media'].includes(target)) return false;
+  if (!currentUser) return target === 'tables';
+  if (isAdminUser()) return true;
+  return STAFF_ALLOWED_PAGES.has(target);
+}
+
+function applyRoleRights() {
+  const userDisplay = document.getElementById('current-user-display');
+  if (userDisplay) {
+    userDisplay.innerHTML = currentUser
+      ? `<span aria-hidden="true">👤</span><span class="header-user-name">${_escapeHtml(currentUser.username)}</span>`
+      : `<span aria-hidden="true">🔒</span><span class="header-user-name">Đã khóa</span>`;
+  }
+
+  const role = String(currentUser?.role || '').toLowerCase();
+  const isAdmin = role === 'admin';
+  const isStaff = role === 'staff';
+  const isLocked = !currentUser;
+
+  // Staff chỉ được thao tác luồng order/checkout, không truy cập cấu hình/kho/báo cáo.
+  document.querySelectorAll('.bottom-nav .nav-item[data-page]').forEach(el => {
+    const page = String(el.getAttribute('data-page') || '').trim().toLowerCase();
+    const allowed = !isLocked && (isAdmin || STAFF_ALLOWED_PAGES.has(page));
+    el.style.display = allowed ? '' : 'none';
+  });
+  const navMore = document.getElementById('nav-more');
+  if (navMore) navMore.style.display = (isLocked || isStaff) ? 'none' : '';
+  const headerLogoutBtn = document.getElementById('header-logout-btn');
+  if (headerLogoutBtn) {
+    // Nếu máy đang khóa nhưng Firebase session còn sống -> luôn cho phép đổi tài khoản.
+    const canShowHeaderLogout = isLocked ? hasMasterAuthSession() : !isStaff;
+    headerLogoutBtn.style.display = canShowHeaderLogout ? '' : 'none';
+  }
+  const lockLogoutBtn = document.getElementById('lock-screen-logout-btn');
+  if (lockLogoutBtn) {
+    // Cho phép đổi tài khoản Firebase khi màn hình đang khóa.
+    // Staff đang đăng nhập PIN thì vẫn ẩn theo yêu cầu bảo mật UI.
+    const canShowLockLogout = isLocked ? hasMasterAuthSession() : !isStaff;
+    lockLogoutBtn.style.display = canShowLockLogout ? '' : 'none';
+  }
+
+  const alertBtn = document.getElementById('header-alert-btn');
+  if (alertBtn) alertBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+  const reloadBtn = document.getElementById('header-reload-btn');
+  if (reloadBtn) reloadBtn.style.display = (isLocked || isStaff) ? 'none' : '';
+
+  const revCard = document.getElementById('staff-hide-rev');
+  if (revCard) revCard.style.display = (isLocked || isStaff) ? 'none' : '';
+  const ordCard = document.getElementById('staff-hide-ord');
+  if (ordCard) ordCard.style.display = (isLocked || isStaff) ? 'none' : '';
+
+  const aifab = document.getElementById('ai-fab');
+  if (aifab) aifab.style.display = (isLocked || isStaff) ? 'none' : '';
+  const aimic = document.getElementById('ai-mic-btn');
+  if (aimic) aimic.style.display = (isLocked || isStaff) ? 'none' : '';
+  const mainFab = document.getElementById('main-fab');
+  if (mainFab) mainFab.style.display = (isLocked || isStaff) ? 'none' : '';
+  const lockBtn = document.getElementById('header-lock-btn');
+  if (lockBtn) lockBtn.style.display = (hasMasterAuthSession() && !isLocked) ? '' : 'none';
+  const aiPanel = document.getElementById('ai-assistant-panel');
+  if (aiPanel && (isLocked || isStaff)) aiPanel.classList.remove('active');
+
+  const orderDelBtns = document.querySelectorAll('.delete-order-btn');
+  orderDelBtns.forEach(btn => btn.style.display = (isLocked || !isAdmin) ? 'none' : '');
+
+  const clearTableBtn = document.getElementById('btn-clear-table');
+  if (clearTableBtn) clearTableBtn.style.display = (isLocked || !isAdmin) ? 'none' : '';
+
+  if (isLocked && currentPage !== 'tables') {
+    navigate('tables');
+    return;
+  }
+
+  if (isStaff && !STAFF_ALLOWED_PAGES.has(String(currentPage || '').toLowerCase())) {
+    navigate('tables');
+  }
+
+  updateKitchenBadge(Number(document.getElementById('kitchen-notif-badge')?.dataset.count || 0));
+  try { updateShiftBtnUI(); } catch (_) {}
+}
+
+function stopKitchenNotificationListener() {
+  if (typeof kitchenNotifUnsub === 'function') {
+    try { kitchenNotifUnsub(); } catch (_) {}
+  }
+  kitchenNotifUnsub = null;
+  kitchenNotifSeenDocIds.clear();
+  updateKitchenBadge(0);
+}
+
+function updateKitchenBadge(count) {
+  const host = document.getElementById('header-kitchen-btn');
+  const badge = document.getElementById('kitchen-notif-badge');
+  if (!host || !badge) return;
+
+  const nextCount = Math.max(0, Number(count || 0));
+  badge.dataset.count = String(nextCount);
+  badge.textContent = nextCount > 99 ? '99+' : String(nextCount);
+  badge.style.display = nextCount > 0 ? 'inline-flex' : 'none';
+  host.classList.toggle('has-kitchen-alert', nextCount > 0);
+  host.classList.toggle('badge-pulse', nextCount > 0);
+
+  const isLocked = !currentUser;
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  const canShow = !!masterAuthUser && !isLocked && role !== 'kitchen';
+  host.style.display = canShow ? 'inline-flex' : 'none';
+}
+
+function showKitchenBrowserAlert(notif = {}, docId = '') {
+  try {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+
+    const title = String(notif.tableName || 'Thong bao bep');
+    const body = Array.isArray(notif.items) && notif.items.length
+      ? String(notif.items.join(', '))
+      : String(notif.message || 'Co cap nhat tu bep');
+
+    const options = {
+      body,
+      tag: docId ? `kitchen-alert-${docId}` : `kitchen-alert-${Date.now()}`,
+      renotify: true,
+      icon: '/kitchen-icon.svg',
+      badge: '/kitchen-badge.svg',
+      data: {
+        url: '/',
+        tableId: String(notif.tableId || ''),
+        orderId: String(notif.orderId || ''),
+        type: String(notif.type || ''),
+      },
+    };
+
+    try {
+      const n = new Notification(title, options);
+      n.onclick = () => {
+        try { window.focus(); } catch (_) {}
+        try { window.location.href = '/'; } catch (_) {}
+        try { n.close(); } catch (_) {}
+      };
+      return;
+    } catch (_) {}
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker?.ready) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg && typeof reg.showNotification === 'function') {
+          reg.showNotification(title, options).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[KitchenPush] browser alert error', err);
+  }
+}
+
+
+function showKitchenToast(notif = {}, docId = '') {
+  if (!docId || document.querySelector(`.kitchen-toast[data-doc-id="${docId}"]`)) return;
+  const notifType = String(notif.type || '').toLowerCase();
+  const tone = notifType === 'delay' ? 'delay' : 'ready';
+  const title = notifType === 'ready'
+    ? 'SAN SANG'
+    : notifType === 'accepted'
+      ? 'BEP DA NHAN'
+      : notifType === 'delay'
+        ? 'BAO CHAM'
+        : 'CAP NHAT BEP';
+  const icon = notifType === 'ready' ? 'OK' : notifType === 'accepted' ? 'BEP' : '!';
+
+  const toast = document.createElement('div');
+  toast.className = `kitchen-toast ${tone}`;
+  toast.dataset.docId = docId;
+
+  const safeTitle = _escapeHtml(notif.tableName || 'Bep');
+  const safeItems = Array.isArray(notif.items) && notif.items.length
+    ? _escapeHtml(notif.items.join(', '))
+    : _escapeHtml(notif.message || 'Co cap nhat tu bep');
+  showKitchenBrowserAlert(notif, docId);
+
+  toast.innerHTML = `
+    <div class="kitchen-toast-icon">${icon}</div>
+    <div class="kitchen-toast-body">
+      <div class="kitchen-toast-title">${safeTitle} - ${title}</div>
+      <div class="kitchen-toast-items">${safeItems}</div>
+    </div>
+    <button class="kitchen-toast-close" type="button" aria-label="Dong">x</button>
+  `;
+
+  const closeToast = () => {
+    if (toast.dataset.closing === '1') return;
+    toast.dataset.closing = '1';
+    toast.classList.add('closing');
+    setTimeout(() => {
+      try { toast.remove(); } catch (_) {}
+    }, 220);
+  };
+
+  const markReadAndClose = async () => {
+    try { await markKitchenNotifRead(docId); } catch (_) {}
+    closeToast();
+  };
+
+  toast.querySelector('.kitchen-toast-close')?.addEventListener('click', () => {
+    markReadAndClose().catch(() => closeToast());
+  });
+
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    markReadAndClose().catch(() => closeToast());
+  }, 8000);
+}
+
+async function markKitchenNotifRead(docId) {
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  if (!uid || !docId || !window.DB?.KitchenNotifications?.markRead) return;
+  await window.DB.KitchenNotifications.markRead(docId, uid);
+}
+
+function initKitchenNotificationListener() {
+  if (!window.DB?.KitchenNotifications?.listenUnread) return;
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  if (!uid || role === 'kitchen') {
+    stopKitchenNotificationListener();
+    return;
+  }
+  if (typeof kitchenNotifUnsub === 'function') return;
+
+  kitchenNotifUnsub = window.DB.KitchenNotifications.listenUnread((docs) => {
+    let unreadCount = 0;
+    docs.forEach(notif => {
+      const readBy = Array.isArray(notif.readBy) ? notif.readBy.map(String) : [];
+      const docId = String(notif.id || '');
+      if (!docId || readBy.includes(String(uid))) return;
+      unreadCount++;
+      if (!kitchenNotifSeenDocIds.has(docId)) {
+        kitchenNotifSeenDocIds.add(docId);
+        showKitchenToast(notif, docId);
+      }
+    });
+    updateKitchenBadge(unreadCount);
+  });
+}
+
+function stopKitchenPushClient() {
+  if (typeof kitchenPushForegroundUnsub === 'function') {
+    try { kitchenPushForegroundUnsub(); } catch (_) {}
+  }
+  kitchenPushForegroundUnsub = null;
+  if (kitchenPushInitTimer) {
+    clearTimeout(kitchenPushInitTimer);
+    kitchenPushInitTimer = null;
+  }
+}
+
+async function showKitchenBrowserNotification(payload = {}) {
+  try {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    if (!('serviceWorker' in navigator)) return;
+
+    const registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js')
+      || await navigator.serviceWorker.getRegistration();
+    if (!registration || typeof registration.showNotification !== 'function') return;
+
+    const data = payload?.data || {};
+    const notification = payload?.notification || {};
+    const title = String(notification.title || data.tableName || 'Thong bao bep');
+    const body = String(notification.body || 'Co cap nhat moi tu bep');
+
+    await registration.showNotification(title, {
+      body,
+      icon: '/kitchen-icon.svg',
+      badge: '/kitchen-badge.svg',
+      tag: `kitchen-foreground-${data.type || 'update'}-${data.orderId || Date.now()}`,
+      renotify: true,
+      data: {
+        url: '/',
+        tableId: data.tableId || '',
+        orderId: data.orderId || '',
+        type: data.type || '',
+      },
+    });
+  } catch (err) {
+    console.warn('[KitchenPush] browser notification error', err);
+  }
+}
+
+function handleKitchenPushForeground(payload = {}) {
+  const data = payload?.data || {};
+  const notification = payload?.notification || {};
+  showKitchenBrowserNotification(payload).catch(() => {});
+  if (!document.hidden && typeof kitchenNotifUnsub === 'function') return;
+  showKitchenToast({
+    type: data.type || 'ready',
+    tableId: data.tableId || '',
+    tableName: data.tableName || notification.title || 'Bep',
+    orderId: data.orderId || '',
+    items: notification.body ? [notification.body] : [],
+    message: notification.body || 'Co cap nhat tu bep',
+  }, `${data.type || 'push'}:${data.orderId || ''}:${data.tableId || ''}:${Date.now()}`);
+}
+
+async function initKitchenPushClient(options = {}) {
+  if (!window.DB?.Messaging?.registerCurrentDevice || !window.DB?.Messaging?.listenForeground) return;
+
+  const role = String(masterAuthUser?.role || '').toLowerCase();
+  const uid = window.appState?.uid || masterAuthUser?.uid;
+  const vapidKey = String(Store.getSettings()?.webPushVapidKey || window.appState?.settings?.webPushVapidKey || '').trim();
+  const retryLater = options.retryLater === true;
+
+  if (!uid || role === 'kitchen' || !vapidKey) {
+    stopKitchenPushClient();
+    return;
+  }
+
+  if (typeof kitchenPushForegroundUnsub !== 'function') {
+    kitchenPushForegroundUnsub = await window.DB.Messaging.listenForeground(handleKitchenPushForeground);
+  }
+
+  try {
+    const result = await window.DB.Messaging.registerCurrentDevice();
+    if (result?.reason === 'permission-default' && !retryLater) {
+      kitchenPushInitTimer = setTimeout(() => {
+        initKitchenPushClient({ retryLater: true }).catch(err => console.warn('[KitchenPush] retry error', err));
+      }, 5000);
+    }
+  } catch (err) {
+    console.warn('[KitchenPush] init error', err);
+  }
+}
+
+// ==== Quản lý nhân sự (collection Staff) ====
+function renderUserManagement() {
+  const umSection = document.getElementById('settings-user-management');
+  if (!umSection) return;
+  if (!isAdminUser()) {
+    umSection.style.display = 'none';
+    return;
+  }
+  umSection.style.display = 'block';
+
+  const list = document.getElementById('user-management-list');
+  if (!list) return;
+
+  const staffList = _getManagedStaff(true);
+  if (!staffList.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">Chưa có nhân viên</div></div>';
+    return;
+  }
+
+  list.innerHTML = staffList.map(staff => {
+    const staffId = _getStaffIdentity(staff);
+    const fullName = staff.full_name || 'Chưa đặt tên';
+    const roleText = _normalizeStaffRole(staff.role);
+    const statusText = _normalizeStaffStatus(staff.status);
+    const pinMasked = String(staff.pin_code || '').replace(/\d/g, '•') || 'Chưa có PIN';
+    const hourlyRate = Number(staff.hourly_rate || 0) || 0;
+    const telegramText = staff.telegram_user_id ? ` · Telegram: ${_escapeHtml(staff.telegram_user_id)}` : ' · Chưa link Telegram';
+    const isCurrentUser = String(currentUser?.staff_id || currentUser?.id || '') === staffId;
+    const isAdminStaff = roleText === 'admin';
+    const roleBadge = isAdminStaff
+      ? '<span class="badge badge-primary">Admin</span>'
+      : '<span class="badge badge-info">Staff</span>';
+    const statusBadge = statusText === 'active'
+      ? '<span class="badge badge-success">Đang hoạt động</span>'
+      : '<span class="badge badge-danger">Ngưng hoạt động</span>';
+
+    return `
+    <div class="list-item" onclick="editUserById('${staffId}')" style="cursor:pointer">
+      <div class="list-item-icon" style="background:rgba(124,58,237,0.1)">👥</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${_escapeHtml(fullName)} ${roleBadge} ${statusBadge}</div>
+        <div class="list-item-sub">PIN: ${pinMasked} · Mã: ${_escapeHtml(staffId)} · Lương: ${fmt(hourlyRate)}đ/giờ${telegramText}${isCurrentUser ? ' · Đang đăng nhập' : ''}</div>
+      </div>
+      <div>
+        <button type="button" class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editUserById('${staffId}')">Sửa</button>
+        <button type="button" class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteUserById('${staffId}')" ${(isCurrentUser || isAdminStaff) ? 'disabled' : ''}>Xóa</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAddUserModal() {
+  const form = document.getElementById('user-form');
+  if (form) form.reset();
+  const idEl = document.getElementById('user-edit-id');
+  const nameEl = document.getElementById('user-edit-full-name');
+  const pinEl = document.getElementById('user-edit-pin');
+  const roleEl = document.getElementById('user-edit-role');
+  const statusEl = document.getElementById('user-edit-status');
+  const hourlyRateEl = document.getElementById('user-edit-hourly-rate');
+  const telegramIdEl = document.getElementById('user-edit-telegram-id');
+  const requireLocationEl = document.getElementById('user-edit-require-location');
+  const submitBtn = document.getElementById('user-save-btn');
+
+  if (idEl) idEl.value = '';
+  if (nameEl) nameEl.value = '';
+  if (pinEl) {
+    pinEl.value = '';
+    pinEl.placeholder = 'Ví dụ: 1234';
+  }
+  if (roleEl) roleEl.value = 'staff';
+  if (statusEl) statusEl.value = 'active';
+  if (hourlyRateEl) hourlyRateEl.value = '';
+  if (telegramIdEl) telegramIdEl.value = '';
+  if (requireLocationEl) requireLocationEl.checked = false;
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = '✅ Lưu';
+  }
+
+  const title = document.getElementById('user-modal-title');
+  if (title) title.textContent = 'Thêm Nhân Sự';
+
+  document.getElementById('user-modal').classList.add('active');
+}
+
+function editUserById(userId) {
+  const staff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(userId));
+  if (!staff) return;
+
+  const title = document.getElementById('user-modal-title');
+  if (title) title.textContent = 'Sửa Nhân Sự';
+
+  document.getElementById('user-edit-id').value = _getStaffIdentity(staff);
+  document.getElementById('user-edit-full-name').value = staff.full_name || '';
+  document.getElementById('user-edit-pin').value = String(staff.pin_code || '');
+  document.getElementById('user-edit-role').value = _normalizeStaffRole(staff.role);
+  document.getElementById('user-edit-status').value = _normalizeStaffStatus(staff.status);
+  const hourlyRateEl = document.getElementById('user-edit-hourly-rate');
+  const telegramIdEl = document.getElementById('user-edit-telegram-id');
+  const requireLocationEl = document.getElementById('user-edit-require-location');
+  if (hourlyRateEl) hourlyRateEl.value = Number(staff.hourly_rate || 0) || '';
+  if (telegramIdEl) telegramIdEl.value = staff.telegram_user_id || '';
+  if (requireLocationEl) requireLocationEl.checked = staff.require_location_checkin === true;
+
+  document.getElementById('user-modal').classList.add('active');
+}
+
+function editUser(username) {
+  const staff = _getManagedStaff(true).find(item =>
+    String(item.full_name || '').toLowerCase() === String(username || '').toLowerCase()
+  );
+  if (!staff) return;
+  editUserById(_getStaffIdentity(staff));
+}
+
+async function logStaffManagementAction(actionType, staffPayload, actionLabel) {
+  try {
+    await window.DB?.logAction?.(actionType, {
+      message: `Admin đã cập nhật thông tin nhân viên ${staffPayload?.full_name || 'không rõ tên'}`,
+      actionLabel,
+      staff_id: staffPayload?.staff_id || null,
+      full_name: staffPayload?.full_name || '',
+      role: staffPayload?.role || '',
+      status: staffPayload?.status || '',
+    });
+  } catch (err) {
+    console.warn(`[Audit] ${actionType}`, err);
+  }
+}
+
+async function submitUser(e) {
+  e.preventDefault();
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được cập nhật nhân sự.', 'danger');
+    return;
+  }
+
+  const staffId = document.getElementById('user-edit-id').value.trim();
+  const fullName = document.getElementById('user-edit-full-name').value.trim();
+  const pinCode = document.getElementById('user-edit-pin').value.trim();
+  const role = _normalizeStaffRole(document.getElementById('user-edit-role').value);
+  const status = _normalizeStaffStatus(document.getElementById('user-edit-status').value);
+  const hourlyRate = Math.max(0, Number(document.getElementById('user-edit-hourly-rate')?.value || 0) || 0);
+  const telegramUserId = String(document.getElementById('user-edit-telegram-id')?.value || '').trim();
+  const requireLocation = document.getElementById('user-edit-require-location')?.checked === true;
+  const submitBtn = document.getElementById('user-save-btn');
+
+  if (!fullName) {
+    showToast('Vui lòng nhập tên nhân sự.', 'warning');
+    return;
+  }
+  if (!/^\d{4}$/.test(pinCode)) {
+    showToast('PIN phải gồm đúng 4 số.', 'warning');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang lưu...';
+  }
+
+  try {
+    const duplicatePin = window.DB?.Staff?.isPinDuplicate
+      ? await window.DB.Staff.isPinDuplicate(pinCode, staffId || null)
+      : _getManagedStaff(true).some(item =>
+          String(item.pin_code || '') === pinCode && _getStaffIdentity(item) !== String(staffId || '')
+        );
+    if (duplicatePin) {
+      showToast('PIN này đã được sử dụng cho nhân sự khác.', 'danger');
+      return;
+    }
+
+    const payload = {
+      staff_id: staffId || null,
+      full_name: fullName,
+      pin_code: pinCode,
+      role,
+      status,
+      hourly_rate: hourlyRate,
+      telegram_user_id: telegramUserId || null,
+      require_location_checkin: requireLocation,
+    };
+
+    if (staffId) {
+      await window.DB?.Staff?.update?.(staffId, payload);
+      await logStaffManagementAction('staff_updated', payload, 'update');
+    } else {
+      const newId = await window.DB?.Staff?.add?.(payload);
+      payload.staff_id = newId;
+      await logStaffManagementAction('staff_created', payload, 'create');
+    }
+
+    document.getElementById('user-modal').classList.remove('active');
+    showToast('✅ Cập nhật thành công', 'success');
+    renderUserManagement();
+    renderAttendanceManagement();
+    renderSystemLogs();
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi lưu nhân sự: ' + (err?.message || err), 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Lưu';
+    }
+  }
+}
+
+async function deleteUserById(userId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được xóa nhân sự.', 'danger');
+    return;
+  }
+
+  const staff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(userId));
+  if (!staff) return;
+
+  const fullName = staff.full_name || 'nhân viên';
+  if (_normalizeStaffRole(staff.role) === 'admin') {
+    showToast('Không thể xóa tài khoản quản trị.', 'warning');
+    return;
+  }
+  if (String(currentUser?.staff_id || currentUser?.id || '') === _getStaffIdentity(staff)) {
+    showToast('Không thể tự xóa tài khoản đang đăng nhập.', 'warning');
+    return;
+  }
+  if (!confirm(`Xóa nhân viên ${fullName}?`)) return;
+
+  try {
+    await window.DB?.Staff?.delete?.(_getStaffIdentity(staff));
+    await logStaffManagementAction('staff_deleted', staff, 'delete');
+    showToast(`✅ Đã xóa nhân viên ${fullName}`, 'success');
+    renderUserManagement();
+    renderSystemLogs();
+  } catch (err) {
+    showToast('Lỗi xóa nhân viên: ' + (err?.message || err), 'danger');
+  }
+}
+
+function deleteUser(username) {
+  const staff = _getManagedStaff(true).find(item =>
+    String(item.full_name || '').toLowerCase() === String(username || '').toLowerCase()
+  );
+  if (!staff) return;
+  deleteUserById(_getStaffIdentity(staff));
+}
+
+function _getAttendanceDailyRows() {
+  return Array.isArray(window.appState?.attendanceDaily) ? window.appState.attendanceDaily : [];
+}
+
+function _attendanceDateFilterRange() {
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl = document.getElementById('attendance-to-date');
+  // PHASE_H_ATTENDANCE_DEFAULT_MONTH_RANGE — default must show existing rows
+  // from earlier in the current month; today→today makes the screen look broken.
+  if (fromEl && !fromEl.value) fromEl.value = monthStart;
+  if (toEl && !toEl.value) toEl.value = today;
+  return {
+    fromDate: fromEl?.value || monthStart,
+    toDate: toEl?.value || today,
+  };
+}
+
+function _getPayrollProfile() {
+    if (window.XekhoApp?.utils?.fixedcost?._getPayrollProfile) return window.XekhoApp.utils.fixedcost._getPayrollProfile();
+    const profile = window.appState?.settings?.financial_profile || {};
+    const monthly = profile.monthly_fixed_costs || {};
+    const managementSalary = Number(profile.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
+    return { profile, monthly, managementSalary, rent: Number(monthly.rent || 0) || 0, utilities: Number(monthly.utilities || 0) || 0, other: Number(monthly.other || 0) || 0 };
+  }
+
+function renderPayrollProfile() {
+  const wrap = document.getElementById('settings-payroll-profile');
+  if (!wrap) return;
+  if (!isAdminUser()) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  const data = _getPayrollProfile();
+  const fields = [
+    ['payroll-management-salary', data.managementSalary],
+    ['payroll-fixed-rent', data.rent],
+    ['payroll-fixed-utilities', data.utilities],
+    ['payroll-fixed-other', data.other],
+  ];
+  fields.forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el) el.value = value ? String(value) : '';
+  });
+  const monthlyTotal = data.managementSalary + data.rent + data.utilities + data.other;
+  const summaryEl = document.getElementById('payroll-profile-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = [
+      `Lương quản lý: <b>${fmt(data.managementSalary)}đ/tháng</b> (${fmt(Math.round(data.managementSalary / 30))}đ/ngày).`,
+      `Lương nhân viên không nằm trong chi phí cố định; hệ thống lấy theo chấm công và ghi vào category <b>Lương nhân viên</b>.`,
+      `Tổng cố định đang tính: <b>${fmt(monthlyTotal)}đ/tháng</b> (${fmt(Math.round(monthlyTotal / 30))}đ/ngày).`,
+    ].join('<br>');
+  }
+}
+
+async function savePayrollProfile() {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được cấu hình lương.', 'danger');
+    return;
+  }
+  const readMoney = (id) => Math.max(0, Number(document.getElementById(id)?.value || 0) || 0);
+  const managementSalary = readMoney('payroll-management-salary');
+  const rent = readMoney('payroll-fixed-rent');
+  const utilities = readMoney('payroll-fixed-utilities');
+  const other = readMoney('payroll-fixed-other');
+  const monthlyTotal = managementSalary + rent + utilities + other;
+  const patch = {
+    management_salary_monthly: managementSalary,
+    monthly_fixed_costs: {
+      management_salary: managementSalary,
+      rent,
+      utilities,
+      other,
+      total: monthlyTotal,
+    },
+    daily_fixed_cost: monthlyTotal > 0 ? Math.round(monthlyTotal / 30) : 0,
+  };
+  try {
+    if (window.DB?.Settings?.saveFinancialProfile) {
+      await window.DB.Settings.saveFinancialProfile(patch);
+    }
+    window.appState.settings = {
+      ...(window.appState.settings || {}),
+      financial_profile: {
+        ...(window.appState.settings?.financial_profile || {}),
+        ...patch,
+      },
+    };
+    renderPayrollProfile();
+    showToast('✅ Đã lưu cấu hình lương và chi phí cố định', 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi lưu cấu hình lương: ' + (err?.message || err), 'danger');
+  }
+}
+
+// PHASE_E_OVERNIGHT_HELPERS
+/**
+ * Derive the effective totalMinutes for a daily row from absolute timestamps when
+ * the stored value is missing, zero, or negative (e.g. overnight shifts where naive
+ * date-scoped subtraction would return a negative number).
+ * Falls back to stored value when it is already valid (> 0).
+ * @param {Object} row - attendance_daily row from appState.attendanceDaily
+ * @returns {number} totalMinutes (always >= 0)
+ */
+function _attendanceTimestampMs(value) {
+  if (!value) return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value?.toDate) return value.toDate().getTime();
+  if (value?.seconds) return Number(value.seconds) * 1000;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function _positiveMinutesFromRange(startValue, endValue) {
+  const inMs = _attendanceTimestampMs(startValue);
+  const outMs = _attendanceTimestampMs(endValue);
+  if (inMs > 0 && outMs > inMs) return Math.round((outMs - inMs) / 60000);
+  if (outMs > 0 && outMs <= inMs) return 0;
+  return -1;
+}
+
+function _computeAttendanceRowMinutes(row = {}) {
+  const derived = _positiveMinutesFromRange(
+    row.firstCheckInAtMs || row.checkInAtMs || row.firstCheckInAt || row.checkInAt,
+    row.lastCheckOutAtMs || row.checkOutAtMs || row.lastCheckOutAt || row.checkOutAt
+  );
+  const stored = Number(row.totalMinutes || 0) || 0;
+  if (derived > 0 && stored <= 0) return derived;
+  if (derived > 0 && stored > 0) return stored;
+  if (stored > 0) return stored;
+  return 0;
+}
+
+function _computeAttendancePayableMinutes(row = {}) {
+  const derivedTotal = _computeAttendanceRowMinutes(row);
+  const stored = Number(row.payableMinutes ?? -1);
+  if (stored > 0) return stored;
+  if (stored === 0 && derivedTotal <= 0) return 0;
+  return _roundAttendancePayableMinutes(derivedTotal);
+}
+
+function _computeAttendanceWage(row = {}) {
+  const stored = Number(row.totalWage || 0) || 0;
+  if (stored > 0) return stored;
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const payableMinutes = _computeAttendancePayableMinutes(row);
+  return Math.round((payableMinutes / 60) * hourlyRate);
+}
+
+/**
+ * Derive the effective durationMinutes for a single shift row from absolute timestamps.
+ * Uses stored durationMinutes when valid; otherwise computes from checkInAt/checkOutAt ms.
+ * @param {Object} s - attendance_shifts row
+ * @returns {number} durationMinutes (always >= 0), or -1 when shift is still open
+ */
+function _computeShiftDurationMinutes(s = {}) {
+  const derived = _positiveMinutesFromRange(
+    s.checkInAtMs || s.checkInAt,
+    s.checkOutAtMs || s.checkOutAt
+  );
+  const stored = Number(s.durationMinutes ?? -1);
+  if (derived > 0 && stored <= 0) return derived;
+  if (stored >= 0) return stored;
+  return derived;
+}
+// END_PHASE_E_OVERNIGHT_HELPERS
+
+// PHASE_A_ATTENDANCE_DASHBOARD
+// PHASE_F_ATTENDANCE_VIEW_ACTIONS
+/**
+ * Reset attendance filters to the current month range and all statuses,
+ * then re-render the attendance table.
+ * Solves: status stuck on 'Đã điều chỉnh' with no matching rows.
+ */
+function resetAttendanceFilters() {
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl   = document.getElementById('attendance-to-date');
+  const staffEl  = document.getElementById('attendance-staff-filter');
+  const statusEl = document.getElementById('attendance-status-filter');
+  if (fromEl)  fromEl.value  = monthStart;
+  if (toEl)    toEl.value    = today;
+  if (staffEl)  staffEl.value  = '';
+  if (statusEl) statusEl.value = '';
+  renderAttendanceManagement();
+  showAttendanceResults();
+}
+
+/**
+ * Scroll / focus the attendance results area so it is visible on mobile,
+ * then trigger a fresh render.
+ * PHASE_G_ATTENDANCE_STAFF_FALLBACK: shows a toast hint when the list is still
+ * empty/null after rendering so the user never gets a silent no-op.
+ */
+function showAttendanceResults() {
+  renderAttendanceManagement();
+  const listEl = document.getElementById('attendance-management-list');
+  if (listEl) {
+    listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // PHASE_G_SHOW_RESULTS_FEEDBACK — give visible feedback if nothing rendered
+  if (!listEl || !listEl.firstChild || listEl.innerHTML.trim() === '') {
+    showToast('⏳ Đang tải dữ liệu chấm công, vui lòng thử lại sau.', 'info', 3000);
+  }
+}
+// END_PHASE_F_ATTENDANCE_VIEW_ACTIONS
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_G_ATTENDANCE_STAFF_FALLBACK
+// Build staff filter options from two sources merged together:
+//   1. Staff collection rows in appState.staff  (authoritative when present)
+//   2. staffId / staffName pairs found in attendance_daily + attendance_shifts
+//      rows already loaded in appState — used as fallback when Staff listener
+//      is empty, late, or permission-blocked.
+// Returns an array of { id, name } objects deduplicated by id.
+// ─────────────────────────────────────────────────────────────────────────────
+function _getAttendanceStaffOptions() {
+  // Source 1: Staff collection
+  const staffList = Array.isArray(window.appState?.staff) ? window.appState.staff : [];
+  const map = new Map();
+  for (const s of staffList) {
+    const sid = String(s.staff_id || s.id || '').trim();
+    if (sid) map.set(sid, { id: sid, name: s.full_name || s.name || sid });
+  }
+
+  // Source 2: attendance_daily rows
+  const dailyRows = Array.isArray(window.appState?.attendanceDaily) ? window.appState.attendanceDaily : [];
+  for (const r of dailyRows) {
+    const sid = String(r.staffId || '').trim();
+    if (sid && !map.has(sid)) {
+      map.set(sid, { id: sid, name: r.staffName || sid });
+    }
+  }
+
+  // Source 3: attendance_shifts rows
+  const shiftRows = Array.isArray(window.appState?.attendanceShifts) ? window.appState.attendanceShifts : [];
+  for (const s of shiftRows) {
+    const sid = String(s.staffId || '').trim();
+    if (sid && !map.has(sid)) {
+      map.set(sid, { id: sid, name: s.staffName || sid });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+// END_PHASE_G_ATTENDANCE_STAFF_FALLBACK
+
+function renderAttendanceManagement() {
+  renderPayrollProfile();
+  const section = document.getElementById('settings-attendance-management');
+  if (!section) return;
+  if (!isAdminUser()) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  // PHASE_C_QA_ATTENDANCE_SAMPLE — inject QA banner when qaAttendance=1 URL param is active
+  const qaMode = _isQaAttendanceMode();
+  const existingQaBanner = document.getElementById('qa-attendance-banner');
+  if (qaMode && !existingQaBanner) {
+    const banner = document.createElement('div');
+    banner.id = 'qa-attendance-banner';
+    banner.style.cssText = 'background:rgba(234,179,8,0.15);border:1px solid rgba(234,179,8,0.5);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    banner.innerHTML = `
+      <span style="font-size:16px">🧪</span>
+      <span style="flex:1"><strong>Dữ liệu mẫu cục bộ</strong> — chỉ để test bộ lọc, không ghi Firestore.</span>
+      <button type="button" class="btn btn-xs btn-warning" onclick="_loadQaAttendanceSample()">Tải dữ liệu mẫu</button>
+      <button type="button" class="btn btn-xs btn-outline" onclick="_resetQaAttendanceSample()">Xóa mẫu</button>
+    `;
+    section.insertBefore(banner, section.firstChild);
+  } else if (!qaMode && existingQaBanner) {
+    existingQaBanner.remove();
+  }
+
+  const listEl = document.getElementById('attendance-management-list');
+  const summaryEl = document.getElementById('attendance-summary');
+  if (!listEl) return;
+
+  // --- Degraded state: DB / appState not ready ---
+  if (!window.appState) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang kết nối cơ sở dữ liệu…</div></div>';
+    return;
+  }
+
+  const allStaff = _getManagedStaff(true);
+
+  // PHASE_G_ATTENDANCE_STAFF_FALLBACK — combined staff options: Staff collection
+  // rows first; fall back to staffId/staffName pairs from attendance rows when
+  // the Staff listener is empty, late, or permission-blocked.
+  const staffOptions = _getAttendanceStaffOptions();
+
+  // Warning banner when Staff collection is empty but attendance data exists
+  const existingStaffFallbackBanner = document.getElementById('attendance-staff-fallback-banner');
+  const attendanceHasRows = Array.isArray(window.appState.attendanceDaily) && window.appState.attendanceDaily.length > 0;
+  if (allStaff.length === 0 && attendanceHasRows) {
+    if (!existingStaffFallbackBanner) {
+      const banner = document.createElement('div');
+      banner.id = 'attendance-staff-fallback-banner';
+      banner.style.cssText = 'background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.45);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--text1)';
+      banner.textContent = 'Không tải được danh sách nhân viên từ Staff, đang dùng dữ liệu chấm công.';
+      const listEl2 = document.getElementById('attendance-management-list');
+      if (listEl2 && listEl2.parentNode) listEl2.parentNode.insertBefore(banner, listEl2);
+    }
+  } else if (existingStaffFallbackBanner) {
+    existingStaffFallbackBanner.remove();
+  }
+
+  // --- Populate staff filter select ---
+  const staffFilterEl = document.getElementById('attendance-staff-filter');
+  if (staffFilterEl && staffOptions.length) {
+    const currentStaffVal = staffFilterEl.value;
+    const staffOptHtml = staffOptions
+      .map(s => {
+        const sel = s.id === currentStaffVal ? ' selected' : '';
+        return `<option value="${_escapeHtml(s.id)}"${sel}>${_escapeHtml(s.name)}</option>`;
+      })
+      .join('');
+    // Only rebuild if options changed (avoid disrupting selection)
+    // CSS selectors do not support [value!=""] — use :not() so clicking
+    // "Xem bảng chấm công" never throws a SyntaxError in real browsers.
+    // PHASE_H_ATTENDANCE_SELECTOR_FIX
+    const optionCount = staffFilterEl.querySelectorAll('option:not([value=""])').length;
+    if (optionCount !== staffOptions.length) {
+      const blankSel = !currentStaffVal ? ' selected' : '';
+      staffFilterEl.innerHTML = `<option value=""${blankSel}>Tất cả nhân viên</option>${staffOptHtml}`;
+    }
+  }
+
+  const { fromDate, toDate } = _attendanceDateFilterRange();
+  // PHASE_A_FILTER_STAFF_STATUS
+  const staffFilterVal = staffFilterEl ? staffFilterEl.value : '';
+  const statusFilterEl = document.getElementById('attendance-status-filter');
+  const statusFilterVal = statusFilterEl ? statusFilterEl.value : '';
+
+  const allDailyRows = _getAttendanceDailyRows();
+
+  // --- Loading state: listeners active but data not yet arrived ---
+  if (!Array.isArray(window.appState.attendanceDaily)) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang tải dữ liệu chấm công…</div></div>';
+    return;
+  }
+
+  // --- No staff state: only block if BOTH staff list AND attendance rows are absent ---
+  // PHASE_G_ATTENDANCE_STAFF_FALLBACK: when Staff listener is empty/late but
+  // attendance_daily already has rows, skip this gate so the payroll table still renders.
+  if (allStaff.length === 0 && !attendanceHasRows) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">Chưa có nhân viên. Thêm nhân viên trong tab Nhân sự trước.</div></div>';
+    return;
+  }
+
+  const rows = allDailyRows
+    .filter(row => {
+      const dk = String(row.dateKey || '');
+      if (dk < fromDate || dk > toDate) return false;
+      if (staffFilterVal && String(row.staffId || '') !== staffFilterVal) return false;
+      const rowStatus = String(row.status || 'closed');
+      if (statusFilterVal && rowStatus !== statusFilterVal) return false;
+      return true;
+    })
+    .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || String(a.staffName || '').localeCompare(String(b.staffName || '')));
+
+  // --- Summary cards ---
+  const uniqueStaffIds = new Set(rows.map(r => String(r.staffId || '')).filter(Boolean));
+  const openCount = rows.filter(row => String(row.status || 'closed') === 'open').length;
+  const totalMinutes = rows.reduce((sum, row) => sum + _computeAttendanceRowMinutes(row), 0);
+  const payableMinutes = rows.reduce((sum, row) => sum + _computeAttendancePayableMinutes(row), 0);
+  const totalWage = rows.reduce((sum, row) => sum + _computeAttendanceWage(row), 0);
+  const missingExpenseCount = rows.filter(row => !row.expenseId && String(row.status || 'closed') !== 'open').length;
+
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Nhân viên</div><div class="stat-value">${fmt(uniqueStaffIds.size)}</div></div>
+      <div class="stat-card"><div class="stat-label">Đang làm</div><div class="stat-value">${fmt(openCount)}</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ tính lương</div><div class="stat-value">${(payableMinutes / 60).toFixed(2)}h</div></div>
+      <div class="stat-card"><div class="stat-label">Tổng lương</div><div class="stat-value">${fmt(totalWage)}đ</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ thực tế</div><div class="stat-value">${(totalMinutes / 60).toFixed(2)}h</div></div>
+      ${missingExpenseCount > 0 ? `<div class="stat-card"><div class="stat-label">Thiếu chi phí</div><div class="stat-value" style="color:var(--danger)">${fmt(missingExpenseCount)}</div></div>` : ''}
+    `;
+  }
+
+  // PHASE_E_NO_DATA_MESSAGE — no data at all (distinct from filter-empty)
+  if (allDailyRows.length === 0) {
+    listEl.innerHTML = '<div class="empty-state" id="attendance-no-data-msg"><div class="empty-icon">📋</div><div class="empty-text">Chưa có dữ liệu chấm công</div></div>';
+    return;
+  }
+
+  // --- Empty rows state (filters hiding everything) ---
+  if (!rows.length) {
+    listEl.innerHTML = `
+      <div class="empty-state attendance-filter-empty-state">
+        <div class="empty-icon">⏱️</div>
+        <div class="empty-text">Chưa có dòng chấm công phù hợp bộ lọc này</div>
+        <button type="button" class="btn btn-sm btn-primary attendance-clear-filter-btn" onclick="resetAttendanceFilters()" style="margin-top:12px">🔄 Xóa bộ lọc</button>
+      </div>`;
+    return;
+  }
+
+  // PHASE_B_ROW_CARDS
+  // PHASE_E_PAYROLL_TABLE — salary/payroll table view
+  const toTs = val => val?.toDate ? val.toDate().toISOString() : val;
+  const tableRows = rows.map(row => {
+    const dailyId = row.dailyId || row.id || `${row.staffId}_${row.dateKey}`;
+    const status = String(row.status || 'closed');
+    let statusBadge;
+    if (status === 'open') {
+      statusBadge = '<span class="badge badge-warning">Đang làm</span>';
+    } else if (status === 'adjusted') {
+      statusBadge = '<span class="badge badge-info">Đã điều chỉnh</span>';
+    } else {
+      statusBadge = '<span class="badge badge-success">Đã chốt</span>';
+    }
+
+    const inTime = row.firstCheckInAt ? fmtTime(toTs(row.firstCheckInAt)) : '--:--';
+    // Show overnight indicator when checkout is on a different calendar day than checkin
+    let outTime = '--:--';
+    let overnightBadge = '';
+    if (row.lastCheckOutAt) {
+      outTime = fmtTime(toTs(row.lastCheckOutAt));
+      const inDay = row.firstCheckInAt ? String(toTs(row.firstCheckInAt) || '').slice(0, 10) : '';
+      const outDay = String(toTs(row.lastCheckOutAt) || '').slice(0, 10);
+      if (inDay && outDay && outDay > inDay) {
+        overnightBadge = ' <span title="Ra ca qua ngày hôm sau" style="font-size:10px;opacity:0.7">🌙+1</span>';
+      }
+    }
+
+    // PHASE_E_OVERNIGHT_GUARD — use overnight-safe minute computation
+    const effectiveTotalMinutes = _computeAttendanceRowMinutes(row);
+    const effectivePayableMinutes = _computeAttendancePayableMinutes(row);
+
+    const actualHours = (effectiveTotalMinutes / 60).toFixed(2);
+    const payableHoursVal = (effectivePayableMinutes / 60).toFixed(2);
+    const hourlyRate = Number(row.hourlyRate || 0);
+    const wage = _computeAttendanceWage(row);
+
+    // Expense / status cell
+    let statusCell;
+    if (row.expenseId) {
+      statusCell = `${statusBadge}<br><span style="font-size:11px;color:var(--text2)">💰 ${_escapeHtml(row.expenseId)}</span>`;
+    } else if (status !== 'open') {
+      statusCell = `${statusBadge}<br><span style="font-size:11px;color:var(--danger)">⚠️ Thiếu chi phí</span>`;
+    } else {
+      statusCell = statusBadge;
+    }
+
+    // PHASE_B_AUDIT_DISPLAY — audit line in detail cell
+    const auditTip = (row.adjustedBy || row.adjustedAt)
+      ? ` title="Chỉnh bởi ${_escapeHtml(String(row.adjustedBy || ''))} ${row.adjustedAt ? String(row.adjustedAt).slice(0, 16).replace('T', ' ') : ''}"`
+      : '';
+    const adjustNote = row.adjustReason
+      ? `<br><span style="font-size:10px;color:var(--text2)" ${auditTip}>📝 ${_escapeHtml(row.adjustReason)}</span>`
+      : (auditTip ? `<span${auditTip}>🔧</span>` : '');
+
+    const detailPanelId = _attendanceDetailPanelId(dailyId);
+    return `
+      <tr>
+        <td style="white-space:nowrap">${_escapeHtml(row.dateKey || '')}${adjustNote}</td>
+        <td>${_escapeHtml(row.staffName || 'Nhân viên')}</td>
+        <td style="white-space:nowrap">${inTime}</td>
+        <td style="white-space:nowrap">${outTime}${overnightBadge}</td>
+        <td style="text-align:right">${actualHours}h</td>
+        <td style="text-align:right">${payableHoursVal}h</td>
+        <td style="text-align:right">${fmt(hourlyRate)}đ</td>
+        <td style="text-align:right;font-weight:600">${fmt(wage)}đ</td>
+        <td>${statusCell}</td>
+        <td style="white-space:nowrap">
+          <button type="button" class="btn btn-xs btn-secondary" onclick="adjustAttendanceDaily(${_escapeJsString(dailyId)})">Sửa</button>
+          <button type="button" class="btn btn-xs btn-outline attendance-detail-toggle" data-daily-id="${_escapeHtml(dailyId)}" onclick="toggleAttendanceShiftDetail(${_escapeJsString(dailyId)})">Chi tiết</button>
+        </td>
+      </tr>
+      <tr id="${detailPanelId}-row" style="display:none">
+        <td colspan="10" style="padding:0 0 6px 0">
+          <div id="${detailPanelId}" class="attendance-shift-detail-panel" style="padding:6px 8px;background:var(--bg2);border-radius:4px"></div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  listEl.innerHTML = `
+    <div style="overflow-x:auto">
+      <table class="attendance-payroll-table" style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg2);text-align:left">
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Ngày / ca</th>
+            <th style="padding:7px 8px;border-bottom:2px solid var(--border)">Nhân viên</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Vào</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Ra</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Giờ thực tế</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Giờ tính lương</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Lương/giờ</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Tiền lương</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Trạng thái / chi phí</th>
+            <th style="padding:7px 8px;border-bottom:2px solid var(--border)">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="attendance-payroll-tbody">
+          ${tableRows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+// END_PHASE_A_ATTENDANCE_DASHBOARD
+
+// PHASE_B_SHIFT_DETAIL
+/**
+ * Toggle (expand/collapse) the per-day shift detail panel for a daily row.
+ * Reads window.appState.attendanceShifts; matches defensively by dailyId OR staffId+dateKey.
+ * @param {string} dailyId
+ */
+function toggleAttendanceShiftDetail(dailyId) {
+  const panelId = _attendanceDetailPanelId(dailyId);
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  // Support both table-row wrapper (new payroll table) and legacy standalone panel
+  const rowWrapper = document.getElementById(panelId + '-row');
+  if (rowWrapper) {
+    if (rowWrapper.style.display !== 'none') {
+      rowWrapper.style.display = 'none';
+      return;
+    }
+    panel.innerHTML = _renderAttendanceShiftDetailHtml(dailyId);
+    rowWrapper.style.display = '';
+    return;
+  }
+  // Legacy fallback: standalone panel (no -row wrapper)
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+  // Render shift rows into panel before showing
+  panel.innerHTML = _renderAttendanceShiftDetailHtml(dailyId);
+  panel.style.display = 'block';
+}
+
+function _attendanceDetailPanelId(dailyId) {
+  return `attendance-detail-${String(dailyId || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+/**
+ * Build the HTML for shift detail panel given a dailyId.
+ * Matching: exact dailyId if present; OR same staffId + dateKey (defensive).
+ * Reads appState.attendanceShifts.
+ * @param {string} dailyId
+ * @returns {string}
+ */
+function _renderAttendanceShiftDetailHtml(dailyId) {
+  // PHASE_B_READS_ATTENDANCE_SHIFTS
+  const allShifts = Array.isArray(window.appState && window.appState.attendanceShifts)
+    ? window.appState.attendanceShifts
+    : [];
+
+  // Find the daily row for this dailyId so we can fall back to staffId+dateKey match
+  const dailyRow = _getAttendanceDailyRows().find(r => String(r.dailyId || r.id || `${r.staffId}_${r.dateKey}`) === String(dailyId));
+  const rowStaffId = dailyRow ? String(dailyRow.staffId || '') : '';
+  const rowDateKey = dailyRow ? String(dailyRow.dateKey || '') : '';
+
+  // PHASE_B_DEFENSIVE_SHIFT_MATCH — match by dailyId exact OR staffId+dateKey fallback
+  const shifts = allShifts.filter(s => {
+    if (s.dailyId && String(s.dailyId) === String(dailyId)) return true;
+    if (rowStaffId && rowDateKey) {
+      return String(s.staffId || '') === rowStaffId && String(s.dateKey || '') === rowDateKey;
+    }
+    return false;
+  });
+
+  if (shifts.length === 0) {
+    // PHASE_B_SHIFT_EMPTY_STATE
+    return '<div style="color:var(--text2);font-size:12px;padding:4px 0">— Không có lượt chấm công nào</div>';
+  }
+
+  const toTs = val => val?.toDate ? val.toDate().toISOString() : val;
+  return shifts
+    .slice()
+    .sort((a, b) => {
+      const aMs = Number(a.checkInAtMs || 0);
+      const bMs = Number(b.checkInAtMs || 0);
+      return aMs - bMs;
+    })
+    .map(s => {
+      const inTs = toTs(s.checkInAt);
+      const outTs = toTs(s.checkOutAt);
+      const inDisp = inTs ? fmtTime(inTs) : '--:--';
+      // PHASE_E_SHIFT_OVERNIGHT_DURATION — use absolute-timestamp helper; show +1 when out is next day
+      let outDisp = '--:--';
+      let overnightTag = '';
+      if (outTs) {
+        outDisp = fmtTime(outTs);
+        const inDay = inTs ? inTs.slice(0, 10) : '';
+        const outDay = outTs.slice(0, 10);
+        if (inDay && outDay && outDay > inDay) {
+          overnightTag = ' <span title="Ra ca qua ngày hôm sau" style="font-size:10px;opacity:0.7">🌙+1</span>';
+        }
+      }
+      // Use overnight-safe duration (never negative)
+      const durMins = _computeShiftDurationMinutes(s);
+      const dur = durMins >= 0
+        ? `${durMins} phút`
+        : (s.status === 'open' ? '<span style="color:var(--text3)">Đang làm</span>' : '—');
+      // PHASE_B_SOURCE_DISPLAY — show Telegram badge when source=telegram
+      const sourceBadge = String(s.source || '') === 'telegram'
+        ? '<span style="background:rgba(37,161,244,0.15);color:#25a1f4;border-radius:4px;padding:1px 5px;font-size:10px;margin-left:4px">Telegram</span>'
+        : (s.source ? `<span style="background:var(--bg3);border-radius:4px;padding:1px 5px;font-size:10px;margin-left:4px">${_escapeHtml(String(s.source))}</span>` : '');
+      // Optional audit/meta fields if present
+      const metaLine = (s.location || s.device || s.photo)
+        ? `<span style="color:var(--text2);font-size:10px"> · ${[s.location ? '📍' : '', s.device ? '📱' : '', s.photo ? '📷' : ''].filter(Boolean).join('')}</span>`
+        : '';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;border-bottom:1px dashed var(--border)">
+        <span style="color:var(--text2)">▶</span>
+        <span>Vào <strong>${inDisp}</strong> → Ra <strong>${outDisp}</strong>${overnightTag}</span>
+        <span style="color:var(--text2)">${dur}</span>
+        ${sourceBadge}${metaLine}
+      </div>`;
+    })
+    .join('');
+}
+// END_PHASE_B_SHIFT_DETAIL
+
+// PHASE_B_ADJUST_MODAL
+/**
+ * Open audit-safe adjustment modal for a daily attendance row.
+ * Replaces prompt-based adjustment. Admin-only guard preserved.
+ * @param {string} dailyId
+ */
+function adjustAttendanceDaily(dailyId) {
+  // PHASE_B_ADMIN_ONLY_GUARD
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được sửa chấm công.', 'danger');
+    return;
+  }
+  const row = _getAttendanceDailyRows().find(item => String(item.dailyId || item.id || '') === String(dailyId));
+  if (!row) return;
+
+  // Default payable hours from existing payableMinutes / payableHours / totalMinutes
+  const defaultMinutes = Number(row.payableMinutes ?? (row.payableHours != null ? Number(row.payableHours) * 60 : row.totalMinutes ?? 0)) || 0;
+  const defaultHours = (defaultMinutes / 60).toFixed(2);
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const oldWage = Number(row.totalWage || 0);
+
+  // Remove any existing adjustment modal before opening a new one
+  const existing = document.getElementById('attendance-adjust-modal');
+  if (existing) existing.remove();
+
+  // PHASE_B_MODAL_INJECT — inject modal dynamically like existing shift-modal pattern
+  const modalEl = document.createElement('div');
+  modalEl.className = 'modal-overlay active';
+  modalEl.id = 'attendance-adjust-modal';
+  modalEl.setAttribute('onclick', "if(event.target===this)this.classList.remove('active')");
+  modalEl.innerHTML = `
+    <div class="modal-sheet" style="max-width:420px">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <div class="modal-title">✏️ Điều chỉnh chấm công</div>
+        <button class="modal-close" onclick="document.getElementById('attendance-adjust-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body" style="padding-bottom:20px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+          ${_escapeHtml(row.staffName || 'Nhân viên')} · ${_escapeHtml(row.dateKey || '')}
+        </div>
+        <div class="input-group">
+          <label class="input-label">Giờ tính lương *</label>
+          <input class="input" id="adj-hours" type="number" min="0" step="0.01" value="${_escapeHtml(defaultHours)}" placeholder="0.00" oninput="_updateAdjustWagePreview(${_escapeJsString(dailyId)})">
+        </div>
+        <div class="input-group" style="margin-top:8px">
+          <label class="input-label">Lý do điều chỉnh * <span style="color:var(--danger)">(bắt buộc)</span></label>
+          <textarea class="input" id="adj-reason" rows="2" placeholder="Nhập lý do…" style="resize:vertical" oninput="_updateAdjustWagePreview(${_escapeJsString(dailyId)})"></textarea>
+        </div>
+        <div id="adj-preview" style="background:var(--bg3);border-radius:8px;padding:10px;margin-top:10px;font-size:13px">
+          <div>Lương cũ: <strong>${fmt(oldWage)}đ</strong></div>
+          <div id="adj-preview-new">Lương mới: <strong>${fmt(oldWage)}đ</strong></div>
+          <div id="adj-preview-delta" style="color:var(--text2)">Chênh lệch: 0đ</div>
+        </div>
+        <div id="adj-reason-error" style="color:var(--danger);font-size:12px;margin-top:6px;display:none">⚠️ Vui lòng nhập lý do điều chỉnh.</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button type="button" class="btn btn-primary" style="flex:1" onclick="_confirmAdjustAttendanceDaily(${_escapeJsString(dailyId)})">✅ Xác nhận</button>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('attendance-adjust-modal').remove()">Hủy</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modalEl);
+
+  // Pre-populate preview with stored hourly rate
+  window._attendanceAdjustMeta = { dailyId, hourlyRate, oldWage, row };
+  _updateAdjustWagePreview(dailyId);
+}
+
+/**
+ * Update wage preview in the adjustment modal whenever hours input changes.
+ * @param {string} _dailyId - unused but kept for signature symmetry
+ */
+function _updateAdjustWagePreview(_dailyId) {
+  // PHASE_B_PREVIEW_WAGE_DELTA
+  const meta = window._attendanceAdjustMeta;
+  if (!meta) return;
+  const hoursEl = document.getElementById('adj-hours');
+  if (!hoursEl) return;
+  const newHours = Number(String(hoursEl.value).replace(',', '.'));
+  const hourlyRate = meta.hourlyRate || 0;
+  const oldWage = meta.oldWage || 0;
+  const newWage = Number.isFinite(newHours) && newHours >= 0
+    ? Math.round(newHours * hourlyRate)
+    : oldWage;
+  const delta = newWage - oldWage;
+  const previewNewEl = document.getElementById('adj-preview-new');
+  const previewDeltaEl = document.getElementById('adj-preview-delta');
+  if (previewNewEl) previewNewEl.innerHTML = `Lương mới: <strong>${fmt(newWage)}đ</strong>`;
+  if (previewDeltaEl) {
+    const sign = delta > 0 ? '+' : '';
+    previewDeltaEl.textContent = `Chênh lệch: ${sign}${fmt(delta)}đ`;
+    previewDeltaEl.style.color = delta > 0 ? 'var(--success)' : delta < 0 ? 'var(--danger)' : 'var(--text2)';
+  }
+}
+
+/**
+ * Confirm handler for the attendance adjustment modal.
+ * Validates hours >= 0 and reason non-empty; writes to Firestore; re-renders.
+ * @param {string} dailyId
+ */
+async function _confirmAdjustAttendanceDaily(dailyId) {
+  if (!isAdminUser()) return;
+
+  const hoursEl = document.getElementById('adj-hours');
+  const reasonEl = document.getElementById('adj-reason');
+  const reasonErrorEl = document.getElementById('adj-reason-error');
+  if (!hoursEl || !reasonEl) return;
+
+  const nextHours = Number(String(hoursEl.value).replace(',', '.'));
+  const reason = String(reasonEl.value).trim();
+
+  // PHASE_B_REASON_REQUIRED_VALIDATION
+  if (!reason) {
+    if (reasonErrorEl) reasonErrorEl.style.display = 'block';
+    reasonEl.focus();
+    return;
+  }
+  if (reasonErrorEl) reasonErrorEl.style.display = 'none';
+
+  if (!Number.isFinite(nextHours) || nextHours < 0) {
+    showToast('Số giờ không hợp lệ.', 'warning');
+    return;
+  }
+
+  const meta = window._attendanceAdjustMeta;
+  const row = meta ? meta.row : _getAttendanceDailyRows().find(item => String(item.dailyId || item.id || '') === String(dailyId));
+  if (!row) return;
+
+  // QA_ATTENDANCE_NO_FIRESTORE_WRITE_GUARD — block Firestore writes for sample rows
+  if (row.qaSample) {
+    showToast('🧪 Dữ liệu mẫu QA — chỉ đọc cục bộ, không ghi Firestore.', 'warning', 4000);
+    document.getElementById('attendance-adjust-modal')?.remove();
+    window._attendanceAdjustMeta = null;
+    return;
+  }
+
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const payableMinutes = Math.round(nextHours * 60);
+  const totalWage = Math.round(nextHours * hourlyRate);
+
+  try {
+    await window.DB?.Attendance?.updateDaily?.(dailyId, {
+      payableMinutes,
+      payableHours: Number(nextHours.toFixed(2)),
+      totalWage,
+      status: 'adjusted',
+      adjustReason: reason,
+      adjustedBy: currentUser?.username || currentUser?.name || 'admin',
+      adjustedAt: new Date().toISOString(),
+    });
+
+    // PHASE_B_EXPENSE_UPDATE_WITH_REASON — update linked expense with reason in note
+    if (row.expenseId && window.DB?.Expenses?.update) {
+      await window.DB.Expenses.update(row.expenseId, {
+        amount: totalWage,
+        note: `${nextHours.toFixed(2)} giờ tính lương x ${fmt(hourlyRate)}đ/giờ (admin chỉnh) — ${reason}`,
+      });
+    }
+
+    showToast('✅ Đã cập nhật chấm công và chi phí lương', 'success');
+    document.getElementById('attendance-adjust-modal')?.remove();
+    window._attendanceAdjustMeta = null;
+    renderAttendanceManagement();
+  } catch (err) {
+    console.error(err);
+    showToast('Lỗi cập nhật chấm công: ' + (err?.message || err), 'danger');
+  }
+}
+// END_PHASE_B_ADJUST_MODAL
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_C_QA_ATTENDANCE_SAMPLE
+// QA-only local sample-data mode for the attendance admin dashboard.
+// Activated via URL: ?qaAttendance=1
+// NO network / Firestore / localStorage writes. Memory only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when QA attendance sample mode is active.
+ * Gate: URLSearchParams(location.search).get('qaAttendance') === '1'
+ * @returns {boolean}
+ */
+function _isQaAttendanceMode() {
+  try {
+    return new URLSearchParams(window.location.search).get('qaAttendance') === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Load deterministic in-memory sample attendance data into window.appState only.
+ * QA_ATTENDANCE_LOCAL_ONLY — NO DB.Attendance / DB.Expenses / fetch / localStorage calls.
+ * @returns {void}
+ */
+function _loadQaAttendanceSample() {
+  // QA_ATTENDANCE_LOCAL_ONLY — only write to window.appState, no network, no DB calls
+  if (!window.appState) window.appState = {};
+
+  const now = new Date();
+  // Compute date keys for today, yesterday, and a third older date
+  const todayKey = formatLocalDateKey(now);
+  const yesterdayDate = new Date(now.getTime() - 86400000);
+  const yesterdayKey = formatLocalDateKey(yesterdayDate);
+  const olderDate = new Date(now.getTime() - 3 * 86400000);
+  const olderKey = formatLocalDateKey(olderDate);
+
+  // --- Sample staff (2 active) ---
+  const sampleStaff = [
+    {
+      staff_id: 'qa-attendance-staff-001',
+      id: 'qa-attendance-staff-001',
+      full_name: 'Nguyễn QA Alpha',
+      name: 'Nguyễn QA Alpha',
+      status: 'active',
+      hourly_rate: 25000,
+      role: 'staff',
+      qaSample: true,
+    },
+    {
+      staff_id: 'qa-attendance-staff-002',
+      id: 'qa-attendance-staff-002',
+      full_name: 'Trần QA Beta',
+      name: 'Trần QA Beta',
+      status: 'active',
+      hourly_rate: 30000,
+      role: 'staff',
+      qaSample: true,
+    },
+  ];
+
+  // --- Sample attendance_daily rows (4 rows, ≥3 date keys, all 3 statuses) ---
+  const sampleDaily = [
+    {
+      dailyId: 'qa-attendance-daily-001',
+      id: 'qa-attendance-daily-001',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: todayKey,
+      firstCheckInAt: `${todayKey}T08:00:00.000Z`,
+      lastCheckOutAt: null,
+      totalMinutes: 120,
+      payableMinutes: 120,
+      payableHours: 2.0,
+      hourlyRate: 25000,
+      totalWage: 50000,
+      status: 'open',
+      expenseId: null,
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-002',
+      id: 'qa-attendance-daily-002',
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: todayKey,
+      firstCheckInAt: `${todayKey}T07:30:00.000Z`,
+      lastCheckOutAt: `${todayKey}T15:30:00.000Z`,
+      totalMinutes: 480,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 30000,
+      totalWage: 240000,
+      status: 'closed',
+      expenseId: 'qa-expense-001',
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-003',
+      id: 'qa-attendance-daily-003',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: yesterdayKey,
+      firstCheckInAt: `${yesterdayKey}T08:15:00.000Z`,
+      lastCheckOutAt: `${yesterdayKey}T16:45:00.000Z`,
+      totalMinutes: 510,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 25000,
+      totalWage: 200000,
+      status: 'adjusted',
+      expenseId: 'qa-expense-002',
+      adjustReason: 'Dữ liệu mẫu QA — đã điều chỉnh thủ công',
+      adjustedBy: 'qa-admin',
+      adjustedAt: `${yesterdayKey}T17:00:00.000Z`,
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-004',
+      id: 'qa-attendance-daily-004',
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: olderKey,
+      firstCheckInAt: `${olderKey}T09:00:00.000Z`,
+      lastCheckOutAt: `${olderKey}T17:00:00.000Z`,
+      totalMinutes: 480,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 30000,
+      totalWage: 240000,
+      status: 'closed',
+      expenseId: null,
+      qaSample: true,
+    },
+  ];
+
+  // --- Sample attendance_shifts (3 shifts, matching daily rows by dailyId + staffId+dateKey) ---
+  const sampleShifts = [
+    {
+      shiftId: 'qa-attendance-shift-001',
+      id: 'qa-attendance-shift-001',
+      dailyId: 'qa-attendance-daily-001',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: todayKey,
+      checkInAt: `${todayKey}T08:00:00.000Z`,
+      checkOutAt: null,
+      checkInAtMs: new Date(`${todayKey}T08:00:00.000Z`).getTime(),
+      checkOutAtMs: null,
+      durationMinutes: null,
+      source: 'telegram',
+      qaSample: true,
+    },
+    {
+      shiftId: 'qa-attendance-shift-002',
+      id: 'qa-attendance-shift-002',
+      dailyId: 'qa-attendance-daily-003',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: yesterdayKey,
+      checkInAt: `${yesterdayKey}T08:15:00.000Z`,
+      checkOutAt: `${yesterdayKey}T16:45:00.000Z`,
+      checkInAtMs: new Date(`${yesterdayKey}T08:15:00.000Z`).getTime(),
+      checkOutAtMs: new Date(`${yesterdayKey}T16:45:00.000Z`).getTime(),
+      durationMinutes: 510,
+      source: 'telegram',
+      qaSample: true,
+    },
+    {
+      shiftId: 'qa-attendance-shift-003',
+      id: 'qa-attendance-shift-003',
+      // No dailyId — exercises staffId+dateKey fallback match
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: todayKey,
+      checkInAt: `${todayKey}T07:30:00.000Z`,
+      checkOutAt: `${todayKey}T15:30:00.000Z`,
+      checkInAtMs: new Date(`${todayKey}T07:30:00.000Z`).getTime(),
+      checkOutAtMs: new Date(`${todayKey}T15:30:00.000Z`).getTime(),
+      durationMinutes: 480,
+      source: 'telegram',
+      qaSample: true,
+    },
+  ];
+
+  // Merge: keep real rows/shifts/staff, add sample items (avoid duplicating qa items)
+  const existingStaff = Array.isArray(window.appState.staff) ? window.appState.staff.filter(s => !s.qaSample) : [];
+  const existingDaily = Array.isArray(window.appState.attendanceDaily) ? window.appState.attendanceDaily.filter(r => !r.qaSample) : [];
+  const existingShifts = Array.isArray(window.appState.attendanceShifts) ? window.appState.attendanceShifts.filter(s => !s.qaSample) : [];
+
+  window.appState.staff = [...existingStaff, ...sampleStaff];
+  window.appState.attendanceDaily = [...existingDaily, ...sampleDaily];
+  window.appState.attendanceShifts = [...existingShifts, ...sampleShifts];
+
+  // Set date filter to cover all sample dates (olderKey → todayKey)
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl = document.getElementById('attendance-to-date');
+  if (fromEl) fromEl.value = olderKey;
+  if (toEl) toEl.value = todayKey;
+
+  renderAttendanceManagement();
+  showToast('🧪 Đã tải dữ liệu mẫu QA — chỉ trong bộ nhớ, không ghi Firestore', 'info', 5000);
+}
+
+/**
+ * Clear all qaSample attendance rows/shifts/staff from window.appState and re-render.
+ * Only removes items tagged with qaSample: true.
+ */
+function _resetQaAttendanceSample() {
+  if (!window.appState) return;
+  if (Array.isArray(window.appState.staff)) {
+    window.appState.staff = window.appState.staff.filter(s => !s.qaSample);
+  }
+  if (Array.isArray(window.appState.attendanceDaily)) {
+    window.appState.attendanceDaily = window.appState.attendanceDaily.filter(r => !r.qaSample);
+  }
+  if (Array.isArray(window.appState.attendanceShifts)) {
+    window.appState.attendanceShifts = window.appState.attendanceShifts.filter(s => !s.qaSample);
+  }
+  renderAttendanceManagement();
+  showToast('🧹 Đã xóa dữ liệu mẫu QA khỏi bộ nhớ', 'info');
+}
+// END_PHASE_C_QA_ATTENDANCE_SAMPLE
+
+function syncCurrentStaffSession() {
+  if (!currentUser) return;
+  if (currentUser.bootstrap) {
+    if (_getManagedStaff(true).length === 0) {
+      syncCurrentPosUserToAppState();
+      applyRoleRights();
+      showLoginScreen(false);
+      showLockScreen(false);
+      return;
+    }
+    syncCurrentPosUserToAppState();
+    applyRoleRights();
+    showLoginScreen(false);
+    showLockScreen(false);
+    if (_getManagedStaff(true).length === 0) return;
+    lockPosSession('Đã có danh sách nhân sự. Vui lòng đăng nhập lại bằng PIN.');
+    showToast('Đã khởi tạo nhân sự. Hãy đăng nhập lại bằng PIN.', 'info');
+    return;
+  }
+  const activeStaff = _getManagedStaff(true).find(item => _getStaffIdentity(item) === String(currentUser.staff_id || currentUser.id || ''));
+  if (!activeStaff || _normalizeStaffStatus(activeStaff.status) !== 'active') {
+    lockPosSession('Phiên nhân sự đã bị vô hiệu hóa. Vui lòng nhập lại PIN.');
+    showToast('Phiên nhân sự không còn hiệu lực.', 'warning');
+    return;
+  }
+
+  const nextUser = _buildCurrentUserFromStaff(activeStaff, activeStaff.pin_code);
+  const changed = JSON.stringify(nextUser) !== JSON.stringify(currentUser);
+  if (!changed) return;
+  currentUser = nextUser;
+  syncCurrentPosUserToAppState();
+  applyRoleRights();
+  updateLockScreenUI(`Đã cập nhật quyền cho ${activeStaff.full_name}`);
+}
+
+async function renderSystemLogs() {
+  const card = document.getElementById('settings-system-logs');
+  const list = document.getElementById('system-logs-list');
+  if (!card || !list) return;
+
+  if (!isAdminUser()) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  list.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang tải nhật ký hệ thống...</div></div>';
+
+  try {
+    const rows = await window.DB?.SystemLogs?.listRecent?.(25);
+    if (!Array.isArray(rows) || !rows.length) {
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có nhật ký hệ thống</div></div>';
+      return;
+    }
+
+    list.innerHTML = rows.map(row => {
+      const actor = row.createdBy?.name || row.createdBy?.id || 'Hệ thống';
+      const when = row.timestamp ? fmtDateTime(row.timestamp) : '';
+      const message = row.details?.message || row.actionType || 'Cập nhật hệ thống';
+      return `
+      <div class="list-item">
+        <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">🧾</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${_escapeHtml(message)}</div>
+          <div class="list-item-sub">${_escapeHtml(actor)}${when ? ` · ${_escapeHtml(when)}` : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Không tải được System Logs</div></div>';
+    console.warn('[SystemLogs] render error', err);
+  }
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', async () => {
+  ensureHeaderLockButton();
+  syncMenuCostFieldText();
+  checkLoginState();
+  bindPosActivityWatchers();
+
+  // 1. Tải cơ sở dữ liệu hệ thống (Bất đồng bộ)
+  await PhotoDB.init();
+  await migratePhotosToIndexedDB();
+  purchasePhotoCache = await Store.getPurchasePhotosAsync() || {};
+  orderPhotoCache    = await Store.getOrderPhotosAsync()   || {};
+
+  // 2. Chạy luồng Main
+  initNav();
+  applyStoreSettings();
+  
+  // Áp dụng Theme ngay từ lúc load app
+  const s = Store.getSettings();
+  if (s && s.appTheme) {
+    applyTheme(s.appTheme);
+  }
+  
+  runMigrations();
+  cleanupOldPurchasePhotos();
+  cleanupOldOrderHistoryPhotos();
+  navigate('tables');
+  updateAlertBadge();
+  // Không auto-repair toàn DOM để tránh làm hỏng chữ tiếng Việt hợp lệ.
+
+  setTimeout(() => {
+    // Chờ auto-backup LocalStorage khi Firebase chưa sẵn sàng (offline mode)
+    if (!window.DB || !window.appState || !window.appState.ready) {
+      if(Store.autoBackupIfNeeded()) console.log('[POS] Auto backup (offline mode) done');
+    } else {
+      console.log('[POS] Firebase đang hoạt động - bỏ qua auto backup LocalStorage');
+    }
+  }, 3000);
+  try { updatePurOcrModeLabel(); } catch(_) {}
+  setTimeout(() => {
+    try { autoExportReportsIfNeeded(); } catch(_) {}
+  }, 4500);
+
+  // 3. ======================== FIREBASE BRIDGE ========================
+  // db.js dùng type="module" nên window.DB gán bất đồng bộ.
+  // Hàm này poll tối đa 5 giây rồi mới đăng ký lắng nghe events.
+  function _waitForDB(cb, timeout = 5000) {
+    if (window.DB) { cb(); return; }
+    const start = Date.now();
+    const t = setInterval(() => {
+      if (window.DB) {
+        clearInterval(t);
+        cb();
+      } else if (Date.now() - start > timeout) {
+        clearInterval(t);
+        console.warn('[Bridge] ⚠️ window.DB không khởi tạo được sau 5s - chạy offline');
+      }
+    }, 50);
+  }
+
+  _waitForDB(() => {
+    console.log('[Bridge] window.DB đã sẵn sàng - đăng ký Firebase events');
+
+  window.addEventListener('db:signedIn', (e) => {
+    const ud = e.detail && e.detail.userDoc;
+    if (ud) {
+      if (String(ud.role || '').toLowerCase() === 'kitchen') {
+        showLockScreen(false);
+        showLoginScreen(false);
+        window.location.href = '/kitchen';
+        return;
+      }
+      masterAuthUser = { uid: ud.uid, email: ud.email, role: ud.role, displayName: ud.displayName, username: ud.username };
+      currentUser = null;
+      syncCurrentPosUserToAppState();
+      showLoginScreen(false);
+      updateLockScreenUI('Nhập mã PIN để vào ca làm việc.');
+      showLockScreen(true);
+      applyRoleRights();
+      initKitchenNotificationListener();
+      initKitchenPushClient().catch(err => console.warn('[KitchenPush] signedIn init error', err));
+      console.log('[Bridge] db:signedIn ->', ud.role, ud.email);
+    }
+  });
+
+  // Khi db.js báo signedOut: luôn đưa về màn hình đăng nhập
+  window.addEventListener('db:signedOut', () => {
+    currentUser = null;
+    syncCurrentPosUserToAppState();
+    masterAuthUser = null;
+    stopKitchenNotificationListener();
+    stopKitchenPushClient();
+    if (posIdleTimer) {
+      clearTimeout(posIdleTimer);
+      posIdleTimer = null;
+    }
+    showLockScreen(false);
+    showLoginScreen(true);
+    applyRoleRights();
+  });
+
+  // Khi Firebase đã ready (tất cả snapshot đã về)
+  window.addEventListener('db:ready', () => {
+    console.log('[Bridge] appState.ready - re-render từ Cloud');
+    // Cloud data có thể chứa text lỗi font từ các bản cũ -> chạy migration lại trên dữ liệu cloud.
+    runMigrations();
+    applyStoreSettings();
+    syncLocalOrderCacheFromCloud();
+    bootstrapStaffSetupSessionIfNeeded(true);
+    syncCurrentStaffSession();
+    renderTables();
+    updateAlertBadge();
+    renderUserManagement();
+    renderSystemLogs();
+
+    // Re-render các màn hình dựa trên current page để tránh bị trống
+    if (typeof currentPage !== 'undefined') {
+      if (currentPage === 'orders') {
+        renderCatTabs();
+        renderMenuItems();
+      } else if (currentPage === 'menu') {
+        try { renderMenuAdmin(); } catch(_) {}
+      } else if (currentPage === 'inventory') {
+        try { renderInventory(); } catch(_) {}
+      }
+    }
+
+    // Khởi tạo sơ đồ bàn nếu collection tables trống (chờ failed-precondition)
+    if (window.DB && window.DB.seedTables) {
+      const s = (window.appState && window.appState.settings) || {};
+      const tableCount = s.tableCount || 20;
+      window.DB.seedTables(tableCount)
+        .then(r => { if (r && r.created) renderTables(); })
+        .catch(console.error);
+    }
+  });
+
+  // Re-render khi từng collection cập nhật (Real-time sync)
+  window.addEventListener('db:update', (e) => {
+    const key = e.detail && e.detail.key;
+    if (key === 'tables' || key === 'orders') renderTables();
+    if (key === 'orders') { syncLocalOrderCacheFromCloud(); try { renderKdsMonitor(); } catch(_) {} }
+    if (key === 'settings') {
+      applyStoreSettings();
+      initKitchenPushClient().catch(err => console.warn('[KitchenPush] settings init error', err));
+    }
+    if (key === 'users' || key === 'presence' || key === 'staff') renderUserManagement();
+    if (key === 'inventory' && typeof currentPage !== 'undefined' && currentPage === 'inventory') {
+      try { renderInventory(); } catch(_) {}
+    }
+    if (key === 'attendanceDaily' || key === 'attendanceShifts' || key === 'staff') {
+      renderAttendanceManagement();
+      try { renderWebAttendancePanel(); } catch(_) {}
+      try { updateShiftBtnUI(); } catch(_) {}
+    }
+    if (key === 'staff') syncCurrentStaffSession();
+    if (key === 'menu') {
+      renderMenuItems();
+      renderCatTabs();
+      if (typeof currentPage !== 'undefined' && currentPage === 'menu') {
+        try { renderMenuAdmin(); } catch(_) {}
+      }
+    }
+    // Báo cáo: re-render khi lịch sử / chi phí / nhập hàng / cấu hình tài chính thay đổi
+    if (key === 'history' || key === 'expenses' || key === 'purchases' || key === 'dailyRevenueSnapshots' || key === 'settings') {
+      renderTables();    // cập nhật doanh thu hôm nay trên thẻ
+      updateAlertBadge();
+      // Nếu đang ở trang reports hoặc finance thì re-render luôn
+      if (typeof currentPage !== 'undefined' && currentPage === 'reports') {
+        try { renderReports(); } catch(_) {}
+      }
+      if (typeof currentPage !== 'undefined' && currentPage === 'finance') {
+        try { renderFinancePage?.() || updateFinanceUI(getRevenueSummary(financePeriod, financeDateOpts)); } catch(_) {}
+      }
+      if (typeof currentPage !== 'undefined' && currentPage === 'inventory') {
+        try { renderAutoStockNormBoard(); } catch(_) {}
+      }
+    }
+  });
+  // ===================================================================
+  }); // end _waitForDB
+}); // end DOMContentLoaded
+
+
+
+function toggleReportExportDate() {
+  const sel = document.getElementById('set-reportExportPeriod');
+  const wrap = document.getElementById('report-export-date-wrap');
+  if(!sel || !wrap) return;
+  wrap.style.display = sel.value === 'day' ? '' : 'none';
+}
+
+function toggleWeeklyDriveCheckbox() {
+  const weeklyEl = document.getElementById('set-autoExportWeekly');
+  const driveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
+  if(!weeklyEl || !driveEl) return;
+  if(!weeklyEl.checked) {
+    driveEl.checked = false;
+    driveEl.disabled = true;
+  } else {
+    driveEl.disabled = false;
+  }
+}
+
+function ensureTelegramReportTimeOptions() {
+  const hourEl = document.getElementById('set-telegramReportSendHour');
+  const minuteEl = document.getElementById('set-telegramReportSendMinute');
+  if (hourEl && !hourEl.dataset.ready) {
+    hourEl.innerHTML = Array.from({ length: 24 }, (_, hour) =>
+      `<option value="${hour}">${String(hour).padStart(2, '0')} giờ</option>`
+    ).join('');
+    hourEl.dataset.ready = 'true';
+  }
+  if (minuteEl && !minuteEl.dataset.ready) {
+    minuteEl.innerHTML = Array.from({ length: 60 }, (_, minute) =>
+      `<option value="${minute}">${String(minute).padStart(2, '0')} phút</option>`
+    ).join('');
+    minuteEl.dataset.ready = 'true';
+  }
+}
+
+function getGoogleDriveConfigFromUi() {
+  const urlEl = document.getElementById('set-googleDriveUploadUrl');
+  const folderEl = document.getElementById('set-googleDriveFolderId');
+  const s = Store.getSettings();
+  const uploadUrl = (urlEl && urlEl.value.trim()) || s.googleDriveUploadUrl || '';
+  const folderId = (folderEl && folderEl.value.trim()) || s.googleDriveFolderId || '';
+  return { uploadUrl, folderId };
+}
+
+function openGoogleDriveReportGuide() {
+  document.getElementById('gdrive-report-guide-modal')?.classList.add('active');
+}
+
+/** Đẩy lên Drive đúng file .xlsx như lúc xuất (theo loại/kỳ trên form), không tải xuống máy. */
+async function pushReportExcelToGoogleDriveManual() {
+  const { uploadUrl, folderId } = getGoogleDriveConfigFromUi();
+  if(!uploadUrl || !folderId) {
+    showToast('Vui lòng nhập URL Web App và ID thư mục Google Drive (mục Cài đặt).', 'warning');
+    return;
+  }
+  await exportReportExcel({
+    skipLocalDownload: true,
+    uploadToDrive: true,
+  });
+}
+
+// Chạy migration để sửa dữ liệu cũ + lỗi font tiếng Việt trong dữ liệu đã lưu.
+function runMigrations() {
+  const s = Store.getSettings();
+  const needLegacyPatch = !s.migratedV2;
+  const hasBad = (v) => {
+    const s = String(v || '');
+    const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+    return badTokens.some(t => s.includes(t));
+  };
+  const cloudInv = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
+  const cloudMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
+  const cloudSettings = window.appState?.settings || {};
+  const hasBadCloudData =
+    cloudInv.some(i => hasBad(i?.name)) ||
+    cloudMenu.some(m => hasBad(m.name) || hasBad(m.category) || (m.ingredients || []).some(ig => hasBad(ig.name))) ||
+    hasBad(cloudSettings.storeName) || hasBad(cloudSettings.bankOwner) || hasBad(cloudSettings.storeSlogan);
+
+  const needEncodingPatch = !s.migratedViFixV4 || !s.migratedViFixV3 || hasBadCloudData;
+  if (!needLegacyPatch && !needEncodingPatch) return;
+
+  const patchKeys = {
+    'Khô cá thiều tâm': 'Khô cá thiều',
+    'Khô cá đuôi': 'Khô cá đuối',
+    'Lạp xít': 'Lạp vịt',
+    'Cá sun sin': 'Cá sụn xịn',
+    'Lá dói': 'Lá dổi'
+  };
+
+  const patchMap = (name) => patchKeys[name] || name;
+
+  // Patch inventory
+  let mappedInv = false;
+  const inv = Store.getInventory();
+  inv.forEach(i => {
+    if (patchKeys[i.name]) { mappedInv = true; i.name = patchKeys[i.name]; }
+  });
+  
+  // Thêm nguyên liệu mới (Tôm 1 nắng)
+  if (!inv.find(i => i.name === 'Tôm 1 nắng')) {
+    mappedInv = true;
+    inv.push({ id:'i42', name:'Tôm 1 nắng', qty:10, unit:'phần', minQty:2, costPerUnit:100000 });
+  }
+  if (mappedInv) Store.setInventory(inv);
+
+  // Patch menu & ingredients
+  let mappedMenu = false;
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [m.id, m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
+  menu.forEach(m => {
+    if (m.name === 'Khô cá chỉ vàng') { mappedMenu = true; m.name = 'Cá chỉ vàng nướng'; }
+    else if (m.name === 'Khô cá thiều tâm') { mappedMenu = true; m.name = 'Khô cá thiều nướng'; }
+    else if (m.name === 'Khô cá đuôi') { mappedMenu = true; m.name = 'Khô cá đuối nướng'; }
+    else if (m.name === 'Lạp xít') { mappedMenu = true; m.name = 'Lạp vịt nướng'; }
+    else if (m.name === 'Khô cá bống') { mappedMenu = true; m.name = 'Khô cá bống nướng'; }
+    else if (m.name === 'Khô cá đao') { mappedMenu = true; m.name = 'Khô cá đao nướng'; }
+    else if (m.name === 'Khô cá bò') { mappedMenu = true; m.name = 'Khô cá bò nướng'; }
+    else if (m.name === 'Mực khô') { mappedMenu = true; m.name = 'Mực khô nướng'; }
+    else if (m.name === 'Cá sun sin chiên giòn') { mappedMenu = true; m.name = 'Cá sụn xịn chiên giòn'; }
+    else if (m.name === 'Ba chỉ nướng lá dói') { mappedMenu = true; m.name = 'Ba chỉ nướng lá dổi'; }
+    else if (m.name === 'Trứng bắc thảo củ kiệu tôm khô') { mappedMenu = true; m.name = 'Trứng bắc thảo tôm khô'; }
+    else if (m.name === 'Khoai tây lắc phô mai') { mappedMenu = true; m.name = 'Khoai tây chiên lắc phô mai'; }
+
+    m.ingredients.forEach(ig => {
+      if (patchKeys[ig.name]) {
+        mappedMenu = true;
+        ig.name = patchKeys[ig.name];
+      }
+    });
+  });
+  
+  if (!menu.find(m => m.name === 'Tôm 1 nắng nướng muối ớt')) {
+    mappedMenu = true;
+    menu.push({ id: 'm38', name: 'Tôm 1 nắng nướng muối ớt', category: 'Đặc Biệt', price: 180000, unit: 'phần', cost: 110000, ingredients: [{name:'Tôm 1 nắng',qty:1,unit:'phần'},{name:'Muối ớt',qty:1,unit:'gói'}] });
+  }
+  
+  if (mappedMenu) Store.setMenu(menu);
+
+  // ===== Patch lỗi font dữ liệu đã lưu (mojibake) =====
+  if (needEncodingPatch) {
+    const hasBad = (v) => {
+      const s = String(v || '');
+      const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä‘', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+      return badTokens.some(t => s.includes(t));
+    };
+    const stripKey = (v) => String(v || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]/g, '');
+
+    const defaultMenu = (typeof DEFAULT_MENU !== 'undefined' && Array.isArray(DEFAULT_MENU)) ? DEFAULT_MENU : [];
+    const defaultInv = (typeof DEFAULT_INVENTORY !== 'undefined' && Array.isArray(DEFAULT_INVENTORY)) ? DEFAULT_INVENTORY : [];
+
+    const menuById = Object.fromEntries(defaultMenu.map(x => [x.id, x]));
+    const invById = Object.fromEntries(defaultInv.map(x => [x.id, x]));
+    const invNameByKey = Object.fromEntries(defaultInv.map(x => [stripKey(x.name), x.name]));
+
+    // 1) Settings text
+    const settings = Store.getSettings();
+    let settingsChanged = false;
+    if (hasBad(settings.storeName)) { settings.storeName = 'XE KHÔ CHỮA LÀNH'; settingsChanged = true; }
+    if (hasBad(settings.bankOwner)) { settings.bankOwner = 'XE KHÔ CHỮA LÀNH'; settingsChanged = true; }
+    if (hasBad(settings.storeSlogan)) { settings.storeSlogan = 'Ăn là nhớ, nhớ là ghiền!'; settingsChanged = true; }
+    Store.setSettings(settings);
+    if (window.appState?.settings) window.appState.settings = { ...window.appState.settings, ...settings };
+
+    // 2) Inventory names by id/canonical key
+    let invChanged = false;
+    const activeInv = cloudInv.length ? cloudInv : Store.getInventory();
+    const invFixed = activeInv.map(i => {
+      const next = { ...i };
+      const byId = invById[next.id];
+      if (hasBad(next.name)) {
+        if (byId?.name) next.name = byId.name;
+        else {
+          const key = stripKey(next.name);
+          if (invNameByKey[key]) next.name = invNameByKey[key];
+          else next.name = repairVietnameseText(next.name);
+        }
+        invChanged = true;
+      }
+      return next;
+    });
+    if (invChanged) {
+      Store.setInventory(invFixed);
+      if (window.appState?.inventory) window.appState.inventory = invFixed.map(normalizeInventoryItemModel);
+    }
+
+    // 3) Menu names/categories/ingredients by id
+    let menuChanged = false;
+    const activeMenu = cloudMenu.length ? cloudMenu : Store.getMenu();
+    const menuFixed = activeMenu.map(m => {
+      const next = { ...m };
+      const base = menuById[next.id];
+      if (hasBad(next.name) && base?.name) { next.name = base.name; menuChanged = true; }
+      if (hasBad(next.category) && base?.category) { next.category = base.category; menuChanged = true; }
+      if (Array.isArray(next.ingredients)) {
+        next.ingredients = next.ingredients.map(ig => {
+          const n = { ...ig };
+          if (hasBad(n.name)) {
+            const key = stripKey(n.name);
+            n.name = invNameByKey[key] || repairVietnameseText(n.name);
+            menuChanged = true;
+          }
+          return n;
+        });
+      }
+      return next;
+    });
+    if (menuChanged) {
+      Store.setMenu(menuFixed);
+      if (window.appState?.menu) window.appState.menu = menuFixed;
+    }
+
+    // 4) Sync ngược lên Cloud để lần sau không bị trả dữ liệu lỗi font
+    if (window.DB && (invChanged || menuChanged || settingsChanged)) {
+      (async () => {
+        try {
+          if (settingsChanged) {
+            if (window.DB.Settings?.save) await window.DB.Settings.save(settings);
+          }
+          if (invChanged && window.DB.Inventory?.update) {
+            for (const i of invFixed) await window.DB.Inventory.update(i.id, i);
+          }
+          if (menuChanged && window.DB.Menu?.update) {
+            for (const m of menuFixed) {
+              await window.DB.Menu.update(m.id, {
+                name: m.name,
+                category: m.category,
+                unit: m.unit,
+                price: m.price,
+                cost: m.cost,
+                itemType: m.itemType,
+                linkedInventoryId: m.linkedInventoryId || null,
+                ingredients: m.ingredients || [],
+              });
+            }
+          }
+          console.log('[Migration] ✅ Đã đồng bộ sửa lỗi font lên Cloud');
+        } catch (e) {
+          console.warn('[Migration] Cloud sync warning:', e);
+        }
+      })();
+    }
+  }
+
+  const finalSettings = Store.getSettings();
+  finalSettings.migratedV2 = true;
+  finalSettings.migratedViFixV3 = true;
+  finalSettings.migratedViFixV4 = true;
+  Store.setSettings(finalSettings);
+  if (window.appState?.settings) window.appState.settings = { ...window.appState.settings, ...finalSettings };
+}
+
+function applyStoreSettings() {
+  try {
+    const localSettings = Store.getSettings();
+    if (localSettings.deepseekApiKey || localSettings.deepseekEndpoint || localSettings.deepseekModel) {
+      Store.setSettings({
+        ...localSettings,
+        deepseekApiKey: '',
+        deepseekEndpoint: '',
+        deepseekModel: '',
+      });
+    }
+  } catch (_) {}
+  // Ưu tiên settings từ Cloud (appState), fallback về LocalStorage
+  const s = (window.appState && window.appState.settings && window.appState.settings.storeName)
+    ? { ...window.appState.settings, deepseekApiKey: '', deepseekEndpoint: '', deepseekModel: '' }
+    : Store.getSettings();
+
+  if(s.bankAccount) PAYMENT_INFO.account = s.bankAccount;
+  if(s.bankName)    PAYMENT_INFO.bank    = s.bankName;
+  if(s.bankOwner)   PAYMENT_INFO.name    = s.bankOwner;
+
+  const logoText = document.querySelector('.logo-text');
+  if(logoText) logoText.textContent = s.storeName || 'XE KHÔ CHỮA LÀNH';
+
+  const logoIcon = document.querySelector('.logo-icon');
+  if (logoIcon) {
+    const didRenderLogo = _replaceWithSafeImage(logoIcon, s.storeLogo, 'Logo cửa hàng', {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      borderRadius: '8px',
+    });
+    if (didRenderLogo) {
+      logoIcon.style.background = 'transparent';
+    } else {
+      logoIcon.textContent = '🧡';
+      logoIcon.style.background = 'linear-gradient(135deg, var(--primary), var(--secondary))';
+    }
+  }
+}
+
+// Dọn ảnh nhập hàng cũ theo photoRetentionDays
+async function cleanupOldPurchasePhotos() {
+  try {
+    const s = Store.getSettings();
+    const days = Number(s.photoRetentionDays || 0);
+    if(!days || isNaN(days) || days <= 0) return;
+    const map = purchasePhotoCache || {};
+    if(Object.keys(map).length === 0) return;
+    const now = Date.now();
+    const maxAgeMs = days * 86400000;
+    let changed = false;
+    Object.keys(map).forEach(pid => {
+      const entry = map[pid];
+      const list = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+      if(!Array.isArray(list)) return;
+      const filtered = list.filter(ph => {
+        if(!ph || !ph.takenAt) return false;
+        const t = new Date(ph.takenAt).getTime();
+        if(!t || isNaN(t)) return false;
+        return (now - t) <= maxAgeMs;
+      });
+      if(filtered.length !== list.length) {
+        changed = true;
+        if(filtered.length) {
+          if(Array.isArray(entry)) map[pid] = filtered;
+          else map[pid] = { ...(entry || {}), photos: filtered };
+        } else {
+          delete map[pid];
+        }
+      }
+    });
+    if(changed) {
+      purchasePhotoCache = map;
+      await Store.setPurchasePhotosAsync(map);
+    }
+  } catch(e) {
+    console.warn('cleanupOldPurchasePhotos error', e);
+  }
+}
+
+async function cleanupOldOrderHistoryPhotos() {
+  try {
+    // Cloud-first with LocalStorage fallback
+    const history = (window.appState && window.appState.history && window.appState.history.length > 0)
+      ? window.appState.history
+      : Store.getHistory();
+    if(!Array.isArray(history) || !history.length) return;
+    const now = Date.now();
+    const maxAgeMs = ORDER_HISTORY_PHOTO_RETENTION_DAYS * 86400000;
+
+    for (const order of history) {
+      const d = new Date(order.paidAt).getTime();
+      if (!Number.isNaN(d) && (now - d) > maxAgeMs) {
+         await PhotoDB.remove('history_' + order.historyId);
+      }
+    }
+  } catch(e) {
+    console.warn('cleanupOldOrderHistoryPhotos error', e);
+  }
+}
+
+// ---- Navigation ----
+function initNav() {
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.id !== 'nav-more') {
+      el.addEventListener('click', () => navigate(el.dataset.page));
+    }
+  });
+}
+
+function navigate(page) {
+  const targetPage = String(page || '').trim().toLowerCase();
+  if (!canAccessPage(targetPage)) {
+    if (currentUser && !isAdminUser()) {
+      showToast('Tài khoản staff chỉ được dùng Order và Thanh toán.', 'warning');
+    }
+    page = 'tables';
+  } else {
+    page = targetPage;
+  }
+  try { closeCartSheet(); } catch(_) {}
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.id === 'nav-more') {
+      n.classList.toggle('active', ['settings'].includes(page));
+    } else {
+      n.classList.toggle('active', n.dataset.page === page);
+    }
+  });
+  renderPage(page);
+}
+
+function openMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.openModal) return window.XekhoApp.ui.openModal('more-modal');
+  document.getElementById('more-modal').classList.add('active');
+}
+
+function closeMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('more-modal');
+  document.getElementById('more-modal').classList.remove('active');
+}
+
+function navigateMore(page) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được truy cập mục cấu hình.', 'warning');
+    return;
+  }
+  closeMoreModal();
+  if (page === 'users' || page === 'settings') {
+    navigate('settings');
+    setTimeout(() => {
+      const targetTab = page === 'users' ? 'users' : 'store';
+      const btn = document.querySelector(`#page-settings .tab-bar .tab-btn[onclick*="'${targetTab}'"]`);
+      if (btn) btn.click();
+    }, 50);
+  } else {
+    showToast('Mục này đã được gỡ khỏi menu quản trị.', 'info');
+    navigate('settings');
+  }
+}
+
+function openInvMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.openModal) return window.XekhoApp.ui.openModal('inv-more-modal');
+  document.getElementById('inv-more-modal').classList.add('active');
+}
+
+function closeInvMoreModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('inv-more-modal');
+  document.getElementById('inv-more-modal').classList.remove('active');
+}
+
+function navigateInvMore(tab) {
+  closeInvMoreModal();
+  const btn = document.getElementById('inv-tab-more');
+  switchInvTab(tab, btn);
+}
+
+function renderPage(page) {
+  switch(page) {
+    case 'tables':   renderTables(); break;
+    case 'orders':   renderOrderPage(); break;
+    case 'inventory':renderInventory(); break;
+    case 'finance':  renderFinance(); break;
+    case 'reports':  renderReports(); break;
+    case 'settings': renderSettings(); break;
+  }
+}
+
+function switchSettingsTab(tabId, btn) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được truy cập cài đặt.', 'warning');
+    return;
+  }
+  const tabsWrap = btn.parentElement;
+  tabsWrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const settingsWrap = document.getElementById('page-settings');
+  settingsWrap.querySelectorAll('.settings-tab-content').forEach(el => el.style.display = 'none');
+  const target = document.getElementById('set-tab-' + tabId);
+  if(target) target.style.display = 'block';
+  if (tabId === 'attendance') renderAttendanceManagement();
+  if (tabId === 'zalo-bot') {
+    renderZaloBotCommandAdmin();
+    renderZaloBotNotificationAdmin();
+  }
+}
+
+let zaloBotCommandAdminCache = [];
+
+// These replies are implemented in the webhook source, not Firestore. Show them
+// in the admin UI so an empty custom catalog is not mistaken for a missing bot.
+const ZALO_BOT_BUILT_IN_COMMANDS = [
+  { id: 'builtin-open', trigger: 'mở ca', aliases: ['mo ca'], replyText: 'Checklist chuẩn bị mở ca.', enabled: true },
+  { id: 'builtin-close', trigger: 'đóng ca', aliases: ['dong ca'], replyText: 'Checklist đóng ca.', enabled: true },
+  { id: 'builtin-help', trigger: 'help', aliases: ['hướng dẫn', 'trợ giúp', 'lệnh'], replyText: 'Hướng dẫn các lệnh nhân viên.', enabled: true },
+];
+
+function _zaloBotCommandNormalize(value = '') {
+  return String(value)
+    .replace(/Đ/g, 'D')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _zaloBotCommandPhrases(row = {}) {
+  const aliases = Array.isArray(row.aliases) ? row.aliases : String(row.aliases || '').split(/[,\n]/);
+  return [...new Set([row.trigger, ...aliases]
+    .map(_zaloBotCommandNormalize)
+    .filter(Boolean))];
+}
+
+function _zaloBotCommandMatches(message, phrase) {
+  const normalizedMessage = _zaloBotCommandNormalize(message);
+  const normalizedPhrase = _zaloBotCommandNormalize(phrase);
+  if (!normalizedMessage || !normalizedPhrase) return false;
+  const escaped = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|\\s)${escaped}($|\\s)`, 'i').test(normalizedMessage);
+}
+
+function _zaloCommandElement(id) { return document.getElementById(id); }
+
+function _zaloBotCommandErrorMessage(error) {
+  const code = String(error?.code || '').trim().toLowerCase();
+  if (code === 'permission-denied') {
+    return 'Không có quyền đọc/ghi lệnh Bot. Hãy dùng tài khoản manager/admin và kiểm tra Firestore Rules đã deploy.';
+  }
+  return error?.message || 'Lỗi không xác định';
+}
+
+function _renderZaloBotBuiltInCommands(list) {
+  const heading = document.createElement('div');
+  heading.style.cssText = 'font-size:13px;font-weight:700;margin-top:4px';
+  heading.textContent = 'Lệnh mặc định đang có sẵn';
+  list.appendChild(heading);
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:11px;color:var(--text2);margin-top:-4px';
+  hint.textContent = 'Lệnh mặc định (không sửa/xóa tại đây)';
+  list.appendChild(hint);
+
+  ZALO_BOT_BUILT_IN_COMMANDS.forEach(row => {
+    const card = document.createElement('div');
+    card.className = 'card card-sm';
+    const title = document.createElement('div');
+    title.style.fontWeight = '700';
+    title.textContent = `@Bot ${row.trigger}`;
+    const aliases = document.createElement('div');
+    aliases.style.cssText = 'font-size:11px;color:var(--text2);margin-top:3px';
+    aliases.textContent = `Tên gọi khác: ${row.aliases.join(', ')}`;
+    const reply = document.createElement('div');
+    reply.style.cssText = 'font-size:12px;white-space:pre-wrap;color:var(--text2);margin-top:8px';
+    reply.textContent = row.replyText;
+    const badge = document.createElement('div');
+    badge.className = 'badge badge-success';
+    badge.style.marginTop = '8px';
+    badge.textContent = 'Mặc định';
+    card.append(title, aliases, reply, badge);
+    list.appendChild(card);
+  });
+}
+
+function resetZaloBotCommandForm() {
+  const form = _zaloCommandElement('zalo-command-form');
+  if (form) form.reset();
+  const id = _zaloCommandElement('zalo-command-id');
+  if (id) id.value = '';
+  const enabled = _zaloCommandElement('zalo-command-enabled');
+  if (enabled) enabled.checked = true;
+}
+
+async function renderZaloBotCommandAdmin() {
+  const list = _zaloCommandElement('zalo-command-admin-list');
+  if (!list || !isAdminUser()) return;
+  list.replaceChildren();
+  const loading = document.createElement('div');
+  loading.className = 'card card-sm';
+  loading.textContent = 'Đang tải danh sách lệnh Bot…';
+  list.appendChild(loading);
+  try {
+    zaloBotCommandAdminCache = await window.DB.ZaloBotCommands.list();
+    list.replaceChildren();
+    _renderZaloBotBuiltInCommands(list);
+    const customHeading = document.createElement('div');
+    customHeading.style.cssText = 'font-size:13px;font-weight:700;margin-top:12px';
+    customHeading.textContent = 'Lệnh tự tạo';
+    list.appendChild(customHeading);
+    if (!zaloBotCommandAdminCache.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Chưa có lệnh tự tạo. Lệnh mặc định mở ca, đóng ca và help vẫn hoạt động.';
+      list.appendChild(empty);
+      return;
+    }
+    zaloBotCommandAdminCache.forEach(row => {
+      const card = document.createElement('div');
+      card.className = 'card card-sm';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;gap:8px';
+      const detail = document.createElement('div');
+      detail.style.minWidth = '0';
+      const title = document.createElement('div');
+      title.style.fontWeight = '700';
+      title.textContent = `@Bot ${row.trigger || '—'}`;
+      const aliases = document.createElement('div');
+      aliases.style.cssText = 'font-size:11px;color:var(--text2);margin-top:3px';
+      aliases.textContent = _zaloBotCommandPhrases(row).slice(1).length ? `Tên gọi khác: ${_zaloBotCommandPhrases(row).slice(1).join(', ')}` : 'Không có tên gọi khác';
+      const reply = document.createElement('div');
+      reply.style.cssText = 'font-size:12px;white-space:pre-wrap;color:var(--text2);margin-top:8px';
+      reply.textContent = row.replyText || '';
+      detail.append(title, aliases, reply);
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end';
+      const state = document.createElement('span');
+      state.className = `badge ${row.enabled === false ? 'badge-warning' : 'badge-success'}`;
+      state.textContent = row.enabled === false ? 'Đang tắt' : 'Đang bật';
+      const edit = document.createElement('button');
+      edit.type = 'button'; edit.className = 'btn btn-xs btn-outline'; edit.textContent = 'Sửa';
+      edit.onclick = () => editZaloBotCommand(row.id);
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.className = 'btn btn-xs btn-danger'; remove.textContent = 'Xóa';
+      remove.onclick = () => deleteZaloBotCommand(row.id);
+      actions.append(state, edit, remove);
+      header.append(detail, actions);
+      card.appendChild(header);
+      list.appendChild(card);
+    });
+  } catch (error) {
+    list.replaceChildren();
+    _renderZaloBotBuiltInCommands(list);
+    const message = document.createElement('div');
+    message.className = 'empty-state';
+    message.textContent = `Không tải được lệnh tự tạo: ${_zaloBotCommandErrorMessage(error)}`;
+    list.appendChild(message);
+  }
+}
+
+function editZaloBotCommand(id) {
+  const row = zaloBotCommandAdminCache.find(item => String(item.id) === String(id));
+  if (!row) return;
+  _zaloCommandElement('zalo-command-id').value = row.id || '';
+  _zaloCommandElement('zalo-command-trigger').value = row.trigger || '';
+  _zaloCommandElement('zalo-command-aliases').value = (Array.isArray(row.aliases) ? row.aliases : []).join(', ');
+  _zaloCommandElement('zalo-command-reply').value = row.replyText || '';
+  _zaloCommandElement('zalo-command-enabled').checked = row.enabled !== false;
+  _zaloCommandElement('zalo-command-trigger').focus();
+}
+
+async function saveZaloBotCommand(event) {
+  event?.preventDefault?.();
+  if (!isAdminUser()) return showToast('Chỉ admin mới được quản lý lệnh Bot.', 'warning');
+  const id = String(_zaloCommandElement('zalo-command-id')?.value || '').trim();
+  const trigger = _zaloBotCommandNormalize(_zaloCommandElement('zalo-command-trigger')?.value || '');
+  const aliases = String(_zaloCommandElement('zalo-command-aliases')?.value || '')
+    .split(/[,\n]/).map(_zaloBotCommandNormalize).filter(Boolean).filter((value, index, values) => value !== trigger && values.indexOf(value) === index).slice(0, 5);
+  const replyText = String(_zaloCommandElement('zalo-command-reply')?.value || '').trim();
+  const enabled = _zaloCommandElement('zalo-command-enabled')?.checked !== false;
+  if (trigger.length < 2 || trigger.length > 80) return showToast('Lệnh phải dài từ 2 đến 80 ký tự.', 'warning');
+  if (!replyText || replyText.length > 1000) return showToast('Nội dung trả lời phải dài từ 1 đến 1000 ký tự.', 'warning');
+  try {
+    await window.DB.ZaloBotCommands.save(id, { trigger, aliases, replyText, enabled });
+    showToast('✅ Đã lưu lệnh Bot.', 'success');
+    resetZaloBotCommandForm();
+    await renderZaloBotCommandAdmin();
+  } catch (error) {
+    showToast(`Không lưu được lệnh Bot: ${_zaloBotCommandErrorMessage(error)}`, 'danger');
+  }
+}
+
+async function deleteZaloBotCommand(id) {
+  if (!isAdminUser() || !confirm('Xóa lệnh Bot này?')) return;
+  try {
+    await window.DB.ZaloBotCommands.remove(id);
+    showToast('Đã xóa lệnh Bot.', 'success');
+    await renderZaloBotCommandAdmin();
+  } catch (error) {
+    showToast(`Không xóa được lệnh Bot: ${_zaloBotCommandErrorMessage(error)}`, 'danger');
+  }
+}
+
+function testZaloBotCommand() {
+  const input = String(_zaloCommandElement('zalo-command-test-input')?.value || '').trim();
+  const result = _zaloCommandElement('zalo-command-test-result');
+  if (!result) return;
+  result.style.display = '';
+  result.replaceChildren();
+  const title = document.createElement('div');
+  title.style.fontWeight = '700';
+  const body = document.createElement('div');
+  body.style.cssText = 'white-space:pre-wrap;font-size:12px;color:var(--text2);margin-top:6px';
+  const normalized = _zaloBotCommandNormalize(input);
+  let reply = null;
+  if (/\bmo ca\b/.test(normalized)) reply = 'Chuẩn bị mở ca: (lệnh mặc định)';
+  else if (/\bdong ca\b/.test(normalized)) reply = 'Checklist đóng ca: (lệnh mặc định)';
+  else if (/\b(help|huong dan|tro giup|lenh)\b/.test(normalized)) reply = 'Lệnh nhân viên: mở ca, đóng ca, help (lệnh mặc định)';
+  else {
+    const matched = zaloBotCommandAdminCache.find(row => row.enabled !== false && _zaloBotCommandPhrases(row).some(phrase => _zaloBotCommandMatches(input, phrase)));
+    reply = matched?.replyText || null;
+  }
+  title.textContent = reply ? '✅ Bot sẽ trả lời:' : 'ℹ️ Bot chưa có phản hồi cho câu này.';
+  body.textContent = reply || 'Tạo lệnh mới hoặc thử lại với một tên gọi khác.';
+  result.append(title, body);
+}
+
+let zaloBotNotificationGroups = [];
+let zaloBotNotificationSchedules = [];
+
+function _zaloNotifyElement(id) { return document.getElementById(id); }
+function _zaloNotifyText(value) { return String(value || '').trim(); }
+function _zaloNotifyError(error) { return error?.message || 'Lỗi không xác định'; }
+
+function _zaloNotifyCreateTextNodeCard(titleText, lines = []) {
+  const card = document.createElement('div');
+  card.className = 'card card-sm';
+  const title = document.createElement('div');
+  title.style.fontWeight = '700';
+  title.textContent = titleText;
+  card.appendChild(title);
+  lines.filter(Boolean).forEach(line => {
+    const el = document.createElement('div');
+    el.style.cssText = 'font-size:11px;color:var(--text2);margin-top:4px;white-space:pre-wrap';
+    el.textContent = line;
+    card.appendChild(el);
+  });
+  return card;
+}
+
+function _zaloNotifyPopulateGroupSelect(id) {
+  const select = _zaloNotifyElement(id);
+  if (!select) return;
+  const previous = select.value;
+  select.replaceChildren();
+  if (!zaloBotNotificationGroups.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Chưa có nhóm được phép';
+    select.appendChild(option);
+    return;
+  }
+  zaloBotNotificationGroups.forEach(group => {
+    const option = document.createElement('option');
+    option.value = group.id;
+    option.textContent = `${group.label || group.id} · ${group.audience === 'customer' ? 'Khách hàng' : 'Nhân viên'}`;
+    option.disabled = group.enabled === false;
+    select.appendChild(option);
+  });
+  if (previous && Array.from(select.options).some(option => option.value === previous)) select.value = previous;
+}
+
+function _zaloNotifyRenderGroups() {
+  const list = _zaloNotifyElement('zalo-notify-group-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!zaloBotNotificationGroups.length) {
+    list.appendChild(_zaloNotifyCreateTextNodeCard('Chưa có nhóm nhận', ['Tạo nhóm nhân viên trước. Chỉ dùng Chat ID nhận được từ webhook group đã xác nhận.']));
+    return;
+  }
+  zaloBotNotificationGroups.forEach(group => {
+    const card = _zaloNotifyCreateTextNodeCard(group.label || group.id, [
+      `Mã: ${group.id} · ${group.audience === 'customer' ? 'Khách hàng' : 'Nhân viên'} · ${group.enabled === false ? 'Đang tắt' : 'Đang bật'}`,
+      `Tối đa ${Number(group.maxDailyMessages || 0)} tin/ngày`,
+    ]);
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+    const edit = document.createElement('button');
+    edit.type = 'button'; edit.className = 'btn btn-xs btn-outline'; edit.textContent = 'Sửa';
+    edit.onclick = () => editZaloBotNotificationGroup(group.id);
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'btn btn-xs btn-danger'; remove.textContent = 'Xóa';
+    remove.onclick = () => deleteZaloBotNotificationGroup(group.id);
+    actions.append(edit, remove); card.appendChild(actions); list.appendChild(card);
+  });
+}
+
+function _zaloNotifyRenderSchedules() {
+  const list = _zaloNotifyElement('zalo-notify-schedule-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!zaloBotNotificationSchedules.length) {
+    list.appendChild(_zaloNotifyCreateTextNodeCard('Chưa có lịch gửi', ['Lịch chỉ chạy theo mốc 5 phút, giờ Việt Nam.']));
+    return;
+  }
+  const weekdayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  zaloBotNotificationSchedules.forEach(schedule => {
+    const group = zaloBotNotificationGroups.find(item => item.id === schedule.groupId);
+    const cadence = schedule.frequency === 'weekly' ? (weekdayNames[Number(schedule.weekday)] || 'Hàng tuần') : 'Mỗi ngày';
+    const time = `${String(Number(schedule.hour || 0)).padStart(2, '0')}:${String(Number(schedule.minute || 0)).padStart(2, '0')}`;
+    const card = _zaloNotifyCreateTextNodeCard(`${group?.label || schedule.groupId || 'Nhóm không xác định'} · ${cadence} ${time}`, [
+      schedule.text || '', schedule.enabled === false ? 'Đang tắt' : 'Đang bật',
+    ]);
+    const actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+    const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'btn btn-xs btn-outline'; edit.textContent = 'Sửa'; edit.onclick = () => editZaloBotNotificationSchedule(schedule.id);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-xs btn-danger'; remove.textContent = 'Xóa'; remove.onclick = () => deleteZaloBotNotificationSchedule(schedule.id);
+    actions.append(edit, remove); card.appendChild(actions); list.appendChild(card);
+  });
+}
+
+function _zaloNotifyRenderHistory(rows) {
+  const list = _zaloNotifyElement('zalo-notify-history-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!rows.length) {
+    list.appendChild(_zaloNotifyCreateTextNodeCard('Chưa có lịch sử gửi', ['Khi Bot gửi thành công/thất bại, metadata sẽ hiện ở đây.']));
+    return;
+  }
+  rows.forEach(row => list.appendChild(_zaloNotifyCreateTextNodeCard(
+    `${row.status === 'sent' ? '✅' : row.status === 'failed' ? '❌' : '⏳'} ${row.groupLabel || row.groupId || 'Nhóm'}`,
+    [`${row.deliveryType === 'scheduled' ? 'Lịch định kỳ' : 'Gửi ngay'} · ${row.createdAt || ''}`, row.textPreview || '']
+  )));
+}
+
+async function renderZaloBotNotificationAdmin() {
+  if (!isAdminUser()) return;
+  try {
+    const api = window.DB?.ZaloBotNotifications;
+    if (!api) throw new Error('Không tải được dịch vụ thông báo Bot.');
+    const [groups, schedules, history] = await Promise.all([api.listGroups(), api.listSchedules(), api.listHistory()]);
+    zaloBotNotificationGroups = groups;
+    zaloBotNotificationSchedules = schedules;
+    _zaloNotifyPopulateGroupSelect('zalo-notify-send-group');
+    _zaloNotifyPopulateGroupSelect('zalo-notify-schedule-group');
+    _zaloNotifyRenderGroups(); _zaloNotifyRenderSchedules(); _zaloNotifyRenderHistory(history);
+  } catch (error) {
+    const list = _zaloNotifyElement('zalo-notify-history-list');
+    if (list) { list.replaceChildren(_zaloNotifyCreateTextNodeCard('Không tải được thông báo Bot', [_zaloNotifyError(error)])); }
+  }
+}
+
+function resetZaloBotNotificationGroupForm() {
+  const form = _zaloNotifyElement('zalo-notify-group-form'); if (form) form.reset();
+  const id = _zaloNotifyElement('zalo-notify-group-id'); if (id) { id.disabled = false; id.value = ''; }
+  const limit = _zaloNotifyElement('zalo-notify-group-limit'); if (limit) limit.value = '8';
+  const enabled = _zaloNotifyElement('zalo-notify-group-enabled'); if (enabled) enabled.checked = true;
+}
+
+async function saveZaloBotNotificationGroup(event) {
+  event?.preventDefault?.(); if (!isAdminUser()) return;
+  const id = _zaloNotifyText(_zaloNotifyElement('zalo-notify-group-id')?.value).toLowerCase();
+  const audience = _zaloNotifyElement('zalo-notify-group-audience')?.value || 'staff';
+  const requestedLimit = Number(_zaloNotifyElement('zalo-notify-group-limit')?.value);
+  const payload = { label: _zaloNotifyText(_zaloNotifyElement('zalo-notify-group-label')?.value), chatId: _zaloNotifyText(_zaloNotifyElement('zalo-notify-group-chat-id')?.value), audience, maxDailyMessages: Math.max(1, Math.min(Number.isInteger(requestedLimit) ? requestedLimit : (audience === 'customer' ? 2 : 8), audience === 'customer' ? 2 : 20)), enabled: _zaloNotifyElement('zalo-notify-group-enabled')?.checked !== false };
+  if (!id || !payload.label || !payload.chatId) return showToast('Nhập đủ mã, tên và Chat ID nhóm.', 'warning');
+  try { await window.DB.ZaloBotNotifications.saveGroup(id, payload); showToast('Đã lưu nhóm nhận thông báo.', 'success'); resetZaloBotNotificationGroupForm(); await renderZaloBotNotificationAdmin(); } catch (error) { showToast(`Không lưu được nhóm: ${_zaloNotifyError(error)}`, 'danger'); }
+}
+
+function editZaloBotNotificationGroup(id) {
+  const group = zaloBotNotificationGroups.find(item => item.id === id); if (!group) return;
+  _zaloNotifyElement('zalo-notify-group-id').value = group.id; _zaloNotifyElement('zalo-notify-group-id').disabled = true;
+  _zaloNotifyElement('zalo-notify-group-label').value = group.label || ''; _zaloNotifyElement('zalo-notify-group-chat-id').value = group.chatId || '';
+  _zaloNotifyElement('zalo-notify-group-audience').value = group.audience || 'staff'; _zaloNotifyElement('zalo-notify-group-limit').value = String(group.maxDailyMessages || 8); _zaloNotifyElement('zalo-notify-group-enabled').checked = group.enabled !== false;
+}
+
+async function deleteZaloBotNotificationGroup(id) { if (!isAdminUser() || !confirm('Xóa nhóm này? Các lịch đang trỏ tới nhóm sẽ không thể gửi.')) return; try { await window.DB.ZaloBotNotifications.removeGroup(id); showToast('Đã xóa nhóm.', 'success'); await renderZaloBotNotificationAdmin(); } catch (error) { showToast(`Không xóa được nhóm: ${_zaloNotifyError(error)}`, 'danger'); } }
+
+function toggleZaloBotScheduleWeekday() { const wrap = _zaloNotifyElement('zalo-notify-schedule-weekday-wrap'); if (wrap) wrap.style.display = _zaloNotifyElement('zalo-notify-schedule-frequency')?.value === 'weekly' ? '' : 'none'; }
+function resetZaloBotNotificationScheduleForm() { const form = _zaloNotifyElement('zalo-notify-schedule-form'); if (form) form.reset(); _zaloNotifyElement('zalo-notify-schedule-id').value = ''; _zaloNotifyElement('zalo-notify-schedule-time').value = '17:00'; _zaloNotifyElement('zalo-notify-schedule-enabled').checked = true; toggleZaloBotScheduleWeekday(); }
+
+async function saveZaloBotNotificationSchedule(event) {
+  event?.preventDefault?.(); if (!isAdminUser()) return;
+  const time = _zaloNotifyText(_zaloNotifyElement('zalo-notify-schedule-time')?.value); const [hourText, minuteText] = time.split(':');
+  const payload = { groupId: _zaloNotifyElement('zalo-notify-schedule-group')?.value || '', text: _zaloNotifyText(_zaloNotifyElement('zalo-notify-schedule-text')?.value), frequency: _zaloNotifyElement('zalo-notify-schedule-frequency')?.value || 'daily', weekday: Number(_zaloNotifyElement('zalo-notify-schedule-weekday')?.value), hour: Number(hourText), minute: Number(minuteText), enabled: _zaloNotifyElement('zalo-notify-schedule-enabled')?.checked !== false };
+  if (!payload.groupId || !payload.text || !Number.isInteger(payload.hour) || payload.minute % 5 !== 0) return showToast('Chọn nhóm, nhập nội dung và giờ theo mốc 5 phút.', 'warning');
+  try { await window.DB.ZaloBotNotifications.saveSchedule(_zaloNotifyElement('zalo-notify-schedule-id')?.value, payload); showToast('Đã lưu lịch gửi.', 'success'); resetZaloBotNotificationScheduleForm(); await renderZaloBotNotificationAdmin(); } catch (error) { showToast(`Không lưu được lịch: ${_zaloNotifyError(error)}`, 'danger'); }
+}
+
+function editZaloBotNotificationSchedule(id) { const schedule = zaloBotNotificationSchedules.find(item => item.id === id); if (!schedule) return; _zaloNotifyElement('zalo-notify-schedule-id').value = schedule.id; _zaloNotifyElement('zalo-notify-schedule-group').value = schedule.groupId || ''; _zaloNotifyElement('zalo-notify-schedule-text').value = schedule.text || ''; _zaloNotifyElement('zalo-notify-schedule-frequency').value = schedule.frequency || 'daily'; _zaloNotifyElement('zalo-notify-schedule-weekday').value = String(schedule.weekday ?? 1); _zaloNotifyElement('zalo-notify-schedule-time').value = `${String(Number(schedule.hour || 0)).padStart(2, '0')}:${String(Number(schedule.minute || 0)).padStart(2, '0')}`; _zaloNotifyElement('zalo-notify-schedule-enabled').checked = schedule.enabled !== false; toggleZaloBotScheduleWeekday(); }
+async function deleteZaloBotNotificationSchedule(id) { if (!isAdminUser() || !confirm('Xóa lịch gửi này?')) return; try { await window.DB.ZaloBotNotifications.removeSchedule(id); showToast('Đã xóa lịch.', 'success'); await renderZaloBotNotificationAdmin(); } catch (error) { showToast(`Không xóa được lịch: ${_zaloNotifyError(error)}`, 'danger'); } }
+
+function previewZaloBotAnnouncement() { const group = zaloBotNotificationGroups.find(item => item.id === _zaloNotifyElement('zalo-notify-send-group')?.value); const text = _zaloNotifyText(_zaloNotifyElement('zalo-notify-send-text')?.value); const preview = _zaloNotifyElement('zalo-notify-preview'); if (!preview) return; preview.style.display = ''; preview.replaceChildren(); preview.append(_zaloNotifyCreateTextNodeCard(`📣 Thông báo từ chủ quán → ${group?.label || 'Chưa chọn nhóm'}`, [text || 'Nhập nội dung để xem trước.'])); }
+async function sendZaloBotAnnouncementNow() { if (!isAdminUser()) return; const groupId = _zaloNotifyElement('zalo-notify-send-group')?.value || ''; const text = _zaloNotifyText(_zaloNotifyElement('zalo-notify-send-text')?.value); const group = zaloBotNotificationGroups.find(item => item.id === groupId); if (!groupId || !text) return showToast('Chọn nhóm và nhập nội dung thông báo.', 'warning'); if (!confirm(`Gửi ngay vào “${group?.label || groupId}”?`)) return; try { await window.DB.ZaloBotNotifications.sendNow(groupId, text); _zaloNotifyElement('zalo-notify-send-text').value = ''; showToast('Đã gửi thông báo qua Bot.', 'success'); await renderZaloBotNotificationAdmin(); } catch (error) { showToast(`Không gửi được thông báo: ${_zaloNotifyError(error)}`, 'danger'); } }
+
+function switchReportTab(tabId, btn) {
+  const tabsWrap = btn.parentElement;
+  tabsWrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const reportsWrap = document.getElementById('page-reports');
+  reportsWrap.querySelectorAll('.report-tab-content').forEach(el => el.style.display = 'none');
+  const target = document.getElementById('report-tab-' + tabId);
+  if(target) target.style.display = 'block';
+  if (tabId === 'ads') {
+    ensureAdsRevenueReportDateInputs();
+    setTimeout(() => {
+      try { loadAdsRevenueReport(); } catch (_) {}
+    }, 0);
+  }
+}
+
+function navigateToReport(type) {
+  navigate('reports');
+  if (type === 'revenue') {
+    const btn = document.querySelector('#page-reports .tab-bar .tab-btn:first-child');
+    if (btn) switchReportTab('revenue', btn);
+  } else if (type === 'expense') {
+    const btn = document.querySelector('#page-reports .tab-bar .tab-btn:nth-child(2)');
+    if (btn) switchReportTab('purchase', btn);
+  }
+}
+
+function addNoteToCartItem(itemId) {
+  const items = orderItems[currentTable] || [];
+  const item = items.find(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if (!item) return;
+
+  const currentNote = item.note || '';
+  const newNote = prompt(`Nhập ghi chú cho món [${item.name}]:`, currentNote);
+
+  if (newNote !== null) {
+    item.note = newNote.trim();
+    saveOrder();
+    renderCart();
+  }
+}
+
+function updateAlertBadge() {
+  const alerts = getInventoryAlerts();
+  const total = alerts.critical.length + alerts.low.length;
+  const badge = document.getElementById('alert-badge');
+  if(badge) { badge.textContent = total; badge.style.display = total ? '' : 'none'; }
+  const headerBtn = document.getElementById('header-alert-btn');
+  if(headerBtn) headerBtn.classList.toggle('alert-dot', total > 0);
+}
+
+function openStockAlertPopup() {
+  const { critical, low } = getInventoryAlerts();
+  const total = critical.length + low.length;
+  if(total === 0) { showToast('✅ Tồn kho ổn định, không có cảnh báo!', 'success'); return; }
+  
+  let html = '';
+  
+  if (critical.length > 0) {
+    html += `
+      <div class="alert-card danger" style="margin-bottom:8px; cursor:pointer;" onclick="document.getElementById('stock-alert-critical-list').style.display = document.getElementById('stock-alert-critical-list').style.display === 'none' ? 'flex' : 'none'">
+        <div class="alert-icon">🚨</div>
+        <div class="alert-content">
+          <div class="alert-title">Hàng cần nhập gấp (${critical.length})</div>
+          <div class="alert-desc">Nhấn để xem/ẩn chi tiết</div>
+        </div>
+      </div>
+      <div id="stock-alert-critical-list" style="display:none; flex-direction:column; gap:8px; margin-bottom:16px; padding-left:12px; border-left:2px solid var(--danger)">
+        ${critical.map(i => `<div class="stock-alert-item danger">
+          <div class="stock-alert-info">
+            <div class="stock-alert-name">${i.name}</div>
+            <div class="stock-alert-detail">Còn lại: <b>${i.qty}</b> ${i.unit} | Tối thiểu: ${i.minQty} ${i.unit}</div>
+          </div>
+          <button class="btn btn-xs btn-danger" onclick="quickAddStockFromAlert('${i.id}')">Nhập</button>
+        </div>`).join('')}
+      </div>
+    `;
+  }
+
+  if (low.length > 0) {
+    html += `
+      <div class="alert-card warning" style="margin-bottom:8px; cursor:pointer;" onclick="document.getElementById('stock-alert-low-list').style.display = document.getElementById('stock-alert-low-list').style.display === 'none' ? 'flex' : 'none'">
+        <div class="alert-icon">⚠️</div>
+        <div class="alert-content">
+          <div class="alert-title">Hàng sắp hết (${low.length})</div>
+          <div class="alert-desc">Nhấn để xem/ẩn chi tiết</div>
+        </div>
+      </div>
+      <div id="stock-alert-low-list" style="display:none; flex-direction:column; gap:8px; margin-bottom:16px; padding-left:12px; border-left:2px solid var(--warning)">
+        ${low.map(i => `<div class="stock-alert-item warning">
+          <div class="stock-alert-info">
+            <div class="stock-alert-name">${i.name}</div>
+            <div class="stock-alert-detail">Còn lại: <b>${i.qty}</b> ${i.unit} | Tối thiểu: ${i.minQty} ${i.unit}</div>
+          </div>
+          <button class="btn btn-xs btn-warning" onclick="quickAddStockFromAlert('${i.id}')">Nhập</button>
+        </div>`).join('')}
+      </div>
+    `;
+  }
+  
+  html += `
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('stock-alert-modal').classList.remove('active');navigate('inventory');switchInvTab('purchase',document.querySelector('.tab-btn:nth-child(2)'))">
+          📦 Nhập hàng đầy đủ
+        </button>
+        <button class="btn btn-secondary" onclick="document.getElementById('stock-alert-modal').classList.remove('active')">✕ Đóng</button>
+      </div>
+  `;
+
+  document.getElementById('stock-alert-count').textContent = `${critical.length} cần nhập gấp, ${low.length} sắp hết`;
+  document.getElementById('stock-alert-body').innerHTML = html;
+  
+  // By default, expand the critical one if it exists
+  if (critical.length > 0) {
+    document.getElementById('stock-alert-critical-list').style.display = 'flex';
+  } else if (low.length > 0) {
+    document.getElementById('stock-alert-low-list').style.display = 'flex';
+  }
+  
+  document.getElementById('stock-alert-modal').classList.add('active');
+}
+
+function quickAddStockFromAlert(invId) {
+  const inv = (window.appState && window.appState.inventory) || Store.getInventory();
+  const item = inv.find(i => i.id === invId);
+  if(!item) return;
+  const amt = parseFloat(prompt(`Nhập thêm bao nhiêu ${item.unit} cho "${item.name}"?`, '10'));
+  if(isNaN(amt) || amt <= 0) return;
+  const newQty = (item.qty || 0) + amt;
+  const currentTotalValue = (item.qty || 0) * (item.costPerUnit || 0);
+  const addTotalValue = amt * (item.costPerUnit || 0); // For quick add, we assume the same cost per unit
+  const newCostPerUnit = newQty > 0 ? (currentTotalValue + addTotalValue) / newQty : (item.costPerUnit || 0);
+
+  // FIX 4: Ghi thẳng lên Firestore
+  if (window.DB && window.DB.Inventory) {
+    window.DB.Inventory.update(item.id, { qty: newQty, costPerUnit: newCostPerUnit })
+      .then(() => {
+        updateAlertBadge();
+        openStockAlertPopup();
+        showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
+      }).catch(e => showToast('Lỗi nhập kho: ' + e.message, 'danger'));
+  } else {
+    item.qty = newQty;
+    Store.setInventory(inv);
+    updateAlertBadge();
+    openStockAlertPopup();
+    showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
+  }
+  Store.addPurchase({ id:uid(), name:item.name, qty:amt, unit:item.unit, price:item.costPerUnit*amt, costPerUnit:item.costPerUnit, date:new Date().toISOString(), supplier:'Nhập thủ công' });
+}
+
+// ============================================================
+// PAGE: TABLES
+// ============================================================
+
+/**
+ * _getTables() / _getOrders()
+ * Luôn ưu tiên dữ liđu từ Cloud (window.appState).
+ * Nếu appState chưa ready hoặc rđơg để fallback LocalStorage.
+ * Đây là "Lđp đăm Fallback" chđơg Race Condition.
+ */
+function _getTables() {
+  if (Array.isArray(window.appState?.tables)) {
+    return window.appState.tables;
+  }
+  return Store.getTables();
+}
+function _getOrders() {
+  // appState.orders = { [tableId]: orderObject } (online format)
+  // Store.getOrders() = { [tableId]: itemsArray } (offline format)
+  // Tra ve offline format de khong vo cac ham cu.
+  if (window.appState && window.appState.orders && typeof window.appState.orders === 'object') {
+    const map = {};
+    Object.entries(window.appState.orders).forEach(([tid, order]) => {
+      if (String(tid).toLowerCase() === 'takeaway') return;
+      const status = String(order?.status || '').toLowerCase();
+      if (!order || status === 'cancelled' || status === 'canceled' || status === 'rejected' || status === 'completed' || status === 'closed') return;
+      map[tid] = Array.isArray(order.items) ? order.items : [];
+    });
+    const localOrders = Store.getOrders();
+    const localTakeawayOrder = localOrders.takeaway;
+    if (Array.isArray(localTakeawayOrder) && localTakeawayOrder.length > 0) {
+      map.takeaway = localTakeawayOrder;
+    }
+    return map;
+  }
+  return Store.getOrders();
+}
+
+function isActiveOnlineOrderForTables(order) {
+  if (!order || order.hidden === true || order.deletedAt || order.deletedFromAppAt || order.archivedAt) return false;
+  const status = String(order.status || 'pending').trim().toLowerCase();
+  if (['completed', 'closed', 'cancelled', 'canceled', 'rejected', 'declined', 'expired', 'archived', 'deleted'].includes(status)) return false;
+  if (order.cancelledAt || order.canceledAt || order.cancelReason) return false;
+  return ['pending', 'approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(status);
+}
+
+function getActiveOnlineOrdersForTables(orders = []) {
+  return (Array.isArray(orders) ? orders : []).filter(order => isActiveOnlineOrderForTables(order));
+}
+function _getMenu() {
+  const inv = _getInventory();
+  const hasMasterMenu = Array.isArray(window.appState?.masterData?.products);
+  const cloudMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
+  const menu = hasMasterMenu
+    ? (cloudMenu.length > 0 ? cloudMenu : Store.getMenu())
+    : ((window.appState && window.appState.menu && window.appState.menu.length > 0)
+      ? window.appState.menu
+      : Store.getMenu());
+  return (menu || []).map(item => normalizeMenuItemModel(item, inv));
+}
+function _getInventory() {
+  const masterInventory = Array.isArray(window.appState?.masterData?.inventoryItems)
+    ? window.appState.masterData.inventoryItems
+    : [];
+  const cloudInventory = Array.isArray(window.appState?.inventory) ? window.appState.inventory : [];
+  const inventory = cloudInventory.length > 0
+    ? cloudInventory
+    : (masterInventory.length > 0
+      ? masterInventory
+      : Store.getInventory());
+  return (inventory || []).map(normalizeInventoryItemModel).filter(i => i && i.id && i.name);
+}
+
+function syncLocalOrderCacheFromCloud() {
+  if (!window.appState?.ready || !window.appState?.orders || typeof window.appState.orders !== 'object') return;
+  const cloudOrders = {};
+  Object.entries(window.appState.orders).forEach(([tid, order]) => {
+    if (String(tid).toLowerCase() === 'takeaway') return;
+    if (!order || String(order.status || '').toLowerCase() !== 'open') return;
+    const cloudItems = normalizeKitchenOrderItems(Array.isArray(order.items) ? order.items : []);
+    cloudOrders[tid] = cloudItems;
+
+    // Smart merge: Cập nhật trạng thái bếp từ Cloud về orderItems trên RAM
+    // Điều này giúp POS không bị "ngậm" trạng thái cũ (pending) rồi push đè lên cloud làm bếp bị nhảy lại món.
+    if (typeof orderItems !== 'undefined' && Array.isArray(orderItems[tid])) {
+      let needsRender = false;
+      orderItems[tid].forEach(localItem => {
+        // Match theo lineItemId hoặc id+note
+        const cItem = cloudItems.find(c => {
+          if (localItem.lineItemId) {
+            return c.lineItemId === localItem.lineItemId;
+          }
+          return !c.lineItemId && c.id === localItem.id && String(c.note||'') === String(localItem.note||'');
+        });
+        if (cItem && cItem.kitchenStatus && cItem.kitchenStatus !== localItem.kitchenStatus) {
+          localItem.kitchenStatus = cItem.kitchenStatus;
+          if (cItem.kitchenSentAt) localItem.kitchenSentAt = cItem.kitchenSentAt;
+          needsRender = true;
+        }
+      });
+      // Nếu đang đứng đúng bàn này ở trang orders, tự refresh cart + grid
+      if (needsRender && typeof currentTable !== 'undefined' && String(currentTable) === String(tid)) {
+        if (typeof currentPage !== 'undefined' && currentPage === 'orders') {
+          setTimeout(() => {
+            if (typeof renderCart === 'function') renderCart();
+            if (typeof renderMenuItems === 'function') renderMenuItems();
+          }, 10);
+        }
+      }
+    }
+  });
+  const localOrders = Store.getOrders();
+  const localTakeawayOrder = localOrders.takeaway;
+  if (Array.isArray(localTakeawayOrder) && localTakeawayOrder.length > 0) {
+    cloudOrders.takeaway = localTakeawayOrder;
+  }
+  Store.setOrders(cloudOrders);
+}
+
+function _getPurchases() {
+  const purchases = (window.appState && window.appState.purchases && window.appState.purchases.length > 0)
+    ? window.appState.purchases
+    : Store.getPurchases();
+  return purchases || [];
+}
+
+function _getHistory() {
+  const history = Array.isArray(window.appState?.history)
+    ? window.appState.history
+    : Store.getHistory();
+  return history || [];
+}
+
+function isCompletedHistoryOrderForUi(order) {
+  if (window.XekhoApp?.order?.isCompletedHistoryOrderForUi) return window.XekhoApp.order.isCompletedHistoryOrderForUi(order);
+  const status = String(order?.status || '').trim().toLowerCase();
+  if (!status) return !order?.cancelledAt && !order?.cancelReason;
+  return status === 'completed' || status === 'closed';
+}
+
+function isVisibleHistoryOrderForUi(order) {
+  if (window.XekhoApp?.order?.isVisibleHistoryOrderForUi) return window.XekhoApp.order.isVisibleHistoryOrderForUi(order);
+  if (!order || typeof order !== 'object') return false;
+  if (!isCompletedHistoryOrderForUi(order)) return false;
+  if (order.hidden === true) return false;
+  if (order.hiddenFromReports === true) return false;
+  if (order.hiddenFromHistory === true) return false;
+  if (order.deletedAt || order.deletedFromAppAt) return false;
+  if (order.archivedAt || order.archivedFromHistoryId) return false;
+  if (order.supersededAt || order.supersededByHistoryId) return false;
+  return true;
+}
+
+function _getVisibleHistoryForUi() {
+  return _getHistory().filter(isVisibleHistoryOrderForUi);
+}
+
+if (typeof filterHistory === 'function' && !filterHistory.__gkhlVisibleHistoryWrapped) {
+  const _baseFilterHistory = filterHistory;
+  filterHistory = function(period, opts) {
+    const rows = _baseFilterHistory(period, opts);
+    return Array.isArray(rows) ? rows.filter(isVisibleHistoryOrderForUi) : [];
+  };
+  filterHistory.__gkhlVisibleHistoryWrapped = true;
+}
+
+function _getExpenses() {
+  const expenses = (window.appState && window.appState.expenses && window.appState.expenses.length > 0)
+    ? window.appState.expenses
+    : Store.getExpenses();
+  return expenses || [];
+}
+
+
+
+const ITEM_TYPE_LABELS = {
+  [ITEM_TYPES.RETAIL]: 'Bán thẳng',
+  [ITEM_TYPES.RAW]: 'Nguyên liệu',
+  [ITEM_TYPES.FINISHED]: 'Thành phẩm',
+};
+
+function getCurrentUserRole() {
+  return (currentUser && currentUser.role) || '';
+}
+
+function isAdminUser() {
+  const role = String(getCurrentUserRole() || '').toLowerCase();
+  return role === 'admin' || role === 'manager' || role === 'owner' || role === 'superadmin';
+}
+
+function normalizeViKey(text) {
+  if (window.XekhoApp?.order?.normalizeViKey) return window.XekhoApp.order.normalizeViKey(text);
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function inferInventoryItemType(item = {}) {
+  if (window.XekhoApp?.order?.inferInventoryItemType) return window.XekhoApp.order.inferInventoryItemType(item);
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.RAW) return item.itemType;
+  const masterType = String(item.inv_type || item.inventoryType || '').trim().toLowerCase();
+  if (masterType === 'retail' || masterType === 'retail_item' || masterType === 'hang_ban_thang') return ITEM_TYPES.RETAIL;
+  if (item.saleMode === 'retail' || item.directSale === true) return ITEM_TYPES.RETAIL;
+  return ITEM_TYPES.RAW;
+}
+
+function _appInventoryTypeToMaster(itemType) {
+  return String(itemType || '').trim().toLowerCase() === ITEM_TYPES.RETAIL
+    ? 'Retail'
+    : 'Raw';
+}
+
+function normalizeInventoryItemModel(item = {}) {
+  if (window.XekhoApp?.order?.normalizeInventoryItemModel) {
+    const base = window.XekhoApp.order.normalizeInventoryItemModel(item);
+    return { ...item, ...base };
+  }
+  const id = String(item.id || item.inv_id || item._docId || '').trim();
+  const name = String(item.name || item.material_name || id).trim();
+  return {
+    ...item,
+    id: id || item.id,
+    name,
+    unit: normalizeUnitText(item.unit || item.base_unit),
+    itemType: inferInventoryItemType(item),
+    mergedInto: item.mergedInto || null,
+    qty: Number(item.qty ?? item.current_stock ?? 0),
+    minQty: Number(item.minQty ?? item.min_alert ?? 0),
+    costPerUnit: Number(item.costPerUnit ?? item.cost_per_unit ?? 0),
+    hidden: !!item.hidden,
+    supplierName: item.supplierName || '',
+    supplierPhone: item.supplierPhone || '',
+    supplierAddress: item.supplierAddress || '',
+    masterInventoryId: String(item.masterInventoryId || item.inv_id || id || '').trim(),
+    _docId: String(item._docId || id || '').trim(),
+  };
+}
+
+function inferMenuItemType(item = {}) {
+  if (window.XekhoApp?.order?.inferMenuItemType) return window.XekhoApp.order.inferMenuItemType(item);
+  if (item.itemType === ITEM_TYPES.RETAIL || item.itemType === ITEM_TYPES.FINISHED) return item.itemType;
+  return Array.isArray(item.ingredients) && item.ingredients.length > 0 ? ITEM_TYPES.FINISHED : ITEM_TYPES.RETAIL;
+}
+
+function findLinkedInventoryIdForMenuItem(item = {}, inventory = []) {
+  if (window.XekhoApp?.order?.findLinkedInventoryIdForMenuItem) return window.XekhoApp.order.findLinkedInventoryIdForMenuItem(item, inventory);
+  if (item.linkedInventoryId && inventory.some(inv => inv.id === item.linkedInventoryId)) return item.linkedInventoryId;
+  const exact = inventory.find(inv => !inv.hidden && normalizeViKey(inv.name) === normalizeViKey(item.name));
+  return exact ? exact.id : null;
+}
+
+function _isKitchenSkippedItem(item = {}) {
+  if (window.XekhoApp?.order?._isKitchenSkippedItem) return window.XekhoApp.order._isKitchenSkippedItem(item);
+  return String(item?.itemType || '').trim().toLowerCase() === String(ITEM_TYPES.RETAIL).toLowerCase();
+}
+
+function createKitchenLineItemId() {
+  if (window.XekhoApp?.order?.createKitchenLineItemId) return window.XekhoApp.order.createKitchenLineItemId();
+  return `li_${Date.now()}_${uid().slice(0, 6)}`;
+}
+
+function getKitchenLineItemId(item = {}) {
+  if (window.XekhoApp?.order?.getKitchenLineItemId) return window.XekhoApp.order.getKitchenLineItemId(item);
+  return String(item?.lineItemId || '').trim();
+}
+
+function isKitchenFinalStatus(status) {
+  if (window.XekhoApp?.order?.isKitchenFinalStatus) return window.XekhoApp.order.isKitchenFinalStatus(status);
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'served';
+}
+
+function canToggleServedStatus(item = {}) {
+  if (window.XekhoApp?.order?.canToggleServedStatus) return window.XekhoApp.order.canToggleServedStatus(item);
+  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
+  return status === 'done' || status === 'served';
+}
+
+function getCartItemStatusLabel(item = {}) {
+  if (window.XekhoApp?.order?.getCartItemStatusLabel) return window.XekhoApp.order.getCartItemStatusLabel(item);
+  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
+  if (status === 'served') return 'Da mang ra';
+  if (status === 'done') return 'Cho mang ra';
+  if (status === 'cooking') return 'Dang lam';
+  if (status === 'skip') return 'Ban thang';
+  return 'Cho lam';
+}
+
+function normalizeKitchenOrderItem(item = {}, menuMap = null) {
+  if (window.XekhoApp?.order?.normalizeKitchenOrderItem) return window.XekhoApp.order.normalizeKitchenOrderItem(item, menuMap);
+  const base = { ...item };
+  const menuItem = menuMap instanceof Map ? menuMap.get(String(base.id || '')) : null;
+  const inferredItemType = menuItem?.itemType || base.itemType || inferMenuItemType(menuItem || base);
+  const normalized = {
+    ...base,
+    itemType: inferredItemType,
+    kitchenRouting: menuItem?.kitchenRouting || base.kitchenRouting || 'all',
+    linkedInventoryId: menuItem?.linkedInventoryId || base.linkedInventoryId || null,
+    lineItemId: getKitchenLineItemId(base) || createKitchenLineItemId(),
+  };
+
+  if (_isKitchenSkippedItem(normalized) || String(normalized.kitchenRouting || '').trim().toLowerCase() === 'skip') {
+    normalized.kitchenStatus = 'skip';
+    if (normalized.kitchenSentAt == null) normalized.kitchenSentAt = null;
+    if (normalized.kitchenUpdatedAt == null) normalized.kitchenUpdatedAt = null;
+    if (normalized.servedAt == null) normalized.servedAt = null;
+    return normalized;
+  }
+
+  const existingStatus = String(normalized.kitchenStatus || '').trim().toLowerCase();
+  const validStatuses = new Set(['pending', 'cooking', 'done', 'served']);
+  const nextStatus = validStatuses.has(existingStatus) ? existingStatus : 'pending';
+  const now = Date.now();
+  normalized.kitchenStatus = nextStatus;
+  normalized.kitchenSentAt = Number(normalized.kitchenSentAt || 0) > 0 ? Number(normalized.kitchenSentAt) : now;
+  normalized.kitchenUpdatedAt = Number(normalized.kitchenUpdatedAt || 0) > 0 ? Number(normalized.kitchenUpdatedAt) : normalized.kitchenSentAt;
+  normalized.servedAt = normalized.servedAt != null ? normalized.servedAt : null;
+  return normalized;
+}
+
+function normalizeKitchenOrderItems(items = []) {
+  const menu = _getMenu();
+  const menuMap = new Map((Array.isArray(menu) ? menu : []).map(item => [String(item.id || ''), item]));
+  return (Array.isArray(items) ? items : []).map(item => normalizeKitchenOrderItem(item, menuMap));
+}
+
+function normalizeUnitText(unit) {
+  const raw = String(unit || '').trim();
+  if (!raw) return 'phần';
+  if (/ph/i.test(raw) && /(áº|Ã|ở|§n|ần|an)/i.test(raw)) return 'phần';
+  if (/mi/i.test(raw) && /(áº|Ã|ếng|eng)/i.test(raw)) return 'Miếng';
+  const key = normalizeViKey(raw);
+  const map = {
+    phan: 'phần',
+    portion: 'phần',
+    lon: 'Lon',
+    chai: 'Chai',
+    ly: 'ly',
+    kg: 'Kg',
+    kilogram: 'Kg',
+    gram: 'Gram',
+    gam: 'Gram',
+    mieng: 'Miếng',
+    piece: 'Miếng',
+    con: 'Con',
+  };
+  return map[key] || raw;
+}
+
+function normalizeMenuItemModel(item = {}, inventory = _getInventory()) {
+    if (window.XekhoApp?.order?.normalizeMenuItemModel) return window.XekhoApp.order.normalizeMenuItemModel(item, inventory);
+    const itemType = inferMenuItemType(item);
+    const kitchenRoutingRaw = String(item.kitchenRouting || item.kitchenStation || '').trim().toLowerCase();
+    const kitchenRouting = itemType === ITEM_TYPES.RETAIL ? 'skip' : (['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(kitchenRoutingRaw) ? kitchenRoutingRaw : 'all');
+    const normalized = { ...item, unit: normalizeUnitText(item.unit), itemType, kitchenRouting, linkedInventoryId: itemType === ITEM_TYPES.RETAIL ? findLinkedInventoryIdForMenuItem(item, inventory) : null, ingredients: Array.isArray(item.ingredients) ? item.ingredients : [] };
+    const liveCost = _resolveDishCostPerUnit(normalized, inventory);
+    return { ...normalized, cost: Number(liveCost || item.cost || 0) };
+  }
+
+function getInventoryTypeBadge(itemType) {
+  if (itemType === ITEM_TYPES.RETAIL) return '<span class="badge badge-info">Bán thẳng</span>';
+  if (itemType === ITEM_TYPES.FINISHED) return '<span class="badge badge-warning">Thành phẩm</span>';
+  return '<span class="badge badge-primary">Nguyên liệu</span>';
+}
+
+function refreshIngredientDependentViews() {
+  try { renderInventory(); } catch(_) {}
+  try { renderMenuAdmin(); } catch(_) {}
+  try { updateAlertBadge(); } catch(_) {}
+  try { refreshInventoryPickers(); } catch(_) {}
+  try {
+    const purSelect = document.getElementById('pur-name');
+    if (purSelect && document.getElementById('purchase-modal')?.classList.contains('active')) {
+      const prev = purSelect.value;
+      openPurchaseModal();
+      if (prev) {
+        purSelect.value = prev;
+        onPurchaseItemSelect();
+      }
+    }
+  } catch(_) {}
+}
+
+function refreshInventoryPickers() {
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+  const sorted = [...inv].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+
+  const dl = document.getElementById('inv-names');
+  if (dl) dl.innerHTML = sorted.map(i => `<option value="${i.name}">`).join('');
+
+  const convSel = document.getElementById('conv-ingredient');
+  if (convSel) {
+    const prev = convSel.value;
+    convSel.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' +
+      sorted.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+    if (prev) convSel.value = prev;
+  }
+
+  const wastageSel = document.getElementById('wastage-name');
+  if (wastageSel) {
+    const prev = wastageSel.value;
+    wastageSel.innerHTML = '<option value="">-- Chọn --</option>' +
+      sorted.map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    if (prev) wastageSel.value = prev;
+  }
+
+  const ledgerSel = document.getElementById('ledger-item-select');
+  if (ledgerSel) {
+    const prev = ledgerSel.value;
+    ledgerSel.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' +
+      sorted.map(i => `<option value="${i.id}">${i.hidden ? '🔴 ' : ''}${i.name} (${i.unit})</option>`).join('');
+    if (prev) ledgerSel.value = prev;
+    const fromDate = document.getElementById('ledger-from-date');
+    const toDate = document.getElementById('ledger-to-date');
+    const today = new Date().toISOString().split('T')[0];
+    if (fromDate && !fromDate.value) fromDate.value = today;
+    if (toDate && !toDate.value) toDate.value = today;
+  }
+
+  try { populateManualMergeDropdowns(); } catch(_) {}
+}
+
+function propagateInventoryReferenceRename(oldItem, newItem) {
+  if (!oldItem || !newItem || !oldItem.name || oldItem.name === newItem.name) return;
+  const oldName = oldItem.name;
+  const newName = newItem.name;
+
+  // COMPLETE CLEANUP: Remove all references to old name and replace with new name
+  
+  // 1. Update Menu items with exact name match
+  const menu = Store.getMenu().map(m => {
+    const next = { ...m };
+    // Update menu item name if it matches exactly
+    if (next.name === oldName) {
+      next.name = newName;
+    }
+    // Update ingredients in recipes
+    if (Array.isArray(next.ingredients)) {
+      next.ingredients = next.ingredients.map(ing => ing.name === oldName ? { ...ing, name: newName } : ing);
+    }
+    return next;
+  });
+  Store.setMenu(menu);
+
+  // 2. Update Purchases with exact name match
+  const purchases = Store.getPurchases().map(p => p.name === oldName ? { ...p, name: newName } : p);
+  Store.setPurchases(purchases);
+
+  // 3. Update Unit Conversions with exact name match
+  const conversions = Store.getUnitConversions().map(c => c.ingredientName === oldName ? { ...c, ingredientName: newName } : c);
+  Store.setUnitConversions(conversions);
+
+  // 4. Update Expenses with exact name match
+  const expenses = Store.getExpenses().map(e => e.name === oldName ? { ...e, name: newName } : e);
+  Store.setExpenses(expenses);
+
+  // 5. Update Cloud appState if exists
+  if (window.appState?.menu) {
+    window.appState.menu = window.appState.menu.map(m => {
+      const next = { ...m };
+      if (next.name === oldName) {
+        next.name = newName;
+      }
+      if (Array.isArray(next.ingredients)) {
+        next.ingredients = next.ingredients.map(ing => ing.name === oldName ? { ...ing, name: newName } : ing);
+      }
+      return next;
+    });
+  }
+  if (window.appState?.purchases) {
+    window.appState.purchases = window.appState.purchases.map(p => p.name === oldName ? { ...p, name: newName } : p);
+  }
+  if (window.appState?.expenses) {
+    window.appState.expenses = window.appState.expenses.map(e => e.name === oldName ? { ...e, name: newName } : e);
+  }
+}
+
+async function syncInventoryReferenceRenameToCloud(oldItem, newItem) {
+  if (!window.DB || !oldItem || !newItem || !oldItem.name || oldItem.name === newItem.name) return;
+  try {
+    // Sync all menu items that might have been updated
+    if (window.DB.Menu?.update) {
+      for (const item of Store.getMenu()) {
+        await window.DB.Menu.update(item.id, {
+          name: item.name,
+          itemType: item.itemType,
+          linkedInventoryId: item.linkedInventoryId || null,
+          ingredients: item.ingredients || [],
+        });
+      }
+    }
+    // Sync all purchases with the new name
+    if (window.DB.Purchases?.update) {
+      for (const p of Store.getPurchases().filter(x => x.name === newItem.name || x.name === oldItem.name)) {
+        await window.DB.Purchases.update(p.id, { name: p.name });
+      }
+    }
+    // Sync all expenses with the new name
+    if (window.DB.Expenses?.update) {
+      for (const e of Store.getExpenses().filter(x => x.name === newItem.name || x.name === oldItem.name)) {
+        await window.DB.Expenses.update(e.id, { name: e.name });
+      }
+    }
+    // Sync unit conversions
+    if (window.DB.UnitConversions?.update) {
+      for (const c of Store.getUnitConversions().filter(x => x.ingredientName === newItem.name || x.ingredientName === oldItem.name)) {
+        await window.DB.UnitConversions.update(c.id, { ingredientName: c.ingredientName });
+      }
+    }
+  } catch (e) {
+    console.warn('[rename-sync] cloud warning', e);
+  }
+}
+
+function tokenSimilarity(a, b) {
+    if (window.XekhoApp?.utils?.parser?.tokenSimilarity) return window.XekhoApp.utils.parser.tokenSimilarity(a, b);
+    const ta = new Set(normalizeViKey(a).split(' ').filter(Boolean));
+    const tb = new Set(normalizeViKey(b).split(' ').filter(Boolean));
+    if (!ta.size || !tb.size) return 0;
+    let common = 0;
+    ta.forEach(x => { if (tb.has(x)) common += 1; });
+    return common / Math.max(ta.size, tb.size);
+  }
+
+function getIngredientMergeSuggestions() {
+    if (window.XekhoApp?.report?.getIngredientMergeSuggestions) return window.XekhoApp.report.getIngredientMergeSuggestions();
+    const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+    const suggestions = [];
+    for (let i = 0; i < inv.length; i++) {
+      for (let j = i + 1; j < inv.length; j++) {
+        const a = inv[i]; const b = inv[j];
+        if (a.itemType !== b.itemType || a.unit !== b.unit) continue;
+        const na = normalizeViKey(a.name); const nb = normalizeViKey(b.name);
+        const score = na === nb ? 1 : (na.includes(nb) || nb.includes(na) ? 0.9 : tokenSimilarity(a.name, b.name));
+        if (score < 0.72) continue;
+        const target = a.qty >= b.qty ? a : b; const source = target.id === a.id ? b : a;
+        if (suggestions.some(s => s.source.id === source.id || s.target.id === source.id)) continue;
+        suggestions.push({ id: `merge_${source.id}_${target.id}`, source, target, score });
+      }
+    }
+    return suggestions.sort((a, b) => b.score - a.score);
+  }
+
+function renderIngredientMergeBoard() {
+  const el = document.getElementById('ingredient-merge-board');
+  if (!el) return;
+  const suggestions = getIngredientMergeSuggestions();
+  const requests = Store.getItemMergeRequests();
+  if (!suggestions.length && !requests.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🧹</div><div class="empty-text">Chưa phát hiện nguyên liệu trùng gần giống.</div></div>';
+    return;
+  }
+
+  const requestSet = new Set(requests.filter(r => r.status === 'pending').map(r => `${r.sourceId}:${r.targetId}`));
+  el.innerHTML = suggestions.map(s => {
+    const key = `${s.source.id}:${s.target.id}`;
+    const hasPending = requestSet.has(key);
+    const actionBtn = isAdminUser()
+      ? `<button class="btn btn-xs btn-primary" onclick="approveIngredientMerge('${s.source.id}','${s.target.id}')">Phê duyệt merge</button>`
+      : `<button class="btn btn-xs btn-outline" ${hasPending ? 'disabled' : ''} onclick="requestIngredientMerge('${s.source.id}','${s.target.id}')">${hasPending ? 'Đã gửi duyệt' : 'Gửi duyệt'}</button>`;
+    return `<div class="list-item">
+      <div class="list-item-content">
+        <div class="list-item-title">${s.source.name} → ${s.target.name}</div>
+        <div class="list-item-sub">${ITEM_TYPE_LABELS[s.source.itemType]} · ${Math.round(s.score * 100)}% giống nhau · cùng đơn vị ${s.source.unit}</div>
+      </div>
+      <div class="list-item-right">${actionBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+function requestIngredientMerge(sourceId, targetId) {
+  const source = _getInventory().find(i => i.id === sourceId);
+  const target = _getInventory().find(i => i.id === targetId);
+  if (!source || !target) return;
+  const requests = Store.getItemMergeRequests();
+  if (requests.some(r => r.status === 'pending' && r.sourceId === sourceId && r.targetId === targetId)) {
+    showToast('Đề nghị merge này đang chờ admin phê duyệt.', 'warning');
+    return;
+  }
+  requests.unshift({
+    id: uid(),
+    sourceId,
+    targetId,
+    sourceName: source.name,
+    targetName: target.name,
+    requestedBy: currentUser?.username || 'staff',
+    requestedAt: new Date().toISOString(),
+    status: 'pending',
+  });
+  Store.setItemMergeRequests(requests);
+  renderIngredientMergeBoard();
+  showToast('Đã gửi đề nghị merge cho admin.', 'success');
+}
+
+async function approveIngredientMerge(sourceId, targetId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được phê duyệt merge nguyên liệu.', 'danger');
+    return;
+  }
+  const inventory = _getInventory();
+  const source = inventory.find(i => i.id === sourceId);
+  const target = inventory.find(i => i.id === targetId);
+  if (!source || !target) {
+    showToast('Không tìm thấy nguyên liệu để merge.', 'warning');
+    return;
+  }
+  if (source.id === target.id) return;
+  
+  // Enhanced confirmation message for complete cleanup
+  const confirmMessage = `Gộp "${source.name}" vào "${target.name}"?\n\n` +
+    `- Cộng dồn tồn kho\n` +
+    `- Giữ lại tên "${target.name}"\n` +
+    `- XÓA HOÀN TOÀN tên "${source.name}" khỏi hệ thống\n` +
+    `- Cập nhật menu, phiếu nhập, quy đổi liên quan`;
+  
+  if (!confirm(confirmMessage)) return;
+
+  const mergedQty = (target.qty || 0) + (source.qty || 0);
+  const mergedCost = mergedQty > 0
+    ? (((target.qty || 0) * (target.costPerUnit || 0)) + ((source.qty || 0) * (source.costPerUnit || 0))) / mergedQty
+    : 0;
+
+  const nextInventory = inventory.map(item => {
+    if (item.id === target.id) {
+      return {
+        ...item,
+        qty: mergedQty,
+        costPerUnit: mergedCost,
+        minQty: Math.max(item.minQty || 0, source.minQty || 0),
+        supplierName: item.supplierName || source.supplierName || '',
+        supplierPhone: item.supplierPhone || source.supplierPhone || '',
+        supplierAddress: item.supplierAddress || source.supplierAddress || '',
+      };
+    }
+    if (item.id === source.id) {
+      return { ...item, qty: 0, hidden: true, mergedInto: target.id };
+    }
+    return item;
+  });
+  Store.setInventory(nextInventory);
+  if (window.appState?.inventory) {
+    window.appState.inventory = nextInventory.map(normalizeInventoryItemModel);
+  }
+  propagateInventoryReferenceRename(source, { ...target, name: target.name, id: target.id });
+  await syncInventoryReferenceRenameToCloud(source, { ...target, name: target.name, id: target.id });
+
+  const requests = Store.getItemMergeRequests().map(r => (
+    r.sourceId === sourceId && r.targetId === targetId
+      ? { ...r, status: 'approved', approvedBy: currentUser?.username || 'admin', approvedAt: new Date().toISOString() }
+      : r
+  ));
+  Store.setItemMergeRequests(requests);
+
+  if (window.DB) {
+    try {
+      if (window.DB.Inventory?.update) {
+        await window.DB.Inventory.update(target.id, {
+          qty: mergedQty,
+          costPerUnit: mergedCost,
+          minQty: Math.max(target.minQty || 0, source.minQty || 0),
+          supplierName: target.supplierName || source.supplierName || '',
+          supplierPhone: target.supplierPhone || source.supplierPhone || '',
+          supplierAddress: target.supplierAddress || source.supplierAddress || '',
+        });
+        await window.DB.Inventory.update(source.id, { qty: 0, hidden: true, mergedInto: target.id });
+      }
+      if (window.DB.Menu?.update) {
+        for (const item of Store.getMenu()) {
+          await window.DB.Menu.update(item.id, {
+            itemType: item.itemType,
+            linkedInventoryId: item.linkedInventoryId || null,
+            ingredients: item.ingredients || [],
+            name: item.name,
+          });
+        }
+      }
+      if (window.DB.Purchases?.update) {
+        for (const p of Store.getPurchases().filter(x => x.name === target.name || x.name === source.name)) {
+          await window.DB.Purchases.update(p.id, { name: p.name });
+        }
+      }
+    } catch (e) {
+      console.warn('[merge] cloud sync warning', e);
+    }
+  }
+
+  refreshIngredientDependentViews();
+  renderIngredientMergeBoard();
+  populateManualMergeDropdowns();
+  showToast(`Đã merge "${source.name}" vào "${target.name}".`, 'success');
+}
+
+// ============================================================
+// MANUAL MERGE FUNCTIONS
+// ============================================================
+
+function populateManualMergeDropdowns() {
+  const inv = _getInventory().filter(i => !i.hidden && !i.mergedInto);
+  const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  
+  const sourceSelect = document.getElementById('manual-merge-source');
+  const targetSelect = document.getElementById('manual-merge-target');
+  
+  if (sourceSelect && targetSelect) {
+    sourceSelect.innerHTML = '<option value="">-- Chọn nguyên liệu nguồn --</option>';
+    targetSelect.innerHTML = '<option value="">-- Chọn nguyên liệu đích --</option>';
+    
+    sortedInv.forEach(item => {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = `${item.name} (${item.unit})`;
+      sourceSelect.appendChild(option.cloneNode(true));
+      targetSelect.appendChild(option);
+    });
+  }
+}
+
+function initiateManualMerge() {
+  const sourceId = document.getElementById('manual-merge-source').value;
+  const targetId = document.getElementById('manual-merge-target').value;
+  
+  if (!sourceId || !targetId) {
+    showToast('Vui lòng chọn cả nguyên liệu nguồn và nguyên liệu đích.', 'warning');
+    return;
+  }
+  
+  if (sourceId === targetId) {
+    showToast('Không thể merge nguyên liệu với chính nó.', 'warning');
+    return;
+  }
+  
+  const source = _getInventory().find(i => i.id === sourceId);
+  const target = _getInventory().find(i => i.id === targetId);
+  
+  if (!source || !target) {
+    showToast('Không tìm thấy nguyên liệu.', 'error');
+    return;
+  }
+  
+  if (source.itemType !== target.itemType) {
+    showToast('Chỉ có thể merge nguyên liệu cùng loại.', 'warning');
+    return;
+  }
+  
+  if (source.unit !== target.unit) {
+    showToast('Chỉ có thể merge nguyên liệu cùng đơn vị tính.', 'warning');
+    return;
+  }
+  
+  if (confirm(`Xác nhận merge thủ công:\n\n"${source.name}" → "${target.name}"\n\n- Cộng dồn tồn kho\n- Giữ lại tên "${target.name}"\n- Xóa tên "${source.name}" khỏi hệ thống`)) {
+    if (isAdminUser()) {
+      approveIngredientMerge(sourceId, targetId);
+      return;
+    }
+    requestIngredientMerge(sourceId, targetId);
+  }
+}
+
+function renderTables() {
+  const allTables = _getTables();
+  const tables = allTables.filter(t => String(t.id).toLowerCase() !== 'takeaway' && !t.hiddenInTableGrid);
+  const orders = _getOrders();
+  const grid = document.getElementById('table-grid');
+  const now = Date.now();
+  const occupiedIcons = ['🍽️', '🍻', '🥢', '🍲', '🥘', '🍺', '🔥', '🧾'];
+
+  const occupied = tables.filter(t => {
+    const order = orders[t.id] || [];
+    return order.length > 0 || t.status === 'occupied' || t.status === 'serving';
+  }).length;
+  const empty = tables.length - occupied;
+  document.getElementById('tables-occupied').textContent = occupied;
+  document.getElementById('tables-empty').textContent    = empty;
+
+  updateShiftBtnUI();
+
+  // Takeaway order
+  const takeawayOrder = orders['takeaway'];
+  const takeawayTotal = takeawayOrder ? takeawayOrder.reduce((s,i) => s+i.price*i.qty, 0) : 0;
+  const takeawayHtml = `<div class="table-card table-card-wide takeaway ${takeawayOrder && takeawayOrder.length > 0 ? 'occupied' : 'empty'}" onclick="openTakeaway()" id="table-card-takeaway">
+    <div class="table-summary-icon">🛍️</div>
+    <div class="table-summary-body">
+      <div class="table-summary-title">Khách mang về</div>
+      <div class="table-summary-sub">Takeaway</div>
+    </div>
+    ${takeawayTotal > 0 ? `<div class="table-summary-meta">${fmt(takeawayTotal)}đ</div>` : '<div class="table-summary-sub">Trống</div>'}
+  </div>`;
+
+  const activeOnlineOrders = getActiveOnlineOrdersForTables(window.appState?.onlineOrders || []);
+  const onlineOrders = activeOnlineOrders;
+  const onlineOrderCount = onlineOrders.length;
+  const onlineTotal = onlineOrders.reduce((sum, o) => sum + _calculateOnlineOrderTotal(o), 0);
+  const onlineHtml = onlineOrderCount > 0 ? `
+    <div class="table-card table-card-wide occupied" onclick="openOnlineOrdersPanel()">
+      <div class="table-summary-icon">🌐</div>
+      <div class="table-summary-body">
+        <div class="table-summary-title">Bàn online</div>
+        <div class="table-summary-sub">${onlineOrderCount} đơn | ${onlineOrders.filter(o => o.status === 'pending').length} chờ duyệt | ${onlineOrders.filter(o => o.status === 'approved' || o.status === 'pos_sync').length} đã vào POS</div>
+      </div>
+      <div class="table-summary-meta">${fmt(onlineTotal)}đ</div>
+    </div>
+  ` : '';
+
+  grid.innerHTML = takeawayHtml + onlineHtml + tables.map(t => {
+    const order      = orders[t.id];
+    const total      = order ? order.reduce((s,i) => s+i.price*i.qty, 0) : 0;
+    const elapsed    = t.openTime ? Math.floor((now - new Date(t.openTime).getTime())/60000) : 0;
+    const isOccupied = total > 0 || t.status === 'occupied' || t.status === 'serving';
+    const statusClass = isOccupied ? 'occupied' : 'empty';
+    const tableNum = Number(t.id) || 0;
+    const occupiedEmoji = occupiedIcons[(Math.max(1, tableNum) - 1) % occupiedIcons.length];
+    const statusEmoji = isOccupied ? occupiedEmoji : '🪑';
+    const tableNote = String(t.note || getOrderExtrasForTable(t.id).note || '').trim();
+    const safeTableId = _escapeHtml(t.id);
+    const safeTableNote = _escapeHtml(tableNote);
+
+    return `<div class="table-card ${statusClass}${tableNote ? ' has-note' : ''}" onclick="openTable(${t.id})" id="table-card-${t.id}">
+      ${elapsed > 0 ? `<div class="table-time">${elapsed}p</div>` : ''}
+      <div class="table-title-row">
+        <div class="table-num">${safeTableId}</div>
+      </div>
+      ${tableNote ? `<div class="table-note-text" title="${safeTableNote}">${safeTableNote}</div>` : `<div class="table-icon">${statusEmoji}</div>`}
+      ${total > 0 ? `<div class="table-amount">${fmt(total)}đ</div>` : `<div class="table-status">${isOccupied ? 'Đang phục vụ' : 'Trống'}</div>`}
+    </div>`;
+  }).join('');
+  try { renderKdsMonitor(); } catch(_) {}
+  try { updateDailyTargetProgressBar(); } catch(e) { console.error("Error updating daily target progress bar:", e); }
+  try { renderWebAttendancePanel(); } catch(_) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_D_WEB_ATTENDANCE
+// Direct web check-in/check-out from the Staff PIN lock screen.
+// No admin approval; salary expense synced on checkout close.
+// Geolocation is required: success only when distance to shop is < 15m.
+// ─────────────────────────────────────────────────────────────────────────────
+const SHOP_LOCATION_LAT = 11.537108;
+const SHOP_LOCATION_LNG = 107.823279;
+const ATTENDANCE_MAX_DISTANCE_METERS = 15;
+
+function _getAttendanceStaffFromPinInput(showErrors = false) {
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  if (!/^\d{4}$/.test(pin)) {
+    if (showErrors) showToast('Nhập mã PIN 4 số trước khi chấm công.', 'warning');
+    return null;
+  }
+  const staff = _findStaffByPin(pin);
+  if (!staff) {
+    if (showErrors) showToast('PIN không đúng, không thể chấm công.', 'danger');
+    return null;
+  }
+  return { staff, pin, user: _buildCurrentUserFromStaff(staff, pin) };
+}
+
+function _getAttendanceActorFromCurrentUser() {
+  if (!currentUser) return null;
+  const staffId = currentUser.staff_id || currentUser.id || '';
+  const staff = Array.isArray(window.appState?.staff)
+    ? window.appState.staff.find(s => String(s.staff_id || s.id || '') === String(staffId))
+    : null;
+  return { staff, pin: currentUser.pin || '', user: currentUser };
+}
+
+function _attendanceIdentityFromActor(actor) {
+  const user = actor?.user || actor || {};
+  const staff = actor?.staff || null;
+  const staffId = user.staff_id || user.id || (staff ? _getStaffIdentity(staff) : '');
+  const staffName = user.name || user.username || staff?.full_name || staff?.username || staffId;
+  const hourlyRate = Number(staff?.hourly_rate ?? staff?.hourlyRate ?? user.hourly_rate ?? user.hourlyRate ?? 0) || 0;
+  return { staffId: String(staffId || ''), staffName, hourlyRate };
+}
+
+/**
+ * Render the web attendance quick panel on the PIN lock screen.
+ * It reads the current 4-digit PIN, resolves that staff member, and enables the correct attendance action.
+ */
+function renderWebAttendancePanel() {
+  const card = document.getElementById('web-attendance-card');
+  if (!card) return;
+
+  const infoEl = document.getElementById('web-attendance-info');
+  const statusEl = document.getElementById('web-attendance-status');
+  const checkinBtn = document.getElementById('web-attendance-checkin-btn');
+  const checkoutBtn = document.getElementById('web-attendance-checkout-btn');
+  if (!infoEl || !statusEl || !checkinBtn || !checkoutBtn) return;
+
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  const resolved = /^\d{4}$/.test(pin) ? _getAttendanceStaffFromPinInput(false) : null;
+  if (!resolved) {
+    card.style.display = '';
+    statusEl.textContent = /^\d{4}$/.test(pin) ? 'PIN không đúng' : 'Nhập PIN';
+    statusEl.className = /^\d{4}$/.test(pin) ? 'badge badge-danger' : 'badge badge-secondary';
+    infoEl.innerHTML = 'Nhập mã PIN 4 số rồi bấm <strong>Vào ca</strong>/<strong>Ra ca</strong>. Chỉ thành công khi định vị cách quán dưới <strong>15m</strong>.';
+    checkinBtn.disabled = true;
+    checkoutBtn.disabled = true;
+    checkinBtn.style.opacity = '0.4';
+    checkoutBtn.style.opacity = '0.4';
+    return;
+  }
+
+  const { staffId, staffName } = _attendanceIdentityFromActor(resolved);
+  const dateKey = formatLocalDateKey(new Date());
+  const openRow = _getAttendanceDailyRows().find(r =>
+    String(r.staffId || '') === String(staffId) &&
+    String(r.dateKey || '') === dateKey &&
+    r.status === 'open'
+  );
+
+  card.style.display = '';
+  infoEl.innerHTML = `<strong>${_escapeHtml(staffName)}</strong> · ${_escapeHtml(dateKey)}<br><span style="color:var(--text3)">Yêu cầu định vị: cách quán &lt; 15m.</span>`;
+  if (openRow) {
+    const inTime = openRow.firstCheckInAt
+      ? new Date(openRow.firstCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '–';
+    statusEl.textContent = `Đang làm · Vào ${inTime}`;
+    statusEl.className = 'badge badge-success';
+    checkinBtn.disabled = true;
+    checkoutBtn.disabled = false;
+    checkinBtn.style.opacity = '0.4';
+    checkoutBtn.style.opacity = '';
+  } else {
+    statusEl.textContent = 'Chưa vào ca';
+    statusEl.className = 'badge badge-secondary';
+    checkinBtn.disabled = false;
+    checkoutBtn.disabled = true;
+    checkinBtn.style.opacity = '';
+    checkoutBtn.style.opacity = '0.4';
+  }
+}
+
+function _roundAttendancePayableMinutes(totalMinutes) {
+  const minutes = Math.max(0, Math.round(Number(totalMinutes || 0) || 0));
+  const wholeHoursMinutes = Math.floor(minutes / 60) * 60;
+  const leftoverMinutes = minutes % 60;
+  if (leftoverMinutes < 30) return wholeHoursMinutes;
+  if (leftoverMinutes < 55) return wholeHoursMinutes + 30;
+  return wholeHoursMinutes + 60;
+}
+
+// PHASE_D_WEB_ATTENDANCE_CHECKIN
+function _distanceMetersBetween(lat1, lng1, lat2, lng2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const r = 6371000;
+  const dLat = toRad(Number(lat2) - Number(lat1));
+  const dLng = toRad(Number(lng2) - Number(lng1));
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(Number(lat1))) * Math.cos(toRad(Number(lat2))) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function _getBrowserPositionForAttendance() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation || !navigator.geolocation.getCurrentPosition) {
+      reject(new Error('Trình duyệt không hỗ trợ định vị.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    });
+  });
+}
+
+async function _requireAttendanceLocationGate() {
+  let pos;
+  try {
+    pos = await _getBrowserPositionForAttendance();
+  } catch (err) {
+    const msg = err?.code === 1
+      ? 'Bạn cần cho phép định vị để chấm công.'
+      : 'Không lấy được định vị. Vui lòng bật GPS/Wi‑Fi và thử lại.';
+    showToast(msg, 'danger', 5000);
+    throw err;
+  }
+  const lat = Number(pos.coords?.latitude);
+  const lng = Number(pos.coords?.longitude);
+  const accuracy = Number(pos.coords?.accuracy || 0) || null;
+  const distanceMeters = Math.round(_distanceMetersBetween(lat, lng, SHOP_LOCATION_LAT, SHOP_LOCATION_LNG));
+  if (!Number.isFinite(distanceMeters) || distanceMeters > ATTENDANCE_MAX_DISTANCE_METERS) {
+    // PHASE_D_GEOFENCE_ERROR_MSG: exact required message for out-of-range
+    showToast('bạn đang ở quá xa vị trí chấm công cho phép', 'danger', 6000);
+    throw new Error(`attendance_location_too_far:${distanceMeters}`);
+  }
+  return {
+    latitude: lat,
+    longitude: lng,
+    accuracy,
+    distanceMeters,
+    shopLatitude: SHOP_LOCATION_LAT,
+    shopLongitude: SHOP_LOCATION_LNG,
+  };
+}
+
+async function webAttendanceCheckInFromPin() {
+  const resolved = _getAttendanceStaffFromPinInput(true);
+  if (!resolved) {
+    renderWebAttendancePanel();
+    return;
+  }
+  try {
+    await _webAttendanceCheckInForActor(resolved);
+  } catch (err) {
+    console.warn('[webAttendanceCheckInFromPin]', err);
+    renderWebAttendancePanel();
+  }
+}
+
+async function webAttendanceCheckOutFromPin() {
+  const resolved = _getAttendanceStaffFromPinInput(true);
+  if (!resolved) {
+    renderWebAttendancePanel();
+    return;
+  }
+  try {
+    await _webAttendanceCheckOutForActor(resolved);
+  } catch (err) {
+    console.warn('[webAttendanceCheckOutFromPin]', err);
+    renderWebAttendancePanel();
+  }
+}
+
+/**
+ * Backward-compatible entrypoint for any older page-level button.
+ * Current UI calls webAttendanceCheckInFromPin() from the PIN lock screen.
+ */
+async function webAttendanceCheckIn() {
+  const actor = _getAttendanceActorFromCurrentUser();
+  if (!actor) {
+    showToast('Nhập PIN ở màn khóa để chấm công.', 'warning');
+    return;
+  }
+  try {
+    await _webAttendanceCheckInForActor(actor);
+  } catch (err) {
+    console.warn('[webAttendanceCheckIn]', err);
+  }
+}
+
+async function _webAttendanceCheckInForActor(actor) {
+  if (!window.DB?.Attendance?.setDaily) {
+    showToast('Cơ sở dữ liệu chưa sẵn sàng.', 'warning');
+    return;
+  }
+
+  const { staffId, staffName, hourlyRate } = _attendanceIdentityFromActor(actor);
+  if (!staffId) {
+    showToast('Không xác định được nhân viên.', 'danger');
+    return;
+  }
+  const dateKey = formatLocalDateKey(new Date());
+  const deterministicDailyId = `${staffId}_${dateKey}`;
+
+  // Prevent duplicate open shift today, but allow a second shift after a prior checkout.
+  const existingToday = _getAttendanceDailyRows().find(r =>
+    String(r.staffId || '') === String(staffId) &&
+    String(r.dateKey || '') === dateKey
+  );
+  const existingOpen = existingToday && String(existingToday.status || '') === 'open';
+  if (existingOpen) {
+    showToast('Bạn đã có ca đang mở hôm nay. Hãy bấm "Ra ca" trước.', 'warning');
+    return;
+  }
+
+  const location = await _requireAttendanceLocationGate();
+  const now = new Date();
+  const checkInAt = now.toISOString();
+  const checkInAtMs = now.getTime();
+  const dailyId = existingToday?.dailyId || existingToday?.id || deterministicDailyId;
+  const shiftId = `${staffId}_${dateKey}_${checkInAtMs}`;
+  const priorMinutes = Number(existingToday?.totalMinutes || 0) || 0;
+  const priorPayableMinutes = Number(existingToday?.payableMinutes ?? existingToday?.totalMinutes ?? 0) || 0;
+  const priorWage = Number(existingToday?.totalWage || 0) || 0;
+
+  try {
+    await window.DB.Attendance.setDaily(dailyId, {
+      dailyId,
+      staffId,
+      staffName,
+      dateKey,
+      firstCheckInAt: existingToday?.firstCheckInAt || checkInAt,
+      lastCheckOutAt: null,
+      totalMinutes: priorMinutes,
+      payableMinutes: priorPayableMinutes,
+      payableHours: Number((priorPayableMinutes / 60).toFixed(2)),
+      hourlyRate,
+      totalWage: priorWage,
+      status: 'open',
+      source: 'web',
+      locationDistanceMeters: location.distanceMeters,
+      lastLocationAt: checkInAt,
+      ...(existingToday?.expenseId ? { expenseId: existingToday.expenseId } : {}),
+    });
+
+    await window.DB.Attendance.createShift(shiftId, {
+      shiftId,
+      dailyId,
+      staffId,
+      staffName,
+      dateKey,
+      checkInAt,
+      checkInAtMs,
+      checkOutAt: null,
+      checkOutAtMs: null,
+      durationMinutes: null,
+      status: 'open',
+      source: 'web',
+      location,
+    });
+
+    if (Array.isArray(window.appState.attendanceDaily)) {
+      const idx = window.appState.attendanceDaily.findIndex(r => String(r.dailyId || r.id || '') === dailyId);
+      const newRow = { dailyId, id: dailyId, staffId, staffName, dateKey, firstCheckInAt: existingToday?.firstCheckInAt || checkInAt,
+        lastCheckOutAt: null, totalMinutes: priorMinutes, payableMinutes: priorPayableMinutes,
+        payableHours: Number((priorPayableMinutes / 60).toFixed(2)),
+        hourlyRate, totalWage: priorWage, status: 'open', source: 'web', locationDistanceMeters: location.distanceMeters,
+        ...(existingToday?.expenseId ? { expenseId: existingToday.expenseId } : {}) };
+      if (idx >= 0) window.appState.attendanceDaily[idx] = { ...window.appState.attendanceDaily[idx], ...newRow };
+      else window.appState.attendanceDaily.unshift(newRow);
+    }
+    if (Array.isArray(window.appState.attendanceShifts)) {
+      window.appState.attendanceShifts.unshift({ shiftId, id: shiftId, dailyId, staffId, staffName, dateKey,
+        checkInAt, checkInAtMs, checkOutAt: null, checkOutAtMs: null, durationMinutes: null,
+        status: 'open', source: 'web', location });
+    }
+
+    showToast(`✅ Đã vào ca — ${staffName} · cách quán ${fmt(location.distanceMeters)}m`, 'success');
+    renderWebAttendancePanel();
+    try { updateShiftBtnUI(); } catch (_) {}
+    return { ok: true, staffId, staffName, dailyId, shiftId };
+  } catch (err) {
+    console.error('[webAttendanceCheckIn]', err);
+    if (String(err?.message || err || '').startsWith('attendance_location_too_far:')) return null;
+    showToast('Lỗi chấm công vào ca: ' + (err?.message || err), 'danger');
+    return null;
+  }
+}
+
+// PHASE_D_WEB_ATTENDANCE_CHECKOUT
+/**
+ * Backward-compatible entrypoint for any older page-level button.
+ * Current UI calls webAttendanceCheckOutFromPin() from the PIN lock screen.
+ */
+async function webAttendanceCheckOut() {
+  const actor = _getAttendanceActorFromCurrentUser();
+  if (!actor) {
+    showToast('Nhập PIN ở màn khóa để chấm công.', 'warning');
+    return;
+  }
+  try {
+    await _webAttendanceCheckOutForActor(actor);
+  } catch (err) {
+    console.warn('[webAttendanceCheckOut]', err);
+  }
+}
+
+async function _webAttendanceCheckOutForActor(actor, options = {}) {
+  if (!window.DB?.Attendance?.updateDaily) {
+    showToast('Cơ sở dữ liệu chưa sẵn sàng.', 'warning');
+    return { ok: false, reason: 'db-not-ready' };
+  }
+
+  const { staffId, staffName } = _attendanceIdentityFromActor(actor);
+  const dateKey = formatLocalDateKey(new Date());
+  const deterministicDailyId = `${staffId}_${dateKey}`;
+
+  const openRow = _getAttendanceDailyRows().find(r =>
+    String(r.staffId || '') === String(staffId) &&
+    String(r.dateKey || '') === dateKey &&
+    r.status === 'open'
+  );
+  if (!openRow) {
+    showToast('Không tìm thấy ca đang mở hôm nay.', 'warning');
+    return { ok: false, reason: 'no-open-daily' };
+  }
+  const dailyId = openRow.dailyId || openRow.id || deterministicDailyId;
+
+  const shifts = Array.isArray(window.appState.attendanceShifts) ? window.appState.attendanceShifts : [];
+  const openShift = shifts
+    .filter(s =>
+      (String(s.dailyId || '') === dailyId ||
+       (String(s.staffId || '') === String(staffId) && String(s.dateKey || '') === dateKey)) &&
+      s.status === 'open'
+    )
+    .sort((a, b) => (b.checkInAtMs || 0) - (a.checkInAtMs || 0))[0];
+
+  if (!openShift) {
+    showToast('Không tìm thấy ca đang mở hôm nay.', 'warning');
+    return { ok: false, reason: 'no-open-shift' };
+  }
+
+  const location = await _requireAttendanceLocationGate();
+  const now = new Date();
+  const checkOutAt = now.toISOString();
+  const checkOutAtMs = now.getTime();
+  const checkInAtMs = openShift.checkInAtMs || new Date(openShift.checkInAt || 0).getTime();
+  const durationMinutes = Math.max(0, Math.round((checkOutAtMs - checkInAtMs) / 60000));
+
+  const hourlyRate = Number(openRow.hourlyRate || 0) || 0;
+  const previousTotalMinutes = Number(openRow.totalMinutes || 0) || 0;
+  const totalMinutes = previousTotalMinutes + durationMinutes;
+  const payableMinutes = _roundAttendancePayableMinutes(totalMinutes);
+  const payableHours = Number((payableMinutes / 60).toFixed(2));
+  const totalWage = Math.round(payableHours * hourlyRate);
+  const shiftId = openShift.shiftId || openShift.id;
+
+  try {
+    await window.DB.Attendance.updateShift(shiftId, {
+      checkOutAt,
+      checkOutAtMs,
+      durationMinutes,
+      status: 'closed',
+      checkoutLocation: location,
+    });
+
+    let expenseId = openRow.expenseId || null;
+    const expenseNote = `Lương nhân viên ${staffName} · ${dateKey} · ${payableHours.toFixed(2)}h x ${Math.round(hourlyRate)}đ/h (web)`;
+    const expenseData = {
+      name: `Lương nhân viên — ${staffName} — ${dateKey}`,
+      category: 'Lương nhân viên',
+      amount: totalWage,
+      date: checkOutAt,
+      note: expenseNote,
+    };
+
+    if (expenseId && window.DB?.Expenses?.update) {
+      await window.DB.Expenses.update(expenseId, expenseData);
+    } else if (window.DB?.Expenses?.add) {
+      expenseId = await window.DB.Expenses.add(expenseData);
+    }
+
+    await window.DB.Attendance.updateDaily(dailyId, {
+      lastCheckOutAt: checkOutAt,
+      totalMinutes,
+      payableMinutes,
+      payableHours,
+      totalWage,
+      status: 'closed',
+      locationDistanceMeters: location.distanceMeters,
+      lastLocationAt: checkOutAt,
+      ...(expenseId ? { expenseId } : {}),
+    });
+
+    if (Array.isArray(window.appState.attendanceDaily)) {
+      const idx = window.appState.attendanceDaily.findIndex(r => String(r.dailyId || r.id || '') === dailyId);
+      if (idx >= 0) {
+        window.appState.attendanceDaily[idx] = {
+          ...window.appState.attendanceDaily[idx],
+          lastCheckOutAt: checkOutAt, totalMinutes,
+          payableMinutes, payableHours, totalWage, status: 'closed', locationDistanceMeters: location.distanceMeters,
+          ...(expenseId ? { expenseId } : {}),
+        };
+      }
+    }
+    if (Array.isArray(window.appState.attendanceShifts)) {
+      const si = window.appState.attendanceShifts.findIndex(s => String(s.shiftId || s.id || '') === String(shiftId));
+      if (si >= 0) {
+        window.appState.attendanceShifts[si] = {
+          ...window.appState.attendanceShifts[si],
+          checkOutAt, checkOutAtMs, durationMinutes, status: 'closed', checkoutLocation: location,
+        };
+      }
+    }
+
+    if (!options.suppressSuccessToast) {
+      showToast(`🏁 Đã ra ca — ${staffName} · ${durationMinutes}p · cách quán ${fmt(location.distanceMeters)}m`, 'success');
+    }
+    renderWebAttendancePanel();
+    try { updateShiftBtnUI(); } catch (_) {}
+    return { ok: true, staffId, staffName, dailyId, shiftId, durationMinutes, totalMinutes, payableMinutes, payableHours, totalWage };
+  } catch (err) {
+    console.error('[webAttendanceCheckOut]', err);
+    if (String(err?.message || err || '').startsWith('attendance_location_too_far:')) return { ok: false, reason: 'location-too-far' };
+    showToast('Lỗi chấm công ra ca: ' + (err?.message || err), 'danger');
+    return { ok: false, reason: 'error', error: err?.message || String(err) };
+  }
+}
+
+// END_PHASE_D
+
+// PHASE_J_STATUS_BAR_ATTENDANCE_CHECKOUT
+// The dashboard status card doubles as the nearest checkout action for a staff
+// member who is already checked in and has unlocked the POS with their PIN.
+function renderStatusBarAttendanceCheckout() {
+  const btn = document.getElementById('btn-ket-ca');
+  const statusLabel = document.getElementById('shift-status-label');
+  const statusText = document.getElementById('shift-status-text');
+  if (!btn || !statusLabel || !statusText) return;
+
+  const actor = _getAttendanceActorFromCurrentUser();
+  const { staffId } = _attendanceIdentityFromActor(actor);
+  const dateKey = formatLocalDateKey(new Date());
+  const openRow = staffId && _getAttendanceDailyRows().find(row =>
+    String(row.staffId || '') === String(staffId)
+      && String(row.dateKey || '') === dateKey
+      && row.status === 'open'
+  );
+  if (!openRow) return;
+
+  const inTime = openRow.firstCheckInAt
+    ? new Date(openRow.firstCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    : '--:--';
+  statusLabel.textContent = 'Trạng thái chấm công';
+  statusText.textContent = `Đang làm · Vào ${inTime}`;
+  btn.textContent = '🏁 Chấm công ra';
+  btn.style.background = 'linear-gradient(135deg, #f97316, #ea580c)';
+  btn.setAttribute('data-attendance-status-checkout', 'true');
+  btn.onclick = (event) => {
+    event.stopPropagation();
+    statusBarAttendanceCheckoutAction();
+  };
+}
+
+async function statusBarAttendanceCheckoutAction() {
+  const btn = document.getElementById('btn-ket-ca');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang checkout…';
+  }
+  try {
+    const actor = _getAttendanceActorFromCurrentUser();
+    if (!actor) {
+      showToast('Không xác định được tài khoản. Vui lòng đăng nhập lại.', 'warning');
+      return;
+    }
+
+    const checkoutResult = await _webAttendanceCheckOutForActor(actor, { suppressSuccessToast: true });
+    if (!checkoutResult?.ok) return;
+
+    const minutes = Math.max(0, Number(checkoutResult.durationMinutes || 0));
+    const durationLabel = minutes >= 60
+      ? `${Math.floor(minutes / 60)} giờ${minutes % 60 ? ` ${minutes % 60} phút` : ''}`
+      : `${minutes} phút`;
+    showToast(`bạn đã checkout thành công, tổng giờ làm ca này là ${durationLabel}`, 'success', 7000);
+  } catch (err) {
+    console.warn('[statusBarAttendanceCheckoutAction]', err);
+  } finally {
+    try { updateShiftBtnUI(); } catch (_) {}
+  }
+}
+// END_PHASE_J_STATUS_BAR_ATTENDANCE_CHECKOUT
+
+function openOnlineOrdersPanel() {
+  const modal = document.getElementById('online-orders-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+  renderOnlineOrdersPanel();
+}
+
+function closeOnlineOrdersModal() {
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('online-orders-modal');
+  const modal = document.getElementById('online-orders-modal');
+  if (!modal) return;
+  modal.classList.remove('active');
+}
+
+function renderOnlineOrdersPanel() {
+  const body = document.getElementById('online-orders-modal-body');
+  if (!body) return;
+  
+  const onlineOrders = getActiveOnlineOrdersForTables(window.appState?.onlineOrders || []);
+  
+  if (onlineOrders.length === 0) {
+    body.innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--text3)">
+        <div style="font-size:48px;margin-bottom:12px">🌐</div>
+        <div>Chưa có đơn hàng online nào</div>
+      </div>
+    `;
+    return;
+  }
+  
+  const getStatusBadge = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'pending') return '<span style="background:#ffc107;color:#000;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Chờ duyệt</span>';
+    if (s === 'approved' || s === 'pos_sync') return '<span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đã vào POS</span>';
+    if (s === 'preparing') return '<span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đang làm</span>';
+    if (s === 'ready_to_serve') return '<span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Sẵn sàng giao</span>';
+    if (s === 'delivering') return '<span style="background:#673ab7;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Đang giao</span>';
+    if (s === 'completed') return '<span style="background:#009688;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Hoàn tất</span>';
+    if (s === 'rejected') return '<span style="background:#f44336;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">Từ chối</span>';
+    return `<span style="background:#9e9e9e;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">${status || 'N/A'}</span>`;
+  };
+  
+  body.innerHTML = `
+    <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+      ${onlineOrders.map(order => {
+        const items = Array.isArray(order.items) ? order.items : [];
+        const orderDocId = _resolveOnlineOrderDocId(order);
+        const total = _calculateOnlineOrderTotal(order);
+        const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleString('vi-VN') : 'N/A';
+        const customerName = order.customerName || order.customer?.name || 'Khách hàng';
+        const customerPhone = order.customerPhone || order.customer?.phone || '';
+        const address = order.address || order.deliveryAddress || '';
+        const note = order.note || '';
+        const statusKey = String(order.status || '').toLowerCase();
+        const canComplete = !!order.posOrderId && ['approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(statusKey);
+        const canCancel = !!order.posOrderId && ['approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(statusKey);
+        
+        return `
+          <div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div style="flex:1">
+                <div style="font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px">
+                  🌐 ${order.orderCode || order.id || 'Đơn không mã'}
+                </div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">
+                  ${createdAt}
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                ${getStatusBadge(order.status)}
+                <div style="font-weight:800;color:var(--primary)">${fmt(total)}đ</div>
+              </div>
+            </div>
+            
+            <div style="font-size:11px;color:var(--text2);display:flex;flex-direction:column;gap:2px">
+              <div>👤 ${customerName}${customerPhone ? ` • ${customerPhone}` : ''}</div>
+              ${address ? `<div>📍 ${address}</div>` : ''}
+              ${note ? `<div>📝 ${note}</div>` : ''}
+            </div>
+            
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--border)">
+              ${items.map(item => `
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+                  <div style="flex:1">
+                    <span style="font-weight:600">${_getOnlineOrderItemQty(item)}x</span> ${item.name || item.productName || 'Món không tên'}
+                  </div>
+                  <div style="font-weight:700;color:var(--text2)">${fmt(_getOnlineOrderItemUnitPrice(item) * _getOnlineOrderItemQty(item))}đ</div>
+                </div>
+              `).join('')}
+            </div>
+            
+            ${statusKey === 'pending' ? `
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-success btn-block" style="flex:1" onclick="approveOnlineOrder('${orderDocId}')">
+                  ✅ Duyệt đơn
+                </button>
+                <button class="btn btn-danger btn-block" style="flex:1" onclick="rejectOnlineOrder('${orderDocId}')">
+                  ❌ Từ chối
+                </button>
+              </div>
+            ` : ''}
+            ${(canComplete || canCancel) ? `
+              <div style="display:flex;gap:8px;margin-top:8px">
+                ${canComplete ? `
+                  <button class="btn btn-primary btn-block" style="flex:1" onclick="completeOnlineOrder('${orderDocId}')">
+                    ✅ Hoàn tất đơn
+                  </button>
+                ` : ''}
+                ${canCancel ? `
+                  <button class="btn btn-danger btn-block" style="flex:1" onclick="cancelOnlineOrder('${orderDocId}')">
+                    ❌ Hủy đơn
+                  </button>
+                ` : ''}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function _mapOnlineOrderPayMethod(order = {}) {
+  if (window.XekhoApp?.order?._mapOnlineOrderPayMethod) return window.XekhoApp.order._mapOnlineOrderPayMethod(order);
+  const paymentMethod = String(order.paymentMethod || '').trim().toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').trim().toLowerCase();
+  if (paymentMethod && paymentMethod !== 'cod') {
+    return paymentStatus === 'paid' ? 'bank' : 'cash';
+  }
+  return 'cash';
+}
+
+function _buildOnlineOrderBillNo(order = {}) {
+  if (window.XekhoApp?.order?._buildOnlineOrderBillNo) return window.XekhoApp.order._buildOnlineOrderBillNo(order);
+  const orderCode = String(order.orderCode || '').trim();
+  if (orderCode) return `ONL-${orderCode}`;
+  const now = new Date();
+  return `ONL-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${uid().slice(0, 4).toUpperCase()}`;
+}
+
+function _estimateOnlineOrderCost(items = []) {
+  const menu = _getMenu();
+  const inventory = _getInventory();
+  return (Array.isArray(items) ? items : []).reduce((sum, item) => {
+    const qty = Number(item?.qty || 0) || 0;
+    const inlineCost = Number(item?.cost || 0) || 0;
+    if (inlineCost > 0) return sum + (inlineCost * qty);
+    const menuItem = menu.find(m => String(m?.id || '') === String(item?.id || ''))
+      || menu.find(m => String(m?.name || '').trim() === String(item?.name || '').trim());
+    const unitCost = Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0) || 0;
+    return sum + (unitCost * qty);
+  }, 0);
+}
+
+function _getOnlineOrderItemQty(item = {}) {
+  if (window.XekhoApp?.order?._getOnlineOrderItemQty) return window.XekhoApp.order._getOnlineOrderItemQty(item);
+  return Number(item?.qty ?? item?.quantity ?? 1) || 1;
+}
+
+function _getOnlineOrderItemUnitPrice(item = {}) {
+  if (window.XekhoApp?.order?._getOnlineOrderItemUnitPrice) return window.XekhoApp.order._getOnlineOrderItemUnitPrice(item);
+  return Number(
+    item?.unitPrice ??
+    item?.price ??
+    item?.sellPrice ??
+    item?.finalPrice ??
+    item?.subtotal
+  ) || 0;
+}
+
+function _calculateOnlineOrderTotal(order = {}) {
+  if (window.XekhoApp?.order?._calculateOnlineOrderTotal) return window.XekhoApp.order._calculateOnlineOrderTotal(order);
+  const pricing = order?.pricing || {};
+  const explicitTotal = Number(
+    order?.total ??
+    order?.finalBillTotal ??
+    order?.temporaryTotal ??
+    order?.totalPrice ??
+    pricing?.total ??
+    pricing?.grandTotal ??
+    pricing?.finalTotal
+  ) || 0;
+  if (explicitTotal > 0) return explicitTotal;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const itemsTotal = items.reduce((sum, item) => sum + (_getOnlineOrderItemUnitPrice(item) * _getOnlineOrderItemQty(item)), 0);
+  const shipping = Number(order?.shipping || order?.shippingFee || pricing?.shippingFee || pricing?.deliveryFee || 0) || 0;
+  const discount = Number(order?.discount || order?.discountAmount || pricing?.discountTotal || pricing?.discountAmount || 0) || 0;
+  const vatAmount = Number(order?.vatAmount || pricing?.vatAmount || 0) || 0;
+  return Math.max(0, itemsTotal + shipping + vatAmount - discount);
+}
+
+function _patchLocalOnlineOrderStatus(orderId, nextStatus) {
+  const orders = Array.isArray(window.appState?.onlineOrders) ? window.appState.onlineOrders : null;
+  if (!orders) return;
+  const target = orders.find(order =>
+    String(order?._docId || order?.id || '') === String(orderId || '')
+  );
+  if (!target) return;
+  target.status = String(nextStatus || target.status || '').trim() || target.status;
+}
+
+function _patchLocalOnlineOrderMeta(orderId, patch = {}) {
+  const orders = Array.isArray(window.appState?.onlineOrders) ? window.appState.onlineOrders : null;
+  if (!orders) return;
+  const target = orders.find(order =>
+    String(order?._docId || order?.id || '') === String(orderId || '')
+  );
+  if (!target || !patch || typeof patch !== 'object') return;
+  Object.assign(target, patch);
+}
+
+function _resolveOnlineOrderDocId(order = {}, fallbackId = '') {
+  if (window.XekhoApp?.order?._resolveOnlineOrderDocId) return window.XekhoApp.order._resolveOnlineOrderDocId(order, fallbackId);
+  return String(order?._docId || order?.id || fallbackId || '').trim();
+}
+
+async function _resolveOnlinePosContext(onlineOrder = {}) {
+  const explicitPosOrderId = String(onlineOrder?.posOrderId || '').trim();
+  const inferredPosOrderId = onlineOrder?.id ? `ONLINE-${String(onlineOrder.id).trim()}` : '';
+  const orderCode = String(onlineOrder?.orderCode || '').trim();
+  const candidateOrderIds = [...new Set([explicitPosOrderId, inferredPosOrderId].filter(Boolean))];
+
+  let liveOrder = null;
+  for (const candidateId of candidateOrderIds) {
+    liveOrder = await window.DB?.Orders?.getById?.(candidateId);
+    if (liveOrder) break;
+  }
+  if (!liveOrder) {
+    liveOrder = await window.DB?.Orders?.findOpenByOnlineOrderId?.(onlineOrder?.id);
+  }
+  if (!liveOrder && orderCode) {
+    liveOrder = await window.DB?.Orders?.findOpenByOnlineOrderCode?.(orderCode);
+  }
+
+  let historyOrder = null;
+  if (!liveOrder) {
+    for (const candidateId of candidateOrderIds) {
+      historyOrder = await window.DB?.History?.findByOrderId?.(candidateId);
+      if (historyOrder) break;
+    }
+  }
+  if (!liveOrder && !historyOrder) {
+    historyOrder = await window.DB?.History?.findLatestByOnlineOrderId?.(onlineOrder?.id);
+  }
+  if (!liveOrder && !historyOrder && orderCode) {
+    historyOrder = await window.DB?.History?.findLatestByOnlineOrderCode?.(orderCode);
+  }
+
+  return {
+    posOrderId: String(liveOrder?.id || historyOrder?.id || explicitPosOrderId || '').trim(),
+    liveOrder,
+    historyOrder,
+  };
+}
+
+async function completeOnlineOrder(orderId) {
+  try {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+
+    const onlineOrder = (window.appState?.onlineOrders || []).find(order =>
+      String(order?._docId || order?.id || '') === cleanId
+    );
+    if (!onlineOrder) throw new Error('Không tìm thấy đơn online');
+    const onlineOrderDocId = _resolveOnlineOrderDocId(onlineOrder, cleanId);
+
+    const confirmOk = window.confirm(`Hoàn tất đơn online ${onlineOrder.orderCode || cleanId} và ghi nhận doanh số vào POS?`);
+    if (!confirmOk) return;
+
+    showToast('⏳ Đang hoàn tất đơn online...', 'info');
+
+    const { posOrderId, liveOrder, historyOrder } = await _resolveOnlinePosContext(onlineOrder);
+    if (posOrderId && posOrderId !== String(onlineOrder.posOrderId || '').trim()) {
+      _patchLocalOnlineOrderMeta(onlineOrderDocId, { posOrderId });
+    }
+    if (!liveOrder) {
+      if (historyOrder) {
+        await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
+        _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
+        showToast('✅ Đơn này đã được hoàn tất trong POS trước đó.', 'success');
+        renderOnlineOrdersPanel();
+        renderTables();
+        return;
+      }
+      throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
+    }
+    if (String(liveOrder.status || '').toLowerCase() !== 'open') {
+      throw new Error('Đơn POS không còn ở trạng thái mở');
+    }
+
+    const items = Array.isArray(liveOrder.items) ? liveOrder.items : [];
+    const itemsTotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+    const extras = {
+      discount: Number(liveOrder.discount || 0) || 0,
+      discountType: liveOrder.discountType === 'percent' ? 'percent' : 'vnd',
+      discountNote: String(liveOrder.discountNote || '').trim(),
+      shipping: Number(liveOrder.shipping || 0) || 0,
+      note: String(liveOrder.note || '').trim(),
+    };
+    const vatAmount = Number(liveOrder.vatAmount || 0) || 0;
+    const taxRate = Number(liveOrder.taxRate || 0) || 0;
+    const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+    const total = subtotal + vatAmount;
+    const cost = _estimateOnlineOrderCost(items);
+    const billNo = _buildOnlineOrderBillNo(onlineOrder);
+    const payMethod = _mapOnlineOrderPayMethod(onlineOrder);
+
+    await window.DB.Orders.close(liveOrder.id, {
+      total,
+      cost,
+      payMethod,
+      discount: extras.discount,
+      discountNote: extras.discountNote,
+      discountType: extras.discountType,
+      shipping: extras.shipping,
+      vatAmount,
+      taxRate,
+      billNo,
+    });
+
+    await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+      status: 'completed',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      completedAt: new Date().toISOString(),
+    });
+    _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+      status: 'completed',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      completedAt: new Date().toISOString(),
+    });
+    showToast('✅ Đã hoàn tất đơn online và ghi nhận doanh số vào POS!', 'success');
+    renderOnlineOrdersPanel();
+    renderTables();
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể hoàn tất đơn online'), 'danger');
+  }
+}
+
+async function cancelOnlineOrder(orderId) {
+  try {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+
+    const onlineOrder = (window.appState?.onlineOrders || []).find(order =>
+      String(order?._docId || order?.id || '') === cleanId
+    );
+    if (!onlineOrder) throw new Error('Không tìm thấy đơn online');
+    const onlineOrderDocId = _resolveOnlineOrderDocId(onlineOrder, cleanId);
+
+    const reasonInput = window.prompt(`Nhập lý do hủy cho đơn online ${onlineOrder.orderCode || cleanId}:`, 'Khách hủy đơn');
+    if (reasonInput === null) return;
+    const cancelReason = String(reasonInput || '').trim() || 'Khách hủy đơn';
+
+    const confirmOk = window.confirm(`Xác nhận hủy đơn online ${onlineOrder.orderCode || cleanId}?`);
+    if (!confirmOk) return;
+
+    showToast('⏳ Đang hủy đơn online...', 'info');
+
+    const { posOrderId, liveOrder, historyOrder } = await _resolveOnlinePosContext(onlineOrder);
+    if (posOrderId && posOrderId !== String(onlineOrder.posOrderId || '').trim()) {
+      _patchLocalOnlineOrderMeta(onlineOrderDocId, { posOrderId });
+    }
+    if (!liveOrder) {
+      if (historyOrder) {
+        await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+          status: 'completed',
+          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
+          completedAt: new Date().toISOString(),
+          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
+        });
+        _patchLocalOnlineOrderStatus(onlineOrderDocId, 'completed');
+        showToast('⚠️ Đơn này đã hoàn tất trong POS nên không thể hủy nữa.', 'warning');
+        renderOnlineOrdersPanel();
+        return;
+      }
+      const statusKey = String(onlineOrder.status || '').toLowerCase();
+      if (['cancelled', 'rejected'].includes(statusKey)) {
+        showToast('⚠️ Đơn online này đã ở trạng thái hủy.', 'warning');
+        renderOnlineOrdersPanel();
+        return;
+      }
+      throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
+    }
+    if (String(liveOrder.status || '').toLowerCase() !== 'open') {
+      throw new Error('Đơn POS không còn ở trạng thái mở');
+    }
+
+    await window.DB.Orders.cancel(liveOrder.id, cancelReason);
+
+    await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
+      status: 'cancelled',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      cancelledAt: new Date().toISOString(),
+      cancelReason,
+    });
+    _patchLocalOnlineOrderMeta(onlineOrderDocId, {
+      status: 'cancelled',
+      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
+      cancelledAt: new Date().toISOString(),
+      cancelReason,
+    });
+    showToast('✅ Đã hủy đơn online!', 'success');
+    renderOnlineOrdersPanel();
+    renderTables();
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể hủy đơn online'), 'danger');
+  }
+}
+
+async function approveOnlineOrder(orderId) {
+  try {
+    showToast('⏳ Đang duyệt đơn...', 'info');
+    if (!window.DB?.OnlineOrders?.approve) {
+      throw new Error('Chức năng duyệt đơn không khả dụng');
+    }
+    const result = await window.DB.OnlineOrders.approve(orderId);
+    if (result?.ok) {
+      _patchLocalOnlineOrderMeta(orderId, { status: 'approved' });
+      showToast('✅ Đã duyệt đơn thành công!', 'success');
+      renderOnlineOrdersPanel();
+      renderTables();
+    } else {
+      throw new Error(result?.message || 'Không thể duyệt đơn');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể duyệt đơn'), 'danger');
+  }
+}
+
+async function rejectOnlineOrder(orderId) {
+  try {
+    showToast('⏳ Đang từ chối đơn...', 'info');
+    if (!window.DB?.OnlineOrders?.reject) {
+      throw new Error('Chức năng từ chối không khả dụng');
+    }
+    const result = await window.DB.OnlineOrders.reject(orderId);
+    if (result?.ok) {
+      _patchLocalOnlineOrderMeta(orderId, { status: 'rejected', rejectedAt: new Date().toISOString() });
+      showToast('✅ Đã từ chối đơn!', 'success');
+      renderOnlineOrdersPanel();
+      renderTables();
+    } else {
+      throw new Error(result?.message || 'Không thể từ chối đơn');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Lỗi: ' + (err.message || 'Không thể từ chối đơn'), 'danger');
+  }
+}
+
+function requireOpenShiftForOrderFlow(actionLabel = 'thao tác này') {
+  const shift = Store.getCurrentShift();
+  if (shift) return true;
+  showToast('Bạn phải mở ca trước khi chọn bàn và chọn món.', 'warning');
+  if (actionLabel) {
+    console.warn(`[ShiftGuard] blocked ${actionLabel}: shift_not_open`);
+  }
+  try {
+    updateShiftBtnUI();
+  } catch (_) {}
+  return false;
+}
+
+function getOrderExtrasForTable(tableKey) {
+  const key = String(tableKey || '');
+  const existing = orderExtras[key] || orderExtras[tableKey] || {};
+  return {
+    discount: Number(existing.discount || 0) || 0,
+    discountInput: Number(existing.discountInput || existing.discount || 0) || 0,
+    discountType: existing.discountType || 'amount',
+    discountNote: String(existing.discountNote || ''),
+    shipping: Number(existing.shipping || 0) || 0,
+    note: String(existing.note || ''),
+  };
+}
+
+function getTableNoteForOrder(tableKey) {
+  const key = String(tableKey || '');
+  if (!key) return '';
+  const cloudOrder = window.appState?.orders?.[key] || null;
+  const cloudOrderNote = String(cloudOrder?.note || '').trim();
+  if (cloudOrderNote) return cloudOrderNote;
+  const cloudTable = Array.isArray(window.appState?.tables)
+    ? window.appState.tables.find(t => String(t.id) === key)
+    : null;
+  const cloudTableNote = String(cloudTable?.note || '').trim();
+  if (cloudTableNote) return cloudTableNote;
+  const localTable = (Store.getTables() || []).find(t => String(t.id) === key);
+  return String(localTable?.note || '').trim();
+}
+
+function ensureOrderExtrasForCurrentTable() {
+  if (currentTable == null) return {};
+  const key = String(currentTable);
+  const existing = getOrderExtrasForTable(key);
+  if (!existing.note) existing.note = getTableNoteForOrder(key);
+  orderExtras[key] = existing;
+  orderExtras[currentTable] = existing;
+  return existing;
+}
+
+function syncOrderTableNoteInput(value) {
+  const noteValue = String(value != null ? value : ensureOrderExtrasForCurrentTable().note || '');
+  const headerNoteInp = document.getElementById('order-table-note');
+  const cartNoteInp = document.getElementById('cart-note');
+  if (headerNoteInp && document.activeElement !== headerNoteInp) headerNoteInp.value = noteValue;
+  if (cartNoteInp && document.activeElement !== cartNoteInp) cartNoteInp.value = noteValue;
+}
+
+function updateCurrentTableNoteEverywhere(noteValue) {
+  if (currentTable == null) return;
+  const key = String(currentTable);
+  const note = String(noteValue || '').trim();
+  const extras = ensureOrderExtrasForCurrentTable();
+  extras.note = note;
+  orderExtras[key] = extras;
+  orderExtras[currentTable] = extras;
+
+  if (key !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => String(t.id) === key);
+    if (table) {
+      table.note = note;
+      Store.setTables(tables);
+    }
+    if (Array.isArray(window.appState?.tables)) {
+      const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+      if (cloudTable) cloudTable.note = note;
+    }
+  }
+
+  if ((orderItems[currentTable] || []).length > 0 && window.DB && key !== 'takeaway') {
+    _queueWholeOrderCloudSync(key);
+  }
+  _queueTableNoteCloudUpdate(key, note);
+}
+
+function _queueTableNoteCloudUpdate(tableKey, noteValue) {
+  const key = String(tableKey || '');
+  if (!key || key === 'takeaway' || !window.DB?.Tables?.update) return;
+  window.__tableNoteCloudTimers = window.__tableNoteCloudTimers || {};
+  if (window.__tableNoteCloudTimers[key]) clearTimeout(window.__tableNoteCloudTimers[key]);
+  window.__tableNoteCloudTimers[key] = setTimeout(() => {
+    window.DB.Tables.update(key, { note: String(noteValue || '').trim() })
+      .catch(err => console.warn('[POS] table note cloud update failed:', key, err))
+      .finally(() => {
+        if (window.__tableNoteCloudTimers) delete window.__tableNoteCloudTimers[key];
+      });
+  }, 400);
+}
+
+function handleOrderTableNoteInput(value) {
+  updateCurrentTableNoteEverywhere(value);
+  syncOrderTableNoteInput(value);
+}
+
+function openTakeaway() {
+  if (!requireOpenShiftForOrderFlow('open_takeaway')) return;
+  currentTable = 'takeaway';
+  const orders = Store.getOrders();
+  if(!orderItems['takeaway']) {
+    orderItems['takeaway'] = orders['takeaway'] ? [...orders['takeaway']] : [];
+  }
+  ensureOrderExtrasForCurrentTable();
+  document.getElementById('order-table-title').textContent = '🛍️ Mang về';
+  syncOrderTableNoteInput();
+  navigate('orders');
+}
+
+function openTable(tableId) {
+  if (!requireOpenShiftForOrderFlow('open_table')) return;
+  const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
+  currentTable = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? tableId : tid);
+
+  // Load existing order:
+  // Ưu tiên từ Cloud (appState.orders), fallback LocalStorage
+  if (!orderItems[currentTable]) {
+    const hasCloudOrdersState = !!(window.appState && window.appState.orders && typeof window.appState.orders === 'object');
+    const cloudOrder = hasCloudOrdersState ? window.appState.orders[String(currentTable)] : null;
+    if (cloudOrder && cloudOrder.items && cloudOrder.items.length > 0) {
+      orderItems[currentTable] = normalizeKitchenOrderItems(cloudOrder.items);
+      // Ghi cưđc orderId vào bđ nhđ tiền cho phase write
+      window._currentOrderId = window._currentOrderId || {};
+      window._currentOrderId[currentTable] = cloudOrder.id || cloudOrder.orderId;
+    } else if (hasCloudOrdersState) {
+      orderItems[currentTable] = [];
+    } else {
+      const localOrders = Store.getOrders();
+      orderItems[currentTable] = localOrders[currentTable] ? normalizeKitchenOrderItems(localOrders[currentTable]) : [];
+    }
+  }
+
+  const label = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
+  ensureOrderExtrasForCurrentTable();
+  document.getElementById('order-table-title').textContent = label;
+  syncOrderTableNoteInput();
+  navigate('orders');
+}
+
+async function clearTable() {
+  try { closeCartSheet(); } catch(_) {}
+  if (currentTable == null) return;
+  const label = currentTable === 'takeaway' ? 'đơn mang về' : `bàn ${currentTable}`;
+  if (!confirm(`Huỷ ${label}? Mọi món đang chọn sẽ bị xoá.`)) return;
+  const cancelReasonInput = prompt('Nhập lý do hủy đơn hàng:', currentTable === 'takeaway' ? 'Khách đổi ý' : 'Hủy tại quầy');
+  if (cancelReasonInput === null) return;
+  const cancelReason = String(cancelReasonInput || '').trim();
+  if (!cancelReason) {
+    showToast('Vui lòng nhập lý do hủy đơn.', 'warning');
+    return;
+  }
+
+  const key = String(currentTable);
+  let cancelledViaCloud = false;
+  _cancelWholeOrderCloudSync(key);
+
+  // Cloud: huỷ đơn nếu tồn tại
+  try {
+    if (window.DB && currentTable !== 'takeaway') {
+      const orderIdFromCache = (typeof _getCloudOrderId === 'function') ? _getCloudOrderId(key) : null;
+      const orderIdFromAppState = window.appState?.orders?.[key]?.id || null;
+      const orderIdFromForTable = window.DB?.Orders?.forTable ? (window.DB.Orders.forTable(currentTable)?.id || null) : null;
+      const orderIdFromTable = window.appState?.tables?.find(t => String(t.id) === key)?.orderId || null;
+      const orderId = orderIdFromCache || orderIdFromAppState || orderIdFromForTable || orderIdFromTable;
+      if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
+        await window.DB.Orders.cancel(orderId, cancelReason);
+        cancelledViaCloud = true;
+      }
+      if (window._currentOrderId) delete window._currentOrderId[key];
+      if (window.appState?.orders && window.appState.orders[key]) delete window.appState.orders[key];
+    }
+  } catch(e) {
+    console.warn('[clearTable] cloud cancel error', e);
+  }
+
+  if (!cancelledViaCloud) {
+    try {
+      await window.DB?.logAction?.('order_cancelled_local', {
+        tableId: key,
+        cancelReason,
+        mode: currentTable === 'takeaway' ? 'takeaway' : 'local_only',
+      });
+    } catch (auditErr) {
+      console.warn('[Audit] order_cancelled_local', auditErr);
+    }
+  }
+
+  // Local: xoá giỏ
+  orderItems[currentTable] = [];
+  orderExtras[currentTable] = { discount: 0, discountInput: 0, discountType: 'amount', shipping: 0, note: '' };
+
+  const orders = Store.getOrders();
+  delete orders[key];
+  Store.setOrders(orders);
+
+  if (currentTable !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => String(t.id) === key);
+    if (table) {
+      table.status = 'empty';
+      table.orderId = null;
+      table.openTime = null;
+      table.note = '';
+      Store.setTables(tables);
+    }
+    if (window.appState?.tables) {
+      const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+      if (cloudTable) {
+        cloudTable.status = 'empty';
+        cloudTable.orderId = null;
+        cloudTable.openTime = null;
+        cloudTable.note = '';
+      }
+    }
+  }
+
+  try { renderCart(); } catch(_) {}
+  try { renderTables(); } catch(_) {}
+  navigate('tables');
+  showToast('✅ Đã huỷ bàn.', 'success');
+}
+
+// ============================================================
+// CLOUD ORDER SYNC HELPERS  để  Transaction-safe
+// Thay thế pattern updateMeta({ items }) cũ (race condition)
+// ============================================================
+
+/** Lấy orderId hiđơ tại của 1 bàn từ Cloud (appState hoặc cache) */
+function _getCloudOrderId(key) {
+  const ordersMap = window.appState && window.appState.orders;
+  const tableOrderId = Array.isArray(window.appState?.tables)
+    ? (window.appState.tables.find(t => String(t.id) === String(key))?.orderId || null)
+    : null;
+  const liveOrderId = window.DB?.Orders?.forTable ? (window.DB.Orders.forTable(key)?.id || null) : null;
+  return (window._currentOrderId && window._currentOrderId[String(key)])
+    || (ordersMap && ordersMap[String(key)] && ordersMap[String(key)].id)
+    || liveOrderId
+    || tableOrderId
+    || null;
+}
+
+function getCurrentOrderActorMeta() {
+  const posUser = getCurrentPosUser();
+  if (window.XekhoApp?.auth?.getCurrentOrderActorMetaFromUser) {
+    return window.XekhoApp.auth.getCurrentOrderActorMetaFromUser(posUser);
+  }
+  return {
+    updatedBy: posUser?.name || null,
+    updatedByRole: posUser?.role || null,
+  };
+}
+
+async function _syncWholeOrderToCloud(tableKey) {
+  if (!window.DB || !window.appState || !window.appState.ready || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  const items = normalizeKitchenOrderItems(Array.isArray(orderItems[key]) ? orderItems[key].map(item => ({ ...item })) : []);
+  const extras = orderExtras[key] || {};
+  orderItems[key] = items.map(item => ({ ...item }));
+
+  if (!items.length) {
+    const orderId = _getCloudOrderId(key);
+    if (orderId && window.DB.Orders?.cancel) {
+      await window.DB.Orders.cancel(orderId, 'Tự động hủy do giỏ hàng trống');
+      if (window._currentOrderId) delete window._currentOrderId[key];
+    }
+    return;
+  }
+
+  const orderId = await _ensureCloudOrder(key);
+  if (!orderId) return;
+
+  await window.DB.Orders.updateMeta(orderId, {
+    items,
+    discount: Number(extras.discount || 0),
+    shipping: Number(extras.shipping || 0),
+    note: extras.note || '',
+    discountType: extras.discountType === 'percent' ? 'percent' : 'vnd',
+    ...getCurrentOrderActorMeta(),
+  });
+}
+
+function _queueWholeOrderCloudSync(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  window.__orderCloudSyncTimers = window.__orderCloudSyncTimers || {};
+  if (window.__orderCloudSyncTimers[key]) {
+    clearTimeout(window.__orderCloudSyncTimers[key]);
+  }
+  window.__orderCloudSyncTimers[key] = setTimeout(() => {
+    _syncWholeOrderToCloud(key).catch(err => {
+      console.error('[POS] _syncWholeOrderToCloud failed:', key, err);
+    }).finally(() => {
+      if (window.__orderCloudSyncTimers) delete window.__orderCloudSyncTimers[key];
+    });
+  }, 250);
+}
+
+function _cancelWholeOrderCloudSync(tableKey) {
+  const key = String(tableKey);
+  if (window.__orderCloudSyncTimers && window.__orderCloudSyncTimers[key]) {
+    clearTimeout(window.__orderCloudSyncTimers[key]);
+    delete window.__orderCloudSyncTimers[key];
+  }
+}
+
+async function _flushWholeOrderCloudSync(tableKey) {
+  if (!window.DB || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  _cancelWholeOrderCloudSync(key);
+  await _syncWholeOrderToCloud(key);
+}
+
+function _markTableEmptyEverywhere(tableKey) {
+  const key = String(tableKey);
+
+  const orders = Store.getOrders();
+  delete orders[key];
+  Store.setOrders(orders);
+
+  if (key !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => String(t.id) === key);
+    if (table) {
+      table.status = 'empty';
+      table.orderId = null;
+      table.openTime = null;
+      table.note = '';
+      Store.setTables(tables);
+    }
+  }
+
+  if (window._currentOrderId) delete window._currentOrderId[key];
+
+  if (window.appState?.orders && typeof window.appState.orders === 'object') {
+    delete window.appState.orders[key];
+  }
+
+  if (key !== 'takeaway' && Array.isArray(window.appState?.tables)) {
+    const cloudTable = window.appState.tables.find(t => String(t.id) === key);
+    if (cloudTable) {
+      cloudTable.status = 'empty';
+      cloudTable.orderId = null;
+      cloudTable.openTime = null;
+      cloudTable.note = '';
+    }
+  }
+}
+
+/**
+ * Đảm bảo tđơ tại đơn hàng Cloud cho bàn key.
+ * Nếu chưa có để gọi Orders.open() và cache lại orderId.
+ * Trả về Promise<orderId|null>
+ */
+async function _ensureCloudOrder(key) {
+  if (!window.DB || !window.appState || !window.appState.ready || key === 'takeaway') return null;
+  window.__ensureCloudOrderPromises = window.__ensureCloudOrderPromises || {};
+  let orderId = _getCloudOrderId(key);
+  if (orderId) return orderId;
+  if (window.__ensureCloudOrderPromises[key]) return window.__ensureCloudOrderPromises[key];
+  const staffUid = window.appState && window.appState.uid;
+  const tableName = `Ban ${key}`;
+  const posUser = getCurrentPosUser();
+  window.__ensureCloudOrderPromises[key] = (async () => {
+    const existingId = _getCloudOrderId(key);
+    if (existingId) return existingId;
+    const nextOrderId = await window.DB.Orders.open(key, tableName, staffUid, posUser);
+    window._currentOrderId = window._currentOrderId || {};
+    window._currentOrderId[String(key)] = nextOrderId;
+    return nextOrderId;
+  })();
+  try {
+    orderId = await window.__ensureCloudOrderPromises[key];
+    return orderId;
+  } finally {
+    delete window.__ensureCloudOrderPromises[key];
+  }
+}
+
+/**
+ * Sync 1 thao tác item lên Firestore qua Transaction-based API.
+ *
+ * action = {
+ *   type : 'add' | 'change' | 'remove'
+ *   item : { id, name, price, cost, qty }   đđ bắt buđc khi type='add'
+ *   itemId   : string                        đđ bắt buđc khi type='change'|'remove'
+ *   itemNote : string                        đđ tuỳ chọn
+ *   delta    : number                        đđ bắt buđc khi type='change'
+ * }
+ * tableKey = currentTable hoặc tableId của bàn cần sync
+ *
+ * Không ném exception ra ngoài để chđ log lđi đă UI không bđ block.
+ */
+async function _cloudSyncItem(action, tableKey) {
+  if (!window.DB || !window.appState || !window.appState.ready || tableKey === 'takeaway') return;
+  const key = String(tableKey);
+  try {
+    let orderId;
+    if (action.type === 'add') {
+      // Mđ đơn mđi nếu chưa có
+      orderId = await _ensureCloudOrder(key);
+      if (!orderId) return;
+      await window.DB.Orders.addItem(orderId, action.item);
+    } else {
+      // change / remove chđ thực hiđơ khi đơn đã tđơ tại
+      orderId = _getCloudOrderId(key);
+      if (!orderId) return;
+      if (action.type === 'change') {
+        await window.DB.Orders.changeQty(orderId, action.itemId, action.itemNote || '', action.delta, action.lineItemId || '');
+      } else if (action.type === 'remove') {
+        await window.DB.Orders.removeItem(orderId, action.itemId, action.itemNote || '', action.lineItemId || '');
+      }
+    }
+  } catch (e) {
+    console.error('[POS] _cloudSyncItem failed:', action.type, e);
+    try {
+      await _syncWholeOrderToCloud(key);
+    } catch (syncErr) {
+      console.error('[POS] fallback whole-order sync failed:', key, syncErr);
+    }
+  }
+}
+
+// Lưu order cho mđt bàn cụ thđ (dùng cho AI actions)
+function saveOrderForTable(tableId) {
+  const tid = (tableId === 'takeaway') ? 'takeaway' : Number(tableId);
+  const key = (tid === 'takeaway') ? 'takeaway' : (isNaN(tid) ? String(tableId) : tid);
+  orderItems[key] = normalizeKitchenOrderItems(orderItems[key] || []);
+  const hasItems = (orderItems[key] || []).length > 0;
+
+  // --- LocalStorage (offline backup) ---
+  const orders = Store.getOrders();
+  if (hasItems) orders[key] = orderItems[key] || [];
+  else delete orders[key];
+  Store.setOrders(orders);
+
+  if(key !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => t.id === key);
+    if(table) {
+      if(hasItems) {
+        table.status   = 'occupied';
+        table.openTime = table.openTime || Date.now();
+        table.note     = getOrderExtrasForTable(key).note || table.note || '';
+      } else if(!hasItems) {
+        table.status   = 'empty';
+        table.orderId  = null;
+        table.openTime = null;
+        table.note     = '';
+      }
+      Store.setTables(tables);
+    }
+  }
+
+  if (!hasItems) {
+    _markTableEmptyEverywhere(key);
+  }
+
+  // --- Firestore (cloud sync để AI batch write) ---
+  // saveOrderForTable được gọi từ AI actions khi đã build sẵn toàn bđ orderItems[key].
+  // Dùng _ensureCloudOrder + updateMeta là hợp lý vì AI là writer duy nhất tại thời điđm này.
+  if (window.DB && key !== 'takeaway') {
+    const items = orderItems[key] || [];
+    if (items.length > 0) {
+      _ensureCloudOrder(key)
+        .then(orderId => {
+          if (orderId) return window.DB.Orders.updateMeta(orderId, { items: normalizeKitchenOrderItems(items), ...getCurrentOrderActorMeta() });
+        })
+        .catch(console.error);
+    } else {
+      const orderId = _getCloudOrderId(key);
+      if (orderId && window.DB.Orders && window.DB.Orders.cancel) {
+        window.DB.Orders.cancel(orderId, 'Tự động hủy do giỏ hàng trống')
+          .then(() => {
+            if (window._currentOrderId) delete window._currentOrderId[String(key)];
+          })
+          .catch(console.error);
+      }
+    }
+  }
+}
+
+// ============================================================
+// PAGE: ORDERS
+// ============================================================
+let currentCat = 'Tất cả';
+let menuSearch = '';
+
+function renderOrderPage() {
+  if(!currentTable) { navigate('tables'); return; }
+  const menu = _getMenu();
+  const availableCategories = new Set((menu || []).map(item => String(item.category || '').trim()).filter(Boolean));
+  if (currentCat !== 'Tất cả' && !availableCategories.has(currentCat)) currentCat = 'Tất cả';
+  renderCatTabs();
+  renderMenuItems();
+  renderCart();
+  // Khi mđ trang order, đăng bđ UI ảnh bàn
+  try { updateOrderPhotoUI(); } catch(_) {}
+}
+
+function renderCatTabs() {
+  const wrap = document.getElementById('cat-tabs');
+  wrap.innerHTML = ['Tất cả', ...CATEGORIES].map(c =>
+    `<button class="cat-tab ${currentCat === c ? 'active' : ''}" onclick="selectCat('${c}')">${c}</button>`
+  ).join('');
+}
+
+function selectCat(cat) {
+  currentCat = cat;
+  renderCatTabs();
+  renderMenuItems();
+}
+
+function renderMenuItems() {
+  const menu  = _getMenu(); // đđ Cloud-first vđi LocalStorage fallback
+  const items = orderItems[currentTable] || [];
+  const orderSearchInput = document.getElementById('order-search');
+  const activeMenuSearch = String((orderSearchInput && orderSearchInput.value) || menuSearch || '').trim();
+  menuSearch = activeMenuSearch;
+  let filtered = currentCat === 'Tất cả' ? menu : menu.filter(m => m.category === currentCat);
+  if(activeMenuSearch) filtered = filtered.filter(m => String(m.name || '').toLowerCase().includes(activeMenuSearch.toLowerCase()));
+
+  document.getElementById('menu-grid').innerHTML = filtered.map(m => {
+    const activeQty = items
+      .filter(i => i.id === m.id && !isKitchenFinalStatus(i.kitchenStatus))
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    const safeMenuId = _escapeHtml(_escapeJsString(m.id));
+    const safeMenuName = _escapeHtml(m.name || '');
+    return `<div class="menu-item ${activeQty > 0 ? 'in-order' : ''}" onclick="addToOrder(${safeMenuId})">
+      ${activeQty > 0 ? `<div class="menu-item-qty">${activeQty}</div>` : ''}
+      <div class="menu-item-name">${safeMenuName}</div>
+      <div class="menu-item-price">${fmt(m.price)}đ</div>
+    </div>`;
+  }).join('') || `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🍽️</div><div class="empty-text">Không có món</div></div>`;
+}
+
+function _resolveDishCostPerUnit(dish, inventoryList) {
+    if (window.XekhoApp?.order?._resolveDishCostPerUnit) return window.XekhoApp.order._resolveDishCostPerUnit(dish, inventoryList);
+    if (!dish) return 0;
+    const inv = Array.isArray(inventoryList) ? inventoryList : [];
+    let dishCost = Number(dish.cost || 0);
+    if (dish.itemType === ITEM_TYPES.RETAIL) {
+      const linked = inv.find(i => i.id === dish.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(dish.name));
+      return Number(linked?.costPerUnit || dishCost || 0);
+    }
+    if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+      dishCost = dish.ingredients.reduce((sum, ing) => { const stock = inv.find(i => i.name === ing.name); return sum + (Number(stock?.costPerUnit || 0) * Number(ing.qty || 0)); }, 0);
+    }
+    return Number(dishCost || 0);
+  }
+
+function addToOrder(itemId) {
+  if (!requireOpenShiftForOrderFlow('add_to_order')) return;
+  const menu = _getMenu(); // đđ Cloud-first
+  const inv = _getInventory();
+  const dish = menu.find(m => m.id === itemId);
+  if(!dish) return;
+  const unitCost = _resolveDishCostPerUnit(dish, inv);
+  if(!orderItems[currentTable]) orderItems[currentTable] = [];
+  const existing = orderItems[currentTable].find(i =>
+    i.id === itemId &&
+    !isKitchenFinalStatus(i.kitchenStatus) &&
+    String(i.note || '').trim() === ''
+  );
+  let cloudAction = null;
+  if(existing) {
+    existing.qty++;
+    cloudAction = {
+      type: 'change',
+      itemId,
+      lineItemId: getKitchenLineItemId(existing),
+      itemNote: existing.note || '',
+      delta: 1,
+    };
+  }
+  else {
+    const nextItem = normalizeKitchenOrderItem({
+      id: dish.id,
+      name: dish.name,
+      price: dish.price,
+      cost: unitCost,
+      qty: 1,
+      itemType: dish.itemType || inferMenuItemType(dish),
+      linkedInventoryId: dish.linkedInventoryId || null,
+    });
+    orderItems[currentTable].push(nextItem);
+    cloudAction = { type: 'add', item: nextItem };
+  }
+  saveOrder(); // localStorage + table status
+  // Cloud: Transaction-based addItem (tránh race condition khi 2 nhân viên cùng thêm món)
+  _cloudSyncItem(cloudAction, currentTable);
+  renderMenuItems();
+  renderCart();
+  if(navigator.vibrate) navigator.vibrate(30);
+}
+
+function removeCartItem(itemId) {
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if(idx < 0) return;
+  const targetItem = items[idx];
+  items.splice(idx, 1);
+  saveOrder();
+  // Cloud: Transaction-based removeItem
+  _cloudSyncItem({ type: 'remove', itemId, lineItemId: getKitchenLineItemId(targetItem), itemNote: targetItem?.note || '' }, currentTable);
+  renderMenuItems();
+  renderCart();
+}
+
+function changeQty(itemId, delta) {
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if(idx < 0) return;
+  const targetItem = items[idx];
+  items[idx].qty += delta;
+  if(items[idx].qty <= 0) {
+    items.splice(idx, 1);
+    saveOrder();
+    // Cloud: xóa dòng món khỏi đơn
+    _cloudSyncItem({ type: 'remove', itemId, lineItemId: getKitchenLineItemId(targetItem), itemNote: targetItem?.note || '' }, currentTable);
+  } else {
+    saveOrder();
+    // Cloud: Transaction-based changeQty (tránh race condition)
+    _cloudSyncItem({ type: 'change', itemId, lineItemId: getKitchenLineItemId(items[idx]), itemNote: items[idx]?.note || '', delta }, currentTable);
+  }
+  renderMenuItems();
+  renderCart();
+}
+
+function setCartQty(itemId, val) {
+  const qty = parseInt(val);
+  if(isNaN(qty) || qty <= 0) { renderCart(); return; }
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if(idx < 0) return;
+  const delta = qty - items[idx].qty; // tính delta đă dùng Transaction
+  items[idx].qty = qty;
+  saveOrder();
+  // Cloud: Transaction-based changeQty vđi delta thực tế
+  if(delta !== 0) _cloudSyncItem({ type: 'change', itemId, lineItemId: getKitchenLineItemId(items[idx]), itemNote: items[idx]?.note || '', delta }, currentTable);
+  renderMenuItems();
+  renderCart();
+}
+
+function toggleServedCartItem(itemId) {
+  const items = orderItems[currentTable];
+  if(!items) return;
+  const idx = items.findIndex(i => getKitchenLineItemId(i) === String(itemId) || i.id === itemId);
+  if(idx < 0) return;
+  const targetItem = items[idx];
+  if (!canToggleServedStatus(targetItem)) return;
+
+  const nextStatus = String(targetItem.kitchenStatus || '').toLowerCase() === 'served' ? 'done' : 'served';
+  items[idx] = normalizeKitchenOrderItem({
+    ...targetItem,
+    kitchenStatus: nextStatus,
+    servedAt: nextStatus === 'served' ? Date.now() : null,
+    kitchenUpdatedAt: Date.now(),
+  });
+  saveOrder();
+  _queueWholeOrderCloudSync(currentTable);
+  renderCart();
+}
+
+function saveOrder() {
+  // Chđ ghi LocalStorage + cập nhật trạng thái bàn.
+  // Cloud sync được xử lý riêng bđi _cloudSyncItem() trong từng hàm
+  // (addToOrder, changeQty, removeCartItem, setCartQty) dùng Transaction-based API.
+
+  // --- LocalStorage (offline backup) ---
+  orderItems[currentTable] = normalizeKitchenOrderItems(orderItems[currentTable] || []);
+  const orders = Store.getOrders();
+  const hasItems = (orderItems[currentTable] || []).length > 0;
+  if (hasItems) orders[currentTable] = orderItems[currentTable] || [];
+  else delete orders[currentTable];
+  Store.setOrders(orders);
+
+  if (currentTable !== 'takeaway') {
+    const tables = Store.getTables();
+    const table = tables.find(t => t.id === currentTable);
+    if(table) {
+      if(hasItems) {
+        table.status   = 'occupied';
+        table.openTime = table.openTime || Date.now();
+        table.note     = ensureOrderExtrasForCurrentTable().note || table.note || '';
+      } else if(!hasItems) {
+        table.status   = 'empty';
+        table.orderId  = null;
+        table.openTime = null;
+        table.note     = '';
+      }
+      Store.setTables(tables);
+    }
+  }
+
+  if (!hasItems) {
+    _markTableEmptyEverywhere(currentTable);
+  }
+
+  if (window.DB && currentTable !== 'takeaway') {
+    _queueWholeOrderCloudSync(currentTable);
+  }
+}
+
+function renderCart() {
+  const items = orderItems[currentTable] || [];
+  const extras = ensureOrderExtrasForCurrentTable();
+  
+  const discountTypeEl = document.getElementById('cart-discount-type');
+  const dInp = document.getElementById('cart-discount');
+  const dNoteInp = document.getElementById('cart-discount-note');
+  const sInp = document.getElementById('cart-shipping');
+  const noteInp = document.getElementById('cart-note');
+  const headerNoteInp = document.getElementById('order-table-note');
+
+  if (discountTypeEl && document.activeElement === discountTypeEl) extras.discountType = discountTypeEl.value;
+  else if (discountTypeEl) discountTypeEl.value = extras.discountType || 'amount';
+
+  if (dInp && document.activeElement === dInp) extras.discountInput = parseFloat(dInp.value) || 0;
+  else if (dInp) dInp.value = extras.discountInput || '';
+
+  if (dNoteInp && document.activeElement === dNoteInp) extras.discountNote = dNoteInp.value || '';
+  else if (dNoteInp) dNoteInp.value = extras.discountNote || '';
+
+  if (sInp && document.activeElement === sInp) extras.shipping = parseFloat(sInp.value) || 0;
+  else if (sInp) sInp.value = extras.shipping || '';
+
+  if (noteInp && document.activeElement === noteInp) updateCurrentTableNoteEverywhere(noteInp.value || '');
+  else if (noteInp) noteInp.value = extras.note || '';
+
+  if (headerNoteInp && document.activeElement === headerNoteInp) updateCurrentTableNoteEverywhere(headerNoteInp.value || '');
+  else if (headerNoteInp) headerNoteInp.value = extras.note || '';
+
+  const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
+  const itemsTotal = items.reduce((s,i) => s + i.price*(i.qty||1), 0);
+
+  if (extras.discountType === 'percent') {
+    extras.discount = Math.round((itemsTotal * (extras.discountInput || 0)) / 100);
+  } else {
+    extras.discount = extras.discountInput || 0;
+  }
+
+  orderExtras[currentTable] = extras;
+
+  // Tính tđơg có VAT
+  const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+  const total = subtotal + vatAmount;
+  const qtyCount = items.reduce((s,i) => s + (i.qty || 1), 0);
+
+  if(items.length === 0) {
+    document.getElementById('cart-items').innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:32px">🛒</div><div class="empty-text">Chưa có món</div></div>`;
+  } else {
+      document.getElementById('cart-items').innerHTML = items.map(item => {
+        const itemKey = getKitchenLineItemId(item) || item.id;
+        // Chỉ khóa khi bếp đã mang ra (served) — KHÔNG khóa hàng bán thẳng (skip)
+        const isServed = String(item.kitchenStatus || '').toLowerCase() === 'served';
+        const isSkip   = String(item.kitchenStatus || '').toLowerCase() === 'skip';
+        const lockControls = isServed; // chỉ lock khi served, không lock skip
+        return `<div class="cart-item ${isServed ? 'cart-item-served' : ''}">
+          <div>
+            <div class="cart-item-name" style="display:flex;align-items:center;gap:8px;">
+              <span title="${isServed ? 'Bếp đã mang ra' : isSkip ? 'Bán thẳng (không qua bếp)' : 'Chưa mang ra'}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;font-size:14px;font-weight:900;flex-shrink:0;cursor:default;user-select:none;background:${isServed ? 'rgba(16,185,129,0.18)' : isSkip ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.04)'};color:${isServed ? 'var(--success)' : 'var(--text3)'};">✓</span>
+              <span>${item.name}</span>
+            </div>
+            <div style="font-size:10px; color:var(--text2); margin-top:2px;">${getCartItemStatusLabel(item)}${item.note ? ` · Ghi chú: ${item.note}` : ''}</div>
+          </div>
+          <div class="cart-qty-ctrl">
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} onclick="changeQty('${itemKey}',-1)">−</button>
+            <input type="number" class="cart-qty-input" min="1" max="99" value="${item.qty}"
+              ${lockControls ? 'disabled' : ''}
+              onchange="setCartQty('${itemKey}', this.value)"
+              onclick="this.select()" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;padding:2px 4px">
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} onclick="changeQty('${itemKey}',1)">+</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px">
+            <div class="cart-price">${fmt(item.price*item.qty)}đ</div>
+            <button class="qty-btn" style="color:var(--primary); background:rgba(0,149,255,0.1); width:28px;" onclick="addNoteToCartItem('${itemKey}')" title="Thêm ghi chú">📝</button>
+            <button class="qty-btn" ${lockControls ? 'disabled' : ''} style="color:var(--danger); background:rgba(255,61,113,0.1); width:28px;" onclick="removeCartItem('${itemKey}')">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+  }
+
+  // Hiđơ thđ VAT trong tđơg nếu có
+  const totalEl = document.getElementById('cart-total');
+  if(totalEl) {
+    if(vatAmount > 0) {
+      totalEl.innerHTML = `${fmtFull(total)} <span style="font-size:10px;color:var(--text3);font-weight:400">(gồm VAT ${taxRate}%: ${fmtFull(vatAmount)})</span>`;
+    } else {
+      totalEl.textContent = fmtFull(total);
+    }
+  }
+  const cartCountEl = document.getElementById('cart-count');
+  if (cartCountEl) cartCountEl.textContent = `${qtyCount} món`;
+  const pillCountEl = document.getElementById('order-cart-pill-count');
+  if (pillCountEl) pillCountEl.textContent = String(qtyCount);
+  const pillTotalEl = document.getElementById('order-cart-pill-total');
+  if (pillTotalEl) pillTotalEl.textContent = fmtFull(total);
+  document.getElementById('pay-btn').disabled = items.length === 0;
+
+  // Cập nhật UI ảnh bàn (nếu đang đ đúng trang)
+  try {
+    updateOrderPhotoUI();
+  } catch(_) {}
+}
+
+function openCartSheet() {
+  const overlay = document.getElementById('cart-sheet');
+  const body = document.getElementById('cart-sheet-body');
+  const cart = document.getElementById('order-cart-root');
+  if (!overlay || !body || !cart) return;
+  
+  // Set explicit height to allow scrolling within the sheet
+  body.style.maxHeight = '70vh';
+  body.style.overflowY = 'auto';
+  
+  body.appendChild(cart);
+  overlay.classList.add('active');
+  renderCart();
+}
+
+function closeCartSheet() {
+  const overlay = document.getElementById('cart-sheet');
+  if (overlay) overlay.classList.remove('active');
+  const host = document.getElementById('order-cart-host');
+  const cart = document.getElementById('order-cart-root');
+  if (host && cart) host.appendChild(cart);
+  renderCart(); // Re-render to ensure it shows correctly in the host
+}
+
+function formatBillUnitPrice(value) {
+  const number = Number(value || 0) || 0;
+  if (number >= 1000) {
+    const thousands = number / 1000;
+    const fractionDigits = Number.isInteger(thousands) ? 0 : 3;
+    return thousands.toLocaleString('vi-VN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: fractionDigits,
+    }) + 'K';
+  }
+  return number.toLocaleString('vi-VN');
+}
+
+function openBillModal() {
+  try { closeCartSheet(); } catch(_) {}
+  const items = orderItems[currentTable] || [];
+  if(items.length === 0) return;
+  const extras = orderExtras[currentTable] || {discount: 0, shipping: 0};
+  const s = Store.getSettings();
+  const taxRate = s.taxRate != null ? Number(s.taxRate) : 0;
+  const itemsTotal = items.reduce((s,i) => s + i.price*i.qty, 0);
+  const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+  const total = subtotal + vatAmount;
+  // Dynamically calculate cost based on current inventory
+  const inv = _getInventory();
+  const menu = _getMenu();
+  let cost = 0;
+  items.forEach(item => {
+    const dish = menu.find(m => m.id === item.id);
+    const dishCost = _resolveDishCostPerUnit(dish, inv);
+    cost += dishCost * item.qty;
+  });
+  const now = new Date();
+  const billNo = `B${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,4).toUpperCase()}`;
+
+  const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
+  const desc = `Thanh toan ${currentTable === 'takeaway' ? 'Mang ve' : 'Ban ' + currentTable} - ${billNo}`;
+  const bank = s.bankAccount || PAYMENT_INFO.account;
+  const bankBin = s.bankName === 'Vietinbank' ? '970415' : '970415';
+  const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bank}-compact2.png?amount=${encodeURIComponent(total)}&addInfo=${encodeURIComponent(desc)}&accountName=${encodeURIComponent(s.bankOwner||PAYMENT_INFO.name)}`;
+
+  // Store bill data for payment confirmation (include VAT)
+  window._pendingBill = { billNo, total, cost, extras, tableLabel, vatAmount, taxRate };
+
+  // Lấy ảnh của bàn (tđi đa 5 ảnh) đă in kèm bill
+  let orderPhotosHtml = '';
+  try {
+    if(!orderPhotoCache) orderPhotoCache = {};
+    const list = (orderPhotoCache && currentTable && orderPhotoCache[currentTable]) ? orderPhotoCache[currentTable] : [];
+    const limited = Array.isArray(list) ? list.slice(0, 5) : [];
+    if(limited.length) {
+      orderPhotosHtml = `
+      <div class="bill-photo-page">
+        <h3 style="font-size:14px;margin:12px 0 6px;">📸 Ảnh ghi nhận bàn</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${limited.map(ph => {
+            const safeDataUrl = _safeImageUrl(ph.dataUrl);
+            if (!safeDataUrl) return '';
+            return `
+              <div style="flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);">
+                <div style="font-size:9px;color:#666;margin-bottom:2px;">${_escapeHtml(ph.takenAt ? fmtDateTime(ph.takenAt) : '')}</div>
+                <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh bàn" style="width:100%;max-height:220px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+  } catch(_) {}
+
+  document.getElementById('bill-content').innerHTML = `
+    <div class="bill-container" id="bill-print-area">
+      <div class="bill-header">
+        <div class="bill-logo">🧾 ${s.storeName||'XE KHÔ CHỮA LÀNH'}</div>
+        ${s.storeSlogan ? `<div class="bill-sub">${s.storeSlogan}</div>` : ''}
+        ${s.storePhone ? `<div class="bill-sub" style="margin-top:4px">ĐT: ${s.storePhone}</div>` : ''}
+        ${s.storeAddress ? `<div class="bill-sub">${s.storeAddress}</div>` : ''}
+      </div>
+      <hr class="bill-divider">
+      <div class="bill-info">
+        <div>Bill: <span>${billNo}</span></div>
+        <div>${currentTable === 'takeaway' ? '🛍️' : '🪑'} <span>${tableLabel}</span></div>
+        <div>Thời gian: <span>${fmtDateTime(now)}</span></div>
+      </div>
+      <hr class="bill-divider">
+      <table class="bill-items">
+        <thead><tr><th>Món</th><th style="text-align:center">SL</th><th style="text-align:right">Đ.Giá</th><th style="text-align:right">T.Tiền</th></tr></thead>
+        <tbody>${items.map(i=>`<tr>
+          <td>${i.name}${i.note ? `<br><small style="font-size:9px;color:#666;line-height:1">(Note: ${i.note})</small>` : ''}</td><td style="text-align:center">${i.qty}</td>
+          <td style="text-align:right">${formatBillUnitPrice(i.price)}</td>
+          <td class="amount">${fmt(i.price*i.qty)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <hr class="bill-divider">
+      ${extras.note ? `<div style="font-size:12px;margin-bottom:8px"><em>Ghi chú: ${extras.note}</em></div>` : ''}
+      <div style="font-size:12px;margin-bottom:4px;color:var(--text3);display:flex;justify-content:space-between"><span>Tiền hàng</span><span>${fmtFull(itemsTotal)}</span></div>
+      ${extras.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🏷️ Giảm giá ${extras.discountNote ? `(${extras.discountNote})` : ''}</span><span>-${fmtFull(extras.discount)}</span></div>` : ''}
+      ${extras.shipping > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>🚚 Phí giao hàng</span><span>+${fmtFull(extras.shipping)}</span></div>` : ''}
+      ${vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;color:var(--primary)"><span>🧾 Thuế VAT (${taxRate}%)</span><span>+${fmtFull(vatAmount)}</span></div>` : ''}
+      <div class="bill-total"><span>TỔNG CỘNG</span><span>${fmtFull(total)}</span></div>
+      ${vatAmount > 0 ? `<div style="font-size:10px;color:var(--text3);text-align:right;margin-top:-4px">Đã bao gồm VAT ${taxRate}%: ${fmtFull(vatAmount)}</div>` : ''}
+      <div class="bill-qr">
+        <div class="bill-qr-label">Quét QR để thanh toán chuyển khoản</div>
+        <img src="${qrUrl}" alt="QR Thanh toán" onerror="this.style.display='none'" style="width:200px;height:200px;object-fit:contain;margin:8px auto;display:block">
+        <div class="bill-qr-bank">${s.bankName||'Vietinbank'} • ${bank}</div>
+        <div class="bill-qr-amount">${fmtFull(total)}</div>
+      </div>
+      <hr class="bill-divider">
+      <div class="bill-thanks">Cảm ơn quý khách! Hẹn gặp lại ❤️</div>
+    </div>
+    ${orderPhotosHtml}
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-secondary" style="flex:1" onclick="printBill()">🖨️ In bill</button>
+      <button id="bill-pay-btn" class="btn btn-success" style="flex:1" onclick="openPaymentMethodModal()">💳 Thanh toán</button>
+    </div>
+    <div id="pay-watch-status" style="font-size:11px;text-align:center;margin-top:8px;min-height:16px;color:var(--text3);transition:color 0.3s"></div>`;
+
+  document.getElementById('bill-modal').classList.add('active');
+
+  // Bắt đầu theo dõi thanh toán tự đăng (nếu đã cấu hình Casso)
+  startPaymentWatcher(total, billNo);
+}
+
+function openPaymentMethodModal() {
+  if(!window._pendingBill) return;
+  document.getElementById('pay-method-modal').classList.add('active');
+}
+
+function confirmPaymentMethod(method) {
+  document.getElementById('pay-method-modal').classList.remove('active');
+  const { billNo, total, cost, extras, vatAmount, taxRate } = window._pendingBill;
+  confirmPayment(billNo, total, cost, extras, method, vatAmount, taxRate);
+}
+
+function closeBillModal() {
+  stopPaymentWatcher();
+  // Sprint 1.5: delegate to app/ui/modal.js
+  if (window.XekhoApp?.ui?.closeModal) return window.XekhoApp.ui.closeModal('bill-modal');
+  document.getElementById('bill-modal').classList.remove('active');
+}
+
+function buildStandaloneBillPrintHtml(printableMarkup) {
+  if (window.XekhoApp?.utils?.print?.buildStandaloneBillPrintHtml) return window.XekhoApp.utils.print.buildStandaloneBillPrintHtml(printableMarkup);
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>In bill</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: "Times New Roman", Georgia, serif;
+      font-size: 12pt;
+    }
+    body { padding: 0; }
+    .bill-container {
+      background: #fff;
+      color: #000;
+      padding: 0;
+      border-radius: 0;
+      font-family: "Times New Roman", Georgia, serif;
+      font-size: 12pt;
+      width: 100%;
+      max-width: none;
+      page-break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .bill-header { text-align: center; margin-bottom: 16px; }
+    .bill-logo { font-size: 24pt; font-weight: 900; color: #000; display: block; }
+    .bill-sub { font-size: 11pt; color: #333; margin-top: 4px; line-height: 1.5; }
+    .bill-divider { border: none; border-top: 1px solid #000; margin: 12px 0; }
+    .bill-info { font-size: 11pt; margin-bottom: 10px; line-height: 1.6; }
+    .bill-info span { font-weight: 700; }
+    .bill-items { width: 100%; font-size: 11pt; border-collapse: collapse; }
+    .bill-items th {
+      text-align: left;
+      border-bottom: 1px solid #000;
+      padding: 7px 0;
+      font-size: 10pt;
+      color: #000;
+    }
+    .bill-items td { padding: 7px 0; vertical-align: top; color: #000; }
+    .bill-items .amount { text-align: right; font-weight: 700; }
+    .bill-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 18pt;
+      font-weight: 900;
+      margin-top: 14px;
+      border-top: 2px solid #000;
+      padding-top: 12px;
+      color: #000;
+    }
+    .bill-qr {
+      text-align: center;
+      margin-top: 16px;
+      page-break-inside: avoid;
+      background: #f9f9f9;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .bill-qr img {
+      width: 220px;
+      height: 220px;
+      object-fit: contain;
+      display: block;
+      margin: 10px auto;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .bill-qr-label, .bill-qr-bank { font-size: 11pt; color: #333; }
+    .bill-qr-amount { font-size: 16pt; font-weight: 900; color: #E55A25; }
+    .bill-thanks {
+      text-align: center;
+      font-size: 11pt;
+      color: #333;
+      margin-top: 12px;
+      padding-bottom: 4px;
+    }
+    .bill-photo-page { margin-top: 12px; page-break-before: auto; }
+    .bill-photo-page img { width: 100%; max-width: 100%; height: auto; display: block; }
+  </style>
+</head>
+<body>
+  ${printableMarkup}
+  <script>
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        try { window.focus(); } catch (e) {}
+        try { window.print(); } catch (e) {}
+      }, 250);
+    });
+    window.onafterprint = function () {
+      setTimeout(function () {
+        try { window.close(); } catch (e) {}
+      }, 150);
+    };
+  <\/script>
+</body>
+</html>`;
+}
+
+function printBill() {
+  const billContent = document.getElementById('bill-content');
+  if (!billContent) return;
+
+  const clone = billContent.cloneNode(true);
+  clone.querySelectorAll('button, #pay-watch-status').forEach(node => node.remove());
+  const printableMarkup = clone.innerHTML.trim();
+  if (!printableMarkup) return;
+
+  const printWindow = window.open('', '_blank', 'width=420,height=900');
+  if (printWindow && printWindow.document) {
+    printWindow.document.open();
+    printWindow.document.write(buildStandaloneBillPrintHtml(printableMarkup));
+    printWindow.document.close();
+    return;
+  }
+
+  try {
+    window.print();
+  } catch (_) {
+    showToast('Không mở được cửa sổ in trên iPhone. Hãy thử lại bằng Safari.', 'warning');
+  }
+}
+
+async function confirmPayment(billNo, total, cost, extras, payMethod, vatAmount, taxRate) {
+  const items      = orderItems[currentTable] || [];
+  const ordersMap = window.appState && window.appState.orders;
+  const activeOrder = ordersMap && ordersMap[String(currentTable)] ? ordersMap[String(currentTable)] : null;
+  const isMigratedOrder = activeOrder?.is_migrated === true;
+  const tableLabel = currentTable === 'takeaway' ? '🛍️ Mang về' : `Bàn ${currentTable}`;
+
+  // --- Ảnh hóa đơn ---
+  let orderPhotosForBill = [];
+  try {
+    if(!orderPhotoCache) orderPhotoCache = {};
+    const list = orderPhotoCache[currentTable] || [];
+    if(Array.isArray(list) && list.length) {
+      orderPhotosForBill = list.map(p => ({ id:p.id, dataUrl:p.dataUrl, takenAt:p.takenAt || null }));
+      delete orderPhotoCache[currentTable];
+      Store.setOrderPhotosAsync(orderPhotoCache);
+    }
+  } catch(_) {}
+
+  const historyId = uid();
+  if (orderPhotosForBill.length > 0) {
+    PhotoDB.set('history_' + historyId, orderPhotosForBill);
+  }
+
+  const historyRecord = {
+    historyId,
+    id:           billNo,
+    tableId:      currentTable,
+    tableName:    tableLabel,
+    note:         extras?.note || '',
+    items:        items.map(i => ({...i})),
+    total,
+    cost,
+    discount:     extras?.discount || 0,
+    discountNote: extras?.discountNote || '',
+    shipping:     extras?.shipping || 0,
+    vatAmount:    vatAmount || 0,
+    taxRate:      taxRate || 0,
+    payMethod:    payMethod || 'cash',
+    paidAt:       new Date().toISOString(),
+    createdBy:    getCurrentPosUserName(),
+    createdByRole: getCurrentUserRole(),
+    status:       'completed',
+    is_migrated:  isMigratedOrder,
+    photos:       [],
+  };
+
+  try {
+    if (window.DB) {
+      if (currentTable !== 'takeaway') {
+        await _flushWholeOrderCloudSync(currentTable);
+      }
+
+      const orderId   = (window._currentOrderId && window._currentOrderId[currentTable])
+        || (window.appState && window.appState.orders && window.appState.orders[String(currentTable)] && window.appState.orders[String(currentTable)].id)
+        || null;
+
+      const payInfo = {
+        total, cost,
+        payMethod:    payMethod || 'cash',
+        discount:     extras?.discount || 0,
+        discountNote: extras?.discountNote || '',
+        shipping:     extras?.shipping || 0,
+        vatAmount:    vatAmount || 0,
+        taxRate:      taxRate || 0,
+        billNo,
+        historyId,
+      };
+
+      if (orderId && currentTable !== 'takeaway') {
+        // Chỉ coi là thanh toán xong khi close() ghi được history lên Firestore.
+        await window.DB.Orders.close(orderId, payInfo);
+      } else {
+        if (!window.DB.History || !window.DB.History.add) {
+          throw new Error('Cloud history writer is unavailable.');
+        }
+        await window.DB.History.add({ ...historyRecord, status: 'completed' });
+        if (currentTable !== 'takeaway' && window.DB.Tables?.update) {
+          await window.DB.Tables.update(currentTable, {
+            status: 'empty',
+            orderId: null,
+            openTime: null,
+          });
+        }
+        if (!isMigratedOrder && window.DB.Inventory?.deduct) {
+          await window.DB.Inventory.deduct(items);
+        }
+      }
+
+      if (window._currentOrderId) delete window._currentOrderId[currentTable];
+    }
+  } catch (err) {
+    console.error('[POS] confirmPayment cloud write failed:', err);
+    showToast('Thanh toán chưa ghi được lên Firestore. Đơn vẫn được giữ lại để thử lại.', 'danger');
+    return;
+  }
+
+  // --- Ghi LocalStorage (offline backup) ---
+  Store.addHistory(historyRecord);
+  if (!isMigratedOrder) {
+    Store.deductInventory(items);
+  }
+
+  // --- Dọn local state ---
+  delete orderItems[currentTable];
+  delete orderExtras[currentTable];
+  const lsOrders = Store.getOrders();
+  delete lsOrders[currentTable];
+  Store.setOrders(lsOrders);
+
+  if(currentTable !== 'takeaway') {
+    const tables = Store.getTables();
+    const table  = tables.find(t => t.id === currentTable);
+    if(table) { table.status = 'empty'; table.openTime = null; }
+    Store.setTables(tables);
+  }
+
+  closeBillModal();
+  updateAlertBadge();
+  const methodLabel = payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+  showToast(`✅ Thanh toán ${methodLabel} thành công!`, 'success');
+  currentTable = null;
+  navigate('tables');
+}
+
+// ============================================================
+// PAGE: INVENTORY
+// ============================================================
+let invTab = 'stock'; // stock | purchase | forecast
+
+function renderInventory() {
+  if(invTab === 'stock') {
+    renderStockList();
+    populateManualMergeDropdowns(); // Populate manual merge dropdowns when stock tab is shown
+  }
+  else if(invTab === 'purchase') renderPurchaseList();
+  else if(invTab === 'ledger') renderLedger();
+  else if(invTab === 'ncc') renderNCC();
+  else if(invTab === 'conversion') renderConversionTab();
+  else if(invTab === 'wastage') renderWastageTab();
+  else if(invTab === 'stocktake') renderStocktakeHistory();
+  else renderForecast();
+}
+
+// ============================================================
+// ORDER PHOTOS (per table)
+// ============================================================
+
+function ensureOrderPhotoCache() {
+  if(!orderPhotoCache) {
+    orderPhotoCache = {};
+  }
+}
+
+function triggerOrderPhotoCapture() {
+  const input = document.getElementById('order-photo-input-cam');
+  if(input) input.click();
+}
+
+function triggerOrderPhotoFromDevice() {
+  const input = document.getElementById('order-photo-input-file');
+  if(input) input.click();
+}
+
+async function handleOrderPhotoCapture(event) {
+  const files = event.target.files;
+  if(!files || !files.length || !currentTable) {
+    if(event.target) event.target.value = '';
+    return;
+  }
+  try {
+    ensureOrderPhotoCache();
+    let list = orderPhotoCache[currentTable] || [];
+    if(list.length >= 5) {
+      showToast('⚠️ Mỗi bàn chỉ lưu tối đa 5 ảnh.', 'danger');
+      event.target.value = '';
+      return;
+    }
+    let added = 0;
+    for(let i = 0; i < files.length; i++) {
+      if(list.length >= 5) break;
+      const file = files[i];
+      if(!file || !String(file.type || '').startsWith('image/')) continue;
+      const dataUrl = await resizeImageToDataUrl(file, 1080, 0.6);
+      const photo = {
+        id: uid(),
+        tableId: currentTable,
+        dataUrl,
+        takenAt: new Date().toISOString(),
+      };
+      list.push(photo);
+      added++;
+    }
+    orderPhotoCache[currentTable] = list;
+    Store.setOrderPhotosAsync(orderPhotoCache);
+    updateOrderPhotoUI();
+    if(added > 0) {
+      showToast(added > 1 ? `📸 Đã thêm ${added} ảnh cho bàn ${currentTable}` : `📸 Đã lưu ảnh cho bàn ${currentTable}`);
+    } else {
+      showToast('⚠️ Không có file ảnh hợp lệ.', 'warning');
+    }
+    if(files.length > added && list.length >= 5) {
+      showToast('⚠️ Đã đủ 5 ảnh/bàn - bỏ qua phần còn lại.', 'warning');
+    }
+  } catch(e) {
+    console.warn('handleOrderPhotoCapture error', e);
+    showToast('❌ Không xử lý được ảnh. Thử lại.', 'danger');
+  } finally {
+    if(event.target) event.target.value = '';
+  }
+}
+
+function updateOrderPhotoUI() {
+  try {
+    if(!currentTable) return;
+    const wrap = document.getElementById('order-photo-thumbs');
+    const countEl = document.getElementById('order-photo-count');
+    const btnCam = document.getElementById('order-photo-btn');
+    const btnFile = document.getElementById('order-photo-btn-file');
+    if(!wrap || !countEl) return;
+    ensureOrderPhotoCache();
+    const list = orderPhotoCache[currentTable] || [];
+    const limited = list.slice(0, 5);
+    countEl.textContent = `(${limited.length}/5)`;
+    const full = limited.length >= 5;
+    if(btnCam) btnCam.disabled = full;
+    if(btnFile) btnFile.disabled = full;
+    if(!limited.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh nào.</div>';
+      return;
+    }
+    wrap.innerHTML = limited.map(ph => {
+      const safeDataUrl = _safeImageUrl(ph.dataUrl);
+      if (!safeDataUrl) return '';
+      return `
+        <div style="position:relative;flex:0 0 auto;width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
+          <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh bàn" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    console.warn('updateOrderPhotoUI error', e);
+  }
+}
+
+// ============================================================
+// PURCHASE PHOTOS + HYBRID OCR
+// ============================================================
+
+function triggerPurchasePhotoCapture() {
+  const input = document.getElementById('pur-photo-input-cam');
+  if(input) input.click();
+}
+
+function triggerPurchasePhotoFromDevice() {
+  const input = document.getElementById('pur-photo-input-file');
+  if(input) input.click();
+}
+
+async function handlePurchasePhotoCapture(event) {
+  const files = event.target.files;
+  if(!files || !files.length) {
+    if(event.target) event.target.value = '';
+    return;
+  }
+  try {
+    if(!currentPurchasePhotosBatchId) {
+      currentPurchasePhotosBatchId = uid(); // Gom tất cả ảnh theo "lần nhập/chứng từ" trong phiên modal
+    }
+    let added = 0;
+    for(let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if(!file || !String(file.type || '').startsWith('image/')) continue;
+      const dataUrl = await resizeImageToDataUrl(file, 1280, 0.7);
+      const photo = {
+        id: uid(),
+        dataUrl,
+        takenAt: new Date().toISOString(),
+      };
+      currentPurchasePhotos.push(photo);
+      added++;
+    }
+    if(added === 0) {
+      showToast('⚠️ Không có file ảnh hợp lệ.', 'warning');
+      return;
+    }
+    renderPurchasePhotoThumbs();
+    const last = currentPurchasePhotos[currentPurchasePhotos.length - 1];
+    setPurchasePhotoViewer(last);
+    
+    // Áp dụng lưu ngay sau khi chụp đă tránh viđc chưa submit đã mất ảnh
+    persistCurrentPurchasePhotosBatch();
+
+    setPurOcrStatus(added > 1
+      ? `📸 Đã thêm ${added} ảnh chứng từ. Có thể bấm "Quét" để đọc dữ liệu.`
+      : '📸 Đã thêm ảnh chứng từ. Có thể bấm "Quét" để đọc dữ liệu.');
+  } catch(e) {
+    console.warn('handlePurchasePhotoCapture error', e);
+    showToast('❌ Không xử lý được ảnh chứng từ.', 'danger');
+  } finally {
+    if(event.target) event.target.value = '';
+  }
+}
+
+function renderPurchasePhotoThumbs() {
+  const wrap = document.getElementById('pur-photo-thumbs');
+  if(!wrap) return;
+  if(!currentPurchasePhotos.length) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+    const viewer = document.getElementById('pur-photo-viewer');
+    if(viewer) viewer.style.display = 'none';
+    return;
+  }
+  wrap.innerHTML = currentPurchasePhotos.map(ph => {
+    const safeDataUrl = _safeImageUrl(ph.dataUrl);
+    if (!safeDataUrl) return '';
+    const safePhotoId = _escapeHtml(_escapeJsString(ph.id));
+    return `
+      <div style="position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:6px;overflow:hidden;border:1px solid var(--border);cursor:pointer;"
+           onclick="setPurchasePhotoViewerById(${safePhotoId})">
+        <img src="${_escapeHtml(safeDataUrl)}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+      </div>
+    `;
+  }).join('');
+}
+
+function setPurchasePhotoViewerById(id) {
+  const ph = currentPurchasePhotos.find(p => p.id === id);
+  if(ph) setPurchasePhotoViewer(ph);
+}
+
+function setPurchasePhotoViewer(photo) {
+  const box = document.getElementById('pur-photo-viewer');
+  const img = document.getElementById('pur-photo-viewer-img');
+  if (!box || !img || !photo) return;
+  if (!_setSafeImageSource(img, photo.dataUrl)) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'block';
+  window._currentPurchaseViewerPhoto = photo;
+}
+
+function openCurrentPurchasePhotoViewerFull() {
+  const p = window._currentPurchaseViewerPhoto;
+  if(!p) return;
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  ImgZoom.detach();
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
+}
+
+async function persistCurrentPurchasePhotosBatch() {
+  if(!currentPurchasePhotosBatchId) return;
+  if(!currentPurchasePhotos || !currentPurchasePhotos.length) return;
+  try {
+    const map = purchasePhotoCache || {};
+    const batchId = currentPurchasePhotosBatchId;
+    const existing = map[batchId];
+
+    const entry = (existing && existing.photos && Array.isArray(existing.photos))
+      ? existing
+      : { batchId, createdAt: (existing && existing.createdAt) || new Date().toISOString(), photos: [] };
+
+    const photoById = new Map((entry.photos || []).map(p => [p.id, p]));
+    currentPurchasePhotos.forEach(p => {
+      if(!photoById.has(p.id)) entry.photos.push(p);
+    });
+    entry.photos = entry.photos || [];
+    map[batchId] = entry;
+    purchasePhotoCache = map;
+    await Store.setPurchasePhotosAsync(map);
+  } catch(e) {
+    console.warn('persistCurrentPurchasePhotosBatch error', e);
+    showToast('⚠️ Lưu ảnh bị lỗi (có thể đầy dung lượng).', 'danger');
+  }
+}
+
+function getEffectiveOcrMode() {
+  if(currentPurchaseOcrMode) return currentPurchaseOcrMode;
+  const s = Store.getSettings();
+  return s.ocrMode || 'auto';
+}
+
+function updatePurOcrModeLabel() {
+  const el = document.getElementById('pur-ocr-mode-label');
+  if(!el) return;
+  const mode = getEffectiveOcrMode();
+  let text = 'OCR: Tự động';
+  if(mode === 'offline') text = 'OCR: Offline (on-device)';
+  else if(mode === 'online') text = 'OCR: Online (Gemini)';
+  el.textContent = text;
+}
+
+function togglePurchaseOcrMode() {
+  const current = getEffectiveOcrMode();
+  const next = current === 'auto' ? 'offline' : current === 'offline' ? 'online' : 'auto';
+  currentPurchaseOcrMode = next;
+  updatePurOcrModeLabel();
+}
+
+function setPurOcrStatus(msg) {
+  const el = document.getElementById('pur-ocr-status');
+  if(el) el.innerHTML = msg || '';
+}
+
+async function runPurchaseOcrFromLatestPhoto() {
+  if(!currentPurchasePhotos.length) {
+    showToast('⚠️ Chưa có ảnh chứng từ để quét.', 'warning');
+    return;
+  }
+  const photo = currentPurchasePhotos[currentPurchasePhotos.length - 1];
+  const mode = getEffectiveOcrMode();
+  updatePurOcrModeLabel();
+  setPurOcrStatus('⏳ Đang quét ảnh...');
+  try {
+    let result = null;
+    if(mode === 'offline') {
+      result = await runOfflineOcr(photo.dataUrl);
+    } else if(mode === 'online') {
+      result = await runOnlinePurchaseOcr(photo.dataUrl);
+    } else { // auto
+      try {
+        result = await runOfflineOcr(photo.dataUrl);
+      } catch(e) {
+        console.warn('Offline OCR failed, considering online fallback', e);
+        const canOnline = navigator.onLine;
+        if(canOnline) {
+          if(confirm('OCR Offline không đọc rõ. Dùng OCR Online qua Vertex để quét ảnh này?')) {
+            result = await runOnlinePurchaseOcr(photo.dataUrl);
+          } else {
+            throw new Error('Người dùng không muốn dùng OCR Online');
+          }
+        } else {
+          throw e;
+        }
+      }
+    }
+    if(result) {
+      applyPurchaseOcrResult(result);
+    } else {
+      setPurOcrStatus('⚠️ Không đọc được nhiều thông tin từ ảnh. Vui lòng nhập tay.');
+    }
+  } catch(e) {
+    console.warn('runPurchaseOcrFromLatestPhoto error', e);
+    setPurOcrStatus('❌ Lỗi OCR: ' + (e.message || e));
+  }
+}
+
+async function loadTesseractWorker() {
+  if(tesseractWorker) return tesseractWorker;
+  if(typeof Tesseract === 'undefined') {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Không tải được thư viện OCR offline'));
+      document.head.appendChild(s);
+    });
+  }
+  tesseractWorker = await Tesseract.createWorker('vie', 1);
+  return tesseractWorker;
+}
+
+async function runOfflineOcr(dataUrl) {
+  const worker = await loadTesseractWorker();
+  const res = await worker.recognize(dataUrl);
+  const text = (res && res.data && res.data.text) ? res.data.text : '';
+  if(!text.trim()) throw new Error('OCR Offline không đọc được nội dung.');
+  return parsePurchaseText(text, 'offline');
+}
+
+async function runOnlinePurchaseOcr(dataUrl) {
+  const endpoint = 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/purchaseOcr';
+  const token = await window.DB?.currentUser?.getIdToken();
+  if (!token) throw new Error('Cần đăng nhập Firebase để dùng OCR Online.');
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ dataUrl }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok || !data?.ok) {
+    throw new Error(data?.error || 'Vertex OCR không phản hồi.');
+  }
+  return parsePurchaseJson(data, 'online');
+}
+
+function parsePurchaseText(text, source) {
+    if (window.XekhoApp?.utils?.parser?.parsePurchaseText) return window.XekhoApp.utils.parser.parsePurchaseText(text, source);
+    const numbers = (text.match(/\d[\d\.]*/g) || []).map(x => parseFloat(x.replace(/\./g,''))).filter(x => !isNaN(x));
+    let price = null; let qty = null;
+    if(numbers.length) { price = Math.max(...numbers); const others = numbers.filter(n => n !== price); if(others.length) qty = others[0]; }
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let bestLine = '';
+    lines.forEach(l => { if(/[A-Za-z\u00C0-\u1EF9]/.test(l) && l.length > bestLine.length) bestLine = l; });
+    return { name: bestLine || '', qty, price, rawText: text, source };
+  }
+
+function parsePurchaseJson(obj, source) {
+    if (window.XekhoApp?.utils?.parser?.parsePurchaseJson) return window.XekhoApp.utils.parser.parsePurchaseJson(obj, source);
+    return { name: obj.name || '', qty: typeof obj.qty === 'number' ? obj.qty : null, price: typeof obj.price === 'number' ? obj.price : null, rawText: obj.rawText || '', source };
+  }
+
+function applyPurchaseOcrResult(result) {
+  const nameInp = document.getElementById('pur-name');
+  const qtyInp = document.getElementById('pur-qty');
+  const priceInp = document.getElementById('pur-price');
+  if(!nameInp || !qtyInp || !priceInp) return;
+
+  let filled = [];
+  if(result.name) {
+    // Tìm nguyên liệu gần giống nhất trong danh sách
+    const inv = Store.getInventory();
+    const match = inv.find(i => i.name.toLowerCase().includes(result.name.toLowerCase()) || result.name.toLowerCase().includes(i.name.toLowerCase()));
+    if(match && !nameInp.value) {
+      nameInp.value = match.id;
+      onPurchaseItemSelect();
+      filled.push('tên nguyên liệu');
+    }
+  }
+  if(typeof result.qty === 'number' && !qtyInp.value) {
+    qtyInp.value = result.qty;
+    filled.push('số lượng');
+  }
+  if(typeof result.price === 'number' && !priceInp.value) {
+    priceInp.value = result.price;
+    filled.push('tổng tiền');
+  }
+
+  if(filled.length) {
+    setPurOcrStatus(`✅ OCR ${result.source === 'online' ? 'Online' : 'Offline'} đã điền: ${filled.join(', ')}. Phần còn lại vui lòng nhập tay nếu cần.`);
+  } else {
+    setPurOcrStatus('⚠️ OCR không điền thêm được trường nào. Vui lòng nhập thủ công dựa trên ảnh.');
+  }
+}
+
+// ============================================================
+// IMAGE RESIZE HELPER
+// ============================================================
+
+function resizeImageToDataUrl(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const max = maxSize || 1080;
+        if(width > height && width > max) {
+          height = Math.round(height * max / width);
+          width = max;
+        } else if(height > width && height > max) {
+          width = Math.round(width * max / height);
+          height = max;
+        } else if(width > max) {
+          const ratio = max / width;
+          width = max;
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const q = typeof quality === 'number' ? quality : 0.7;
+        const dataUrl = canvas.toDataURL('image/jpeg', q);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Không đọc được ảnh.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Không tải được file ảnh.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function escapeAutoStockNormHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getAutoStockNormDateKey(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getAutoStockNormDayKeys(days = 56) {
+  const todayKey = getAutoStockNormDateKey(new Date());
+  const todayStart = new Date(`${todayKey}T00:00:00+07:00`).getTime();
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    out.push(getAutoStockNormDateKey(new Date(todayStart - i * 86400000)));
+  }
+  return out;
+}
+
+function autoStockNormQuantile(values, q) {
+  const nums = (values || []).map(Number).filter(n => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!nums.length) return 0;
+  const pos = (nums.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return nums[lo];
+  return nums[lo] * (hi - pos) + nums[hi] * (pos - lo);
+}
+
+function getAutoStockNormClass(total, avgDay, daysSold) {
+  if (total >= 50 || avgDay >= 1 || daysSold >= 20) return 'A';
+  if (total >= 15 || daysSold >= 8) return 'B';
+  return 'C';
+}
+
+function getAutoStockNormLevels(row) {
+  const total = row.total || 0;
+  const avgDay = row.avgDay || 0;
+  const avgSoldDay = row.avgSoldDay || 0;
+  const daysSold = row.daysSold || 0;
+  const p75 = row.p75 || 0;
+  const p90 = row.p90 || 0;
+  const p95 = row.p95 || 0;
+  if (row.abc === 'A') {
+    return {
+      min: Math.ceil(Math.max(p75, avgDay * 1.2, 1)),
+      par: Math.ceil(Math.max(p90 * 2, avgDay * 3, Math.ceil(Math.max(p75, avgDay * 1.2, 1)) + 1)),
+      max: Math.ceil(Math.max(p95 * 3, avgDay * 4, Math.ceil(Math.max(p90 * 2, avgDay * 3, Math.ceil(Math.max(p75, avgDay * 1.2, 1)) + 1)) + 1))
+    };
+  }
+  if (row.abc === 'B') {
+    const min = Math.ceil(Math.max(p75, avgDay, daysSold >= 8 ? 1 : 0));
+    const par = Math.ceil(Math.max(p90 * 1.5, avgDay * 2, min + 1));
+    return { min, par, max: Math.ceil(Math.max(p95 * 2, avgDay * 3, par + 1)) };
+  }
+  const min = 0;
+  const par = Math.ceil(Math.max(total >= 3 ? 1 : 0, p90, avgSoldDay * 0.75));
+  return { min, par, max: Math.ceil(Math.max(par, p95 * 1.5, avgSoldDay)) };
+}
+
+function buildAutoStockNormRows(days = 56) {
+  const history = _getVisibleHistoryForUi();
+  const inventory = _getInventory();
+  const dayKeys = getAutoStockNormDayKeys(days);
+  const daySet = new Set(dayKeys);
+  const byId = new Map();
+  const byName = new Map();
+  inventory.forEach(item => {
+    if (!item || item.hidden) return;
+    byId.set(String(item.id || ''), item);
+    byName.set(normalizeViKey(item.name), item);
+  });
+
+  const groups = new Map();
+  let ordersInRange = 0;
+  history.forEach(order => {
+    const ts = order?.paidAt || order?.timestamp || order?.createdAt;
+    const dayKey = getAutoStockNormDateKey(ts);
+    if (!daySet.has(dayKey)) return;
+    ordersInRange += 1;
+    (Array.isArray(order.items) ? order.items : []).forEach(item => {
+      const qty = Number(item?.qty || 0);
+      const name = String(item?.name || item?.id || '').trim();
+      if (!name || !Number.isFinite(qty) || qty <= 0) return;
+      const key = normalizeViKey(name) || name;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name,
+          id: String(item?.id || ''),
+          linkedInventoryId: String(item?.linkedInventoryId || ''),
+          daily: Object.create(null),
+          total: 0,
+          price: Number(item?.price || 0),
+        });
+      }
+      const row = groups.get(key);
+      row.total += qty;
+      row.daily[dayKey] = (row.daily[dayKey] || 0) + qty;
+      if (!row.linkedInventoryId && item?.linkedInventoryId) row.linkedInventoryId = String(item.linkedInventoryId);
+      if (!row.id && item?.id) row.id = String(item.id);
+    });
+  });
+
+  const rows = [...groups.values()].map(row => {
+    const values = dayKeys.map(day => Number(row.daily[day] || 0));
+    const nonZero = values.filter(v => v > 0);
+    const avgDay = row.total / Math.max(1, dayKeys.length);
+    const avgSoldDay = row.total / Math.max(1, nonZero.length);
+    const stats = {
+      ...row,
+      daysSold: nonZero.length,
+      avgDay,
+      avgSoldDay,
+      p75: autoStockNormQuantile(values, 0.75),
+      p90: autoStockNormQuantile(values, 0.90),
+      p95: autoStockNormQuantile(values, 0.95),
+      maxDay: values.length ? Math.max(...values) : 0,
+    };
+    stats.abc = getAutoStockNormClass(stats.total, stats.avgDay, stats.daysSold);
+    const levels = getAutoStockNormLevels(stats);
+    const mapped = stats.linkedInventoryId ? byId.get(stats.linkedInventoryId) : null;
+    const stockItem = mapped || byId.get(stats.id) || byName.get(normalizeViKey(stats.name)) || null;
+    const currentStock = stockItem ? Number(stockItem.qty || 0) : null;
+    const unit = stockItem ? String(stockItem.unit || '') : 'phần';
+    let status = 'ok';
+    let statusText = 'Đủ';
+    if (!stockItem) { status = 'unmapped'; statusText = 'Chưa map kho'; }
+    else if (currentStock <= levels.min) { status = 'need'; statusText = 'Cần nhập'; }
+    else if (currentStock > levels.max) { status = 'over'; statusText = 'Dư tồn'; }
+    else if (currentStock <= levels.par) { status = 'watch'; statusText = 'Theo dõi'; }
+    if (stats.daysSold <= 4 && stats.maxDay >= 10) statusText += ' / spike';
+    const suggestedImportQty = stockItem ? Math.max(0, Math.ceil(levels.par - currentStock)) : null;
+    return { ...stats, ...levels, stockItem, currentStock, unit, status, statusText, suggestedImportQty };
+  }).sort((a, b) => {
+    const rank = { need: 0, watch: 1, over: 2, ok: 3, unmapped: 4 };
+    return (rank[a.status] ?? 9) - (rank[b.status] ?? 9)
+      || 'ABC'.indexOf(a.abc) - 'ABC'.indexOf(b.abc)
+      || b.total - a.total
+      || a.name.localeCompare(b.name, 'vi');
+  });
+
+  return { rows, days: dayKeys.length, ordersInRange, start: dayKeys[0], end: dayKeys[dayKeys.length - 1] };
+}
+
+function getAutoStockNormPurchaseInfo(row) {
+  const suggested = Number(row?.suggestedImportQty || 0);
+  if (!Number.isFinite(suggested) || suggested <= 0) return null;
+  const unit = String(row.unit || '').trim() || 'đơn vị';
+  const unitKey = normalizeViKey(unit);
+  const nameKey = normalizeViKey(row.name || '');
+  const isCanBeer = unitKey.includes('lon') || (nameKey.includes('bia') && !unitKey.includes('thung'));
+  const packageSize = isCanBeer ? 24 : 1;
+  const packageName = isCanBeer ? 'thùng' : unit;
+  const packageCount = Math.ceil(suggested / packageSize);
+  const orderQty = packageCount * packageSize;
+  const unitCost = Number(row.stockItem?.costPerUnit || row.stockItem?.cost || row.stockItem?.price || 0);
+  const estimatedCost = Math.max(0, orderQty * (Number.isFinite(unitCost) ? unitCost : 0));
+  return { suggested, unit, isCanBeer, packageSize, packageName, packageCount, orderQty, unitCost, estimatedCost };
+}
+
+function toggleAutoStockNormOverview(event) {
+  if (event && event.target && event.target.closest('button, select, input, a, details, summary')) return;
+  const card = document.querySelector('[data-xk-auto-stock-norm="v1"]');
+  if (!card) return;
+  card.dataset.autoStockExpanded = card.dataset.autoStockExpanded === '1' ? '0' : '1';
+  renderAutoStockNormBoard();
+}
+
+function renderAutoStockNormBoard() {
+  const board = document.getElementById('auto-stock-norm-board');
+  if (!board) return;
+  const card = document.querySelector('[data-xk-auto-stock-norm="v1"]');
+  const subtitle = document.getElementById('auto-stock-norm-subtitle');
+  const report = buildAutoStockNormRows(56);
+  const mappedRows = report.rows.filter(r => r.stockItem && Number(r.suggestedImportQty || 0) > 0);
+  const actionRows = mappedRows.map(row => ({ ...row, purchase: getAutoStockNormPurchaseInfo(row) })).filter(row => row.purchase);
+  const totalEstimatedCost = actionRows.reduce((sum, row) => sum + (row.purchase?.estimatedCost || 0), 0);
+  const totalSuggestedQty = actionRows.reduce((sum, row) => sum + Number(row.purchase?.suggested || 0), 0);
+  const totalPackages = actionRows.reduce((sum, row) => sum + (row.purchase?.isCanBeer ? row.purchase.packageCount : 0), 0);
+  const overCount = report.rows.filter(r => r.status === 'over').length;
+  const unmappedCount = report.rows.filter(r => r.status === 'unmapped').length;
+  const expanded = card ? card.dataset.autoStockExpanded === '1' : true;
+  const fmtQty = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+  const fmtMoney = (n) => `${Number(n || 0).toLocaleString('vi-VN')}đ`;
+
+  if (card) {
+    card.classList.toggle('auto-stock-norm-expanded', expanded);
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+  }
+  if (subtitle) {
+    subtitle.textContent = actionRows.length
+      ? `Hôm nay cần đặt ${actionRows.length} món • ${totalPackages ? `${totalPackages} thùng bia • ` : ''}dự kiến ${fmtMoney(totalEstimatedCost)}`
+      : `Hôm nay chưa cần đặt thêm. Đã phân tích ${report.rows.length} món trong ${report.days} ngày.`;
+  }
+
+  if (!report.rows.length) {
+    board.innerHTML = '<div class="auto-stock-empty">📊 Chưa có lịch sử bán để tính định mức.</div>';
+    return;
+  }
+
+  const itemCards = actionRows.map(row => {
+    const info = row.purchase;
+    const packageLine = info.isCanBeer
+      ? `${fmtQty(info.suggested)} ${escapeAutoStockNormHtml(info.unit)} = ${info.packageCount} ${info.packageName}`
+      : `${fmtQty(info.suggested)} ${escapeAutoStockNormHtml(info.unit)}`;
+    const orderLine = info.isCanBeer && info.orderQty !== info.suggested
+      ? `Đặt chẵn ${info.packageCount} ${info.packageName} (${fmtQty(info.orderQty)} ${escapeAutoStockNormHtml(info.unit)})`
+      : `Đặt ${packageLine}`;
+    return `
+      <details class="auto-stock-order-item" onclick="event.stopPropagation()">
+        <summary>
+          <span class="auto-stock-order-main">
+            <strong>${escapeAutoStockNormHtml(row.name)}</strong>
+            <span>${packageLine}</span>
+          </span>
+          <span class="auto-stock-order-cost">${fmtMoney(info.estimatedCost)}</span>
+        </summary>
+        <div class="auto-stock-order-detail">
+          <div><span>Lý do</span><strong>${row.statusText}</strong></div>
+          <div><span>Tồn hiện tại</span><strong>${row.currentStock === null ? '—' : `${fmtQty(row.currentStock)} ${escapeAutoStockNormHtml(row.unit)}`}</strong></div>
+          <div><span>Mức chuẩn</span><strong>${row.par} ${escapeAutoStockNormHtml(row.unit)}</strong></div>
+          <div><span>Đề xuất nhập</span><strong>${orderLine}</strong></div>
+          <div><span>Giá vốn</span><strong>${info.unitCost ? `${fmtMoney(info.unitCost)}/${escapeAutoStockNormHtml(info.unit)}` : 'Chưa có giá vốn'}</strong></div>
+        </div>
+      </details>`;
+  }).join('');
+
+  const emptyAction = actionRows.length ? '' : `
+    <div class="auto-stock-empty">
+      <div style="font-size:24px">✅</div>
+      <strong>Hôm nay chưa cần đặt thêm.</strong>
+      <span>Không có món nào dưới mức chuẩn nhập hàng.</span>
+    </div>`;
+
+  board.innerHTML = `
+    <div class="auto-stock-compact ${expanded ? 'is-expanded' : ''}">
+      <div class="auto-stock-compact-top">
+        <div>
+          <div class="auto-stock-eyebrow">Tổng quan nhập hàng hôm nay</div>
+          <div class="auto-stock-headline">${actionRows.length ? `Cần đặt thêm ${actionRows.length} món` : 'Không cần đặt thêm'}</div>
+        </div>
+        <div class="auto-stock-total">${fmtMoney(totalEstimatedCost)}</div>
+      </div>
+      <div class="auto-stock-mini-stats">
+        <span>${fmtQty(totalSuggestedQty)} đơn vị cần bù</span>
+        ${totalPackages ? `<span>${totalPackages} thùng bia chẵn</span>` : ''}
+        <span>${overCount} dư tồn</span>
+        ${unmappedCount ? `<span>${unmappedCount} chưa map</span>` : ''}
+      </div>
+      <div class="auto-stock-tap-hint">${expanded ? 'Thu gọn thẻ' : 'Bấm vào thẻ để xem cần đặt món nào'}</div>
+    </div>
+    <div class="auto-stock-overview" ${expanded ? '' : 'hidden'}>
+      ${emptyAction}
+      ${itemCards}
+      <div class="auto-stock-note">Số thùng bia được làm tròn theo thùng chẵn 24 lon. Tổng tiền dùng giá vốn hiện tại trong Kho, chỉ để dự kiến nhập hàng.</div>
+    </div>`;
+}
+
+function renderStockList() {
+  const inv = _getInventory();
+  const search = (document.getElementById('inv-search')||{}).value || '';
+  const typeFilter = (document.getElementById('inv-type-filter')||{}).value || 'all';
+  const filtered = inv
+    .filter(i => {
+      if (i.hidden) return false;
+      const normalizedType = String(i.itemType || ITEM_TYPES.RAW);
+      const expectedType = typeFilter === 'raw' ? ITEM_TYPES.RAW : typeFilter;
+      if (expectedType !== 'all' && normalizedType !== expectedType) return false;
+      return !search || i.name.toLowerCase().includes(search.toLowerCase());
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi')); // Sắp xếp theo alphabet tiếng Việt
+  const {critical, low} = getInventoryAlerts();
+  const critSet = new Set(critical.map(i=>i.id));
+  const lowSet = new Set(low.map(i=>i.id));
+
+  // Calculate total inventory value
+  let totalValue = 0;
+  filtered.forEach(i => {
+    totalValue += (i.qty || 0) * (i.costPerUnit || 0);
+  });
+  
+  const totalValEl = document.getElementById('total-inventory-value');
+  if (totalValEl) {
+    totalValEl.textContent = fmtFull(totalValue);
+  }
+
+  const html = filtered.map(i => {
+    const pct = Math.min(100, (i.qty / (i.minQty * 3)) * 100);
+    const level = critSet.has(i.id) ? 'low' : lowSet.has(i.id) ? 'mid' : 'ok';
+    const barClass = level === 'low' ? 'red' : level === 'mid' ? 'yellow' : 'green';
+    return `<div class="inv-item" onclick="viewItemLedger('${i.id}')" style="cursor:pointer;">
+      <div style="flex:1">
+        <div class="inv-name">${i.name} <span class="inv-unit">(${i.unit})</span> ${getInventoryTypeBadge(i.itemType)}</div>
+        <div class="progress"><div class="progress-bar ${barClass}" style="width:${pct}%"></div></div>
+        <div style="font-size:10px;color:var(--text3)">Tối thiểu: ${i.minQty} ${i.unit}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="inv-qty ${level}">${i.qty}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">Giá vốn: ${fmt(i.costPerUnit||0)}đ</div>
+        ${i.supplierName ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">NCC: ${i.supplierName}</div>` : ''}
+        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
+          <span style="font-size:10px;color:var(--text3)">Xem thẻ kho để quản lý</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">Không có dữ liệu</div></div>';
+
+  document.getElementById('stock-list').innerHTML = html;
+  renderAutoStockNormBoard();
+  renderIngredientMergeBoard();
+
+  // Alert summary
+  const alertDiv = document.getElementById('inv-alerts');
+  let alertHtml = '';
+  if(critical.length > 0) alertHtml += `<div class="alert-card danger" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">🚨</div><div class="alert-content"><div class="alert-title">Cần nhập gấp (${critical.length})</div><div class="alert-desc">${critical.map(i=>i.name).join(', ')}</div></div></div>`;
+  if(low.length > 0) alertHtml += `<div class="alert-card warning" style="cursor:pointer" onclick="openStockAlertPopup()"><div class="alert-icon">⚠️</div><div class="alert-content"><div class="alert-title">Sắp hết (${low.length})</div><div class="alert-desc">${low.map(i=>i.name).join(', ')}</div></div></div>`;
+  alertDiv.innerHTML = alertHtml;
+}
+
+function viewItemLedger(itemId) {
+  // Switch to ledger tab
+  switchInvTab('ledger', document.querySelector('.tab-btn:nth-child(3)'));
+
+  // Select the clicked item in ledger dropdown then re-render
+  setTimeout(() => {
+    const ledgerSelect = document.getElementById('ledger-item-select');
+    if (ledgerSelect) {
+      ledgerSelect.value = itemId;
+      renderLedger();
+    }
+  }, 100);
+}
+
+function quickAddStock(invId) {
+  const inv = (window.appState && window.appState.inventory) || Store.getInventory();
+  const item = inv.find(i => i.id === invId);
+  if(!item) return;
+  const amt = parseFloat(prompt(`Nhập thêm bao nhiêu ${item.unit}?`, '10'));
+  if(isNaN(amt) || amt <= 0) return;
+  const newQty = (item.qty || 0) + amt;
+  // FIX 4: Ghi thẳng lên Firestore
+  if (window.DB && window.DB.Inventory) {
+    window.DB.Inventory.update(item.id, { qty: newQty })
+      .then(() => {
+        renderInventory();
+        updateAlertBadge();
+        showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
+      }).catch(e => showToast('Lỗi nhập kho: ' + e.message, 'danger'));
+  } else {
+    item.qty = newQty;
+    Store.setInventory(inv);
+    renderInventory();
+    updateAlertBadge();
+    showToast(`✅ Đã nhập thêm ${amt} ${item.unit} ${item.name}`);
+  }
+  // Log purchase (vẫn giữ trackđ?s purchase record)
+  Store.addPurchase({ id:uid(), name:item.name, qty:amt, unit:item.unit, price:(item.costPerUnit||0)*amt, costPerUnit:item.costPerUnit||0, date:new Date().toISOString(), supplier:'Nhập thủ công' });
+}
+
+function openAddInvItemModal() {
+  document.getElementById('inv-edit-id').value = '';
+  document.getElementById('inv-edit-name').value = '';
+  document.getElementById('inv-edit-unit').value = '';
+  document.getElementById('inv-edit-type').value = ITEM_TYPES.RAW;
+  document.getElementById('inv-edit-qty').value = '0';
+  document.getElementById('inv-edit-min').value = '5';
+  document.getElementById('inv-edit-cost').value = '0';
+  document.getElementById('inv-edit-status').value = 'active';
+  document.getElementById('inv-edit-supplier').value = '';
+  document.getElementById('inv-edit-supplier-phone').value = '';
+  document.getElementById('inv-edit-supplier-addr').value = '';
+  document.getElementById('inv-edit-modal-title').textContent = '🧾 Tạo Nguyên Liệu Mới';
+  document.getElementById('inv-edit-modal').classList.add('active');
+}
+
+function editInvItem(invId) {
+  const inv = _getInventory();
+  const item = inv.find(i => i.id === invId);
+  if(!item) return;
+  document.getElementById('inv-edit-id').value = item.id;
+  document.getElementById('inv-edit-name').value = item.name;
+  document.getElementById('inv-edit-unit').value = item.unit;
+  document.getElementById('inv-edit-type').value = item.itemType || ITEM_TYPES.RAW;
+  document.getElementById('inv-edit-qty').value = item.qty;
+  document.getElementById('inv-edit-min').value = item.minQty;
+  document.getElementById('inv-edit-cost').value = item.costPerUnit || 0;
+  document.getElementById('inv-edit-status').value = item.hidden ? 'hidden' : 'active';
+  document.getElementById('inv-edit-supplier').value = item.supplierName || '';
+  document.getElementById('inv-edit-supplier-phone').value = item.supplierPhone || '';
+  document.getElementById('inv-edit-supplier-addr').value = item.supplierAddress || '';
+  document.getElementById('inv-edit-modal-title').textContent = '🧾 Cập nhật nguyên liệu';
+  document.getElementById('inv-edit-modal').classList.add('active');
+}
+
+async function submitInvEdit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
+  const prevBtnText = submitBtn ? submitBtn.textContent : '';
+  const setSaving = (saving) => {
+    if (!submitBtn) return;
+    submitBtn.disabled = !!saving;
+    submitBtn.textContent = saving ? '⏳ Đang lưu...' : prevBtnText;
+  };
+  const id = document.getElementById('inv-edit-id').value;
+  const name = document.getElementById('inv-edit-name').value.trim();
+  const unit = document.getElementById('inv-edit-unit').value.trim();
+  const itemType = document.getElementById('inv-edit-type').value;
+  const minQty = parseFloat(document.getElementById('inv-edit-min').value);
+  const cost = parseFloat(document.getElementById('inv-edit-cost').value);
+  const status = document.getElementById('inv-edit-status').value;
+  const supplierName = document.getElementById('inv-edit-supplier').value.trim();
+  const supplierPhone = document.getElementById('inv-edit-supplier-phone').value.trim();
+  const supplierAddress = document.getElementById('inv-edit-supplier-addr').value.trim();
+
+  if(!name || !unit || isNaN(minQty) || isNaN(cost)) return;
+  setSaving(true);
+
+  const hidden = (status === 'hidden');
+  const existing = id ? _getInventory().find(i => i.id === id) : null;
+  const updateData = { name, unit, itemType, inv_type: _appInventoryTypeToMaster(itemType), minQty, costPerUnit: cost, hidden, supplierName, supplierPhone, supplierAddress };
+  
+  if (window.DB && window.DB.Inventory) {
+    try {
+      if (id) {
+        await window.DB.Inventory.update(id, updateData);
+        try {
+          await window.DB?.logAction?.('inventory_manual_update', {
+            inventoryId: id,
+            before: existing || null,
+            after: { ...(existing || {}), ...updateData, id },
+          });
+        } catch (auditErr) {
+          console.warn('[Audit] inventory_manual_update', auditErr);
+        }
+        if (window.appState?.inventory) {
+          const idx = window.appState.inventory.findIndex(i => i.id === id);
+          if (idx >= 0) window.appState.inventory[idx] = { ...window.appState.inventory[idx], ...updateData };
+        }
+        propagateInventoryReferenceRename(existing, { ...existing, ...updateData, id });
+        syncInventoryReferenceRenameToCloud(existing, { ...existing, ...updateData, id });
+        refreshIngredientDependentViews();
+        document.getElementById('inv-edit-modal').classList.remove('active');
+        showToast('✅ Đã cập nhật nguyên liệu');
+      } else {
+        const newInventoryId = await window.DB.Inventory.add({ qty: 0, ...updateData });
+        try {
+          await window.DB?.logAction?.('inventory_manual_create', {
+            inventoryId: newInventoryId,
+            after: { id: newInventoryId, qty: 0, ...updateData },
+          });
+        } catch (auditErr) {
+          console.warn('[Audit] inventory_manual_create', auditErr);
+        }
+        refreshIngredientDependentViews();
+        document.getElementById('inv-edit-modal').classList.remove('active');
+        showToast('✅ Đã tạo nguyên liệu mới');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Lỗi lưu kho: ' + (err?.message || String(err)), 'danger');
+    } finally {
+      setSaving(false);
+    }
+  } else {
+    const inv = Store.getInventory();
+    if (id) {
+      const idx = inv.findIndex(i => i.id === id);
+      if(idx >= 0) {
+        inv[idx] = { ...inv[idx], ...updateData };
+      }
+    } else {
+      inv.push({ id: uid(), qty: 0, ...updateData });
+    }
+    Store.setInventory(inv);
+    if (id) propagateInventoryReferenceRename(existing, { ...(existing || {}), ...updateData, id });
+    refreshIngredientDependentViews();
+    document.getElementById('inv-edit-modal').classList.remove('active');
+    showToast(id ? '✅ Đã cập nhật nguyên liệu' : '✅ Đã tạo nguyên liệu mới');
+    setSaving(false);
+  }
+}
+
+function getPurchasePhotoBatchEntries() {
+  const map = purchasePhotoCache || {};
+  const purchases = Store.getPurchases();
+  const entries = [];
+
+  Object.keys(map).forEach(batchId => {
+    const entry = map[batchId];
+    const createdAt = entry && entry.createdAt ? entry.createdAt : null;
+    const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+    if(!photos || !photos.length) return;
+    const usedCount = purchases.filter(p => String(p.photoBatchId || '') === String(batchId)).length;
+
+    entries.push({
+      batchId,
+      createdAt: createdAt || (photos[0] && photos[0].takenAt) || null,
+      photos,
+      count: photos.length,
+      usedCount,
+    });
+  });
+
+  entries.sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  return entries;
+}
+
+function renderPurchasePhotoManager() {
+  const entries = getPurchasePhotoBatchEntries();
+  if(!entries.length) {
+    return '<div class="card" style="padding:12px;margin-bottom:12px;"><div class="card-title" style="margin-bottom:6px">🖼️ Quản lý hình ảnh đã chụp</div><div class="card-sub" style="font-size:12px;color:var(--text3)">Chưa có ảnh chứng từ đã lưu</div></div>';
+  }
+
+  const html = entries.slice(0, 10).map(e => `
+    <div class="list-item" style="flex-direction:row;align-items:flex-start;gap:10px;">
+      <div class="list-item-icon" style="width:56px;height:56px;background:rgba(0,149,255,0.1);border-radius:14px;overflow:hidden;padding:0;">
+        <img src="${e.photos[0].dataUrl}" alt="Ảnh" style="width:100%;height:100%;object-fit:cover;cursor:pointer;"
+             onclick="openPurchasePhotoFullFromBatch('${e.batchId}', 0)">
+      </div>
+      <div class="list-item-content">
+        <div class="list-item-title">🖼️ Batch chứng từ</div>
+        <div class="list-item-sub" style="margin-top:4px">
+          <div>Thời gian: ${e.createdAt ? fmtDateTime(e.createdAt) : ''}</div>
+          <div>Số ảnh: ${e.count}</div>
+          <div>Sử dụng cho: ${e.usedCount} lần nhập</div>
+        </div>
+      </div>
+      <div class="list-item-right" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-xs btn-outline" onclick="viewPurchasePhotoBatch('${e.batchId}')">👁️ Xem</button>
+          <button class="btn btn-xs btn-danger" onclick="deletePurchasePhotoBatch('${e.batchId}')">🗑️</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="card" style="padding:12px;margin-bottom:12px;">
+      <div class="card-header" style="margin-bottom:8px">
+        <div class="card-title">🖼️ Quản lý hình ảnh đã chụp</div>
+        <div class="card-sub" style="margin-left:auto;font-size:11px;color:var(--text3)">Xem lại & xóa thủ công</div>
+      </div>
+      ${html}
+    </div>
+  `;
+}
+
+function viewPurchasePhotoBatch(batchId) {
+  const map = purchasePhotoCache || {};
+  const entry = map[batchId];
+  const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+  if(!photos.length) {
+    showToast('Không tìm thấy batch ảnh.', 'warning');
+    return;
+  }
+
+  window._activePurchasePhotoBatchId = batchId;
+  window._activePurchasePhotoBatchPhotos = photos;
+  const purchases = Store.getPurchases();
+  const used = purchases.filter(p => String(p.photoBatchId || '') === String(batchId));
+  const meta = document.getElementById('purchase-photo-batch-meta');
+  const gallery = document.getElementById('purchase-photo-batch-gallery');
+  if(meta) {
+    const names = used.slice(0, 3).map(p => p.name).join(', ');
+    const more = used.length > 3 ? ` +${used.length - 3} món` : '';
+    meta.textContent = `Batch: ${batchId} · Ảnh: ${photos.length} · Thời gian: ${fmtDateTime(entry.createdAt || photos[0].takenAt)} · Dùng cho: ${used.length} lần nhập${used.length ? ` (${names}${more})` : ''}`;
+  }
+  if(gallery) {
+    gallery.innerHTML = photos.map((ph, idx) => {
+      const safeDataUrl = _safeImageUrl(ph.dataUrl);
+      if (!safeDataUrl) return '';
+      return `
+        <div style="flex:0 0 auto;width:96px;height:96px;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;"
+             onclick="openPurchasePhotoBatchFull(${idx})">
+          <img src="${_escapeHtml(safeDataUrl)}" alt="Chứng từ" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('purchase-photo-batch-modal')?.classList.add('active');
+}
+
+function openPurchasePhotoFullFromBatch(batchId, photoIdx) {
+  const map = purchasePhotoCache || {};
+  const entry = map[batchId];
+  const photos = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.photos) ? entry.photos : []);
+  const p = photos && photos.length ? photos[photoIdx] : null;
+  if(!p) return;
+
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  ImgZoom.detach();
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : `Batch: ${batchId}`;
+  modal.classList.add('active');
+  // Attach zoom after image loads
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
+}
+
+function openPurchasePhotoBatchFull(photoIdx) {
+  const photos = window._activePurchasePhotoBatchPhotos || [];
+  const p = photos[photoIdx];
+  if(!p) return;
+  const modal = document.getElementById('purchase-photo-full-modal');
+  const img = document.getElementById('purchase-photo-full-img');
+  const wrap = document.getElementById('purchase-photo-full-wrap');
+  const meta = document.getElementById('purchase-photo-full-meta');
+  if(!modal || !img) return;
+
+  ImgZoom.detach();
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
+  if(meta) meta.textContent = p.takenAt ? `Thời gian chụp: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
+}
+
+async function deletePurchasePhotoBatch(batchId) {
+  const map = purchasePhotoCache || {};
+  if(!map[batchId]) {
+    showToast('Không tìm thấy batch ảnh.', 'warning');
+    return;
+  }
+  if(!confirm('Xóa toàn bộ ảnh chứng từ của batch này? Hành động này không thể hoàn tác.')) return;
+
+  delete map[batchId];
+  purchasePhotoCache = map;
+  await Store.setPurchasePhotosAsync(map);
+
+  // Gỡ liên kết khỏi các lần nhập
+  const purchases = Store.getPurchases();
+  let changed = false;
+  purchases.forEach(p => {
+    if(String(p.photoBatchId || '') === String(batchId)) {
+      p.photoBatchId = null;
+      changed = true;
+    }
+  });
+  if(changed) Store.setPurchases(purchases);
+
+  // Nếu modal đang mđ batch đó thì reset
+  if(String(currentPurchasePhotosBatchId || '') === String(batchId)) {
+    currentPurchasePhotosBatchId = null;
+    currentPurchasePhotos = [];
+    resetPurchasePhotoFileInputs();
+    if(document.getElementById('pur-photo-thumbs')) {
+      document.getElementById('pur-photo-thumbs').innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+    }
+    if(document.getElementById('pur-photo-viewer')) document.getElementById('pur-photo-viewer').style.display = 'none';
+    setPurOcrStatus('');
+  }
+
+  document.getElementById('purchase-photo-batch-modal')?.classList.remove('active');
+  renderInventory();
+  showToast('🗑️ Đã xóa batch ảnh.', 'success');
+}
+
+function renderPurchaseList() {
+  const purchases = _getPurchases()
+    .slice()
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    .slice(0, 50);
+  const search = (document.getElementById('purchase-search')||{}).value || '';
+  const inv = _getInventory();
+  const filtered = search
+    ? purchases.filter(p => {
+        const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
+        return p.name.toLowerCase().includes(search.toLowerCase()) ||
+          (invItem && invItem.name.toLowerCase().includes(search.toLowerCase()));
+      })
+    : purchases;
+  const purchasesHtml = filtered.length ? filtered.map(p => {
+    const invItem = inv.find(i => i.id === p.inventoryItemId) || inv.find(i => i.name === p.name);
+    let subInfo = `${p.qty} ${p.unit} · ${p.supplier || 'Không rõ'} · ${fmtDate(p.date)}`;
+    if (invItem) subInfo += `<br><small style="color:var(--text3)">${ITEM_TYPE_LABELS[invItem.itemType] || 'Nguyên liệu'}</small>`;
+    if (p.note) {
+      const safeNote = String(p.note).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      subInfo += `<br><small style="color:var(--text2)">${safeNote}</small>`;
+    }
+    if (p.photoBatchId) subInfo += `<br><small style="color:var(--text3)">🖼️ Batch: ${String(p.photoBatchId).slice(0,8)}...</small>`;
+    if (p.supplierPhone) subInfo += `<br><small style="color:var(--text3)">ĐT: ${p.supplierPhone} ${p.supplierAddress ? '- ' + p.supplierAddress : ''}</small>`;
+    return `<div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📥</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${p.name}</div>
+        <div class="list-item-sub">${subInfo}</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount">-${fmt(p.price)}đ</div>
+        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
+          <button class="btn btn-xs btn-outline" onclick="editPurchase('${p.id}')">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="deletePurchase('${p.id}')">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : (search ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">Không tìm thấy "${_escapeHtml(search)}"</div></div>` : '<div class="empty-state"><div class="empty-icon">📥</div><div class="empty-text">Chưa có lịch sử nhập hàng</div></div>');
+
+  const wrap = document.getElementById('purchase-list');
+  if(!wrap) return;
+  wrap.innerHTML = renderPurchasePhotoManager() + purchasesHtml;
+}
+
+function editPurchase(purchaseId) {
+  const purchases = _getPurchases();
+  const p = purchases.find(x => x.id === purchaseId);
+  if(!p) return;
+  renderPurchaseSupplierDropdown();
+  resetPurchasePhotoFileInputs();
+  // Fill form and open modal
+  const inv = Store.getInventory();
+  const item = inv.find(i => i.name === p.name);
+  if(item) {
+    document.getElementById('pur-name').value = item.id;
+    onPurchaseItemSelect();
+  }
+  document.getElementById('pur-qty').value = p.qty;
+  document.getElementById('pur-unit').value = p.unit || (p.qty ? 'phần' : '');
+  document.getElementById('pur-price').value = p.price;
+  calcPurUnitPrice();
+  document.getElementById('pur-supplier').value = p.supplier || '';
+  document.getElementById('pur-supplier-phone').value = p.supplierPhone || '';
+  document.getElementById('pur-supplier-addr').value = p.supplierAddress || '';
+  const noteEl = document.getElementById('pur-note');
+  if(noteEl) noteEl.value = p.note || '';
+  syncPurchaseSupplierSelectFromPurchase(p);
+  // Store editing id
+  const form = document.getElementById('purchase-form');
+  form.dataset.editId = purchaseId;
+  document.getElementById('purchase-modal-title').textContent = '✏️ Sửa nhập hàng';
+  document.getElementById('purchase-modal').classList.add('active');
+}
+
+function deletePurchase(purchaseId) {
+  if(!confirm('Xoá bản ghi nhập hàng này?')) return;
+  if (window.DB?.Purchases?.delete) {
+    window.DB.Purchases.delete(purchaseId).then(() => {
+      const purchases = Store.getPurchases().filter(p => p.id !== purchaseId);
+      Store.setPurchases(purchases);
+      renderInventory();
+      showToast('🗑️ Đã xoá bản ghi nhập hàng', 'success');
+    }).catch(err => showToast('Lỗi xoá bản ghi: ' + err.message, 'danger'));
+    return;
+  }
+  const purchases = Store.getPurchases().filter(p => p.id !== purchaseId);
+  Store.setPurchases(purchases);
+  renderInventory();
+  showToast('🗑️ Đã xoá bản ghi nhập hàng', 'success');
+}
+
+function renderForecast() {
+  const needs = getForecastNeeds(3);
+  document.getElementById('forecast-list').innerHTML = needs.length ? needs.map(n =>
+    `<div class="alert-card ${n.urgent ? 'danger' : 'warning'}">
+      <div class="alert-icon">${n.urgent ? '🚨' : '📦'}</div>
+      <div class="alert-content">
+        <div class="alert-title">${n.name} <span class="badge ${n.urgent ? 'badge-danger' : 'badge-warning'}">${n.urgent ? 'KHẨN' : 'Dự báo'}</span></div>
+        <div class="alert-desc">Tồn: ${n.currentQty} ${n.unit} | Trung bình/ngày: ${n.dailyAvg} ${n.unit}<br>Cần nhập thêm ~${n.need.toFixed(1)} ${n.unit} cho 3 ngày tới</div>
+      </div>
+    </div>`
+  ).join('') : '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Tồn kho đủ dùng!</div></div>';
+}
+
+function renderLedger() {
+  const invItems = _getInventory();
+  const select = document.getElementById('ledger-item-select');
+  const fromInput = document.getElementById('ledger-from-date');
+  const toInput = document.getElementById('ledger-to-date');
+  const today = new Date().toISOString().split('T')[0];
+  if (fromInput && !fromInput.value) fromInput.value = today;
+  if (toInput && !toInput.value) toInput.value = fromInput?.value || today;
+  
+  const currentVal = select.value;
+  const sortedItems = invItems.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  select.innerHTML = '<option value="">-- Chọn Nguyên Liệu --</option>' + 
+    sortedItems.map(i => `<option value="${i.id}">${i.hidden ? '🚫 ' : ''}${i.name} (${i.unit})</option>`).join('');
+  select.value = currentVal;
+
+  const itemId = select.value;
+  const listEl = document.getElementById('ledger-list');
+  const infoCardEl = document.getElementById('ledger-info-card');
+
+  if(!itemId) {
+    if(infoCardEl) infoCardEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Vui lòng chọn một nguyên liệu để xem thẻ kho</div></div>';
+    return;
+  }
+
+  const inv = invItems.find(i => i.id === itemId);
+  if(!inv) return;
+
+  const itemName = inv.name;
+  const itemKey = normalizeViKey(itemName);
+  const conversions = Store.getUnitConversions();
+  const normalizeLedgerQty = (recipeQty, recipeUnit, stockItem) => {
+    const baseQty = Number(recipeQty || 0);
+    if (!(baseQty > 0) || !stockItem) return 0;
+    const sourceUnit = String(recipeUnit || stockItem.unit || '').trim();
+    const stockUnit = String(stockItem.unit || '').trim();
+    if (!sourceUnit || !stockUnit || normalizeViKey(sourceUnit) === normalizeViKey(stockUnit)) return baseQty;
+    const conv = conversions.find(c =>
+      normalizeViKey(c.ingredientName) === itemKey &&
+      normalizeViKey(c.recipeUnit) === normalizeViKey(sourceUnit) &&
+      normalizeViKey(c.purchaseUnit) === normalizeViKey(stockUnit)
+    );
+    if (!conv || !(Number(conv.recipeQty) > 0)) return 0;
+    return baseQty * (Number(conv.purchaseQty || 0) / Number(conv.recipeQty || 1));
+  };
+
+  // Hiđơ thđ thông tin nguyên liđu
+  if(infoCardEl) {
+    infoCardEl.innerHTML = `
+      <div class="card" style="padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(0,149,255,0.05),rgba(0,149,255,0.15))">
+        <div>
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${inv.hidden ? '🚫 ' : ''}${inv.name} ${inv.hidden ? '<span style="font-size:10px;padding:2px 4px;background:#ff4d4f;color:#fff;border-radius:4px;vertical-align:middle;margin-left:4px">Đã ẩn</span>' : ''}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px">Tồn hiện tại: <strong style="color:var(--primary)">${fmt(inv.qty)} ${inv.unit}</strong></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-secondary" onclick="editInvItem('${inv.id}')">✏️ Sửa thông tin</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteInventoryItemFromLedger('${inv.id}')">🗑️ Xóa</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const fromValue = fromInput?.value || today;
+  const toValue = toInput?.value || fromValue;
+  let startDate = new Date(fromValue);
+  let endDate = new Date(toValue);
+  if (Number.isNaN(startDate.getTime())) startDate = new Date();
+  if (Number.isNaN(endDate.getTime())) endDate = new Date(startDate);
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(23, 59, 59, 999);
+  if (endDate < startDate) {
+    const temp = new Date(startDate);
+    startDate = new Date(endDate);
+    endDate = new Date(temp);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+    if (fromInput) fromInput.value = startDate.toISOString().split('T')[0];
+    if (toInput) toInput.value = endDate.toISOString().split('T')[0];
+  }
+  const startTime = startDate.getTime();
+  const endTime = endDate.getTime();
+
+  const allPurchases = _getPurchases().filter(p =>
+    String(p.inventoryItemId || '') === String(inv.id) ||
+    normalizeViKey(p.name) === itemKey
+  );
+  const allHistory = _getHistory().filter(isCompletedHistoryOrderForUi);
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [String(m.id), m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
+
+  let events = [];
+  
+  allPurchases.forEach(p => {
+    const t = new Date(p.date).getTime();
+    events.push({
+      time: t,
+      type: 'purchase',
+      qty: Number(p.qty || 0),
+      desc: 'Nhập hàng',
+      label: p.supplier || '',
+    });
+  });
+
+  allHistory.forEach(h => {
+    const t = new Date(h.paidAt).getTime();
+    let usedQty = 0;
+    (h.items || []).forEach(i => {
+      const dish = menuById.get(String(i.id || '')) || menuByName.get(normalizeViKey(i.name)) || null;
+      if (!dish) return;
+
+      if (dish.itemType === ITEM_TYPES.RETAIL) {
+        const linkedId = String(dish.linkedInventoryId || '');
+        if ((linkedId && linkedId === String(inv.id)) || (!linkedId && normalizeViKey(dish.name) === itemKey)) {
+          usedQty += Number(i.qty || 0);
+        }
+        return;
+      }
+
+      if (!Array.isArray(dish.ingredients)) return;
+      dish.ingredients.forEach(ing => {
+        if (normalizeViKey(ing.name) !== itemKey) return;
+        usedQty += normalizeLedgerQty(ing.qty, ing.unit, inv) * Number(i.qty || 0);
+      });
+    });
+    if (usedQty > 0) {
+      events.push({ time: t, type: 'sale', qty: usedQty, desc: 'Bán ra', label: h.id });
+    }
+  });
+
+  events.sort((a,b) => a.time - b.time);
+
+  let totalPurchasesAfterStart = 0;
+  let totalSalesAfterStart = 0;
+  let totalPurchasesAfterEnd = 0;
+  let totalSalesAfterEnd = 0;
+
+  events.forEach(e => {
+    if (e.time >= startTime) {
+      if (e.type === 'purchase') totalPurchasesAfterStart += e.qty;
+      else if (e.type === 'sale') totalSalesAfterStart += e.qty;
+    }
+    if (e.time > endTime) {
+      if (e.type === 'purchase') totalPurchasesAfterEnd += e.qty;
+      else if (e.type === 'sale') totalSalesAfterEnd += e.qty;
+    }
+  });
+
+  // Calculate back from present
+  let openingStock = inv.qty - totalPurchasesAfterStart + totalSalesAfterStart;
+  
+  let periodEvents = events.filter(e => e.time >= startTime && e.time <= endTime);
+
+  let periodPurchases = 0;
+  let periodSales = 0;
+  let currentRunningStock = openingStock;
+
+  let html = `<div class="card" style="margin-bottom:12px;background:var(--bg3)">
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Tồn đầu kỳ:</span><span style="font-weight:700">${fmt(openingStock)} ${inv.unit}</span>
+    </div>
+  `;
+
+  let detailsHtml = '';
+  periodEvents.forEach(e => {
+    if (e.type === 'purchase') {
+      currentRunningStock += e.qty;
+      periodPurchases += e.qty;
+      detailsHtml += `<div class="list-item">
+        <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📥</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${e.desc} <span style="font-weight:normal;color:var(--text2);font-size:11px">(${e.label})</span></div>
+          <div class="list-item-sub">${fmtTime(new Date(e.time))} · ${fmtDate(new Date(e.time))}</div>
+        </div>
+        <div class="list-item-right" style="text-align:right">
+          <div class="list-item-amount" style="color:var(--info)">+${fmt(e.qty)} ${inv.unit}</div>
+          <div style="font-size:11px;color:var(--text3)">Tồn: ${fmt(currentRunningStock)}</div>
+        </div>
+      </div>`;
+    } else {
+      currentRunningStock -= e.qty;
+      periodSales += e.qty;
+      detailsHtml += `<div class="list-item">
+        <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">📤</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${e.desc} <span style="font-weight:normal;color:var(--text2);font-size:11px">(${e.label})</span></div>
+          <div class="list-item-sub">${fmtTime(new Date(e.time))} · ${fmtDate(new Date(e.time))}</div>
+        </div>
+        <div class="list-item-right" style="text-align:right">
+          <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.qty)} ${inv.unit}</div>
+          <div style="font-size:11px;color:var(--text3)">Tồn: ${fmt(currentRunningStock)}</div>
+        </div>
+      </div>`;
+    }
+  });
+
+  html += `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Nhập trong kỳ:</span><span style="font-weight:700;color:var(--info)">+${fmt(periodPurchases)} ${inv.unit}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>Xuất trong kỳ:</span><span style="font-weight:700;color:var(--danger)">-${fmt(periodSales)} ${inv.unit}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <span>Tồn cuối kỳ:</span><span style="font-weight:800;color:var(--primary)">${fmt(currentRunningStock)} ${inv.unit}</span>
+    </div>
+  </div>`;
+
+  html += detailsHtml || '<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">Không có giao dịch trong khoảng thời gian đã chọn</div></div>';
+
+  document.getElementById('ledger-list').innerHTML = html;
+}
+
+async function deleteInventoryItemFromLedger(itemId) {
+  if (!isAdminUser()) {
+    showToast('Chỉ admin mới được xóa nguyên liệu.', 'danger');
+    return;
+  }
+
+  const inventory = _getInventory();
+  const item = inventory.find(i => i.id === itemId);
+  if (!item) {
+    showToast('Không tìm thấy nguyên liệu để xóa.', 'warning');
+    return;
+  }
+
+  const menu = Store.getMenu();
+  const unitConversions = Store.getUnitConversions();
+  const relatedRetail = menu.filter(m => m.linkedInventoryId === item.id).length;
+  const relatedRecipes = menu.reduce((sum, m) => sum + ((m.ingredients || []).filter(ing => ing.name === item.name).length), 0);
+  const relatedConversions = unitConversions.filter(c => c.ingredientName === item.name).length;
+
+  const msg = [
+    `Xóa nguyên liệu "${item.name}" khỏi hệ thống`,
+    '',
+    '- Nguyên liệu sẽ bị xóa khỏi Thẻ kho và Tồn kho',
+    `- Liên kết menu bán thẳng bị ảnh hưởng: ${relatedRetail}`,
+    `- Công thức có chứa nguyên liệu này: ${relatedRecipes}`,
+    `- Quy đổi đơn vị liên quan: ${relatedConversions}`,
+    '',
+    'Hành động này không thể hoàn tác.'
+  ].join('\n');
+  if (!confirm(msg)) return;
+
+  // 1) Xóa nguyên liệu trong kho
+  const nextInventory = inventory.filter(i => i.id !== item.id);
+  Store.setInventory(nextInventory);
+  if (window.appState?.inventory) {
+    window.appState.inventory = nextInventory.map(normalizeInventoryItemModel);
+  }
+
+  // 2) Dọn liên kết menu/công thức để tránh rác
+  const nextMenu = menu.map(m => {
+    const next = { ...m };
+    if (next.linkedInventoryId === item.id) next.linkedInventoryId = null;
+    if (Array.isArray(next.ingredients)) {
+      next.ingredients = next.ingredients.filter(ing => ing.name !== item.name);
+    }
+    return next;
+  });
+  Store.setMenu(nextMenu);
+  if (window.appState?.menu) window.appState.menu = nextMenu;
+
+  // 3) Dọn quy đổi đơn vị liên quan
+  const nextConversions = unitConversions.filter(c => c.ingredientName !== item.name);
+  Store.setUnitConversions(nextConversions);
+
+  // 4) Dọn request merge liên quan
+  const nextRequests = Store.getItemMergeRequests().filter(r => r.sourceId !== item.id && r.targetId !== item.id);
+  Store.setItemMergeRequests(nextRequests);
+
+  // 5) Sync cloud (best effort)
+  if (window.DB) {
+    try {
+      if (window.DB.Inventory?.delete) await window.DB.Inventory.delete(item.id);
+      if (window.DB.Menu?.update) {
+        for (const m of nextMenu) {
+          await window.DB.Menu.update(m.id, {
+            linkedInventoryId: m.linkedInventoryId || null,
+            ingredients: m.ingredients || [],
+            itemType: m.itemType,
+            name: m.name,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[delete-inventory] cloud sync warning', e);
+    }
+  }
+
+  const ledgerSelect = document.getElementById('ledger-item-select');
+  if (ledgerSelect) ledgerSelect.value = '';
+  refreshIngredientDependentViews();
+  renderLedger();
+  populateManualMergeDropdowns();
+  showToast(`✅ Đã xóa nguyên liệu "${item.name}".`, 'success');
+}
+
+function resetPurchasePhotoFileInputs() {
+  ['pur-photo-input-cam', 'pur-photo-input-file'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+}
+
+function getInventorySearchText(item = {}) {
+  return normalizeViKey([
+    item.name,
+    item.unit,
+    item.itemType,
+    ITEM_TYPE_LABELS[item.itemType],
+    item.sku,
+    item.code,
+  ].filter(Boolean).join(' '));
+}
+
+function getVisibleInventoryForPicking() {
+  return _getInventory()
+    .filter(i => !i.hidden && !i.mergedInto)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
+}
+
+function renderPurchaseItemOptions(query = '', selectedId = '') {
+  const select = document.getElementById('pur-name');
+  if (!select) return;
+  const normalizedQuery = normalizeViKey(query || '');
+  const inv = getVisibleInventoryForPicking();
+  const filtered = normalizedQuery
+    ? inv.filter(i => getInventorySearchText(i).includes(normalizedQuery))
+    : inv;
+  select.innerHTML = '<option value="">-- Chọn nguyên liệu --</option>' +
+    filtered.map(i => {
+      const safeId = _escapeHtml(i.id || '');
+      const safeName = _escapeHtml(i.name || '');
+      const safeType = _escapeHtml(ITEM_TYPE_LABELS[i.itemType] || 'Nguyên liệu');
+      return `<option value="${safeId}">${safeName} (${safeType})</option>`;
+    }).join('');
+  if (selectedId && filtered.some(i => String(i.id) === String(selectedId))) {
+    select.value = selectedId;
+  }
+  const hint = document.getElementById('pur-item-search-hint');
+  if (hint) {
+    hint.textContent = normalizedQuery
+      ? `Hiển thị ${filtered.length}/${inv.length} món / nguyên liệu phù hợp`
+      : `${inv.length} món / nguyên liệu có thể nhập kho`;
+  }
+}
+
+function filterPurchaseItemOptions() {
+  const search = document.getElementById('pur-item-search');
+  const select = document.getElementById('pur-name');
+  renderPurchaseItemOptions(search?.value || '', select?.value || '');
+  onPurchaseItemSelect();
+}
+
+function openPurchaseModal() {
+  const form = document.getElementById('purchase-form');
+  delete form.dataset.editId;
+  form.reset();
+  resetPurchasePhotoFileInputs();
+  // Reset session ảnh chứng từ cho lần nhập hiđơ tại
+  currentPurchasePhotos = [];
+  currentPurchasePhotosBatchId = null;
+  const thumbs = document.getElementById('pur-photo-thumbs');
+  if(thumbs) thumbs.innerHTML = '<div style="font-size:11px;color:var(--text3);">Chưa có ảnh chứng từ.</div>';
+  const viewer = document.getElementById('pur-photo-viewer');
+  if(viewer) viewer.style.display = 'none';
+  setPurOcrStatus('');
+  document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
+  renderPurchaseSupplierDropdown(); // Load danh sách NCC
+
+  const search = document.getElementById('pur-item-search');
+  if (search) search.value = '';
+  renderPurchaseItemOptions('', '');
+  document.getElementById('pur-last-price-hint').style.display = 'none';
+  document.getElementById('pur-price-compare-hint').style.display = 'none';
+
+  document.getElementById('purchase-modal').classList.add('active');
+}
+
+function calcPurUnitPrice() {
+  const qtyStr = document.getElementById('pur-qty').value;
+  const priceStr = document.getElementById('pur-price').value;
+  const unit = document.getElementById('pur-unit')?.value || 'đvt';
+  
+  const unitLabel = document.getElementById('pur-unit-label');
+  if (unitLabel) unitLabel.textContent = '/' + unit;
+
+  const unitPriceEl = document.getElementById('pur-unit-price');
+  const compareEl = document.getElementById('pur-price-compare-hint');
+  if (unitPriceEl) {
+    const qty = parseFloat(qtyStr);
+    const price = parseFloat(priceStr);
+    if (!isNaN(qty) && qty > 0 && !isNaN(price)) {
+      const currentUnitPrice = Math.round(price / qty);
+      unitPriceEl.value = currentUnitPrice.toLocaleString('vi-VN');
+      const lastPrice = Number(unitPriceEl.dataset.lastPrice || 0);
+      if (compareEl && lastPrice > 0) {
+        const diff = currentUnitPrice - lastPrice;
+        const pct = lastPrice > 0 ? Math.round((diff / lastPrice) * 100) : 0;
+        const trend = diff > 0 ? '▲ tăng' : diff < 0 ? '▼ giảm' : '• bằng';
+        const color = diff > 0 ? 'var(--danger)' : diff < 0 ? 'var(--success)' : 'var(--text3)';
+        compareEl.innerHTML = `<span style="color:${color}">${trend} ${fmt(Math.abs(diff))}đ (${Math.abs(pct)}%) so với lần gần nhất</span>`;
+        compareEl.style.display = '';
+      } else if (compareEl) {
+        compareEl.style.display = 'none';
+      }
+    } else {
+      unitPriceEl.value = '';
+      if (compareEl) compareEl.style.display = 'none';
+    }
+  }
+}
+
+function onPurchaseItemSelect() {
+  const inv = _getInventory();
+  const select = document.getElementById('pur-name');
+  const itemId = select.value;
+  const unitInp = document.getElementById('pur-unit');
+  const hintEl = document.getElementById('pur-last-price-hint');
+
+  if(!itemId) {
+    unitInp.value = '';
+    hintEl.style.display = 'none';
+    return;
+  }
+
+  const item = inv.find(i => i.id === itemId);
+  if(item) {
+    unitInp.value = item.unit || '';
+    
+    // Tìm đơn giá nhập gần nhất
+    const purchases = ((window.appState && window.appState.purchases) ? window.appState.purchases : Store.getPurchases()).filter(p => p.name === item.name);
+    if(purchases.length > 0) {
+      purchases.sort((a,b) => new Date(b.date) - new Date(a.date)); // Mđi nhất lên đầu
+      const lastPur = purchases[0];
+      const lastPrice = lastPur.qty > 0 ? lastPur.price / lastPur.qty : 0;
+      hintEl.innerHTML = `Đơn giá nhập gần nhất: <strong>${fmt(lastPrice)}đ / ${item.unit}</strong>`;
+      hintEl.style.display = 'block';
+      const unitPriceEl = document.getElementById('pur-unit-price');
+      if (unitPriceEl) unitPriceEl.dataset.lastPrice = String(Math.round(lastPrice));
+    } else {
+      hintEl.style.display = 'none';
+      const unitPriceEl = document.getElementById('pur-unit-price');
+      if (unitPriceEl) unitPriceEl.dataset.lastPrice = '';
+    }
+  }
+  calcPurUnitPrice();
+}
+
+function submitPurchase(e) {
+  e.preventDefault();
+  const itemId = document.getElementById('pur-name').value;
+  if(!itemId) return;
+  const liveInv = _getInventory();
+  const liveItem = liveInv.find(i => i.id === itemId);
+  if(!liveItem) {
+    showToast('⚠️ Không tìm thấy nguyên liệu này trong kho.', 'warning');
+    return;
+  }
+
+  const name = liveItem.name;
+  const qty = parseFloat(document.getElementById('pur-qty').value);
+  const price = parseFloat(document.getElementById('pur-price').value);
+  const unit = document.getElementById('pur-unit')?.value.trim() || 'đvt';
+  const supplierSel = document.getElementById('pur-supplier-select');
+  const supplierId = supplierSel && supplierSel.value ? supplierSel.value : '';
+  const supplierName = document.getElementById('pur-supplier').value.trim() || 'Không rõ';
+  const supplierPhone = document.getElementById('pur-supplier-phone').value.trim() || '';
+  const supplierAddr = document.getElementById('pur-supplier-addr').value.trim() || '';
+  const noteEl = document.getElementById('pur-note');
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  if(!name || isNaN(qty) || isNaN(price)) return;
+
+  const form = document.getElementById('purchase-form');
+  const editId = form.dataset.editId;
+
+  if (window.DB && window.DB.Inventory) {
+    if (editId) {
+      const purchases = _getPurchases().slice();
+      const pIdx = purchases.findIndex(p => p.id === editId);
+      if (pIdx < 0) {
+        showToast('⚠️ Không tìm thấy phiếu nhập cần sửa.', 'warning');
+        return;
+      }
+
+      const oldPurchase = purchases[pIdx];
+      const inv = Store.getInventory();
+      const oldItem = inv.find(i => String(i.id) === String(oldPurchase.inventoryItemId)) || inv.find(i => String(i.name || '').toLowerCase() === String(oldPurchase.name || '').toLowerCase());
+      const nextItem = inv.find(i => String(i.id) === String(liveItem.id)) || liveItem;
+      if (!oldItem || !nextItem) {
+        showToast('⚠️ Không tìm thấy nguyên liệu để cập nhật phiếu nhập.', 'warning');
+        return;
+      }
+
+      if (currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
+        persistCurrentPurchasePhotosBatch();
+      }
+
+      const oldQty = Number(oldPurchase.qty || 0);
+      const oldPrice = Number(oldPurchase.price || 0);
+      const sameItem = String(oldItem.id) === String(nextItem.id);
+
+      const oldBaseQty = Number(oldItem.qty || 0);
+      const oldBaseCost = Number(oldItem.costPerUnit || 0);
+      const revertedQty = Math.max(0, oldBaseQty - oldQty);
+      const revertedTotalValue = Math.max(0, (oldBaseQty * oldBaseCost) - oldPrice);
+      const revertedCostPerUnit = revertedQty > 0 ? (revertedTotalValue / revertedQty) : (oldBaseCost || 0);
+
+      const updates = [];
+      let nextQty;
+      let nextCostPerUnit;
+
+      if (sameItem) {
+        nextQty = revertedQty + qty;
+        nextCostPerUnit = nextQty > 0 ? ((revertedQty * revertedCostPerUnit) + price) / nextQty : revertedCostPerUnit;
+        updates.push(window.DB.Inventory.update(nextItem.id, { qty: nextQty, costPerUnit: nextCostPerUnit, unit }));
+      } else {
+        updates.push(window.DB.Inventory.update(oldItem.id, { qty: revertedQty, costPerUnit: revertedCostPerUnit, unit: oldItem.unit || oldPurchase.unit || 'đvt' }));
+        const currentQty = Number(nextItem.qty || 0);
+        const currentCost = Number(nextItem.costPerUnit || 0);
+        nextQty = currentQty + qty;
+        nextCostPerUnit = nextQty > 0 ? ((currentQty * currentCost) + price) / nextQty : currentCost;
+        updates.push(window.DB.Inventory.update(nextItem.id, { qty: nextQty, costPerUnit: nextCostPerUnit, unit }));
+      }
+
+      const nextPurchase = {
+        ...oldPurchase,
+        name,
+        qty,
+        price,
+        unit,
+        itemType: nextItem.itemType,
+        inventoryItemId: nextItem.id,
+        costPerUnit: qty > 0 ? price / qty : 0,
+        supplier: supplierName,
+        supplierId: supplierId || null,
+        supplierPhone,
+        supplierAddress: supplierAddr,
+        note,
+        photoBatchId: currentPurchasePhotosBatchId || oldPurchase.photoBatchId || null,
+      };
+
+      updates.push(window.DB.Purchases?.update ? window.DB.Purchases.update(editId, nextPurchase) : Promise.resolve());
+
+      Promise.all(updates).then(() => {
+        purchases[pIdx] = nextPurchase;
+        Store.setPurchases(purchases);
+
+        const invIdx = inv.findIndex(i => String(i.id) === String(nextItem.id));
+        if (invIdx >= 0) {
+          inv[invIdx] = { ...inv[invIdx], qty: nextQty, costPerUnit: nextCostPerUnit, unit };
+        }
+        if (!sameItem) {
+          const oldIdx = inv.findIndex(i => String(i.id) === String(oldItem.id));
+          if (oldIdx >= 0) {
+            inv[oldIdx] = { ...inv[oldIdx], qty: revertedQty, costPerUnit: revertedCostPerUnit };
+          }
+        }
+        Store.setInventory(inv);
+
+        delete form.dataset.editId;
+        document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
+        document.getElementById('purchase-modal').classList.remove('active');
+        form.reset();
+        resetPurchasePhotoFileInputs();
+        currentPurchasePhotos = [];
+        currentPurchasePhotosBatchId = null;
+        refreshIngredientDependentViews();
+        renderPurchaseList();
+        showToast('✅ Đã cập nhật nhập hàng!', 'success');
+      }).catch(err => showToast('Lỗi cập nhật nhập hàng: ' + err.message, 'danger'));
+      return;
+    }
+
+    persistCurrentPurchasePhotosBatch();
+
+    const currentQty = Number(liveItem.qty || 0);
+    const currentCost = Number(liveItem.costPerUnit || 0);
+    const newQty = currentQty + qty;
+    const newCostPerUnit = newQty > 0 ? ((currentQty * currentCost) + price) / newQty : currentCost;
+
+    const purchaseData = {
+      name,
+      qty,
+      unit: unit || liveItem.unit || 'đvt',
+      itemType: liveItem.itemType,
+      inventoryItemId: liveItem.id,
+      price,
+      costPerUnit: qty > 0 ? price / qty : 0,
+      date: new Date().toISOString(),
+      supplier: supplierName,
+      supplierId: supplierId || null,
+      supplierPhone,
+      supplierAddress: supplierAddr,
+      note,
+      photoBatchId: currentPurchasePhotosBatchId || null
+    };
+
+    Promise.all([
+      window.DB.Inventory.update(liveItem.id, { qty: newQty, costPerUnit: newCostPerUnit, unit: purchaseData.unit }),
+      window.DB.Purchases?.add ? window.DB.Purchases.add(purchaseData) : Promise.resolve(null)
+    ]).then(([_, cloudPurchaseId]) => {
+      const id = cloudPurchaseId || uid();
+      Store.addPurchase({ ...purchaseData, id }, { skipCloudSync: true });
+      showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
+
+      document.getElementById('pur-name').value = '';
+      document.getElementById('pur-qty').value = '';
+      document.getElementById('pur-unit').value = '';
+      document.getElementById('pur-price').value = '';
+      calcPurUnitPrice();
+      if(noteEl) noteEl.value = '';
+      const nameInp = document.getElementById('pur-name');
+      if(nameInp) nameInp.focus();
+
+      refreshIngredientDependentViews();
+    }).catch(err => showToast('Lỗi nhập hàng: ' + err.message, 'danger'));
+    return;
+  }
+
+  const inv = Store.getInventory();
+  let item = inv.find(i => i.id === itemId);
+  if(!item) return;
+
+  if(editId) {
+    // EDIT MODE: update purchase record
+    const purchases = Store.getPurchases();
+    const pIdx = purchases.findIndex(p => p.id === editId);
+    if(pIdx >= 0) {
+      const oldQty = purchases[pIdx].qty;
+      const oldPrice = purchases[pIdx].price;
+      const oldName = purchases[pIdx].name;
+      // Reverse old inventory change, apply new one
+      let oldItem = inv.find(i => i.name.toLowerCase() === oldName.toLowerCase());
+      if(oldItem) {
+        const oldTotalValue = oldItem.qty * (oldItem.costPerUnit || 0);
+        const revertedQty = Math.max(0, oldItem.qty - oldQty);
+        const revertedTotalValue = Math.max(0, oldTotalValue - oldPrice);
+        oldItem.qty = revertedQty;
+        oldItem.costPerUnit = revertedQty > 0 ? revertedTotalValue / revertedQty : (oldItem.costPerUnit || 0);
+      }
+
+      if(item && item.name.toLowerCase() === name.toLowerCase()) {
+        const currentQty = item.qty || 0;
+        const currentCost = item.costPerUnit || 0;
+        const newQty = currentQty + qty;
+        const newCostPerUnit = newQty > 0 ? ((currentQty * currentCost) + price) / newQty : currentCost;
+        item.qty = newQty;
+        item.costPerUnit = newCostPerUnit;
+        // Do not overwrite item.unit if it already exists, unless we want to? Let's just keep item.unit or update it.
+        // Usually unit is set on creation. We will update it.
+        item.unit = unit; 
+      } else if(!item) {
+        item = { id:uid(), name, qty, unit, minQty:5, costPerUnit:price/qty };
+        inv.push(item);
+      }
+
+      // Gắn batch ảnh chứng từ (nếu có) cho lần chđơh sửa này
+      if(currentPurchasePhotosBatchId && currentPurchasePhotos && currentPurchasePhotos.length) {
+        persistCurrentPurchasePhotosBatch();
+      }
+      purchases[pIdx] = { ...purchases[pIdx], name, qty, price, unit:item.unit, itemType: item.itemType, inventoryItemId: item.id, costPerUnit:price/qty, supplier:supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress:supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || purchases[pIdx].photoBatchId || null };
+    Store.setPurchases(purchases);
+    Store.setInventory(inv);
+    delete form.dataset.editId;
+    document.getElementById('purchase-modal-title').textContent = '📥 Nhập hàng mới';
+    
+    // Nếu chi phí đi kèm, cũng cần update
+    const expenses = Store.getExpenses();
+    const expIdx = expenses.findIndex(e => e.name === `Nhập hàng: ${oldName}` && Math.abs(e.amount - oldPrice) < 0.1);
+    if(expIdx >= 0) {
+      expenses[expIdx] = { ...expenses[expIdx], name: `Nhập hàng: ${name}`, amount: price };
+      Store.set(KEYS.expenses, expenses);
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.add) window.DB.Expenses.add(expenses[expIdx]);
+    }
+  }
+  showToast('✅ Đã cập nhật nhập hàng!');
+} else {
+    // ADD MODE
+    // Lưu batch ảnh chứng từ (nếu có) - chđ lưu theo batch id đă tránh trùng lặp
+    persistCurrentPurchasePhotosBatch();
+    const purchaseId = uid();
+    if(item) {
+      const currentQty = item.qty || 0;
+      const currentCost = item.costPerUnit || 0;
+      const newQty = currentQty + qty;
+      const newCostPerUnit = newQty > 0 ? ((currentQty * currentCost) + price) / newQty : currentCost;
+      item.qty = newQty;
+      item.costPerUnit = newCostPerUnit;
+      item.unit = unit;
+    } else {
+      item = { id:uid(), name, qty, unit, itemType: ITEM_TYPES.RAW, minQty:5, costPerUnit:price/qty };
+      inv.push(item);
+    }
+    Store.setInventory(inv);
+    Store.addPurchase({ id:purchaseId, name, qty, unit:item.unit, itemType: item.itemType, inventoryItemId: item.id, price, costPerUnit:price/qty, date:new Date().toISOString(), supplier: supplierName, supplierId: supplierId || null, supplierPhone, supplierAddress: supplierAddr, note, photoBatchId: currentPurchasePhotosBatchId || null });
+    // Bđ Tạo bản ghi Expense tự đăng, chđ lưu Purchase
+    // Store.addExpense({ id:uid(), name:`Nhập hàng: ${name}`, amount:price, category:'Nhập hàng', date:new Date().toISOString() });
+    showToast('✅ Đã nhập hàng! Tiếp tục chọn nguyên liệu khác.', 'success');
+  }
+
+  // Sau khi bấm "Nhập hàng": giữ modal mđ đă tiếp tục nhập nguyên liđu mđi
+  // - Reset các field nhập nguyên liđu, giữ lại NCC + ảnh chứng từ
+  if(editId) {
+    document.getElementById('purchase-modal').classList.remove('active');
+    document.getElementById('purchase-form').reset();
+    renderInventory();
+    updateAlertBadge();
+    if (typeof renderPurchaseReport === 'function' && currentPage === 'reports') {
+      renderPurchaseReport();
+    }
+    return;
+  }
+
+  // Clear only item fields
+  document.getElementById('pur-name').value = '';
+  document.getElementById('pur-qty').value = '';
+  document.getElementById('pur-unit').value = '';
+  document.getElementById('pur-price').value = '';
+  calcPurUnitPrice();
+  if(noteEl) noteEl.value = '';
+  const nameInp = document.getElementById('pur-name');
+  if(nameInp) nameInp.focus();
+  renderInventory();
+  updateAlertBadge();
+}
+
+// ============================================================
+// STOCKTAKE (Kiểm kê)
+// ============================================================
+function renderStocktakeHistory() {
+  const stocktakeCategory = normalizeExpenseCategoryLabel('Lãi/Lỗ do kiểm kê');
+  const periodEl = document.getElementById('stocktake-history-period');
+  const fromEl = document.getElementById('stocktake-history-from');
+  const toEl = document.getElementById('stocktake-history-to');
+  const totalEl = document.getElementById('stocktake-history-total');
+  const now = new Date();
+  const todayKey = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  if (fromEl && !fromEl.dataset.initialized) {
+    fromEl.value = todayKey;
+    fromEl.dataset.initialized = '1';
+  }
+  if (toEl && !toEl.dataset.initialized) {
+    toEl.value = todayKey;
+    toEl.dataset.initialized = '1';
+  }
+
+  const period = periodEl?.value || 'month';
+  const inRange = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return false;
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (period === 'all') return true;
+    if (period === 'today') return d >= startOfToday;
+    if (period === 'week') {
+      const start = new Date(startOfToday);
+      start.setDate(start.getDate() - 6);
+      const end = new Date(startOfToday);
+      end.setDate(end.getDate() + 1);
+      return d >= start && d < end;
+    }
+    if (period === 'month') {
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }
+    if (period === 'custom') {
+      const fromDate = fromEl?.value ? new Date(`${fromEl.value}T00:00:00`) : null;
+      const toDate = toEl?.value ? new Date(`${toEl.value}T23:59:59.999`) : null;
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    }
+    return true;
+  };
+
+  const expenses = _getExpenses()
+    .filter(e => normalizeExpenseCategoryLabel(e.category) === stocktakeCategory)
+    .filter(e => inRange(e.date))
+    .slice()
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  const listEl = document.getElementById('stocktake-history-list');
+  if(!listEl) return;
+  if (fromEl) fromEl.disabled = period !== 'custom';
+  if (toEl) toEl.disabled = period !== 'custom';
+  if (totalEl) {
+    const total = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    totalEl.textContent = `${total < 0 ? '+' : '-'}${fmt(Math.abs(total))}đ`;
+    totalEl.style.color = total > 0 ? 'var(--danger)' : total < 0 ? 'var(--success)' : 'var(--text)';
+  }
+
+  listEl.innerHTML = expenses.map(e => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">📋</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${repairVietnameseText(e.name)}</div>
+        <div class="list-item-sub">${repairVietnameseText(e.note || '')}</div>
+        <div class="list-item-sub" style="font-size:10px;color:var(--text3)">${fmtDateTime(e.date)}</div>
+      </div>
+      <div class="list-item-right" style="flex-direction:row; gap:4px; align-items:center;">
+        <div class="list-item-amount" style="color:${e.amount > 0 ? 'var(--danger)' : 'var(--success)'}">
+          ${e.amount > 0 ? '-' : '+'}${fmt(Math.abs(e.amount))}đ
+        </div>
+        <button class="btn btn-xs btn-outline" onclick="editStocktakeNote('${e.id}')">Ghi chú</button>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Chưa có lịch sử kiểm kê</div></div>';
+}
+
+window.applyStocktakeHistoryFilter = function applyStocktakeHistoryFilter() {
+  renderStocktakeHistory();
+};
+
+window.editStocktakeNote = async function editStocktakeNote(expenseId) {
+  const expenses = _getExpenses().slice();
+  const idx = expenses.findIndex(e => String(e.id || '') === String(expenseId || ''));
+  if (idx < 0) return;
+
+  const current = expenses[idx];
+  const nextNote = prompt('Ghi chú chênh lệch kiểm kê:', repairVietnameseText(current.note || ''));
+  if (nextNote === null) return;
+
+  expenses[idx] = { ...current, note: String(nextNote || '').trim() };
+  Store.set(KEYS.expenses, expenses);
+  if (Array.isArray(window.appState?.expenses)) {
+    window.appState.expenses = expenses;
+  }
+
+  if (window.DB?.Expenses?.update) {
+    await window.DB.Expenses.update(expenseId, { note: expenses[idx].note }).catch(err => {
+      console.error('[Expenses.update]', err);
+    });
+  }
+
+  renderStocktakeHistory();
+  showToast('Đã cập nhật ghi chú kiểm kê.', 'success');
+};
+
+function renderStocktakeItemsList(items) {
+  const listEl = document.getElementById('stocktake-list');
+  if (!listEl) return;
+  listEl.innerHTML = items.map(i => {
+    const safeName = _escapeHtml(i.name || '');
+    const safeUnit = _escapeHtml(i.unit || '');
+    const safeSearch = _escapeHtml(getInventorySearchText(i));
+    return `
+    <div class="list-item stocktake-item-row" data-stocktake-search="${safeSearch}" style="padding:8px 12px; gap:8px">
+      <div class="list-item-content">
+        <div class="list-item-title">${safeName}</div>
+        <div class="list-item-sub">Hệ thống: ${i.qty} ${safeUnit}</div>
+      </div>
+      <div style="flex-shrink:0; width:100px">
+        <input type="number" class="input input-sm stocktake-actual-qty" data-id="${i.id}" data-sys="${i.qty}" data-unit="${safeUnit}" placeholder="Thực tế..." min="0" step="0.01">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterStocktakeItems() {
+  const input = document.getElementById('stocktake-item-search');
+  const query = normalizeViKey(input?.value || '');
+  const rows = Array.from(document.querySelectorAll('.stocktake-item-row'));
+  let visible = 0;
+  rows.forEach(row => {
+    const matches = !query || String(row.dataset.stocktakeSearch || '').includes(query);
+    row.style.display = matches ? '' : 'none';
+    if (matches) visible += 1;
+  });
+  const hint = document.getElementById('stocktake-search-hint');
+  if (hint) {
+    hint.textContent = query
+      ? `Hiển thị ${visible}/${rows.length} món / nguyên liệu để kiểm kê`
+      : `${rows.length} món / nguyên liệu trong danh sách kiểm kê`;
+  }
+}
+
+function openStocktakeModal() {
+  const inv = _getInventory().filter(i => !i.hidden);
+  const sortedInv = inv.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  const listEl = document.getElementById('stocktake-list');
+  if(!listEl) return;
+
+  renderStocktakeItemsList(sortedInv);
+  const search = document.getElementById('stocktake-item-search');
+  if (search) search.value = '';
+  filterStocktakeItems();
+
+  document.getElementById('stocktake-modal').classList.add('active');
+}
+
+function submitStocktake() {
+  const inv = _getInventory();
+  const inputs = document.querySelectorAll('.stocktake-actual-qty');
+  let changes = 0;
+
+  const updates = [];
+
+  inputs.forEach(inp => {
+    const actualStr = inp.value.trim();
+    if(actualStr === '') return;
+    const actual = parseFloat(actualStr);
+    const sys = parseFloat(inp.dataset.sys);
+    const id = inp.dataset.id;
+    const unit = inp.dataset.unit;
+    
+    if(!isNaN(actual) && actual !== sys) {
+      const item = inv.find(i => i.id === id);
+      if(item) {
+        const diff = actual - sys; // dương = lãi (dư), âm = lđ (thiếu)
+        const diffCost = diff * (item.costPerUnit || 0);
+
+        updates.push({
+          id: item.id,
+          newQty: actual,
+          diff,
+          diffCost,
+          name: item.name,
+          unit
+        });
+      }
+    }
+  });
+
+  if(updates.length === 0) {
+    showToast('Không có thay đổi nào để lưu.');
+    document.getElementById('stocktake-modal').classList.remove('active');
+    return;
+  }
+
+  if(!confirm(`Lưu kết quả kiểm kê cho ${updates.length} nguyên liệu?`)) return;
+
+  const now = new Date().toISOString();
+
+  if (window.DB && window.DB.Inventory) {
+    const promises = updates.map(u => {
+      Store.addExpense({
+        id: uid(),
+        name: `Kiểm kê: Điều chỉnh ${u.diff > 0 ? 'Tăng' : 'Giảm'} ${Math.abs(u.diff)} ${u.unit} ${u.name}`,
+        amount: -u.diffCost, // Nếu dư -> diffCost > 0 -> amount < 0 (Lãi). Nếu thiếu -> diffCost < 0 -> amount > 0 (Chi phí)
+        category: 'Lãi/Lỗ do kiểm kê',
+        date: now,
+        note: `Hệ thống: ${u.newQty - u.diff}, Thực tế: ${u.newQty}`
+      });
+      return window.DB.Inventory.update(u.id, { qty: u.newQty });
+    });
+
+    Promise.all(promises).then(() => {
+      document.getElementById('stocktake-modal').classList.remove('active');
+      renderInventory();
+      renderStocktakeHistory();
+      showToast('✅ Đã lưu kết quả kiểm kê!', 'success');
+    }).catch(err => showToast('Lỗi lưu kiểm kê: ' + err.message, 'danger'));
+  } else {
+    const localInv = Store.getInventory();
+    updates.forEach(u => {
+      const item = localInv.find(i => i.id === u.id);
+      if(item) item.qty = u.newQty;
+      Store.addExpense({
+        id: uid(),
+        name: `Kiểm kê: Điều chỉnh ${u.diff > 0 ? 'Tăng' : 'Giảm'} ${Math.abs(u.diff)} ${u.unit} ${u.name}`,
+        amount: -u.diffCost,
+        category: 'Lãi/Lỗ do kiểm kê',
+        date: now,
+        note: `Hệ thống: ${u.newQty - u.diff}, Thực tế: ${u.newQty}`
+      });
+    });
+    Store.setInventory(localInv);
+    document.getElementById('stocktake-modal').classList.remove('active');
+    renderInventory();
+    renderStocktakeHistory();
+    showToast('✅ Đã lưu kết quả kiểm kê!', 'success');
+  }
+}
+
+// ============================================================
+// CONVERSION (Quy đổi đơn vị)
+// ============================================================
+function renderConversionTab() {
+  const conversions = Store.getUnitConversions();
+  const listEl = document.getElementById('conversion-list');
+  if(!listEl) return;
+
+  listEl.innerHTML = conversions.map(c => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(139,92,246,0.1)">⚖️</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${c.ingredientName}</div>
+        <div class="list-item-sub">Công thức: ${c.purchaseQty} ${c.purchaseUnit} = ${c.recipeQty} ${c.recipeUnit}</div>
+        ${c.note ? `<div class="list-item-sub" style="color:var(--text3);font-size:10px">Ghi chú: ${c.note}</div>` : ''}
+      </div>
+      <div class="list-item-right" style="flex-direction:row; gap:4px; align-items:center;">
+        <button class="btn btn-xs btn-outline" onclick="editConversion('${c.id}')">✏️</button>
+        <button class="btn btn-xs btn-danger" onclick="deleteConversion('${c.id}')">🗑️</button>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-icon">⚖️</div><div class="empty-text">Chưa có quy đổi đơn vị nào</div></div>';
+}
+
+function updateConvPreview() {
+  const purQty = parseFloat(document.getElementById('conv-purchase-qty').value) || 0;
+  const purUnit = document.getElementById('conv-purchase-unit').value || '...';
+  const recQty = parseFloat(document.getElementById('conv-recipe-qty').value) || 0;
+  const recUnit = document.getElementById('conv-recipe-unit').value || '...';
+  const textEl = document.getElementById('conv-preview-text');
+  
+  if(purQty > 0 && purUnit !== '...' && recQty > 0 && recUnit !== '...') {
+    textEl.innerHTML = `<span style="color:var(--success)">${purQty} ${purUnit}</span> = <span style="color:var(--primary)">${recQty} ${recUnit}</span>`;
+  } else {
+    textEl.innerHTML = `<span style="color:var(--primary)">Nhập thông tin bên dưới để xem trước</span>`;
+  }
+}
+
+function resetConversionForm() {
+  document.getElementById('conversion-form').reset();
+  document.getElementById('conv-edit-id').value = '';
+  document.getElementById('conv-purchase-qty').value = '1';
+  document.getElementById('conv-recipe-qty').value = '1';
+  updateConvPreview();
+  // Set focus on first field
+  const ingField = document.getElementById('conv-ingredient');
+  if(ingField) {
+    ingField.focus();
+    // Cập nhật lại đơn vđ mua nếu có tđơ kho
+    ingField.onchange = function() {
+      const inv = _getInventory();
+      const stock = inv.find(i => normalizeViKey(i.name) === normalizeViKey(this.value));
+      if(stock && stock.unit) {
+        document.getElementById('conv-purchase-unit').value = stock.unit;
+        updateConvPreview();
+      }
+    };
+  }
+}
+
+function submitConversion(e) {
+  e.preventDefault();
+  const idEl = document.getElementById('conv-edit-id');
+  const id = idEl.value;
+  const ingredientName = document.getElementById('conv-ingredient').value.trim();
+  const purchaseQty = parseFloat(document.getElementById('conv-purchase-qty').value);
+  const purchaseUnit = document.getElementById('conv-purchase-unit').value.trim();
+  const recipeQty = parseFloat(document.getElementById('conv-recipe-qty').value);
+  const recipeUnit = document.getElementById('conv-recipe-unit').value.trim();
+  const note = document.getElementById('conv-note').value.trim();
+
+  if(!ingredientName || !purchaseUnit || isNaN(purchaseQty) || purchaseQty<=0 || !recipeUnit || isNaN(recipeQty) || recipeQty<=0) {
+    showToast('Vui lòng nhập đầy đủ và hợp lệ', 'warning');
+    return;
+  }
+
+  const conversions = Store.getUnitConversions();
+  if(id) {
+    // Edit
+    const idx = conversions.findIndex(c => c.id === id);
+    if(idx >= 0) {
+      conversions[idx] = { ...conversions[idx], ingredientName, purchaseQty, purchaseUnit, recipeQty, recipeUnit, note };
+      Store.setUnitConversions(conversions);
+      showToast('✅ Đã cập nhật quy đổi!');
+    }
+  } else {
+    // Add (addUnitConversion takes care of duplicates for same ingredient + recipe unit)
+    Store.addUnitConversion({ id:uid(), ingredientName, purchaseQty, purchaseUnit, recipeQty, recipeUnit, note });
+    showToast('✅ Đã thêm quy đổi mới!', 'success');
+  }
+  
+  resetConversionForm();
+  renderConversionTab();
+}
+
+function editConversion(id) {
+  const conversions = Store.getUnitConversions();
+  const conv = conversions.find(c => c.id === id);
+  if(!conv) return;
+
+  document.getElementById('conv-edit-id').value = conv.id;
+  document.getElementById('conv-ingredient').value = conv.ingredientName;
+  document.getElementById('conv-purchase-qty').value = conv.purchaseQty;
+  document.getElementById('conv-purchase-unit').value = conv.purchaseUnit;
+  document.getElementById('conv-recipe-qty').value = conv.recipeQty;
+  document.getElementById('conv-recipe-unit').value = conv.recipeUnit;
+  document.getElementById('conv-note').value = conv.note || '';
+  updateConvPreview();
+  // Scroll form into view
+  document.getElementById('conversion-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function deleteConversion(id) {
+  if(!confirm('Xóa quy đổi này?')) return;
+  Store.deleteUnitConversion(id);
+  renderConversionTab();
+  showToast('🗑️ Đã xóa quy đổi', 'success');
+}
+
+// ============================================================
+// PAGE: FINANCE
+// ============================================================
+let financePeriod = 'month'; // Thay đăi mặc đănh thành 'month'
+let financeDateOpts = {};
+
+function renderFinance() {
+  setFinancePeriod(financePeriod);
+}
+
+function formatLocalDateKey(date) {
+  if (window.XekhoApp?.utils?.date?.formatLocalDateKey) return window.XekhoApp.utils.date.formatLocalDateKey(date);
+  const value = new Date(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function resolvePeriodDateRange(period, opts = {}) {
+  const now = new Date();
+
+  if (period === 'today') {
+    const dateKey = formatLocalDateKey(now);
+    return { fromDate: dateKey, toDate: dateKey };
+  }
+
+  if (period === 'day') {
+    const singleDate = opts?.date || opts?.singleDate;
+    if (singleDate) {
+      return { fromDate: String(singleDate), toDate: String(singleDate) };
+    }
+  }
+
+  if (period === 'range' && opts?.fromDate && opts?.toDate) {
+    return { fromDate: String(opts.fromDate), toDate: String(opts.toDate) };
+  }
+
+  if (period === 'week') {
+    const end = new Date(now);
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    return { fromDate: formatLocalDateKey(start), toDate: formatLocalDateKey(end) };
+  }
+
+  if (period === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { fromDate: formatLocalDateKey(start), toDate: formatLocalDateKey(end) };
+  }
+
+  const sourceDates = [
+    ...(filterHistory(period, opts) || []).map(order => order?.paidAt),
+    ...(filterExpenses(period, opts) || []).map(expense => expense?.date),
+    ...(filterPurchases(period, opts) || []).map(purchase => purchase?.date),
+  ]
+    .map(value => new Date(value))
+    .filter(value => !Number.isNaN(value.getTime()))
+    .sort((a, b) => a - b);
+
+  if (!sourceDates.length) {
+    const dateKey = formatLocalDateKey(now);
+    return { fromDate: dateKey, toDate: dateKey };
+  }
+
+  return {
+    fromDate: formatLocalDateKey(sourceDates[0]),
+    toDate: formatLocalDateKey(sourceDates[sourceDates.length - 1]),
+  };
+}
+
+function buildOperationalExpenseBreakdown(period, opts = {}, options = {}) {
+  if (window.XekhoApp?.report?.buildOperationalExpenseBreakdown) return window.XekhoApp.report.buildOperationalExpenseBreakdown(period, opts, options);
+  const includeFixedCost = options.includeFixedCost !== false;
+  const ignoreMenuFilter = options.ignoreMenuFilter !== false;
+  const purchases = ignoreMenuFilter ? filterPurchases(period, opts) : getFilteredReportPurchases();
+  const expenses = ignoreMenuFilter ? filterExpenses(period, opts) : getFilteredReportExpenses();
+
+  const purchaseRows = purchases.map(p => ({
+    type: 'purchase',
+    id: p.id || uid(),
+    name: p.name,
+    category: 'Chi phí nguyên liệu',
+    date: p.date,
+    amount: normalizePositiveAmount(p.price),
+    qty: Number(p.qty) || 0,
+    unit: p.unit || '',
+    supplier: p.supplier || '',
+    note: `${fmt(Number(p.qty) || 0)} ${repairVietnameseText(p.unit || '')} - ${repairVietnameseText(p.supplier || '')}`,
+  })).filter(row => row.date && row.amount > 0);
+
+  const expenseRows = expenses.map(e => ({
+    type: 'expense',
+    id: e.id || uid(),
+    name: repairVietnameseText(e.name),
+    category: normalizeExpenseCategoryLabel(e.category || 'Chi phí khác'),
+    date: e.date,
+    amount: normalizePositiveAmount(e.amount),
+    note: repairVietnameseText(e.category || ''),
+  })).filter(row => row.date && row.amount > 0);
+
+  const range = resolvePeriodDateRange(period, opts);
+  const fixedCostProfile = getFixedCostProfileForReports();
+  const reportDays = countInclusiveReportDays(range.fromDate, range.toDate);
+  const fixedCostDaily = Number(fixedCostProfile.dailyFixedCost || 0) || 0;
+  const fixedCostTotal = includeFixedCost ? fixedCostDaily * (Number(reportDays || 0) || 0) : 0;
+  const managementSalaryTotal = includeFixedCost
+    ? (Number(fixedCostProfile.dailyManagementSalary || 0) || 0) * (Number(reportDays || 0) || 0)
+    : 0;
+  const otherFixedCostTotal = Math.max(0, fixedCostTotal - managementSalaryTotal);
+  const fixedCostRows = [
+    ...(managementSalaryTotal > 0 ? [{
+      type: 'fixed_cost',
+      id: `management_salary_${range.fromDate}_${range.toDate}`,
+      name: 'Lương quản lý',
+      category: 'Lương quản lý',
+      date: `${range.toDate}T23:59:59`,
+      amount: managementSalaryTotal,
+      note: `${fmt(reportDays)} ngày x ${fmt(fixedCostProfile.dailyManagementSalary || 0)}đ/ngày`,
+    }] : []),
+    ...(otherFixedCostTotal > 0 ? [{
+      type: 'fixed_cost',
+      id: `fixed_cost_${range.fromDate}_${range.toDate}`,
+      name: 'Chi phí cố định',
+      category: 'Chi phí cố định',
+      date: `${range.toDate}T23:59:59`,
+      amount: otherFixedCostTotal,
+      note: `${fmt(reportDays)} ngày x ${fmt(Math.max(0, fixedCostDaily - (Number(fixedCostProfile.dailyManagementSalary || 0) || 0)))}đ/ngày`,
+    }] : []),
+  ];
+
+  const rows = [...purchaseRows, ...expenseRows, ...fixedCostRows]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sums = rows.reduce((acc, row) => {
+    acc[row.category] = (acc[row.category] || 0) + (Number(row.amount) || 0);
+    return acc;
+  }, {});
+
+  const purchaseTotal = purchaseRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const otherExpenseTotal = expenseRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const total = purchaseTotal + otherExpenseTotal + fixedCostTotal;
+
+  return {
+    rows,
+    sums,
+    total,
+    purchaseTotal,
+    otherExpenseTotal,
+    fixedCostTotal,
+    managementSalaryTotal,
+    otherFixedCostTotal,
+    fixedCostDaily,
+    dailyManagementSalary: fixedCostProfile.dailyManagementSalary,
+    fixedCostConfigured: fixedCostProfile.isConfigured,
+    reportDays,
+    range,
+  };
+}
+
+function setFinancePeriod(p) {
+  financePeriod = p;
+  document.querySelectorAll('.finance-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  
+  // Show/hide date picker
+  const picker = document.getElementById('finance-date-picker');
+  if(picker) picker.style.display = p === 'day' ? '' : 'none';
+  
+  if(p === 'day') {
+    // If no date selected yet, default to today
+    const singleInput = document.getElementById('finance-single-date');
+    if(singleInput && !singleInput.value) singleInput.value = new Date().toISOString().split('T')[0];
+    applyDateFilter('finance');
+    return;
+  }
+  financeDateOpts = {};
+  const s = getRevenueSummary(p, financeDateOpts);
+  updateFinanceUI(s);
+}
+
+function updateFinanceUI(s) {
+  const expenseSummary = buildOperationalExpenseBreakdown(financePeriod, financeDateOpts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  });
+  const netProfitAfterFixedCost = Number(s.gross || 0) - Number(s.operatingExpenseTotal || 0) - Number(expenseSummary.fixedCostTotal || 0);
+  // Thay đăi cách hiđơ thđ các chđ sđ tài chính
+  document.getElementById('fin-revenue').textContent = fmtFull(s.netSales);
+  document.getElementById('fin-cost').textContent = fmtFull(s.cost);
+  document.getElementById('fin-gross').textContent = fmtFull(s.gross);
+  document.getElementById('fin-expense').textContent = fmtFull(expenseSummary.total || 0);
+  document.getElementById('fin-profit').textContent = fmtFull(netProfitAfterFixedCost || 0);
+  document.getElementById('fin-orders').textContent = s.orders;
+  document.getElementById('fin-bank').textContent = fmtFull(s.revenueBank || 0);
+  document.getElementById('fin-cash').textContent = fmtFull(s.revenueCash || 0);
+  const finDiscount = document.getElementById('fin-discount');
+  if(finDiscount) finDiscount.textContent = fmtFull(s.discountTotal || 0);
+  const finShipping = document.getElementById('fin-shipping');
+  if(finShipping) finShipping.textContent = fmtFull(s.shippingTotal || 0);
+  const margin = s.netSales > 0 ? (s.gross/s.netSales*100).toFixed(1) : 0;
+  document.getElementById('fin-margin').textContent = margin + '%';
+  // VAT section
+  const settings = Store.getSettings();
+  const taxRate = settings.taxRate != null ? Number(settings.taxRate) : 0;
+  const vatRow = document.getElementById('fin-vat-row');
+  if(vatRow) {
+    const vatTotal = s.vatTotal || 0;
+    if(vatTotal > 0 || taxRate > 0) {
+      vatRow.style.display = 'grid';
+      const displayRate = taxRate > 0 ? taxRate : '?';
+      const vatRateLabel = document.getElementById('fin-vat-rate-label');
+      if(vatRateLabel) vatRateLabel.textContent = displayRate;
+      const finVat = document.getElementById('fin-vat');
+      if(finVat) finVat.textContent = fmtFull(vatTotal);
+      const finRevAfterVat = document.getElementById('fin-revenue-after-vat');
+      // Tđơg thực thu (có VAT và phí ship)
+      if(finRevAfterVat) finRevAfterVat.textContent = fmtFull(s.revenue);
+    } else {
+      vatRow.style.display = 'none';
+    }
+  }
+  renderExpenseList();
+  renderRevenueChart();
+}
+
+function getFinanceExpenseRows(period = financePeriod, opts = financeDateOpts) {
+  return buildOperationalExpenseBreakdown(period, opts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  }).rows;
+}
+
+function renderExpenseList() {
+  const rows = getFinanceExpenseRows(financePeriod, financeDateOpts);
+
+  if(!rows.length) {
+    document.getElementById('expense-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-text">Chưa có chi phí</div></div>';
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  rows.forEach(e => {
+    const key = fmtDate(e.date);
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  });
+
+  let html = '';
+  for(const [date, items] of Object.entries(groups)) {
+    const dayTotal = items.reduce((s,e) => s + (Number(e.amount) || 0), 0);
+    html += `<div class="history-group-header"><span>📅 ${date}</span><span class="history-group-total">-${fmt(dayTotal)}đ</span></div>`;
+    html += items.map(e => `<div class="list-item">
+      <div class="list-item-icon" style="background:${e.type === 'purchase' ? 'rgba(255,193,7,0.12)' : 'rgba(255,61,113,0.1)'}">${e.type === 'purchase' ? '📦' : '💸'}</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${repairVietnameseText(e.type === 'purchase' ? ('Nhập hàng: ' + e.name) : e.name)}</div>
+        <div class="list-item-sub">${normalizeExpenseCategoryLabel(e.category)}${e.type === 'purchase' ? ` · ${fmt(e.qty)} ${repairVietnameseText(e.unit || '')}` : ''} · ${fmtTime(e.date)}</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount" style="color:var(--danger)">-${fmt(e.amount)}đ</div>
+      </div>
+    </div>`).join('');
+  }
+  document.getElementById('expense-list').innerHTML = html;
+}
+
+function editExpense(expenseId) {
+  const expenses = Store.getExpenses();
+  const e = expenses.find(x => x.id === expenseId);
+  if(!e) return;
+  
+  if (normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || e.name.startsWith('Nhập hàng:')) {
+    showToast('Chi phí nhập hàng được tạo tự động. Vui lòng chuyển sang mục Nhập hàng để chỉnh sửa phiếu nhập.', 'warning');
+    return;
+  }
+
+  document.getElementById('exp-name').value = repairVietnameseText(e.name);
+  document.getElementById('exp-amount').value = e.amount;
+  document.getElementById('exp-category').value = normalizeExpenseCategoryLabel(e.category || 'Chi phí khác');
+  
+  const form = document.getElementById('expense-form');
+  form.dataset.editId = expenseId;
+  document.getElementById('expense-modal').querySelector('.modal-title').textContent = '✏️ Sửa chi phí';
+  document.getElementById('expense-modal').classList.add('active');
+}
+
+function openExpenseModal() {
+  const form = document.getElementById('expense-form');
+  delete form.dataset.editId;
+  form.reset();
+  document.getElementById('expense-modal').querySelector('.modal-title').textContent = '💸 Thêm chi phí';
+  document.getElementById('expense-modal').classList.add('active');
+}
+
+function submitExpense(e) {
+  e.preventDefault();
+  const name = document.getElementById('exp-name').value.trim();
+  const amount = parseFloat(document.getElementById('exp-amount').value);
+  const category = document.getElementById('exp-category').value;
+  if(!name || isNaN(amount)) return;
+
+  const form = document.getElementById('expense-form');
+  const editId = form.dataset.editId;
+
+  if (editId) {
+    const expenses = Store.getExpenses();
+    const idx = expenses.findIndex(x => x.id === editId);
+    if (idx >= 0) {
+      expenses[idx] = { ...expenses[idx], name, amount, category };
+      Store.set(KEYS.expenses, expenses);
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.add) {
+        // Technically update, but using add is fine if using setDoc with same id
+        window.DB.Expenses.add(expenses[idx]).catch(console.error);
+      }
+    }
+    showToast('✅ Đã cập nhật chi phí!');
+  } else {
+    Store.addExpense({ id:uid(), name, amount, category, date:new Date().toISOString() });
+    showToast('✅ Đã thêm chi phí!');
+  }
+  
+  document.getElementById('expense-modal').classList.remove('active');
+  form.reset();
+  delete form.dataset.editId;
+  renderFinance();
+  if (typeof renderPurchaseReport === 'function' && currentPage === 'reports') {
+    renderPurchaseReport();
+  }
+}
+
+// ---- Auto cleanup script for wrong expenses (Run once) ----
+setTimeout(async () => {
+  try {
+    const expenses = Store.getExpenses() || [];
+    const toDelete = expenses.filter(e => normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:')));
+    if (toDelete.length > 0) {
+      console.log('[Cleanup] Found wrong auto-generated expenses:', toDelete.length);
+      const newExpenses = expenses.filter(e => !(normalizeExpenseCategoryLabel(e.category) === 'Nhập hàng' || (e.name && e.name.startsWith('Nhập hàng:'))));
+      Store.set(KEYS.expenses, newExpenses);
+      
+      if (window.DB && window.DB.Expenses && window.DB.Expenses.delete) {
+        for (const exp of toDelete) {
+          if (exp.id) await window.DB.Expenses.delete(exp.id).catch(console.warn);
+        }
+      }
+      console.log('[Cleanup] Removed duplicate expenses successfully.');
+    }
+  } catch (err) {
+    console.error('[Cleanup] Error:', err);
+  }
+}, 3000);
+
+
+function openDiscountDetails() {
+  const orders = filterHistory(financePeriod, financeDateOpts).filter(o => o.discount && o.discount > 0);
+  if (orders.length === 0) {
+    showToast('Chưa có đơn nào được giảm giá trong thời gian này', 'warning');
+    return;
+  }
+  
+  document.getElementById('discount-detail-content').innerHTML = orders.map(o => `
+    <div class="list-item" onclick="document.getElementById('discount-detail-modal').classList.remove('active'); viewOrderDetail('${o.id}')" style="cursor:pointer">
+      <div class="list-item-icon" style="background:rgba(255,61,113,0.1)">🏷️</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${o.tableName} • ${o.id}</div>
+        <div class="list-item-sub">${fmtDateTime(o.paidAt)}</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount" style="color:var(--danger)">-${fmt(o.discount)}đ</div>
+      </div>
+    </div>
+  `).join('');
+  
+  document.getElementById('discount-detail-modal').classList.add('active');
+}
+
+function renderRevenueChart() {
+  const data = [];
+  const now = new Date();
+  const localIsoDate = (date) => {
+    const d = new Date(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const buildDayPoint = (date) => {
+    const dateKey = localIsoDate(date);
+    const dayOrders = filterHistory('range', { fromDate: dateKey, toDate: dateKey });
+    const dayRows = getFinanceExpenseRows('range', { fromDate: dateKey, toDate: dateKey });
+    const dayNetSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0) - (o.discount || 0), 0);
+    const dayCashOut = dayRows.reduce((s,row) => s + (Number(row.amount) || 0), 0);
+    return {
+      date: new Date(date),
+      label: new Date(date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
+      income: dayNetSales,
+      expense: dayCashOut,
+    };
+  };
+
+  if (financePeriod === 'today') {
+    data.push(buildDayPoint(now));
+  } else if (financePeriod === 'day' && financeDateOpts?.singleDate) {
+    data.push(buildDayPoint(financeDateOpts.singleDate));
+  } else {
+    const periodRange = getPeriodDateRange(financePeriod, financeDateOpts);
+    let startDate;
+    let endDate;
+    if (periodRange) {
+      startDate = new Date(periodRange.start);
+      endDate = new Date(periodRange.end);
+    } else {
+      endDate = new Date(now);
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 6);
+    }
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      data.push(buildDayPoint(d));
+    }
+  }
+
+  const ctx = document.getElementById('revenue-chart');
+  if(!ctx) return;
+  if(chartInstances.revenue) chartInstances.revenue.destroy();
+  
+  chartInstances.revenue = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [
+        {
+          label: 'DOANH THU',
+          data: data.map(d => d.income),
+          backgroundColor: '#00E5FF', // Cyan
+          borderRadius: 4,
+          borderSkipped: false,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8,
+          yAxisID: 'yIncome'
+        },
+        {
+          label: 'CHI PHÍ',
+          data: data.map(d => d.expense),
+          backgroundColor: '#FF3D71', // Pink
+          borderRadius: 4,
+          borderSkipped: false,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8,
+          yAxisID: 'yExpense'
+        }
+      ]
+    },
+    options: {
+      responsive: true, 
+      maintainAspectRatio: true,
+      plugins: { 
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#A0A0B5',
+            usePointStyle: true,
+            boxWidth: 8
+          }
+        } 
+      },
+      scales: {
+        yIncome: { 
+          position: 'left',
+          beginAtZero: true,
+          ticks: { 
+            color: '#A0A0B5', 
+            callback: v => v >= 1000 ? `${(v/1000)}k` : v
+          }, 
+          grid: { color: 'rgba(255,255,255,0.05)' } 
+        },
+        yExpense: {
+          position: 'right',
+          beginAtZero: true,
+          ticks: {
+            color: '#A0A0B5',
+            callback: v => v >= 1000 ? `${(v/1000)}k` : v
+          },
+          grid: { drawOnChartArea: false }
+        },
+        x: { 
+          ticks: { color: '#A0A0B5' }, 
+          grid: { display: false } 
+        }
+      }
+    }
+  });
+}
+
+// ============================================================
+// ============================================================
+// CHỐT CA  để  Ghi ShiftLogs lên Firestore
+// ============================================================
+// ============================================================
+// SHIFT MANAGEMENT (Quản lý ca)
+// ============================================================
+function manageShift() {
+  const shift = Store.getCurrentShift();
+  if (!shift) {
+    // Mở ca
+    const floatStr = prompt("MỞ CA\n\nNhập số tiền lẻ đầu ca (VNĐ):", "0");
+    if (floatStr === null) return;
+    const floatCash = parseFloat(floatStr);
+    if (isNaN(floatCash)) {
+      showToast("Số tiền không hợp lệ", "danger");
+      return;
+    }
+    const newShift = {
+      id: uid(),
+      openedAt: new Date().toISOString(),
+      floatCash,
+      payIn: 0,
+      payOut: 0
+    };
+    Store.setCurrentShift(newShift);
+    updateShiftBtnUI();
+    showToast(`✅ Đã mở ca với ${fmt(floatCash)}đ tiền đầu ca.`, "success");
+  } else {
+    // Quản lý / Đóng ca
+    openShiftModal(shift);
+  }
+}
+
+function updateShiftBtnUI() {
+  const shift = Store.getCurrentShift();
+  const btn = document.getElementById('btn-ket-ca');
+  const statusText = document.getElementById('shift-status-text');
+  const statusLabel = document.getElementById('shift-status-label');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.onclick = null;
+  btn.removeAttribute('data-attendance-status-checkout');
+  if (statusLabel) statusLabel.textContent = 'Trạng thái ca làm việc';
+  if (shift) {
+    btn.innerHTML = '🔒 Đóng Ca';
+    btn.style.background = 'linear-gradient(135deg, #f43f5e, #e11d48)';
+    if(statusText) statusText.innerHTML = `<span style="color:var(--success)">Đang mở (${fmtDateTime(shift.openedAt).split(' ')[1]})</span>`;
+  } else {
+    btn.innerHTML = '🟢 Mở Ca';
+    btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+    if(statusText) statusText.innerHTML = `<span style="color:var(--text2)">Chưa mở ca</span>`;
+  }
+  renderStatusBarAttendanceCheckout();
+}
+
+function openShiftModal(shift) {
+  // Lấy dữ liệu trong ca
+  const history = _getVisibleHistoryForUi();
+  
+  // Các đơn trong ca
+  const shiftOrders = history.filter(h => h.paidAt >= shift.openedAt);
+  const cashOrders = shiftOrders.filter(h => h.payMethod !== 'bank');
+  const bankOrders = shiftOrders.filter(h => h.payMethod === 'bank');
+  
+  const cashSales = cashOrders.reduce((sum, h) => sum + h.total, 0);
+  const bankSales = bankOrders.reduce((sum, h) => sum + h.total, 0);
+  const totalSales = cashSales + bankSales;
+
+  const expectedCash = shift.floatCash + cashSales + shift.payIn - shift.payOut;
+
+  let modalHtml = `
+    <div class="modal-overlay active" id="shift-modal" onclick="if(event.target===this)this.classList.remove('active')">
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <div class="modal-title">⏰ Quản lý Ca Làm Việc</div>
+          <button class="modal-close" onclick="document.getElementById('shift-modal').remove()">✕</button>
+        </div>
+        <div class="modal-body" style="padding-bottom: 20px;">
+          <div style="font-size:13px; color:var(--text2); margin-bottom:12px;">Ca mở lúc: ${fmtDateTime(shift.openedAt)}</div>
+          
+          <div class="card" style="padding:12px; margin-bottom:12px; background:var(--bg3);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span style="font-weight:bold; color:var(--primary)">Tổng doanh thu ca:</span>
+              <span style="font-weight:bold; color:var(--primary)">${fmt(totalSales)}đ</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; color:var(--text2);">
+              <span>- Tiền mặt:</span>
+              <span>${fmt(cashSales)}đ</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:12px; color:var(--text2);">
+              <span>- Chuyển khoản (CK):</span>
+              <span>${fmt(bankSales)}đ</span>
+            </div>
+            <hr style="border:0; border-top:1px dashed var(--border); margin:8px 0;">
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span>Tiền lẻ đầu ca:</span>
+              <span style="font-weight:bold;">${fmt(shift.floatCash)}đ</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span>Doanh thu tiền mặt (trong ca):</span>
+              <span style="font-weight:bold; color:var(--success)">+ ${fmt(cashSales)}đ</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span>Tiền nộp vào (Pay in):</span>
+              <span style="font-weight:bold; color:var(--info)">+ ${fmt(shift.payIn)}đ</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span>Tiền rút ra (Pay out):</span>
+              <span style="font-weight:bold; color:var(--danger)">- ${fmt(shift.payOut)}đ</span>
+            </div>
+            <hr style="border:0; border-top:1px dashed var(--border); margin:8px 0;">
+            <div style="display:flex; justify-content:space-between; font-size:16px;">
+              <span>Tiền mặt dự kiến:</span>
+              <span style="font-weight:900; color:var(--primary)">${fmt(expectedCash)}đ</span>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <button class="btn btn-outline" style="flex:1" onclick="shiftPayInOut('in', ${expectedCash})">⬇️ Nộp tiền</button>
+            <button class="btn btn-outline" style="flex:1" onclick="shiftPayInOut('out', ${expectedCash})">⬆️ Rút tiền</button>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label">Tiền mặt thực tế (khi đóng ca)</label>
+            <input type="text" inputmode="numeric" class="input" id="shift-actual-cash" placeholder="Nhập số tiền đếm được..." style="font-size:18px; font-weight:bold;" oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\\B(?=(\\d{3})+(?!\\d))/g,',')">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Ghi chú đóng ca</label>
+            <input type="text" class="input" id="shift-note" placeholder="Lý do chênh lệch (nếu có)...">
+          </div>
+
+          <button class="btn btn-danger btn-block" style="margin-top:16px;" onclick="closeShift(${expectedCash})">🔒 Xác nhận Đóng Ca</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const oldModal = document.getElementById('shift-modal');
+  if(oldModal) oldModal.remove();
+  
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function shiftPayInOut(type, expectedCash) {
+  const shift = Store.getCurrentShift();
+  if(!shift) return;
+
+  const actionName = type === 'in' ? 'Nộp tiền (Pay in)' : 'Rút tiền (Pay out)';
+  const amountStr = prompt(`${actionName}\n\nNhập số tiền (VNĐ):`, '0');
+  if(amountStr === null) return;
+
+  const amount = parseFloat(amountStr);
+  if(isNaN(amount) || amount <= 0) {
+    showToast('Số tiền không hợp lệ', 'danger');
+    return;
+  }
+
+  const reason = prompt(`Lý do ${actionName.toLowerCase()}:`) || '';
+
+  if(type === 'in') {
+    shift.payIn += amount;
+  } else {
+    shift.payOut += amount;
+  }
+
+  Store.setCurrentShift(shift);
+  
+  // Ghi nhận vào chi phí/thu nhập (dùng Expense cho Pay Out, nhưng không tính vào OPEX P&L nếu là rút tiền đi chợ, tùy thiết kế. 
+  // đ đây ghi lại thành log Expense vđi category "Rút tiền ca" đă tra cứu)
+  if(type === 'out') {
+    Store.addExpense({
+      id: uid(),
+      name: `Rút tiền ca: ${reason}`,
+      amount: amount,
+      category: 'Rút tiền ca',
+      date: new Date().toISOString()
+    });
+  }
+
+  showToast(`✅ Đã ghi nhận ${actionName}: ${fmt(amount)}đ`, 'success');
+  openShiftModal(shift); // Re-render modal
+}
+
+async function closeShift(expectedCash) {
+  const actualInput = document.getElementById('shift-actual-cash');
+  const noteInput = document.getElementById('shift-note');
+  if(!actualInput) return;
+
+  const actualStr = actualInput.value.replace(/,/g, '');
+  if(actualStr === '') {
+    showToast('Vui lòng nhập số tiền mặt thực tế để đóng ca.', 'warning');
+    return;
+  }
+
+  const actualCash = parseFloat(actualStr);
+  if(isNaN(actualCash)) {
+    showToast('Số tiền thực tế không hợp lệ.', 'danger');
+    return;
+  }
+
+  const diff = actualCash - expectedCash;
+  const note = noteInput ? noteInput.value.trim() : '';
+
+  if(!confirm(`Xác nhận đóng ca?\nChênh lệch: ${diff >= 0 ? '+' : ''}${fmt(diff)}đ`)) return;
+
+  const shift = Store.getCurrentShift();
+  const ud = window.appState && window.appState.userDoc;
+
+  const logData = {
+    shiftId: shift.id,
+    staffUid: ud ? ud.uid : 'unknown',
+    staffName: ud ? (ud.displayName || ud.username || ud.email) : 'Không rõ',
+    openedAt: shift.openedAt,
+    closedAt: new Date().toISOString(),
+    floatCash: shift.floatCash,
+    payIn: shift.payIn,
+    payOut: shift.payOut,
+    expectedCash,
+    actualCash,
+    difference: diff,
+    note
+  };
+
+  if (window.DB && window.DB.ShiftLogs) {
+    try {
+      await window.DB.ShiftLogs.add(logData);
+      showToast(`✅ Đã đóng ca! Chênh lệch: ${fmt(diff)}đ`, 'success');
+    } catch(e) {
+      showToast('Lỗi lưu log ca: ' + e.message, 'danger');
+    }
+  } else {
+    console.log('[ShiftLog offline]:', logData);
+    showToast(`✅ Đã đóng ca (Offline)! Chênh lệch: ${fmt(diff)}đ`, 'success');
+  }
+
+  // Nếu thiếu/dư tiền mặt, có thđ ghi nhận vào Expense
+  if(diff !== 0) {
+    Store.addExpense({
+      id: uid(),
+      name: `Chênh lệch đóng ca: ${diff > 0 ? 'Dư' : 'Thiếu'} tiền mặt`,
+      amount: -diff, // Nếu dư, diff > 0, amount âm -> Lãi. Nếu thiếu, diff < 0, amount dương -> Lđ (Chi phí)
+      category: 'Chênh lệch ca',
+      date: new Date().toISOString(),
+      note: `Dự kiến: ${expectedCash}, Thực tế: ${actualCash}. Ghi chú: ${note}`
+    });
+  }
+
+  Store.setCurrentShift(null);
+  document.getElementById('shift-modal').remove();
+  updateShiftBtnUI();
+  renderFinance(); // update reports if needed
+}
+
+// PAGE: REPORTS
+// ============================================================
+let reportPeriod = 'month'; // Thay đăi mặc đănh thành 'month' đă hiđơ thđ đủ dữ liđu từ các ngày trưđc
+let reportDateOpts = {};
+let reportFilters = {
+  transactions: { sales: true, purchases: true, expenses: true },
+  menuItemId: '',
+};
+
+function isReportTransactionEnabled(type) {
+  return !!reportFilters?.transactions?.[type];
+}
+
+function getSelectedReportMenuItem() {
+  const menu = _getMenu().filter(item => !item.hidden);
+  if (!reportFilters.menuItemId) return null;
+  return menu.find(item => String(item.id) === String(reportFilters.menuItemId)) || null;
+}
+
+function populateReportMenuFilter() {
+  const selects = Array.from(document.querySelectorAll('[data-esm-report-menu-filter]'));
+  if (!selects.length) return;
+  const menu = _getMenu()
+    .filter(item => !item.hidden)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
+  const current = String(reportFilters.menuItemId || '');
+  const html = '<option value="">Tất cả món ăn</option>' + menu
+    .map(item => `<option value="${item.id}">${item.name}</option>`)
+    .join('');
+  const nextValue = menu.some(item => String(item.id) === current) ? current : '';
+  selects.forEach(select => {
+    select.innerHTML = html;
+    select.value = nextValue;
+  });
+}
+
+function ensureReportSummaryLayout() {
+  const revenueTab = document.getElementById('report-tab-revenue');
+  if (!revenueTab) return;
+
+  const legacyCards = Array.from(revenueTab.querySelectorAll('.card')).filter(card =>
+    card.querySelector('[data-esm-report-filter-summary]') || card.querySelector('[data-esm-report-menu-filter]')
+  );
+  legacyCards.forEach(card => {
+    card.style.display = 'none';
+    card.setAttribute('aria-hidden', 'true');
+  });
+
+  if (!document.getElementById('report-menu-summary-card')) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'report-menu-summary-card';
+    card.style.marginBottom = '16px';
+    card.innerHTML = `
+      <div class="card-title" id="report-menu-summary-title" style="margin-bottom:12px">Tóm tắt theo món ăn</div>
+      <div id="report-menu-summary-content"></div>
+    `;
+    revenueTab.insertBefore(card, revenueTab.firstElementChild);
+  }
+}
+
+function getReportMenuIngredientKeys(menuItem) {
+    if (window.XekhoApp?.report?.getReportMenuIngredientKeys) return window.XekhoApp.report.getReportMenuIngredientKeys(menuItem);
+    if (!menuItem) return [];
+    const inventory = _getInventory();
+    const ingredientNames = new Set();
+    if (Array.isArray(menuItem.ingredients)) {
+      menuItem.ingredients.forEach(ing => { const name = String(ing?.name || '').trim(); if (name) ingredientNames.add(normalizeViKey(name)); });
+    }
+    if (menuItem.itemType === ITEM_TYPES.RETAIL && menuItem.linkedInventoryId) {
+      const stock = inventory.find(item => String(item.id || '') === String(menuItem.linkedInventoryId));
+      const stockName = String(stock?.name || '').trim();
+      if (stockName) ingredientNames.add(normalizeViKey(stockName));
+    }
+    const ownName = String(menuItem.name || '').trim();
+    if (ownName) ingredientNames.add(normalizeViKey(ownName));
+    return Array.from(ingredientNames).filter(Boolean);
+  }
+
+function getReportMenuSalesSummary(menuItem) {
+  const orders = getFilteredReportOrders();
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const targetId = menuItem ? String(menuItem.id || '') : '';
+  const targetName = menuItem ? normalizeViKey(menuItem.name) : '';
+
+  return orders.reduce((summary, order) => {
+    (order.items || []).forEach(item => {
+      const itemId = String(item.id || '');
+      const itemNameKey = normalizeViKey(item.name);
+      if (menuItem && itemId !== targetId && itemNameKey !== targetName) return;
+
+      const qty = Number(item.qty || 0);
+      const revenue = Number(item.price || 0) * qty;
+      const itemMenu = menuById.get(itemId) || menuByName.get(itemNameKey) || menuItem;
+      const unitCost = Number(item.cost || 0) > 0
+        ? Number(item.cost || 0)
+        : Number(_resolveDishCostPerUnit(itemMenu, inventory) || itemMenu?.cost || 0);
+
+      summary.qty += qty;
+      summary.revenue += revenue;
+      summary.cost += unitCost * qty;
+    });
+    return summary;
+  }, { qty: 0, revenue: 0, cost: 0, profit: 0 });
+}
+
+function renderReportFilterSummary() {
+  const summaryEls = Array.from(document.querySelectorAll('[data-esm-report-filter-summary]'));
+  if (!summaryEls.length) return;
+  const labels = [];
+  if (isReportTransactionEnabled('sales')) labels.push('Đơn bán');
+  if (isReportTransactionEnabled('purchases')) labels.push('Nhập hàng');
+  if (isReportTransactionEnabled('expenses')) labels.push('Chi phí khác');
+  const menuItem = getSelectedReportMenuItem();
+  const text = `Đang xem: ${labels.length ? labels.join(', ') : 'chưa chọn giao dịch nào'}${menuItem ? ` · Món ăn: ${menuItem.name}` : ' · Tất cả món ăn'}`;
+  summaryEls.forEach(summaryEl => { summaryEl.textContent = text; });
+}
+
+function syncReportFilterUI() {
+  document.querySelectorAll('[data-esm-report-transaction-filter="sales"]').forEach(el => { el.checked = isReportTransactionEnabled('sales'); });
+  document.querySelectorAll('[data-esm-report-transaction-filter="purchases"]').forEach(el => { el.checked = isReportTransactionEnabled('purchases'); });
+  document.querySelectorAll('[data-esm-report-transaction-filter="expenses"]').forEach(el => { el.checked = isReportTransactionEnabled('expenses'); });
+  populateReportMenuFilter();
+  renderReportFilterSummary();
+}
+function setReportTransactionFilter(type, checked) {
+  reportFilters.transactions[type] = !!checked;
+  renderReportFilterSummary();
+  refreshReportViews();
+}
+
+function setReportMenuFilter(value) {
+  reportFilters.menuItemId = String(value || '').trim();
+  renderReportFilterSummary();
+  refreshReportViews();
+}
+
+function resetReportFilters() {
+  reportFilters = {
+    transactions: { sales: true, purchases: true, expenses: true },
+    menuItemId: '',
+  };
+  syncReportFilterUI();
+  refreshReportViews();
+}
+
+function doesOrderMatchReportMenuItem(order, menuItem) {
+    if (window.XekhoApp?.report?.doesOrderMatchReportMenuItem) return window.XekhoApp.report.doesOrderMatchReportMenuItem(order, menuItem);
+    if (!menuItem) return true;
+    const menuItemKey = normalizeViKey(menuItem.name);
+    return (order.items || []).some(item => { if (String(item.id || '') === String(menuItem.id)) return true; return normalizeViKey(item.name) === menuItemKey; });
+  }
+
+function doesPurchaseMatchReportMenuItem(purchase, menuItem) {
+    if (window.XekhoApp?.report?.doesPurchaseMatchReportMenuItem) return window.XekhoApp.report.doesPurchaseMatchReportMenuItem(purchase, menuItem);
+    if (!menuItem) return true;
+    const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+    if (!ingredientKeys.length) return false;
+    const purchaseKey = normalizeViKey(purchase?.name || '');
+    return ingredientKeys.includes(purchaseKey);
+  }
+
+function doesExpenseMatchReportMenuItem(expense, menuItem) {
+    if (window.XekhoApp?.report?.doesExpenseMatchReportMenuItem) return window.XekhoApp.report.doesExpenseMatchReportMenuItem(expense, menuItem);
+    if (!menuItem) return true;
+    const ingredientKeys = getReportMenuIngredientKeys(menuItem);
+    if (!ingredientKeys.length) return false;
+    const haystack = normalizeViKey([expense?.name || '', expense?.note || '', expense?.category || ''].join(' '));
+    return ingredientKeys.some(key => key && haystack.includes(key));
+  }
+
+function getFilteredReportOrders() {
+  if (!isReportTransactionEnabled('sales')) return [];
+  const menuItem = getSelectedReportMenuItem();
+  return filterHistory(reportPeriod, reportDateOpts).filter(order => doesOrderMatchReportMenuItem(order, menuItem));
+}
+
+function getFilteredReportPurchases() {
+  if (!isReportTransactionEnabled('purchases')) return [];
+  const menuItem = getSelectedReportMenuItem();
+  return filterPurchases(reportPeriod, reportDateOpts).filter(purchase => doesPurchaseMatchReportMenuItem(purchase, menuItem));
+}
+
+function getFilteredReportExpenses() {
+  if (!isReportTransactionEnabled('expenses')) return [];
+  const menuItem = getSelectedReportMenuItem();
+  return filterExpenses(reportPeriod, reportDateOpts).filter(expense => doesExpenseMatchReportMenuItem(expense, menuItem));
+}
+
+function refreshReportViews() {
+  ensureReportSummaryLayout();
+  renderTrendChart();
+  renderTopItems();
+  renderReportMenuSummary();
+  renderDishReportList();
+  renderCategoryChart();
+  renderHourlyChart();
+  renderOrderHistoryList();
+  renderExpenseReport();
+}
+
+function ensureAdsRevenueReportDateInputs() {
+  const fromEl = document.getElementById('ads-report-from');
+  const toEl = document.getElementById('ads-report-to');
+  if (!fromEl || !toEl) return;
+
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+  if (!fromEl.value) fromEl.value = monthStart;
+  if (!toEl.value) toEl.value = today;
+}
+
+function detectAdsExpensePlatform(expense = {}) {
+    if (window.XekhoApp?.utils?.categorize?.detectAdsExpensePlatform) return window.XekhoApp.utils.categorize.detectAdsExpensePlatform(expense);
+    const raw = `${expense.name || ''} ${expense.category || ''}`;
+    const key = normalizeViKey(repairVietnameseText(raw));
+    if (!key) return '';
+    if (key.includes('facebook') || key.includes('meta')) return 'facebook';
+    if (key.includes('tiktok')) return 'tiktok';
+    return '';
+  }
+
+function isAdsExpenseEntry(expense = {}) {
+    if (window.XekhoApp?.utils?.categorize?.isAdsExpenseEntry) return window.XekhoApp.utils.categorize.isAdsExpenseEntry(expense);
+    const raw = `${expense.name || ''} ${expense.category || ''}`;
+    const key = normalizeViKey(repairVietnameseText(raw));
+    if (!key) return false;
+    return key.includes('facebook') || key.includes('meta') || key.includes('tiktok') || key.includes('ads') || key.includes('quang cao') || key.includes('marketing');
+  }
+
+function getDailyRevenueSnapshotsInRange(fromDate, toDate) {
+    if (window.XekhoApp?.report?.getDailyRevenueSnapshotsInRange) return window.XekhoApp.report.getDailyRevenueSnapshotsInRange(fromDate, toDate);
+    const rows = Array.isArray(window.appState?.dailyRevenueSnapshots) ? window.appState.dailyRevenueSnapshots : [];
+    return rows.filter((snapshot) => { const dateKey = String(snapshot?.date || '').trim().slice(0, 10); return !!dateKey && dateKey >= fromDate && dateKey <= toDate; });
+  }
+
+function getFixedCostProfileForReports() {
+    if (window.XekhoApp?.utils?.fixedcost?.getFixedCostProfileForReports) return window.XekhoApp.utils.fixedcost.getFixedCostProfileForReports();
+    const financialProfile = window.appState?.settings?.financial_profile || {};
+    const monthly = financialProfile?.monthly_fixed_costs || {};
+    const monthlyManagementSalary = Number(financialProfile?.management_salary_monthly ?? monthly.management_salary ?? monthly.manager_salary ?? 0) || 0;
+    const itemizedMonthlyFixedCostTotal = (Number(monthly.rent || 0) || 0) + monthlyManagementSalary + (Number(monthly.utilities || 0) || 0) + (Number(monthly.other || 0) || 0);
+    const monthlyFixedCostTotal = itemizedMonthlyFixedCostTotal || (Number(monthly.total || 0) || 0);
+    const dailyFixedCost = Number(financialProfile?.daily_fixed_cost || 0) || (monthlyFixedCostTotal > 0 ? Math.round(monthlyFixedCostTotal / 30) : 0);
+    const dailyManagementSalary = monthlyManagementSalary > 0 ? Math.round(monthlyManagementSalary / 30) : 0;
+    const targetMonthlyProfit = Number(financialProfile?.target_monthly_profit || 0) || 0;
+    return { monthlyFixedCostTotal, dailyFixedCost, monthlyManagementSalary, dailyManagementSalary, targetMonthlyProfit, isConfigured: monthlyFixedCostTotal > 0 || dailyFixedCost > 0 || targetMonthlyProfit > 0 };
+  }
+
+function countInclusiveReportDays(fromDate, toDate) {
+    if (window.XekhoApp?.utils?.categorize?.countInclusiveReportDays) return window.XekhoApp.utils.categorize.countInclusiveReportDays(fromDate, toDate);
+    const start = new Date(`${String(fromDate || '').trim()}T00:00:00`);
+    const end = new Date(`${String(toDate || '').trim()}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+  }
+
+function buildAdsRevenueReportHtml(summary = {}) {
+    if (window.XekhoApp?.report?.buildAdsRevenueReportHtml) return window.XekhoApp.report.buildAdsRevenueReportHtml(summary);
+    const fmtMoney = (value) => `${fmt(Number(value || 0))}\u0111`;
+    const posMargin = Number(summary.posRevenue || 0) > 0 ? ((Number(summary.grossProfit || 0) / Number(summary.posRevenue || 0)) * 100).toFixed(1) : '0.0';
+    const roasText = summary.adsSpendTotal > 0 ? `${Number(summary.roas || 0).toFixed(2)}x` : '\u2014';
+    const adsDataNote = summary.adsEntriesCount > 0 || summary.snapshotAdsDays > 0 ? `<div class="report-ads-note">${summary.dataSourceNote || ''}</div>` : `<div class="empty-state report-ads-empty"><div class="empty-text">Ch\u01B0a c\u00F3 d\u1EEF li\u1EC7u ads trong kho\u1EA3ng n\u00E0y. H\u1EC7 th\u1ED1ng \u01B0u ti\u00EAn daily_revenue_snapshot.ads_spend_today, sau \u0111\u00F3 m\u1EDBi c\u1ED9ng c\u00E1c m\u1EE5c chi ph\u00ED marketing/Facebook/TikTok n\u1EBFu c\u00F3.</div></div>`;
+    return `\n    <div class="report-ads-kpis">\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Doanh thu POS</div>\n        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.posRevenue)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">\u0110\u01A1n h\u00E0ng</div>\n        <div class="stat-value report-ads-kpi-value">${fmt(summary.orderCount || 0)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Gi\u00E1 v\u1ED1n</div>\n        <div class="stat-value report-ads-kpi-value">${fmtMoney(summary.cogsTotal)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">L\u00E3i g\u1ED9p</div>\n        <div class="stat-value report-ads-kpi-value" style="color:var(--success)">${fmtMoney(summary.grossProfit)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">Chi ads</div>\n        <div class="stat-value report-ads-kpi-value" style="color:var(--warning)">${fmtMoney(summary.adsSpendTotal)}</div>\n      </div>\n      <div class="stat-card report-ads-kpi">\n        <div class="stat-label">ROAS</div>\n        <div class="stat-value report-ads-kpi-value">${roasText}</div>\n      </div>\n    </div>\n\n    <div class="report-ads-grid">\n      <div class="card report-ads-panel">\n        <div class="card-title report-ads-panel-title">T\u00F3m t\u1EAFt kho\u1EA3ng ng\u00E0y</div>\n        <div class="report-ads-meta-grid">\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">T\u1EEB ng\u00E0y</div>\n            <div class="report-ads-meta-value">${summary.fromDate || ''}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">\u0110\u1EBFn ng\u00E0y</div>\n            <div class="report-ads-meta-value">${summary.toDate || ''}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">M\u00F3n \u0111\u00E3 b\u00E1n</div>\n            <div class="report-ads-meta-value">${fmt(summary.itemQty || 0)} ph\u1EA7n</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">Bi\u00EAn l\u00E3i g\u1ED9p</div>\n            <div class="report-ads-meta-value">${posMargin}%</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh / ng\u00E0y</div>\n            <div class="report-ads-meta-value">${fmtMoney(summary.fixedCostDaily)}</div>\n          </div>\n          <div class="report-ads-meta-item">\n            <div class="report-ads-meta-label">S\u1ED1 ng\u00E0y ph\u00E2n b\u1ED5</div>\n            <div class="report-ads-meta-value">${fmt(summary.reportDays || 0)} ng\u00E0y</div>\n          </div>\n        </div>\n      </div>\n\n      <div class="card report-ads-panel">\n        <div class="card-title report-ads-panel-title">Chi ph\u00ED & l\u1EE3i nhu\u1EADn</div>\n        <div class="report-ads-breakdown">\n          <div class="report-ads-row"><span>Facebook Ads</span><strong>${fmtMoney(summary.facebookAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>TikTok Ads</span><strong>${fmtMoney(summary.tiktokAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>Marketing kh\u00E1c</span><strong>${fmtMoney(summary.otherAdsSpend)}</strong></div>\n          <div class="report-ads-row"><span>Nh\u1EADp h\u00E0ng</span><strong>${fmtMoney(summary.purchaseSpend)}</strong></div>\n          <div class="report-ads-row"><span>Chi ph\u00ED kh\u00E1c, g\u1ED3m l\u01B0\u01A1ng nh\u00E2n vi\u00EAn ch\u1EA5m c\u00F4ng</span><strong>${fmtMoney(summary.otherExpenseSpend)}</strong></div>\n          <div class="report-ads-row"><span>L\u01B0\u01A1ng qu\u1EA3n l\u00FD k\u1EF3 b\u00E1o c\u00E1o</span><strong>${fmtMoney(summary.managementSalaryTotal)}</strong></div>\n          <div class="report-ads-row"><span>Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh kh\u00E1c k\u1EF3 b\u00E1o c\u00E1o</span><strong>${fmtMoney(summary.otherFixedCostTotal)}</strong></div>\n          <div class="report-ads-row report-ads-row-total">\n            <span>L\u1EE3i nhu\u1EADn sau ads, chi ph\u00ED kh\u00E1c & chi ph\u00ED c\u1ED1 \u0111\u1ECBnh</span>\n            <strong style="color:${summary.netAfterAdsAndExpenses >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtMoney(summary.netAfterAdsAndExpenses)}</strong>\n          </div>\n        </div>\n        ${summary.snapshotAdsDays > 0 ? '<div class="report-ads-pill">Meta Ads snapshot: ' + fmt(summary.snapshotAdsDays) + ' ng\u00E0y</div>' : ''}${summary.expenseAdsDays > 0 ? '<div class="report-ads-pill">Chi ph\u00ED n\u1ED9i b\u1ED9: ' + fmt(summary.expenseAdsDays) + ' d\u00F2ng ads</div>' : ''}${summary.fixedCostConfigured ? '<div class="report-ads-pill">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh: ' + fmtMoney(summary.fixedCostDaily) + '/ng\u00E0y, trong \u0111\u00F3 l\u01B0\u01A1ng qu\u1EA3n l\u00FD ' + fmtMoney(summary.dailyManagementSalary) + '/ng\u00E0y</div>' : '<div class="report-ads-pill">Chi ph\u00ED c\u1ED1 \u0111\u1ECBnh: ch\u01B0a c\u1EA5u h\u00ECnh</div>'}\n        ${adsDataNote}\n      </div>\n    </div>\n  `;
+  }
+
+function loadAdsRevenueReport() {
+  const resultEl = document.getElementById('ads-revenue-report-result');
+  const fromEl = document.getElementById('ads-report-from');
+  const toEl = document.getElementById('ads-report-to');
+  if (!resultEl || !fromEl || !toEl) return;
+
+  ensureAdsRevenueReportDateInputs();
+  const fromDate = String(fromEl.value || '').trim();
+  const toDate = String(toEl.value || '').trim();
+
+  if (!fromDate || !toDate) {
+    resultEl.innerHTML = `<div class="empty-state"><div class="empty-text">Vui lòng chọn đầy đủ khoảng ngày để xem báo cáo.</div></div>`;
+    return;
+  }
+  if (fromDate > toDate) {
+    resultEl.innerHTML = `<div class="empty-state"><div class="empty-text">Ngày bắt đầu không được lớn hơn ngày kết thúc.</div></div>`;
+    return;
+  }
+
+  const rangeOpts = { fromDate, toDate };
+  const orders = filterHistory('range', rangeOpts).filter(isCompletedHistoryOrderForUi);
+  const expenses = filterExpenses('range', rangeOpts);
+  const purchases = filterPurchases('range', rangeOpts);
+  const revenueSnapshots = getDailyRevenueSnapshotsInRange(fromDate, toDate);
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+
+  const getOrderItemUnitCost = (item) => {
+    const inlineCost = Number(item?.cost || 0);
+    if (inlineCost > 0) return inlineCost;
+    const menuItem = menuById.get(String(item?.id || '')) || menuByName.get(normalizeViKey(item?.name || ''));
+    return Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
+  };
+
+  const posSummary = orders.reduce((acc, order) => {
+    const items = Array.isArray(order?.items) ? order.items : [];
+    const itemRevenue = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+    const itemQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    const itemCost = items.reduce((sum, item) => sum + (getOrderItemUnitCost(item) * Number(item.qty || 0)), 0);
+    const discount = Number(order?.discount || 0);
+    acc.posRevenue += Math.max(0, itemRevenue - discount);
+    acc.itemQty += itemQty;
+    acc.cogsTotal += itemCost;
+    return acc;
+  }, { posRevenue: 0, itemQty: 0, cogsTotal: 0 });
+
+  const adsSummary = expenses.reduce((acc, expense) => {
+    const amount = Number(expense?.amount || 0);
+    if (!(amount > 0)) return acc;
+    if (isAdsExpenseEntry(expense)) {
+      acc.adsEntriesCount += 1;
+      acc.expenseAdsDays += 1;
+      const platform = detectAdsExpensePlatform(expense);
+      if (platform === 'facebook') acc.facebookAdsSpendManual += amount;
+      else if (platform === 'tiktok') acc.tiktokAdsSpend += amount;
+      else acc.otherAdsSpend += amount;
+    } else {
+      acc.otherExpenseSpend += amount;
+    }
+    return acc;
+  }, {
+    adsEntriesCount: 0,
+    expenseAdsDays: 0,
+    facebookAdsSpendManual: 0,
+    tiktokAdsSpend: 0,
+    otherAdsSpend: 0,
+    otherExpenseSpend: 0,
+  });
+
+  const snapshotAdsSpend = revenueSnapshots.reduce((sum, row) => sum + (Number(row?.ads_spend_today || 0) || 0), 0);
+  const facebookAdsSpend = snapshotAdsSpend > 0 ? snapshotAdsSpend : adsSummary.facebookAdsSpendManual;
+  const adsSpendTotal = facebookAdsSpend + adsSummary.tiktokAdsSpend + adsSummary.otherAdsSpend;
+
+  const fixedCostProfile = getFixedCostProfileForReports();
+  const reportDays = countInclusiveReportDays(fromDate, toDate);
+  const fixedCostTotal = (Number(fixedCostProfile.dailyFixedCost || 0) || 0) * (Number(reportDays || 0) || 0);
+  const managementSalaryTotal = (Number(fixedCostProfile.dailyManagementSalary || 0) || 0) * (Number(reportDays || 0) || 0);
+  const otherFixedCostTotal = Math.max(0, fixedCostTotal - managementSalaryTotal);
+  const purchaseSpend = purchases.reduce((sum, purchase) => sum + Number(purchase?.price || 0), 0);
+  const grossProfit = posSummary.posRevenue - posSummary.cogsTotal;
+  const netAfterAdsAndExpenses = grossProfit - adsSpendTotal - adsSummary.otherExpenseSpend - fixedCostTotal;
+  const dataSourceNote = snapshotAdsSpend > 0
+    ? `Facebook Ads đang lấy từ daily_revenue_snapshot (${fmt(snapshotAdsSpend)}đ). TikTok/Marketing khác lấy từ mục chi phí nội bộ.`
+    : (adsSummary.adsEntriesCount > 0
+      ? 'Chưa có snapshot Meta Ads trong khoảng này, hệ thống đang cộng từ các mục chi phí nội bộ.'
+      : '');
+
+  resultEl.innerHTML = buildAdsRevenueReportHtml({
+    fromDate,
+    toDate,
+    orderCount: orders.length,
+    itemQty: posSummary.itemQty,
+    posRevenue: posSummary.posRevenue,
+    cogsTotal: posSummary.cogsTotal,
+    grossProfit,
+    purchaseSpend,
+    netAfterAdsAndExpenses,
+    fixedCostDaily: fixedCostProfile.dailyFixedCost,
+    dailyManagementSalary: fixedCostProfile.dailyManagementSalary,
+    fixedCostTotal,
+    managementSalaryTotal,
+    otherFixedCostTotal,
+    fixedCostConfigured: fixedCostProfile.isConfigured,
+    reportDays,
+    roas: adsSpendTotal > 0 ? (posSummary.posRevenue / adsSpendTotal) : 0,
+    adsSpendTotal,
+    facebookAdsSpend,
+    tiktokAdsSpend: adsSummary.tiktokAdsSpend,
+    otherAdsSpend: adsSummary.otherAdsSpend,
+    otherExpenseSpend: adsSummary.otherExpenseSpend,
+    adsEntriesCount: adsSummary.adsEntriesCount,
+    snapshotAdsDays: revenueSnapshots.filter(row => Number(row?.ads_spend_today || 0) > 0).length,
+    expenseAdsDays: adsSummary.expenseAdsDays,
+    dataSourceNote,
+  });
+}
+
+function renderReports() {
+  ensureReportSummaryLayout();
+  ensureAdsRevenueReportDateInputs();
+  syncReportFilterUI();
+  setReportPeriod(reportPeriod);
+  const adsTab = document.getElementById('report-tab-ads');
+  if (adsTab && adsTab.style.display !== 'none') {
+    try { loadAdsRevenueReport(); } catch (_) {}
+  }
+}
+
+function setReportPeriod(p) {
+  reportPeriod = p;
+  document.querySelectorAll('.report-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  
+  // Show/hide date picker
+  const picker = document.getElementById('report-date-picker');
+  if(picker) picker.style.display = p === 'day' ? '' : 'none';
+  
+  if(p === 'day') {
+    const singleInput = document.getElementById('report-single-date');
+    if(singleInput && !singleInput.value) singleInput.value = new Date().toISOString().split('T')[0];
+    applyDateFilter('report');
+    return;
+  }
+  reportDateOpts = {};
+  syncReportFilterUI();
+  refreshReportViews();
+}
+
+function renderTopItems() {
+  const orders = getFilteredReportOrders();
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const getOrderItemUnitCost = (item) => {
+    const inlineCost = Number(item.cost || 0);
+    if (inlineCost > 0) return inlineCost;
+    const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name));
+    return Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
+  };
+
+  const topMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (!topMap[item.name]) topMap[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0 };
+      const qty = Number(item.qty || 0);
+      topMap[item.name].qty += qty;
+      topMap[item.name].revenue += Number(item.price || 0) * qty;
+      topMap[item.name].cost += getOrderItemUnitCost(item) * qty;
+    });
+  });
+  const top = Object.values(topMap).sort((a, b) => b.qty - a.qty).slice(0, 8);
+  document.getElementById('top-items').innerHTML = top.length ? top.map((item, i) =>
+    `<div class="list-item">
+      <div class="list-item-icon" style="background:rgba(255,107,53,0.1);color:var(--primary);font-weight:800;font-size:16px">${i+1}</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.name}</div>
+        <div class="list-item-sub">Đã bán: ${item.qty} phần · Doanh thu: ${fmt(item.revenue)}đ · Vốn: ${fmt(item.cost)}đ</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount">${fmt(item.revenue)}đ</div>
+      </div>
+    </div>`
+  ).join('') : '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Chưa có dữ liệu</div></div>';
+
+  const profitMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (!profitMap[item.name]) profitMap[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0 };
+      const qty = Number(item.qty || 0);
+      const revenue = Number(item.price || 0) * qty;
+      const cost = getOrderItemUnitCost(item) * qty;
+      profitMap[item.name].qty += qty;
+      profitMap[item.name].revenue += revenue;
+      profitMap[item.name].cost += cost;
+    });
+  });
+  const topProfit = Object.values(profitMap)
+    .map(item => ({ ...item, profit: item.revenue - item.cost }))
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 8);
+  document.getElementById('top-profit-items').innerHTML = topProfit.length ? topProfit.map((item, i) =>
+    `<div class="list-item">
+      <div class="list-item-icon" style="background:rgba(16,185,129,0.1);color:var(--success);font-weight:800;font-size:16px">${i+1}</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.name}</div>
+        <div class="list-item-sub">Đã bán: ${item.qty} phần</div>
+      </div>
+      <div class="list-item-right">
+        <div class="list-item-amount" style="color:var(--success)">Lãi: ${fmt(item.profit)}đ</div>
+      </div>
+    </div>`
+  ).join('') : '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">Chưa có dữ liệu</div></div>';
+}
+
+function renderReportMenuSummary() {
+  const titleEl = document.getElementById('report-menu-summary-title');
+  const contentEl = document.getElementById('report-menu-summary-content');
+  if (!titleEl || !contentEl) return;
+
+  const menuItem = getSelectedReportMenuItem();
+  const summary = getReportMenuSalesSummary(menuItem);
+  const profit = Number(summary?.revenue || 0) - Number(summary?.cost || 0);
+
+  titleEl.textContent = menuItem ? `Doanh thu món: ${menuItem.name}` : 'Tóm tắt tất cả món ăn';
+  contentEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Tổng số lượng</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.qty || 0)}</div>
+      </div>
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Thành tiền</div>
+        <div class="stat-value" style="font-size:24px">${fmt(summary?.revenue || 0)}đ</div>
+      </div>
+      <div class="stat-card" style="padding:14px">
+        <div class="stat-label">Lãi</div>
+        <div class="stat-value" style="font-size:24px;color:var(--success)">${fmt(profit)}đ</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDishReportList() {
+  const container = document.getElementById('dish-report-list');
+  if (!container) return;
+
+  const orders = getFilteredReportOrders();
+  const menu = _getMenu().filter(item => !item.hidden);
+  const inventory = _getInventory();
+  const menuById = new Map(menu.map(item => [String(item.id || ''), item]));
+  const menuByName = new Map(menu.map(item => [normalizeViKey(item.name), item]));
+  const stats = {};
+
+  orders.forEach(order => {
+    (order.items || []).forEach(item => {
+      const qty = Number(item.qty || 0);
+      if (!(qty > 0)) return;
+      const menuItem = menuById.get(String(item.id || '')) || menuByName.get(normalizeViKey(item.name)) || null;
+      const key = String(menuItem?.id || item.id || normalizeViKey(item.name) || item.name || '');
+      if (!key) return;
+      if (!stats[key]) stats[key] = { id: key, name: menuItem?.name || item.name || 'Khong ro', qty: 0, revenue: 0, cost: 0 };
+
+      const revenue = Number(item.price || 0) * qty;
+      const unitCost = Number(item.cost || 0) > 0
+        ? Number(item.cost || 0)
+        : Number(_resolveDishCostPerUnit(menuItem, inventory) || menuItem?.cost || 0);
+
+      stats[key].qty += qty;
+      stats[key].revenue += revenue;
+      stats[key].cost += unitCost * qty;
+    });
+  });
+
+  const rows = Object.values(stats)
+    .map(item => ({ ...item, profit: item.revenue - item.cost }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  container.innerHTML = rows.length ? rows.map(item => `
+    <div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">🍽️</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.name}</div>
+        <div class="list-item-sub">Đã bán: ${item.qty} phần</div>
+      </div>
+      <div class="list-item-right" style="text-align:right">
+        <div class="list-item-amount">${fmt(item.revenue)}đ</div>
+        <div style="font-size:11px;color:var(--text3)">Vốn: ${fmt(item.cost)}đ · Lãi: ${fmt(item.profit)}đ</div>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state"><div class="empty-icon">🍽️</div><div class="empty-text">Chưa có dữ liệu theo món</div></div>';
+}
+
+function renderTrendChart() {
+  const ctx = document.getElementById('trend-chart');
+  if(!ctx) return;
+  if(chartInstances.trend) chartInstances.trend.destroy();
+
+  const orders = getFilteredReportOrders();
+  const expenses = getFilteredReportExpenses();
+  const purchases = getFilteredReportPurchases();
+  const periodRange = getPeriodDateRange(reportPeriod, reportDateOpts);
+
+  let startDate;
+  let endDate;
+  if(periodRange) {
+    startDate = new Date(periodRange.start);
+    endDate = new Date(periodRange.end);
+  } else {
+    const sourceDates = [
+      ...orders.map(o => o.paidAt),
+      ...expenses.map(e => e.date),
+      ...purchases.map(p => p.date),
+    ]
+      .map(v => new Date(v))
+      .filter(d => !Number.isNaN(d.getTime()))
+      .sort((a, b) => a - b);
+
+    endDate = sourceDates.length ? new Date(sourceDates[sourceDates.length - 1]) : new Date();
+    startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 29);
+  }
+
+  startDate.setHours(0,0,0,0);
+  endDate.setHours(0,0,0,0);
+
+  const data = [];
+  for(let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const ds = d.toDateString();
+    
+    const dayOrders = orders.filter(o => new Date(o.paidAt).toDateString() === ds);
+    
+    // Tính doanh thu gộp
+    const dayGrossSales = dayOrders.reduce((s,o) => s + (o.items || []).reduce((sum, item) => sum + item.price * item.qty, 0), 0);
+    
+    // Tính lại chi phí an toàn từ từng món
+    const dayCost = dayOrders.reduce((s,o) => s + (o.items || []).reduce((ss, i) => ss + (i.cost || 0) * (i.qty || 1), 0), 0);
+    const dayDiscount = dayOrders.reduce((s,o) => s + (o.discount || 0), 0);
+    const dayVat = dayOrders.reduce((s,o) => s + (o.vatAmount || 0), 0);
+    
+    const dayExp = expenses.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.amount), 0);
+    const dayPur = purchases.filter(x => new Date(x.date).toDateString() === ds).reduce((s,x) => s + Math.abs(x.price), 0);
+    
+    data.push({
+      date: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
+      label: d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),
+      revenue: dayGrossSales,
+      cost: dayCost
+    });
+  }
+
+  chartInstances.trend = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [
+        {
+          label: 'Doanh thu',
+          data: data.map(d => d.revenue),
+          backgroundColor: 'rgba(0, 229, 255, 0.85)',
+          borderColor: '#00E5FF',
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+          grouped: false,
+          barPercentage: 0.72,
+          categoryPercentage: 0.62,
+          maxBarThickness: 42,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Tiền vốn',
+          data: data.map(d => d.cost),
+          backgroundColor: 'rgba(255, 215, 0, 0.92)',
+          borderColor: '#FFD700',
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+          grouped: false,
+          barPercentage: 0.42,
+          categoryPercentage: 0.62,
+          maxBarThickness: 24,
+          yAxisID: 'y'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#A0A0B5',
+            usePointStyle: true,
+            boxWidth: 10
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleColor: '#fff',
+          bodyColor: '#fff',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              return items[0].label;
+            },
+            label: (context) => {
+              let label = context.dataset.label || '';
+              if (label) {
+                label += ' : ';
+              }
+              if (context.parsed.y !== null) {
+                label += `${fmt(context.parsed.y)}đ`;
+              }
+              return label;
+            },
+            labelColor: (context) => {
+              return {
+                borderColor: context.dataset.borderColor,
+                backgroundColor: Array.isArray(context.dataset.backgroundColor)
+                  ? context.dataset.backgroundColor[context.dataIndex]
+                  : context.dataset.backgroundColor,
+              };
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          ticks: {
+            color: '#A0A0B5',
+            callback: v => {
+              if (v === 0) return '0';
+              return v >= 1000 || v <= -1000 ? `${(v/1000)}k` : v;
+            }
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        x: {
+          ticks: { color: '#A0A0B5' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function renderHourlyChart() {
+  const orders = getFilteredReportOrders();
+  const hours = Array(24).fill(0);
+  orders.forEach(o => { const h = new Date(o.paidAt).getHours(); hours[h] += o.total; });
+  const activeHours = hours.slice(8, 24);
+  const ctx = document.getElementById('hourly-chart');
+  if(!ctx) return;
+  if(chartInstances.hourly) chartInstances.hourly.destroy();
+  chartInstances.hourly = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: Array.from({length:16},(_,i)=>`${i+8}h`),
+      datasets: [{ label:'Doanh thu', data:activeHours, borderColor:'#FF6B35', backgroundColor:'rgba(255,107,53,0.1)', fill:true, tension:0.4, pointBackgroundColor:'#FF6B35', pointRadius:3 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{display:false}},
+      scales:{
+        y:{ticks:{color:'#A0A0B5',callback:v=>`${fmt(v)}`},grid:{color:'rgba(255,255,255,0.05)'}},
+        x:{ticks:{color:'#A0A0B5'},grid:{display:false}}
+      }
+    }
+  });
+}
+
+function renderCategoryChart() {
+  const orders = getFilteredReportOrders();
+  const menu = _getMenu();
+  const menuById = new Map(menu.map(m => [m.id, m]));
+  const menuByName = new Map(menu.map(m => [normalizeViKey(m.name), m]));
+  const catRevenue = {};
+
+  orders.forEach(o => (o.items || []).forEach(item => {
+    const dish = menuById.get(item.id) || menuByName.get(normalizeViKey(item.name)) || null;
+    const cat = (dish && dish.category) || item.category || 'Khac';
+    catRevenue[cat] = (catRevenue[cat] || 0) + (Number(item.price || 0) * Number(item.qty || 0));
+  }));
+
+  const labels = Object.keys(catRevenue);
+  const data = labels.map(l => catRevenue[l]);
+  const ctx = document.getElementById('category-chart');
+  if(!ctx) return;
+  if(chartInstances.category) chartInstances.category.destroy();
+
+  if (!labels.length) {
+    chartInstances.category = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: ['Chua co du lieu'], datasets: [{ data: [1], backgroundColor: ['#3A3A4D'], borderWidth: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+      }
+    });
+    return;
+  }
+
+  const colors = ['#FF6B35','#FFD700','#00D68F','#0095FF','#FF3D71','#A855F7','#F97316'];
+  chartInstances.category = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth:0, hoverOffset:8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+    }
+  });
+}
+
+function renderExpenseReport() {
+  const ctx = document.getElementById('expense-chart');
+  const listEl = document.getElementById('purchase-report-list');
+  if (!ctx || !listEl) return;
+
+  const tabEl = document.getElementById('report-tab-purchase');
+  if (tabEl && !document.getElementById('report-expense-summary-card')) {
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'card';
+    summaryCard.id = 'report-expense-summary-card';
+    summaryCard.style.marginBottom = '16px';
+    summaryCard.innerHTML = `
+      <div class="card-title" style="margin-bottom:12px">Tóm tắt chi phí toàn quán</div>
+      <div id="report-expense-summary-content"></div>
+    `;
+    tabEl.insertBefore(summaryCard, tabEl.firstElementChild);
+  }
+
+  const expenseSummary = buildOperationalExpenseBreakdown(reportPeriod, reportDateOpts, {
+    includeFixedCost: true,
+    ignoreMenuFilter: true,
+  });
+  const summaryContentEl = document.getElementById('report-expense-summary-content');
+  if (summaryContentEl) {
+    summaryContentEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Tổng chi phí</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.total || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Nhập hàng</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.purchaseTotal || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Chi phí khác</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.otherExpenseTotal || 0)}đ</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Lương quản lý</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.managementSalaryTotal || 0)}đ</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${expenseSummary.dailyManagementSalary ? `${fmt(expenseSummary.dailyManagementSalary || 0)}đ/ngày x ${fmt(expenseSummary.reportDays || 0)} ngày` : 'Chưa cấu hình'}</div>
+        </div>
+        <div class="stat-card" style="padding:14px">
+          <div class="stat-label">Chi phí cố định khác</div>
+          <div class="stat-value" style="font-size:24px">${fmt(expenseSummary.otherFixedCostTotal || 0)}đ</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${expenseSummary.fixedCostConfigured ? `Tổng cố định: ${fmt(expenseSummary.fixedCostTotal || 0)}đ` : 'Chưa cấu hình'}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text2)">
+        Tab Chi phí luôn hiển thị chi phí toàn quán theo ngày/kỳ báo cáo để khớp với tab Tài chính. Bộ lọc món ăn không áp vào chi phí chung.
+      </div>
+    `;
+  }
+
+  const expenseSums = expenseSummary.sums;
+  const expenseLabels = Object.keys(expenseSums);
+  const expenseData = expenseLabels.map(label => expenseSums[label]);
+
+  if (chartInstances.expense) chartInstances.expense.destroy();
+  if (expenseData.every(value => value === 0)) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-text">Chưa có chi phí nào trong khoảng thời gian này.</div></div>';
+    ctx.style.display = 'none';
+    return;
+  }
+
+  ctx.style.display = 'block';
+  const expenseColors = ['#00D68F','#FF3D71','#A855F7','#0095FF','#FFD700','#FF6B35','#8F9BB3'];
+  chartInstances.expense = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: expenseLabels, datasets: [{ data: expenseData, backgroundColor: expenseColors, borderWidth: 0, hoverOffset: 8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { position: 'bottom', labels: { color: '#A0A0B5', padding: 10, font: { size: 11 } } } }
+    }
+  });
+
+  listEl.innerHTML = expenseSummary.rows.map(item => `
+    <div class="list-item" style="cursor:pointer;" onclick="${item.type === 'purchase' ? `editPurchase('${item.id}')` : (item.type === 'expense' ? `editExpense('${item.id}')` : '')}">
+      <div class="list-item-icon" style="background:${item.type === 'purchase' ? 'rgba(0,214,143,0.1)' : (item.type === 'fixed_cost' ? 'rgba(0,149,255,0.12)' : 'rgba(255,61,113,0.1)')}">${item.type === 'purchase' ? '📥' : (item.type === 'fixed_cost' ? '🏢' : '💸')}</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${item.type === 'purchase' ? `Nhập: ${repairVietnameseText(item.name)}` : repairVietnameseText(item.name)}</div>
+        <div class="list-item-sub">${fmtDate(item.date)} · ${item.note || ''}</div>
+      </div>
+      <div class="list-item-right" style="color:var(--danger);font-weight:bold;">
+        ${fmt(item.amount)}đ
+      </div>
+    </div>
+  `).join('');
+  return;
+
+  const rawPurchases = getFilteredReportPurchases();
+  const rawExpenses = getFilteredReportExpenses();
+
+  const sums = {};
+  rawPurchases.forEach(p => {
+    sums['Chi phí nguyên liệu'] = (sums['Chi phí nguyên liệu'] || 0) + (p.price);
+  });
+  rawExpenses.forEach(e => {
+    const cat = normalizeExpenseCategoryLabel(e.category || 'Chi phí khác');
+    sums[cat] = (sums[cat] || 0) + e.amount;
+  });
+
+  const labels = Object.keys(sums);
+  const data = labels.map(l => sums[l]);
+
+  if(chartInstances.expense) chartInstances.expense.destroy();
+  if(data.every(v => v === 0)) {
+    // Hide or render empty?
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-text">Chưa có chi phí nào trong khoảng thời gian này.</div></div>';
+    ctx.style.display = 'none';
+  } else {
+    ctx.style.display = 'block';
+    const colors = ['#00D68F','#FF3D71','#A855F7','#0095FF','#FFD700','#FF6B35','#8F9BB3'];
+    chartInstances.expense = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth:0, hoverOffset:8 }] },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position:'bottom', labels:{ color:'#A0A0B5', padding:10, font:{size:11} } } }
+      }
+    });
+
+    // Render list
+    const allItems = [
+      ...rawPurchases.map(p => ({ type: 'purchase', id: p.id, name: `Nhập: ${repairVietnameseText(p.name)}`, amount: p.price, date: p.date, note: `${p.qty} ${repairVietnameseText(p.unit || '')} - ${repairVietnameseText(p.supplier || '')}` })),
+      ...rawExpenses.map(e => ({ type: 'expense', id: e.id, name: repairVietnameseText(e.name), amount: e.amount, date: e.date, note: repairVietnameseText(e.category || '') }))
+    ].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    listEl.innerHTML = allItems.map(item => `
+      <div class="list-item" style="cursor:pointer;" onclick="${item.type === 'purchase' ? `editPurchase('${item.id}')` : `editExpense('${item.id}')`}">
+        <div class="list-item-icon" style="background:${item.type==='purchase'?'rgba(0,214,143,0.1)':'rgba(255,61,113,0.1)'}">${item.type==='purchase'?'📥':'💸'}</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${item.name}</div>
+          <div class="list-item-sub">${fmtDate(item.date)} · ${item.note || ''}</div>
+        </div>
+        <div class="list-item-right" style="color:var(--danger);font-weight:bold;">
+          ${fmt(item.amount)}đ
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+function renderOrderHistoryList() {
+  cleanupOldOrderHistoryPhotos();
+  const orders = getFilteredReportOrders();
+  
+  if(!orders.length) {
+    document.getElementById('order-history-list').innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Chưa có lịch sử</div></div>';
+    return;
+  }
+
+  // Group orders by date
+  const groups = {};
+  orders.forEach(o => {
+    const key = fmtDate(o.paidAt);
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+
+  let html = '';
+  for(const [date, items] of Object.entries(groups)) {
+    const dayRevenue = items.reduce((s,o) => s + o.total, 0);
+    const dayOrders = items.length;
+    const dayItems = items.reduce((s,o) => s + (o.items||[]).reduce((ss,i)=>ss+i.qty,0), 0);
+    html += `<div class="history-group-header">
+      <span>📅 ${date} <span class="history-group-count">${dayOrders} đơn · ${dayItems} món</span></span>
+      <span class="history-group-total">${fmt(dayRevenue)}đ</span>
+    </div>`;
+    html += items.map(o => {
+      const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
+      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+      const totalItems = (o.items||[]).reduce((s,i)=>s+i.qty,0);
+      const discountLabel = o.discount > 0 ? ` · 🏷️ -${fmt(o.discount)}đ` : '';
+      const shippingLabel = o.shipping > 0 ? ` · 🚚 +${fmt(o.shipping)}đ` : '';
+      const vatLabel = o.vatAmount > 0 ? ` · 🧾 VAT ${fmt(o.vatAmount)}đ` : '';
+      const hasPhotos = Array.isArray(o.photos) && o.photos.length > 0;
+      const photoIcon = hasPhotos ? '📸' : '';
+      const noteLabel = o.note ? ` · 📝 ${o.note}` : '';
+      const detailId = o.historyId || o.id;
+      const itemNames = (o.items||[]).slice(0,3).map(i=>`${i.name} x${i.qty}`).join(', ');
+      const moreItems = (o.items||[]).length > 3 ? ` +${(o.items||[]).length-3}` : '';
+      const adminActions = isAdminUser()
+        ? `<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            <button class="btn btn-xs btn-secondary" onclick="event.stopPropagation(); editHistoryOrder('${detailId}')">Sua</button>
+            <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); deleteHistoryOrder('${detailId}')">Xoa</button>
+          </div>`
+        : '';
+      return `<div class="list-item" onclick="viewOrderDetail('${detailId}')" style="cursor:pointer">
+        <div class="list-item-icon" style="background:rgba(0,214,143,0.1)">HD</div>
+        <div class="list-item-content">
+          <div class="list-item-title">${o.tableName} · ${o.id}</div>
+          <div class="list-item-sub">${fmtTime(o.paidAt)} · ${totalItems} mon · ${payIcon} ${payLabel}${discountLabel}${shippingLabel}${vatLabel}${noteLabel}${photoIcon ? ' · ' + photoIcon : ''}</div>
+          <div class="list-item-sub" style="color:var(--text3);font-size:10px;margin-top:2px">${itemNames}${moreItems}</div>
+          ${adminActions}
+        </div>
+        <div class="list-item-right">
+          <div class="list-item-amount">${fmt(o.total)}d</div>
+          ${o.cost > 0 ? `<div style="font-size:10px;color:var(--text3)">Von: ${fmt(o.cost)}d</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('order-history-list').innerHTML = html;
+}
+
+async function editHistoryOrder(orderId) {
+  const history = _getHistory();
+  const order = history.find(x => (x.historyId || x.id) === orderId);
+  if (!order) return;
+
+  const nextNoteInput = prompt('Ghi chú đơn hàng:', order.note || '');
+  if (nextNoteInput === null) return;
+  const nextDiscountInput = prompt('Giảm giá (đ):', String(Number(order.discount || 0)));
+  if (nextDiscountInput === null) return;
+  const nextShippingInput = prompt('Phí ship (đ):', String(Number(order.shipping || 0)));
+  if (nextShippingInput === null) return;
+  const nextPayMethodInput = prompt('Phương thức thanh toán (cash/bank):', String(order.payMethod || 'cash'));
+  if (nextPayMethodInput === null) return;
+
+  const discount = Math.max(0, Number(nextDiscountInput) || 0);
+  const shipping = Math.max(0, Number(nextShippingInput) || 0);
+  const payMethod = String(nextPayMethodInput || 'cash').trim().toLowerCase() === 'bank' ? 'bank' : 'cash';
+  const itemsTotal = (order.items || []).reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+  const subtotal = Math.max(0, itemsTotal - discount + shipping);
+  const taxRate = Number(order.taxRate || 0);
+  const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : Number(order.vatAmount || 0);
+  const total = subtotal + vatAmount;
+  const nextOrder = {
+    ...order,
+    note: String(nextNoteInput || '').trim(),
+    discount,
+    shipping,
+    payMethod,
+    vatAmount,
+    total,
+  };
+
+  const nextHistory = history.map(item => ((item.historyId || item.id) === orderId ? nextOrder : item));
+  Store.set('gkhl_history', nextHistory);
+  if (Array.isArray(window.appState?.history)) {
+    window.appState.history = nextHistory;
+  }
+
+  if (window.DB?.History?.update) {
+    const historyDocId = order.historyId || order.id;
+    await window.DB.History.update(historyDocId, {
+      note: nextOrder.note,
+      discount: nextOrder.discount,
+      shipping: nextOrder.shipping,
+      payMethod: nextOrder.payMethod,
+      vatAmount: nextOrder.vatAmount,
+      total: nextOrder.total,
+    }).catch(err => console.error('[History.update]', err));
+  }
+
+  try { renderFinance(); } catch (_) {}
+  try { refreshReportViews(); } catch (_) {}
+  try { viewOrderDetail(orderId); } catch (_) {}
+  showToast('Đã cập nhật đơn hàng.', 'success');
+}
+
+async function deleteHistoryOrder(orderId) {
+  const history = _getHistory();
+  const order = history.find(x => (x.historyId || x.id) === orderId);
+  if (!order) return;
+  if (!confirm(`Xóa lịch sử đơn ${order.id || order.historyId}?`)) return;
+
+  const nextHistory = history.filter(item => (item.historyId || item.id) !== orderId);
+  Store.set('gkhl_history', nextHistory);
+  if (Array.isArray(window.appState?.history)) {
+    window.appState.history = nextHistory;
+  }
+
+  const photoKey = order.historyId ? ('history_' + order.historyId) : null;
+  if (photoKey) {
+    try { await PhotoDB.remove(photoKey); } catch (_) {}
+  }
+
+  if (window.DB?.History?.delete) {
+    const historyDocId = order.historyId || order.id;
+    await window.DB.History.delete(historyDocId).catch(err => console.error('[History.delete]', err));
+  }
+
+  document.getElementById('order-detail-modal')?.classList.remove('active');
+  try { renderFinance(); } catch (_) {}
+  try { refreshReportViews(); } catch (_) {}
+  showToast('Đã xóa lịch sử đơn hàng.', 'success');
+}
+
+async function viewOrderDetail(orderId) {
+  const h = _getHistory();
+  const o = h.find(x => (x.historyId || x.id) === orderId);
+  if(!o) return;
+
+  // Lấy ảnh từ indexeddb hoặc fallback (old data)
+  let photos = o.photos || [];
+  if (!photos.length && o.historyId) {
+     const dbPhotos = await PhotoDB.get('history_' + o.historyId);
+     if (Array.isArray(dbPhotos)) photos = dbPhotos;
+  }
+
+  window._activeOrderDetailPhotos = photos;
+  const payIcon = o.payMethod === 'bank' ? '🏦' : '💵';
+  const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+  const itemsHtml = (o.items||[]).map(i =>
+    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px">${i.name} <span style="color:var(--text3)">x${i.qty}</span></span>
+      <span style="font-size:13px;font-weight:700;color:var(--primary)">${fmt(i.price*i.qty)}đ</span>
+    </div>`
+  ).join('');
+  const subTotal = (o.items||[]).reduce((s, i) => s + i.price * i.qty, 0);
+  const photosHtml = (photos && photos.length)
+    ? `<div style="margin-top:12px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">📸 Ảnh ghi nhận đơn</div>
+        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+          ${photos.map((p, idx) => {
+            const safeDataUrl = _safeImageUrl(p.dataUrl);
+            if (!safeDataUrl) return '';
+            return `
+              <div style="flex:0 0 80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;background:var(--bg3);"
+                   onclick="openOrderDetailPhotoFull(${idx})" title="Xem ảnh full">
+                <img src="${_escapeHtml(safeDataUrl)}" alt="Ảnh đơn" style="width:100%;height:100%;object-fit:cover;">
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>`
+    : '';
+  const adminActionsHtml = isAdminUser()
+    ? `<div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-secondary" style="flex:1" onclick="editHistoryOrder('${orderId}')">Sua don</button>
+        <button class="btn btn-danger" style="flex:1" onclick="deleteHistoryOrder('${orderId}')">Xoa don</button>
+      </div>`
+    : '';
+  document.getElementById('order-detail-content').innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">${o.tableName}</div>
+      <div style="font-size:12px;color:var(--text2)">${o.id} · ${fmtDateTime(o.paidAt)}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">${payIcon} Thanh toán: ${payLabel}</div>
+      ${o.note ? `<div style="font-size:12px;color:var(--text);margin-top:4px;border-left:2px solid var(--primary);padding-left:6px"><em>Ghi chú: ${o.note}</em></div>` : ''}
+    </div>
+    <div style="margin-bottom:12px">${itemsHtml}</div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--text3)"><span>Tiền hàng</span><span>${fmtFull(subTotal)}</span></div>
+    ${o.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--danger)"><span>🏷️ Giảm giá ${o.discountNote ? `(${o.discountNote})` : ''}</span><span>-${fmtFull(o.discount)}</span></div>` : ''}
+    ${o.shipping > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--info)"><span>🚚 Phí giao hàng</span><span>+${fmtFull(o.shipping)}</span></div>` : ''}
+    ${o.vatAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--primary)"><span>🧾 Thuế VAT (${o.taxRate || 0}%)</span><span>+${fmtFull(o.vatAmount)}</span></div>` : ''}
+    <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--border)">
+      <span style="font-weight:700">TỔNG CỘNG</span>
+      <span style="font-size:18px;font-weight:800;color:var(--primary)">${fmtFull(o.total)}</span>
+    </div>
+    ${o.cost > 0 ? `<div style="font-size:11px;color:var(--text3);text-align:right">Giá vốn: ${fmtFull(o.cost)} · Lãi gộp: ${fmtFull(o.total - o.cost)}</div>` : ''}
+    ${photosHtml}
+    ${adminActionsHtml}
+  `;
+  document.getElementById('order-detail-modal').classList.add('active');
+}
+
+function openOrderDetailPhotoFull(idx) {
+  const photos = window._activeOrderDetailPhotos || [];
+  if(!photos.length) return;
+  const p = photos[idx];
+  if(!p) return;
+  const modal = document.getElementById('order-detail-photo-full-modal');
+  const img = document.getElementById('order-detail-photo-full-img');
+  const wrap = document.getElementById('order-detail-photo-full-wrap');
+  if(!modal || !img) return;
+  ImgZoom.detach();
+  if (!_setSafeImageSource(img, p.dataUrl)) {
+    modal.classList.remove('active');
+    return;
+  }
+  const meta = document.getElementById('order-detail-photo-full-meta');
+  if(meta) meta.textContent = p.takenAt ? `Thời gian: ${fmtDateTime(p.takenAt)}` : '';
+  modal.classList.add('active');
+  img.onload = () => ImgZoom.attach(wrap || img.parentElement, img);
+  if(img.complete && img.naturalWidth) ImgZoom.attach(wrap || img.parentElement, img);
+}
+
+// ============================================================
+// PAGE: MENU ADMIN
+// ============================================================
+function renderMenuAdmin() {
+  const menu = _getMenu();
+  const inv = _getInventory();
+  const searchPrimary = (document.getElementById('menu-admin-search') || {}).value || '';
+  const searchSecondary = (document.getElementById('menu-search') || {}).value || '';
+  const search = String(searchPrimary || searchSecondary || '').trim().toLowerCase();
+  const normalizedMenu = menu.map(m => {
+    let computedCost = Number(m.cost || 0) || 0;
+    if (m.itemType === ITEM_TYPES.RETAIL) {
+      const linked = inv.find(i => i.id === m.linkedInventoryId) || inv.find(i => normalizeViKey(i.name) === normalizeViKey(m.name));
+      computedCost = linked ? Number(linked.costPerUnit || 0) || 0 : 0;
+    } else if (m.ingredients && m.ingredients.length > 0) {
+      computedCost = m.ingredients.reduce((s, ing) => {
+        const stock = inv.find(i => i.name === ing.name);
+        return s + (Number(ing.qty || 0) * (stock ? Number(stock.costPerUnit || 0) || 0 : 0));
+      }, 0);
+    }
+    const price = Number(m.price || 0) || 0;
+    const cogsPercent = price > 0 ? (computedCost / price) * 100 : 0;
+    return { ...m, computedCost, price, cogsPercent };
+  });
+  const filtered = normalizedMenu.filter(m => {
+    if (!search) return true;
+    const haystack = [
+      m.name,
+      m.category,
+      ITEM_TYPE_LABELS[m.itemType] || '',
+      m.unit,
+      m.aliases,
+    ].map(part => String(part || '').toLowerCase()).join(' ');
+    return haystack.includes(search);
+  });
+  const totalCost = filtered.reduce((sum, item) => sum + (Number(item.computedCost || 0) || 0), 0);
+  const totalPrice = filtered.reduce((sum, item) => sum + (Number(item.price || 0) || 0), 0);
+  const avgCogsPercent = totalPrice > 0 ? (totalCost / totalPrice) * 100 : 0;
+  const renderThumb = (item) => {
+    const imageUrl = _safeImageUrl(getMenuItemImageUrl(item));
+    if (imageUrl) {
+      return '<div class="list-item-icon" style="padding:0;background:#2a2230;overflow:hidden">' +
+        '<img src="' + _escapeHtml(imageUrl) + '" alt="' + _escapeHtml(item.name || 'Món ăn') + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
+      '</div>';
+    }
+    return '<div class="list-item-icon" style="background:rgba(255,107,53,0.1)">MÓN</div>';
+  };
+  const listHtml = filtered.length
+    ? filtered.map(m => {
+      const cogsTone = m.cogsPercent >= 60 ? 'var(--danger)' : m.cogsPercent >= 40 ? 'var(--warning)' : 'var(--success)';
+      const safeMenuId = _escapeHtml(_escapeJsString(m.id));
+      return '<div class="list-item">' +
+        renderThumb(m) +
+        '<div class="list-item-content">' +
+          '<div class="list-item-title">' + _escapeHtml(m.name) + ' <span style="font-size:11px;color:var(--text3);font-weight:normal">(' + _escapeHtml(m.unit || 'phần') + ')</span></div>' +
+          '<div class="list-item-sub">' + _escapeHtml(m.category) + ' &middot; ' + _escapeHtml(ITEM_TYPE_LABELS[m.itemType] || 'Món') + (m.itemType === ITEM_TYPES.FINISHED && m.ingredients?.length ? (' &middot; NL: ' + m.ingredients.length) : '') + '</div>' +
+          '<div style="margin-top:4px;font-size:12px;color:var(--text2)">Giá vốn: <b style="color:var(--text)">' + fmt(m.computedCost) + 'đ</b> &middot; COGS: <b style="color:' + cogsTone + '">' + m.cogsPercent.toFixed(1) + '%</b></div>' +
+        '</div>' +
+        '<div class="list-item-right">' +
+          '<div class="list-item-amount">' + fmt(m.price) + 'đ</div>' +
+          '<div style="display:flex;gap:4px;margin-top:4px">' +
+            '<button class="btn btn-xs btn-outline" onclick="editMenuItem(' + safeMenuId + ')">Sửa</button>' +
+            '<button class="btn btn-xs btn-danger" onclick="deleteMenuItem(' + safeMenuId + ')">Xóa</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('')
+    : '<div class="empty-state"><div class="empty-icon">MÓN</div><div class="empty-text">Không có món</div></div>';
+
+  document.getElementById('menu-admin-list').innerHTML = '<div class="card card-sm" style="margin-bottom:12px;padding:14px 16px;background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.18)">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
+        '<div>' +
+          '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">COGS tổng các món ăn</div>' +
+          '<div style="font-size:20px;font-weight:800;color:var(--warning)">' + fmt(totalCost) + 'đ</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">COGS trung bình</div>' +
+          '<div style="font-size:18px;font-weight:800">' + avgCogsPercent.toFixed(1) + '%</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Dựa trên ' + filtered.length + '/' + normalizedMenu.length + ' món đang hiển thị trong danh sách.</div>' +
+    '</div>' + listHtml;
+}
+
+function getMenuItemImageUrl(item = {}) {
+    if (window.XekhoApp?.utils?.parser?.getMenuItemImageUrl) return window.XekhoApp.utils.parser.getMenuItemImageUrl(item);
+    return String(item.image_url || item.imageUrl || item.photoUrl || item.thumbnail || item.photo || '').trim();
+  }
+
+function syncMenuItemImagePreview(imageUrl) {
+  const previewEl = document.getElementById('menu-item-image-preview');
+  const imageUrlEl = document.getElementById('menu-item-image-url');
+  const safeUrl = String(imageUrl || '').trim();
+  if (imageUrlEl) imageUrlEl.value = safeUrl;
+  if (!previewEl) return;
+  if (_replaceWithSafeImage(previewEl, safeUrl, 'Ảnh món ăn', {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  })) {
+    return;
+  }
+  previewEl.textContent = '🖼️';
+}
+
+async function handleMenuImageChange(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  if (!String(file.type || '').startsWith('image/')) {
+    showToast('Vui lòng chọn đúng file ảnh.', 'warning');
+    return;
+  }
+  try {
+    const dataUrl = await resizeImageToDataUrl(file, 720, 0.78);
+    syncMenuItemImagePreview(dataUrl);
+  } catch (err) {
+    console.error(err);
+    showToast('Không thể đọc ảnh món ăn.', 'danger');
+  } finally {
+    if (event?.target) event.target.value = '';
+  }
+}
+
+window.handleMenuImageChange = handleMenuImageChange;
+
+function editMenuItem(id) { openAddMenuModal(id); }
+
+function openAddMenuModal(id) {
+  const menu = _getMenu();
+  const inventory = _getInventory().filter(i => !i.hidden);
+  const dish = id ? menu.find(m => m.id === id) : null;
+  const formDish = dish || {};
+
+  document.getElementById('menu-modal-title').textContent = dish ? 'Sửa món ăn' : 'Thêm món mới';
+  document.getElementById('menu-item-id').value = formDish.id || '';
+  document.getElementById('menu-item-name').value = formDish.name || '';
+  const unitInput = document.getElementById('menu-item-unit');
+  unitInput.value = formDish.unit || unitInput.defaultValue || 'phần';
+  document.getElementById('menu-item-price').value = formDish.price || '';
+  const costEl = document.getElementById('menu-item-cost');
+  if (costEl) costEl.value = (typeof formDish.cost === 'number' ? formDish.cost : (parseFloat(formDish.cost) || 0));
+  syncMenuCostFieldText();
+  const hiddenEl = document.getElementById('menu-item-hidden');
+  if (hiddenEl) hiddenEl.checked = !!formDish.hidden;
+  const imageInputEl = document.getElementById('menu-item-image-input');
+  if (imageInputEl) imageInputEl.value = '';
+  syncMenuItemImagePreview(getMenuItemImageUrl(formDish));
+  document.getElementById('menu-item-category').value = formDish.category || CATEGORIES[0];
+  document.getElementById('menu-item-type').value = formDish.itemType || ITEM_TYPES.FINISHED;
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
+  if (kitchenRoutingEl) kitchenRoutingEl.value = formDish.kitchenRouting || 'all';
+
+  const linkedSel = document.getElementById('menu-linked-inventory-id');
+  if (linkedSel) {
+    linkedSel.innerHTML = '<option value="">-- Chọn hàng tồn kho --</option>' + inventory
+      .map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    linkedSel.value = formDish.linkedInventoryId || '';
+    linkedSel.onchange = () => { try { updateMenuCostFromForm(); } catch (_) {} };
+  }
+
+  const list = document.getElementById('menu-ingredients-list');
+  list.innerHTML = '';
+  if (dish && Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+    dish.ingredients.forEach(ing => addIngredientRow(ing.name, ing.qty, ing.unit));
+  }
+
+  toggleMenuItemTypeUI();
+  try { updateMenuCostFromForm(); } catch (_) {}
+  document.getElementById('menu-modal').classList.add('active');
+}
+
+function deleteMenuItem(id) {
+  if(!confirm('Xoá món này?')) return;
+  // FIX 4: Xoá trực tiếp trên Firestore
+  if (window.DB && window.DB.Menu) {
+    window.DB.Menu.delete(id)
+      .then(() => { renderMenuAdmin(); showToast('🗑️ Đã xoá món'); })
+      .catch(e => showToast('Lỗi xoá món: ' + e.message, 'danger'));
+  } else {
+    const menu = Store.getMenu().filter(m => m.id !== id);
+    Store.setMenu(menu);
+    renderMenuAdmin();
+    showToast('🗑️ Đã xoá món');
+  }
+}
+
+function applyMenuItemOptimisticState(savedId, payload) {
+  const id = String(savedId || '').trim();
+  if (!id) return;
+
+  const inventory = _getInventory();
+  const currentMenu = Array.isArray(window.appState?.menu) ? window.appState.menu : [];
+  const prev = currentMenu.find(item => String(item.id) === id) || {};
+  const nextItem = normalizeMenuItemModel({
+    ...prev,
+    id,
+    name: payload.name,
+    category: payload.category,
+    price: Number(payload.price || 0),
+    unit: payload.unit || 'phần',
+    cost: Number(payload.cost || 0),
+    itemType: payload.itemType || ITEM_TYPES.FINISHED,
+    kitchenRouting: payload.kitchenRouting || prev.kitchenRouting || 'all',
+    linkedInventoryId: payload.linkedInventoryId || null,
+    aliases: payload.aliases || prev.aliases || '',
+    image_url: payload.image_url || prev.image_url || '',
+    hidden: Object.prototype.hasOwnProperty.call(payload, 'hidden') ? !!payload.hidden : !!prev.hidden,
+    ingredients: Array.isArray(payload.ingredients) ? payload.ingredients : [],
+  }, inventory);
+
+  if (Array.isArray(window.appState?.menu)) {
+    const idx = window.appState.menu.findIndex(item => String(item.id) === id);
+    if (idx >= 0) window.appState.menu[idx] = nextItem;
+    else window.appState.menu.unshift(nextItem);
+  }
+
+  if (Array.isArray(window.appState?.masterData?.products)) {
+    const products = window.appState.masterData.products;
+    const idx = products.findIndex(item => String(item.item_id || item.id || item._docId || '') === id);
+    const nextProduct = {
+      ...(idx >= 0 ? products[idx] : {}),
+      item_id: id,
+      _docId: idx >= 0 ? (products[idx]._docId || id) : id,
+      display_name: payload.name,
+      category: payload.category,
+      sell_price: Number(payload.price || 0),
+      item_type: payload.itemType === ITEM_TYPES.RETAIL ? 'Retail' : 'Finished',
+      kitchenRouting: payload.kitchenRouting || (idx >= 0 ? products[idx].kitchenRouting || 'all' : 'all'),
+      linkedInventoryId: payload.linkedInventoryId || null,
+      cost: Number(payload.cost || 0),
+      unit: payload.unit || 'phần',
+      aliases: payload.aliases || (idx >= 0 ? products[idx].aliases || '' : ''),
+      image_url: payload.image_url || (idx >= 0 ? products[idx].image_url || '' : ''),
+      hidden: Object.prototype.hasOwnProperty.call(payload, 'hidden') ? !!payload.hidden : (idx >= 0 ? !!products[idx].hidden : false),
+    };
+    if (idx >= 0) products[idx] = nextProduct;
+    else products.unshift(nextProduct);
+  }
+
+  if (Array.isArray(window.appState?.masterData?.recipes)) {
+    const invByName = new Map(inventory.map(item => [String(item.name || '').trim(), item]));
+    const nextRecipes = (Array.isArray(payload.ingredients) ? payload.ingredients : [])
+      .map(ing => {
+        const stock = invByName.get(String(ing.name || '').trim());
+        if (!stock?.id) return null;
+        return {
+          _docId: `${id}_${stock.id}`,
+          parent_item_id: id,
+          ingredient_inv_id: stock.id,
+          ingredient_name: stock.name,
+          quantity_needed: Number(ing.qty || 0),
+          unit: ing.unit || stock.unit || '',
+        };
+      })
+      .filter(Boolean);
+
+    window.appState.masterData.recipes = window.appState.masterData.recipes
+      .filter(row => String(row.parent_item_id || '') !== id)
+      .concat(nextRecipes);
+  }
+}
+
+function parseVietnameseMoneyInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return NaN;
+  const cleaned = raw.replace(/\s+/g, '').replace(/đ|vnd/g, '');
+  if (/^\d{1,3}([.,]\d{3})+$/.test(cleaned)) {
+    return Number(cleaned.replace(/[.,]/g, ''));
+  }
+  if (/^\d+[.,]\d{1,2}$/.test(cleaned)) {
+    const normalized = cleaned.replace(',', '.');
+    const asNumber = Number(normalized);
+    if (Number.isFinite(asNumber) && asNumber > 0 && asNumber < 1000) {
+      return Math.round(asNumber * 1000);
+    }
+  }
+  const digitsOnly = cleaned.replace(/[^\d-]/g, '');
+  return digitsOnly ? Number(digitsOnly) : NaN;
+}
+
+function shouldRequireMenuRecipe(itemType, id, ingredients) {
+  return itemType === ITEM_TYPES.FINISHED && !String(id || '').trim() && (!Array.isArray(ingredients) || ingredients.length === 0);
+}
+
+async function submitMenuItem(e) {
+  e.preventDefault();
+  const form = e.target;
+  const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
+  const prevBtnText = submitBtn ? submitBtn.textContent : '';
+  const setSaving = (saving) => {
+    if (!submitBtn) return;
+    submitBtn.disabled = !!saving;
+    submitBtn.textContent = saving ? '⏳ Đang lưu...' : prevBtnText;
+  };
+  const id = document.getElementById('menu-item-id').value;
+  const name = document.getElementById('menu-item-name').value.trim();
+  const price = parseVietnameseMoneyInput(document.getElementById('menu-item-price').value);
+  const category = document.getElementById('menu-item-category').value;
+  const unit = document.getElementById('menu-item-unit').value.trim() || 'phần';
+  const itemType = document.getElementById('menu-item-type').value || ITEM_TYPES.FINISHED;
+  const linkedInventoryId = document.getElementById('menu-linked-inventory-id').value || null;
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
+  const kitchenRouting = kitchenRoutingEl ? String(kitchenRoutingEl.value || 'all') : 'all';
+  const cost = parseFloat(document.getElementById('menu-item-cost')?.value || '0') || 0;
+  const imageUrl = String(document.getElementById('menu-item-image-url')?.value || '').trim();
+  const hidden = !!document.getElementById('menu-item-hidden')?.checked;
+  if(!name || isNaN(price) || price < 0) return;
+
+  const ingredients = [];
+  const inv = _getInventory();
+  document.querySelectorAll('#menu-ingredients-list > .ingredient-row').forEach(row => {
+    const ingName = row.querySelector('.ing-name-sel').value;
+    const qty = parseFloat(row.querySelector('.ing-qty-val').value);
+    const unit = row.querySelector('.ing-unit-sel').value;
+    if (ingName && qty > 0) {
+      const stock = inv.find(i => i.name === ingName);
+      ingredients.push({ name: ingName, qty, unit: unit || (stock ? stock.unit : '') });
+    }
+  });
+
+  if (shouldRequireMenuRecipe(itemType, id, ingredients)) {
+    showToast('Thành phẩm / món ăn mới bắt buộc phải có công thức. Món cũ vẫn được phép sửa giá.', 'warning');
+    return;
+  }
+  if (itemType === ITEM_TYPES.RETAIL && !linkedInventoryId) {
+    showToast('Hàng bán thẳng phải liên kết với một hàng tồn kho.', 'warning');
+    return;
+  }
+
+  setSaving(true);
+  const payload = {
+    name, unit, price, cost, category, itemType,
+    kitchenRouting: itemType === ITEM_TYPES.RETAIL ? 'skip' : kitchenRouting,
+    linkedInventoryId,
+    ingredients: itemType === ITEM_TYPES.FINISHED ? ingredients : [],
+    image_url: imageUrl,
+    hidden,
+  };
+
+  // FIX 4: Ghi thẳng lên Firestore
+  if (window.DB && window.DB.Menu) {
+    try {
+      const savedId = id
+        ? (await window.DB.Menu.update(id, payload), id)
+        : await window.DB.Menu.add(payload);
+
+      if (window.DB.RecipesBOM && typeof window.DB.RecipesBOM.saveBatch === 'function') {
+        await window.DB.RecipesBOM.saveBatch(savedId, payload.ingredients || []);
+      }
+
+      applyMenuItemOptimisticState(savedId, payload);
+      document.getElementById('menu-modal').classList.remove('active');
+      renderMenuAdmin();
+      showToast('✅ Đã lưu món ăn!');
+    } catch (err) {
+      console.error(err);
+      showToast('Lỗi lưu món: ' + (err?.message || String(err)), 'danger');
+    } finally { setSaving(false); }
+  } else {
+    const menu = Store.getMenu();
+    if(id) {
+      const idx = menu.findIndex(m => m.id === id);
+      if(idx >= 0) { menu[idx] = {...menu[idx], ...payload, cost: menu[idx].cost || 0}; }
+    } else {
+      menu.push({ id:uid(), ...payload });
+    }
+    Store.setMenu(menu);
+    document.getElementById('menu-modal').classList.remove('active');
+    renderMenuAdmin();
+    showToast('✅ Đã lưu món ăn!');
+    setSaving(false);
+  }
+}
+
+function toggleMenuItemTypeUI() {
+  const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
+  const linkWrap = document.getElementById('menu-linked-inventory-wrap');
+  const title = document.getElementById('menu-ingredients-title');
+  const list = document.getElementById('menu-ingredients-list');
+  const kitchenRoutingEl = document.getElementById('menu-kitchen-routing');
+  if (linkWrap) linkWrap.style.display = type === ITEM_TYPES.RETAIL ? '' : 'none';
+  if (kitchenRoutingEl) {
+    kitchenRoutingEl.disabled = type === ITEM_TYPES.RETAIL;
+    if (type === ITEM_TYPES.RETAIL) kitchenRoutingEl.value = 'skip';
+    else if (!['all', 'kitchen_1', 'kitchen_2', 'skip'].includes(String(kitchenRoutingEl.value || ''))) kitchenRoutingEl.value = 'all';
+  }
+  if (title) title.textContent = type === ITEM_TYPES.RETAIL ? 'Công thức (không bắt buộc cho bán thẳng)' : 'Công thức (Nguyên liệu)';
+  if (list && type === ITEM_TYPES.RETAIL && !list.children.length) list.innerHTML = '';
+  try { updateMenuCostFromForm(); } catch (_) {}
+}
+
+
+function addIngredientRow(name='', qty='', unit='') {
+  const inv = _getInventory();
+  // Filter inventory list to generate options (include hidden if already selected)
+  const options = inv.filter(i => !i.hidden || i.name === name).map(i => `<option value="${i.name}" data-cost="${i.costPerUnit}">${i.name} (${i.unit})${i.hidden ? ' 🚫(Đã ẩn)' : ''}</option>`).join('');
+  
+  const div = document.createElement('div');
+  div.style.display = 'flex';
+  div.style.gap = '8px';
+  div.className = 'ingredient-row';
+  div.style.alignItems = 'center';
+  div.innerHTML = `
+    <select class="select ing-name-sel" style="flex:2" onchange="updateIngUnitDropdown(this);updateMenuCostFromForm()">
+      <option value="">-- Chọn NL --</option>
+      ${options}
+    </select>
+    <select class="select ing-unit-sel" style="flex:1.5" onchange="updateMenuCostFromForm()">
+      <option value="">-- Tính theo --</option>
+    </select>
+    <input type="number" class="input ing-qty-val" placeholder="SL" value="${qty}" style="flex:1" step="0.01" oninput="updateMenuCostFromForm()">
+    <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove();updateMenuCostFromForm()">✕</button>
+  `;
+  document.getElementById('menu-ingredients-list').appendChild(div);
+  
+  const nameSel = div.querySelector('.ing-name-sel');
+  if (name) {
+    nameSel.value = name;
+    updateIngUnitDropdown(nameSel, unit);
+  }
+  try { updateMenuCostFromForm(); } catch (_) {}
+}
+
+window.updateIngUnitDropdown = function(selectEl, selectedUnit = '') {
+  const row = selectEl.closest('.ingredient-row');
+  if(!row) return;
+  const unitSel = row.querySelector('.ing-unit-sel');
+  const ingName = selectEl.value;
+  
+  unitSel.innerHTML = '<option value="">-- Tính theo --</option>';
+  if(!ingName) return;
+
+  const inv = _getInventory();
+  const convs = Store.getUnitConversions();
+  
+  const stock = inv.find(i => i.name === ingName);
+  if(!stock) return;
+
+  // Add default unit (stock unit)
+  let html = `<option value="${stock.unit}">${stock.unit} (tồn kho)</option>`;
+
+  // Add conversion units
+  const matches = convs.filter(c => c.ingredientName === ingName && c.purchaseUnit === stock.unit);
+  matches.forEach(c => {
+    html += `<option value="${c.recipeUnit}">${c.recipeUnit} (quy đổi)</option>`;
+  });
+
+  unitSel.innerHTML = html;
+  if(selectedUnit) {
+    unitSel.value = selectedUnit;
+  } else {
+    // default to stock unit
+    unitSel.value = stock.unit;
+  }
+  try { updateMenuCostFromForm(); } catch (_) {}
+}
+
+window.updateMenuCostFromForm = function updateMenuCostFromForm() {
+  const costEl = document.getElementById('menu-item-cost');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
+  if (!costEl) return;
+
+  const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
+  const inv = _getInventory();
+  const convs = Store.getUnitConversions();
+  const fmtCost = (value) => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString('vi-VN')}d`;
+
+  let cost = 0;
+
+  if (type === ITEM_TYPES.RETAIL) {
+    const linkedInventoryId = document.getElementById('menu-linked-inventory-id')?.value || '';
+    const stock = linkedInventoryId ? inv.find(i => i.id === linkedInventoryId) : null;
+    cost = stock ? (Number(stock.costPerUnit) || 0) : 0;
+    costEl.value = Math.max(0, Math.round(cost));
+    if (formulaEl) {
+      formulaEl.textContent = stock
+        ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
+        : 'Giá vốn hàng bán thẳng sẽ lấy từ hàng tồn kho liên kết.';
+    }
+    return;
+  }
+
+  const rows = Array.from(document.querySelectorAll('#menu-ingredients-list > .ingredient-row'));
+  const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
+  if (!hasAny) {
+    costEl.value = 0;
+    if (formulaEl) formulaEl.textContent = 'Chưa có nguyên liệu nào trong công thức.';
+    return;
+  }
+
+  const formulaParts = [];
+
+  rows.forEach(row => {
+    const ingName = (row.querySelector('.ing-name-sel')?.value || '').trim();
+    const qty = parseFloat(row.querySelector('.ing-qty-val')?.value || '0') || 0;
+    const recipeUnit = (row.querySelector('.ing-unit-sel')?.value || '').trim();
+    if (!ingName || !(qty > 0)) return;
+
+    const stock = inv.find(i => i.name === ingName);
+    if (!stock) return;
+
+    const stockUnit = String(stock.unit || '').trim();
+    const stockCost = Number(stock.costPerUnit) || 0;
+    const unitToUse = recipeUnit || stockUnit;
+    if (!unitToUse || !stockUnit) return;
+
+    if (unitToUse === stockUnit) {
+      const rowCost = qty * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+      return;
+    }
+
+    const conv = convs.find(c =>
+      c.ingredientName === ingName &&
+      c.recipeUnit === unitToUse &&
+      c.purchaseUnit === stockUnit
+    );
+    if (conv && Number(conv.recipeQty) > 0) {
+      const stockQtyUsed = qty * (Number(conv.purchaseQty) / Number(conv.recipeQty));
+      const rowCost = stockQtyUsed * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} = ${stockQtyUsed.toFixed(4).replace(/\.?0+$/, '')} ${stockUnit} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+    }
+  });
+
+  costEl.value = Math.max(0, Math.round(cost));
+  if (formulaEl) {
+    formulaEl.textContent = formulaParts.length
+      ? `${formulaParts.join(' + ' )} | Tổng: ${fmtCost(cost)}`
+      : 'Không tính được giá vốn. Hãy kiểm tra lại đơn vị quy đổi trong công thức.';
+  }
+};
+
+window.updateMenuCostFromForm = function updateMenuCostFromForm() {
+  const costEl = document.getElementById('menu-item-cost');
+  const formulaEl = document.getElementById('menu-item-cost-formula');
+  if (!costEl) return;
+
+  syncMenuCostFieldText();
+
+  const type = document.getElementById('menu-item-type')?.value || ITEM_TYPES.FINISHED;
+  const inv = _getInventory();
+  const convs = Store.getUnitConversions();
+  const fmtCost = (value) => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString('vi-VN')}d`;
+
+  let cost = 0;
+
+  if (type === ITEM_TYPES.RETAIL) {
+    const linkedInventoryId = document.getElementById('menu-linked-inventory-id')?.value || '';
+    const stock = linkedInventoryId ? inv.find(i => i.id === linkedInventoryId) : null;
+    cost = stock ? (Number(stock.costPerUnit) || 0) : 0;
+    costEl.value = Math.max(0, Math.round(cost));
+    if (formulaEl) {
+      formulaEl.textContent = stock
+        ? `${stock.name}: 1 ${stock.unit} x ${fmtCost(stock.costPerUnit || 0)} = ${fmtCost(cost)}`
+        : 'Giá vốn hàng bán thẳng sẽ lấy từ hàng tồn kho liên kết.';
+    }
+    return;
+  }
+
+  const rows = Array.from(document.querySelectorAll('#menu-ingredients-list > .ingredient-row'));
+  const hasAny = rows.some(row => (row.querySelector('.ing-name-sel')?.value || '').trim());
+  if (!hasAny) {
+    costEl.value = 0;
+    if (formulaEl) formulaEl.textContent = 'Chưa có nguyên liệu nào trong công thức.';
+    return;
+  }
+
+  const formulaParts = [];
+
+  rows.forEach(row => {
+    const ingName = (row.querySelector('.ing-name-sel')?.value || '').trim();
+    const qty = parseFloat(row.querySelector('.ing-qty-val')?.value || '0') || 0;
+    const recipeUnit = (row.querySelector('.ing-unit-sel')?.value || '').trim();
+    if (!ingName || !(qty > 0)) return;
+
+    const stock = inv.find(i => i.name === ingName);
+    if (!stock) return;
+
+    const stockUnit = String(stock.unit || '').trim();
+    const stockCost = Number(stock.costPerUnit) || 0;
+    const unitToUse = recipeUnit || stockUnit;
+    if (!unitToUse || !stockUnit) return;
+
+    if (unitToUse === stockUnit) {
+      const rowCost = qty * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+      return;
+    }
+
+    const conv = convs.find(c =>
+      c.ingredientName === ingName &&
+      c.recipeUnit === unitToUse &&
+      c.purchaseUnit === stockUnit
+    );
+    if (conv && Number(conv.recipeQty) > 0) {
+      const stockQtyUsed = qty * (Number(conv.purchaseQty) / Number(conv.recipeQty));
+      const rowCost = stockQtyUsed * stockCost;
+      cost += rowCost;
+      formulaParts.push(`${ingName}: ${qty} ${unitToUse} = ${stockQtyUsed.toFixed(4).replace(/\.?0+$/, '')} ${stockUnit} x ${fmtCost(stockCost)} = ${fmtCost(rowCost)}`);
+    }
+  });
+
+  costEl.value = Math.max(0, Math.round(cost));
+  if (formulaEl) {
+    formulaEl.textContent = formulaParts.length
+      ? `${formulaParts.join(' + ')} | Tổng: ${fmtCost(cost)}`
+      : 'Không tính được giá vốn. Hãy kiểm tra lại đơn vị quy đổi trong công thức.';
+  }
+};
+
+
+// ============================================================
+// DATE PICKER HELPERS (Finance & Reports)
+// ============================================================
+let datePickerModes = { finance: 'single', report: 'single' };
+
+function setDateMode(page, mode, btn) {
+  datePickerModes[page] = mode;
+  const container = document.getElementById(`${page}-date-picker`);
+  if(!container) return;
+  container.querySelectorAll('.date-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  
+  const inputsDiv = document.getElementById(`${page}-date-inputs`);
+  if(mode === 'single') {
+    inputsDiv.innerHTML = `<input type="date" class="input input-sm date-input" id="${page}-single-date" onchange="applyDateFilter('${page}')">`;
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById(`${page}-single-date`).value = today;
+  } else {
+    inputsDiv.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" class="input input-sm date-input" id="${page}-from-date" onchange="applyDateFilter('${page}')">
+        <span style="color:var(--text2);font-size:12px;white-space:nowrap">đến</span>
+        <input type="date" class="input input-sm date-input" id="${page}-to-date" onchange="applyDateFilter('${page}')">
+      </div>`;
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().split('T')[0];
+    document.getElementById(`${page}-from-date`).value = weekAgo;
+    document.getElementById(`${page}-to-date`).value = today;
+  }
+  applyDateFilter(page);
+}
+
+function applyDateFilter(page) {
+  const mode = datePickerModes[page];
+  let opts = {};
+  
+  if(mode === 'single') {
+    const dateEl = document.getElementById(`${page}-single-date`);
+    if(dateEl && dateEl.value) {
+      opts = { date: dateEl.value };
+    }
+  } else {
+    const fromEl = document.getElementById(`${page}-from-date`);
+    const toEl = document.getElementById(`${page}-to-date`);
+    if(fromEl && toEl && fromEl.value && toEl.value) {
+      opts = { fromDate: fromEl.value, toDate: toEl.value };
+    }
+  }
+  
+  const period = mode === 'range' ? 'range' : 'day';
+  
+  if(page === 'finance') {
+    financePeriod = period;
+    financeDateOpts = opts;
+    const s = getRevenueSummary(period, opts);
+    updateFinanceUI(s);
+  } else {
+    reportDateOpts = opts;
+    reportPeriod = period;
+    refreshReportViews();
+  }
+}
+
+
+// ============================================================
+// TOAST
+
+// ============================================================
+function repairVietnameseText(input) {
+  // Sprint 1.3: delegate to app/ui/toast.js IIFE
+  if (window.XekhoApp?.ui?.repairVietnameseText) return window.XekhoApp.ui.repairVietnameseText(input);
+  // Fallback: inline if IIFE not loaded
+  let str = String(input ?? '');
+  if (!str) return str;
+  const badTokens = ['\uFFFD', 'Ã', 'Â', 'Ä\u0091', 'Æ°', 'â€™', 'â€œ', 'â€', 'ðŸ'];
+  if (badTokens.some(t => str.includes(t))) {
+    try { str = decodeURIComponent(escape(str)); } catch (_) {}
+    try {
+      const bytes = Uint8Array.from(str, ch => ch.charCodeAt(0) & 0xff);
+      str = new TextDecoder('utf-8').decode(bytes) || str;
+    } catch (_) {}
+  }
+  return str;
+}
+
+function normalizeExpenseCategoryLabel(input) {
+    if (window.XekhoApp?.utils?.categorize?.normalizeExpenseCategoryLabel) return window.XekhoApp.utils.categorize.normalizeExpenseCategoryLabel(input);
+    const raw = repairVietnameseText(input || '').trim();
+    const key = normalizeViKey(raw);
+    if (!key) return 'Chi phí khác';
+    if (key.includes('nguyen lieu')) return 'Chi phí nguyên liệu';
+    if (key.includes('kiem ke') || /ki m k|kiem k|kiemke/.test(key)) return 'Lãi/Lỗ do kiểm kê';
+    if (key.includes('chenh lech ca')) return 'Chênh lệch ca';
+    if (key.includes('nhap hang') || /nh p h ng|nhap h ng|nh p hang/.test(key)) return 'Nhập hàng';
+    if (key.includes('nhan su') || /nh n s/.test(key)) return 'Chi phí nhân sự';
+    if (key.includes('marketing')) return 'Chi phí marketing';
+    if (key.includes('van chuyen') || key.includes('giao hang')) return 'Chi phí vận chuyển';
+    if (key.includes('dien nuoc')) return 'Chi phí điện nước';
+    if (key.includes('mat bang')) return 'Chi phí mặt bằng';
+    if (key.includes('nhap so') || /nh p s/.test(key)) return 'Chi phí nhập sổ';
+    if (key.includes('hao hut')) return 'Chi phí hao hụt';
+    if (key.includes('khac')) return 'Chi phí khác';
+    return raw;
+  }
+
+function showToast(msg, type, duration) {
+  // Sprint 1.3: delegate to app/ui/toast.js IIFE
+  if (window.XekhoApp?.ui?.toast) return window.XekhoApp.ui.toast(msg, type, duration);
+  // Fallback: inline if IIFE not loaded
+  let toast = document.getElementById('toast');
+  if(!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.style.cssText = 'position:fixed;bottom:calc(var(--nav-height,70px) + env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--text);padding:10px 14px;border-radius:14px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all 0.3s;white-space:normal;word-break:break-word;line-height:1.45;max-width:min(92vw,420px);text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid var(--border);';
+    document.body.appendChild(toast);
+  }
+  if(toast._hideTimer) clearTimeout(toast._hideTimer);
+  toast.textContent = repairVietnameseText(msg);
+  toast.style.borderColor = type === 'success' ? 'var(--success)' : type === 'danger' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--border)';
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+  });
+  const ms = (typeof duration === 'number' && duration > 0) ? duration : 2500;
+  toast._hideTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(20px)';
+  }, ms);
+}
+
+window.hardReloadApp = async function hardReloadApp() {
+  const preserveKey = (key) => {
+    const k = String(key || '');
+    if (!k) return false;
+    if (k === 'gkhl_current_session') return true;
+    if (/firebase/i.test(k)) return true;
+    if (/auth/i.test(k)) return true;
+    if (/token/i.test(k)) return true;
+    return false;
+  };
+
+  const clearStorage = (storage, label) => {
+    try {
+      const keys = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k) keys.push(k);
+      }
+      keys.forEach(k => {
+        if (preserveKey(k)) return;
+        storage.removeItem(k);
+      });
+    } catch (err) {
+      console.error(`[hardReloadApp] ${label} error:`, err);
+    }
+  };
+
+  clearStorage(localStorage, 'localStorage');
+  clearStorage(sessionStorage, 'sessionStorage');
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(async r => {
+        try {
+          if (typeof r.update === 'function') await r.update();
+        } catch (_) {}
+        return r.unregister();
+      }));
+    }
+  } catch (err) {
+    console.error('[hardReloadApp] serviceWorker error:', err);
+  }
+
+  try {
+    if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (err) {
+    console.error('[hardReloadApp] caches error:', err);
+  }
+
+  try { showToast('🔄 Đang tải lại phiên bản mới...', 'info', 1200); } catch (_) {}
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('_v', String(Date.now()));
+  setTimeout(() => {
+    try {
+      window.location.href = url.toString();
+      if (typeof window.location.reload === 'function') {
+        try { window.location.reload(true); }
+        catch (_) { window.location.reload(); }
+      }
+    } catch (_) {
+      try { window.location.replace(url.toString()); }
+      catch (_) { window.location.reload(); }
+    }
+  }, 150);
+};
+
+// ============================================================
+// RESET DATA
+// ============================================================
+function resetAllData() {
+  document.getElementById('reset-modal').classList.add('active');
+}
+
+async function confirmResetData(keepMenu, keepInventory) {
+  // 1. Reset Local Storage
+  Store.resetAll(keepMenu, keepInventory);
+  orderItems = {};
+  
+  // 2. Reset Cloud Firestore (nếu có kết nối và là Admin)
+  if (window.DB && isAdminUser()) {
+    showToast('⏳ Đang xóa dữ liệu trên Cloud...', 'info');
+    try {
+      await window.DB.resetCloudData(keepMenu, keepInventory);
+      showToast('✅ Đã reset dữ liệu thành công!', 'success');
+    } catch(e) {
+      showToast('❌ Lỗi khi xóa dữ liệu Cloud: ' + e.message, 'danger');
+    }
+  } else if (window.appState) {
+    // Chế độ Offline: Cập nhật lại window.appState rỗng
+    const fieldsToReset = ['history', 'orders', 'expenses', 'purchases', 'aiHistory'];
+    if(!keepMenu) fieldsToReset.push('menu');
+    if(!keepInventory) fieldsToReset.push('inventory', 'unitConversions');
+    
+    fieldsToReset.forEach(f => {
+      if(Array.isArray(window.appState[f])) window.appState[f] = [];
+      else if(typeof window.appState[f] === 'object') window.appState[f] = {};
+    });
+    showToast('✅ Đã reset dữ liệu cục bộ! Sẵn sàng hoạt động.', 'success');
+  }
+
+  document.getElementById('reset-modal').classList.remove('active');
+  applyStoreSettings();
+  navigate('tables');
+  updateAlertBadge();
+}
+
+// ============================================================
+// SETTINGS PAGE
+// ============================================================
+function renderSettings() {
+  const s = Store.getSettings();
+  ensureTelegramReportTimeOptions();
+  const fields = [
+    ['set-storeName',    s.storeName   || ''],
+    ['set-storeSlogan',  s.storeSlogan || ''],
+    ['set-storePhone',   s.storePhone  || ''],
+    ['set-storeAddress', s.storeAddress|| ''],
+    ['set-bankName',     s.bankName    || 'Vietinbank'],
+    ['set-bankAccount',  s.bankAccount || ''],
+    ['set-bankOwner',    s.bankOwner   || ''],
+    ['set-deepseekApiKey', 'server-managed'],
+    ['set-deepseekEndpoint', 'server-managed'],
+    ['set-deepseekModel', 'server-managed'],
+    ['set-googleTTSKey', s.googleTTSKey|| ''],
+    ['set-tableCount',   s.tableCount    || 20],
+    ['set-taxRate',      s.taxRate != null ? s.taxRate : 0],
+    ['set-webPushVapidKey', s.webPushVapidKey || ''],
+    ['set-kitchenNotifyAccepted', s.kitchenNotifyAccepted !== false],
+    ['set-kitchenNotifyReady', s.kitchenNotifyReady !== false],
+    ['set-zaloMessagePrefix', s.zaloMessagePrefix || '[XE KHO POS]'],
+    ['set-zaloGroupLabel', s.zaloGroupLabel || ''],
+  ];
+  fields.forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    if (el.type === 'checkbox') el.checked = !!val;
+    else el.value = val;
+  });
+  // Update VAT display
+  const vatDisplay = document.getElementById('vat-current-display');
+  if(vatDisplay) vatDisplay.textContent = (s.taxRate || 0) + '%';
+  const autoEl = document.getElementById('set-autoBackup');
+  if(autoEl) autoEl.checked = s.autoBackup !== false;
+  const quotaEl = document.getElementById('set-storageQuotaMb');
+  if(quotaEl) quotaEl.value = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
+
+  const autoWeeklyEl  = document.getElementById('set-autoExportWeekly');
+  const autoMonthlyEl = document.getElementById('set-autoExportMonthly');
+  const autoPushWeeklyDriveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
+  const ocrModeEl = document.getElementById('set-ocrMode');
+  const photoRetentionEl = document.getElementById('set-photoRetentionDays');
+  if(autoWeeklyEl)  autoWeeklyEl.checked  = !!s.autoExportWeekly;
+  if(autoMonthlyEl) autoMonthlyEl.checked = !!s.autoExportMonthly;
+  if(autoPushWeeklyDriveEl) {
+    autoPushWeeklyDriveEl.checked = !!s.autoPushWeeklyReportToGoogleDrive;
+    autoPushWeeklyDriveEl.disabled = !s.autoExportWeekly;
+  }
+  if(ocrModeEl) ocrModeEl.value = s.ocrMode || 'auto';
+  if(photoRetentionEl) photoRetentionEl.value = String(Number(s.photoRetentionDays || 0));
+
+  const reportTypeEl = document.getElementById('set-reportExportType');
+  if(reportTypeEl && s.reportExportType) reportTypeEl.value = s.reportExportType;
+  const reportPeriodEl = document.getElementById('set-reportExportPeriod');
+  if(reportPeriodEl && s.reportExportPeriod) reportPeriodEl.value = s.reportExportPeriod;
+  const reportDateEl = document.getElementById('set-reportExportDate');
+  if(reportDateEl && s.reportExportDate) reportDateEl.value = s.reportExportDate;
+  const telegramReportEnabledEl = document.getElementById('set-telegramReportEnabled');
+  if (telegramReportEnabledEl) telegramReportEnabledEl.checked = s.telegramReportEnabled !== false;
+  const telegramReportSendHourEl = document.getElementById('set-telegramReportSendHour');
+  if (telegramReportSendHourEl) telegramReportSendHourEl.value = String(Math.min(23, Math.max(0, Number(s.telegramReportSendHour ?? 7))));
+  const telegramReportSendMinuteEl = document.getElementById('set-telegramReportSendMinute');
+  if (telegramReportSendMinuteEl) telegramReportSendMinuteEl.value = String(Math.min(59, Math.max(0, Number(s.telegramReportSendMinute ?? 0))));
+  const telegramReportIncludeRevenueEl = document.getElementById('set-telegramReportIncludeRevenue');
+  if (telegramReportIncludeRevenueEl) telegramReportIncludeRevenueEl.checked = s.telegramReportIncludeRevenue !== false;
+  const telegramReportIncludePaymentBreakdownEl = document.getElementById('set-telegramReportIncludePaymentBreakdown');
+  if (telegramReportIncludePaymentBreakdownEl) telegramReportIncludePaymentBreakdownEl.checked = s.telegramReportIncludePaymentBreakdown !== false;
+  const telegramReportIncludeInvoiceCountEl = document.getElementById('set-telegramReportIncludeInvoiceCount');
+  if (telegramReportIncludeInvoiceCountEl) telegramReportIncludeInvoiceCountEl.checked = s.telegramReportIncludeInvoiceCount !== false;
+  const telegramReportIncludeTopItemEl = document.getElementById('set-telegramReportIncludeTopItem');
+  if (telegramReportIncludeTopItemEl) telegramReportIncludeTopItemEl.checked = s.telegramReportIncludeTopItem !== false;
+  const telegramReportIncludeRetailStockEl = document.getElementById('set-telegramReportIncludeRetailStock');
+  if (telegramReportIncludeRetailStockEl) telegramReportIncludeRetailStockEl.checked = s.telegramReportIncludeRetailStock !== false;
+
+  const autoUploadDriveEl = document.getElementById('set-autoUploadToGoogleDrive');
+  if(autoUploadDriveEl) autoUploadDriveEl.checked = !!s.autoUploadToGoogleDrive;
+  const gdriveUrlEl = document.getElementById('set-googleDriveUploadUrl');
+  if(gdriveUrlEl) gdriveUrlEl.value = s.googleDriveUploadUrl || '';
+  const gdriveFolderEl = document.getElementById('set-googleDriveFolderId');
+  if(gdriveFolderEl) gdriveFolderEl.value = s.googleDriveFolderId || '';
+
+  // Hiển thị/ẩn phần chọn ngày báo cáo theo kỳ
+  try { toggleReportExportDate(); } catch(_) {}
+  try { toggleWeeklyDriveCheckbox(); } catch(_) {}
+
+  // Payment watcher fields
+  const sepayTokenEl = document.getElementById('set-sepayToken');
+  if (sepayTokenEl) sepayTokenEl.value = s.sepayToken || '';
+  const autoPayEl = document.getElementById('set-autoPayDetect');
+  if (autoPayEl) autoPayEl.checked = !!s.autoPayDetect;
+  const paySoundEl = document.getElementById('set-paySound');
+  const paySoundValEl = document.getElementById('set-paySound-val');
+  if (paySoundEl) {
+    paySoundEl.value = s.paySoundVolume ?? 80;
+    if (paySoundValEl) paySoundValEl.textContent = (s.paySoundVolume ?? 80) + '%';
+    paySoundEl.oninput = () => { if (paySoundValEl) paySoundValEl.textContent = paySoundEl.value + '%'; };
+  }
+  const zaloOaEnabledEl = document.getElementById('set-zaloOaEnabled');
+  if (zaloOaEnabledEl) zaloOaEnabledEl.checked = s.zaloOaEnabled !== false;
+  const zaloNotifyReadyEl = document.getElementById('set-zaloNotifyReady');
+  if (zaloNotifyReadyEl) zaloNotifyReadyEl.checked = s.zaloNotifyReady !== false;
+  const zaloNotifyDelayEl = document.getElementById('set-zaloNotifyDelay');
+  if (zaloNotifyDelayEl) zaloNotifyDelayEl.checked = s.zaloNotifyDelay !== false;
+
+  // Theme radio buttons
+  const themeInput = document.querySelector(`input[name="appTheme"][value="${s.appTheme || 'hien-dai'}"]`);
+  if (themeInput) themeInput.checked = true;
+
+  const logoPreview = document.getElementById('set-logo-preview');
+  const removeBtn = document.getElementById('set-logo-remove');
+  if (logoPreview) {
+    const didRenderPreview = _replaceWithSafeImage(logoPreview, s.storeLogo, 'Logo cửa hàng', {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+    });
+    if (didRenderPreview) {
+      if(removeBtn) removeBtn.style.display = 'inline-block';
+    } else {
+      logoPreview.textContent = '🏪';
+      logoPreview.style.fontSize = '20px';
+      if(removeBtn) removeBtn.style.display = 'none';
+    }
+  }
+
+  renderBackupList();
+
+  // Last backup info
+  const last = Store.getLastBackupTime();
+  const lastEl = document.getElementById('last-backup-time');
+  if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : 'Chưa có backup';
+  updateStorageQuotaInfo();
+  
+  try { renderUserManagement(); } catch(e){}
+  try { renderAttendanceManagement(); } catch(e){}
+  try { renderSystemLogs(); } catch(e){}
+}
+
+async function submitSettings(e) {
+  if(e && e.preventDefault) e.preventDefault();
+  const s = Store.getSettings();
+  const oldTableCount = s.tableCount || 20;
+
+  const nameEl        = document.getElementById('set-storeName');
+  const sloganEl      = document.getElementById('set-storeSlogan');
+  const phoneEl       = document.getElementById('set-storePhone');
+  const addressEl     = document.getElementById('set-storeAddress');
+  const bankNameEl    = document.getElementById('set-bankName');
+  const bankAccountEl = document.getElementById('set-bankAccount');
+  const bankOwnerEl   = document.getElementById('set-bankOwner');
+  const ttsKeyEl      = document.getElementById('set-googleTTSKey');
+  const tableCountEl  = document.getElementById('set-tableCount');
+  const autoBackupEl  = document.getElementById('set-autoBackup');
+  const storageQuotaEl = document.getElementById('set-storageQuotaMb');
+  const autoExportWeeklyEl  = document.getElementById('set-autoExportWeekly');
+  const autoExportMonthlyEl = document.getElementById('set-autoExportMonthly');
+  const autoPushWeeklyDriveEl = document.getElementById('set-autoPushWeeklyReportToGoogleDrive');
+  const reportExportTypeEl   = document.getElementById('set-reportExportType');
+  const reportExportPeriodEl = document.getElementById('set-reportExportPeriod');
+  const reportExportDateEl   = document.getElementById('set-reportExportDate');
+  const telegramReportEnabledEl = document.getElementById('set-telegramReportEnabled');
+  const telegramReportSendHourEl = document.getElementById('set-telegramReportSendHour');
+  const telegramReportSendMinuteEl = document.getElementById('set-telegramReportSendMinute');
+  const telegramReportIncludeRevenueEl = document.getElementById('set-telegramReportIncludeRevenue');
+  const telegramReportIncludePaymentBreakdownEl = document.getElementById('set-telegramReportIncludePaymentBreakdown');
+  const telegramReportIncludeInvoiceCountEl = document.getElementById('set-telegramReportIncludeInvoiceCount');
+  const telegramReportIncludeTopItemEl = document.getElementById('set-telegramReportIncludeTopItem');
+  const telegramReportIncludeRetailStockEl = document.getElementById('set-telegramReportIncludeRetailStock');
+  const autoUploadDriveEl    = document.getElementById('set-autoUploadToGoogleDrive');
+  const gdriveUrlEl          = document.getElementById('set-googleDriveUploadUrl');
+  const gdriveFolderEl       = document.getElementById('set-googleDriveFolderId');
+  const taxRateEl            = document.getElementById('set-taxRate');
+  const ocrModeEl            = document.getElementById('set-ocrMode');
+  const photoRetentionEl     = document.getElementById('set-photoRetentionDays');
+  const webPushVapidKeyEl    = document.getElementById('set-webPushVapidKey');
+  const kitchenNotifyAcceptedEl = document.getElementById('set-kitchenNotifyAccepted');
+  const kitchenNotifyReadyEl    = document.getElementById('set-kitchenNotifyReady');
+  const zaloOaEnabledEl      = document.getElementById('set-zaloOaEnabled');
+  const zaloNotifyReadyEl    = document.getElementById('set-zaloNotifyReady');
+  const zaloNotifyDelayEl    = document.getElementById('set-zaloNotifyDelay');
+  const zaloMessagePrefixEl  = document.getElementById('set-zaloMessagePrefix');
+  const zaloGroupLabelEl     = document.getElementById('set-zaloGroupLabel');
+  
+  // Theme value
+  const themeInput = document.querySelector('input[name="appTheme"]:checked');
+  const selectedTheme = themeInput ? themeInput.value : (s.appTheme || 'hien-dai');
+
+  const newTableCount = tableCountEl ? (parseInt(tableCountEl.value) || 20) : oldTableCount;
+  const quotaMbRaw = storageQuotaEl ? parseInt(storageQuotaEl.value, 10) : Number(s.storageQuotaMb || 500);
+  const storageQuotaMb = Math.min(500, Math.max(10, Number.isFinite(quotaMbRaw) ? quotaMbRaw : 500));
+  const newTaxRate = taxRateEl ? Math.min(100, Math.max(0, parseFloat(taxRateEl.value) || 0)) : (s.taxRate || 0);
+  const telegramReportSendHour = telegramReportSendHourEl
+    ? Math.min(23, Math.max(0, parseInt(telegramReportSendHourEl.value, 10) || 7))
+    : Math.min(23, Math.max(0, Number(s.telegramReportSendHour ?? 7)));
+  const telegramReportSendMinute = telegramReportSendMinuteEl
+    ? Math.min(59, Math.max(0, parseInt(telegramReportSendMinuteEl.value, 10) || 0))
+    : Math.min(59, Math.max(0, Number(s.telegramReportSendMinute ?? 0)));
+
+  const updated = {
+    ...s,
+    storeName:    (nameEl    && nameEl.value.trim())    || s.storeName,
+    storeSlogan:  (sloganEl  && sloganEl.value.trim())  || '',
+    storePhone:   (phoneEl   && phoneEl.value.trim())   || '',
+    storeAddress: (addressEl && addressEl.value.trim()) || '',
+    bankName:     (bankNameEl    && bankNameEl.value.trim())    || 'Vietinbank',
+    bankAccount:  (bankAccountEl && bankAccountEl.value.trim()) || '',
+    bankOwner:    (bankOwnerEl   && bankOwnerEl.value.trim())   || '',
+    deepseekApiKey: '',
+    deepseekEndpoint: '',
+    deepseekModel: '',
+    googleTTSKey: (ttsKeyEl      && ttsKeyEl.value.trim())      || '',
+    gemmaEndpoint:'',
+    gemmaModel:   '',
+    gemmaApiKey:  '',
+    tableCount:   newTableCount,
+    storageQuotaMb,
+    taxRate:      newTaxRate,
+    autoBackup:   autoBackupEl ? autoBackupEl.checked : s.autoBackup,
+    autoExportWeekly:  autoExportWeeklyEl  ? autoExportWeeklyEl.checked  : (s.autoExportWeekly  || false),
+    autoExportMonthly: autoExportMonthlyEl ? autoExportMonthlyEl.checked : (s.autoExportMonthly || false),
+    autoPushWeeklyReportToGoogleDrive: autoPushWeeklyDriveEl && autoExportWeeklyEl && autoExportWeeklyEl.checked
+      ? autoPushWeeklyDriveEl.checked
+      : false,
+    reportExportType: reportExportTypeEl ? reportExportTypeEl.value : (s.reportExportType || 'revenue'),
+    reportExportPeriod: reportExportPeriodEl ? reportExportPeriodEl.value : (s.reportExportPeriod || 'today'),
+    reportExportDate: reportExportDateEl ? reportExportDateEl.value : (s.reportExportDate || ''),
+    telegramReportEnabled: telegramReportEnabledEl ? telegramReportEnabledEl.checked : (s.telegramReportEnabled !== false),
+    telegramReportSendHour,
+    telegramReportSendMinute,
+    telegramReportIncludeRevenue: telegramReportIncludeRevenueEl ? telegramReportIncludeRevenueEl.checked : (s.telegramReportIncludeRevenue !== false),
+    telegramReportIncludePaymentBreakdown: telegramReportIncludePaymentBreakdownEl ? telegramReportIncludePaymentBreakdownEl.checked : (s.telegramReportIncludePaymentBreakdown !== false),
+    telegramReportIncludeInvoiceCount: telegramReportIncludeInvoiceCountEl ? telegramReportIncludeInvoiceCountEl.checked : (s.telegramReportIncludeInvoiceCount !== false),
+    telegramReportIncludeTopItem: telegramReportIncludeTopItemEl ? telegramReportIncludeTopItemEl.checked : (s.telegramReportIncludeTopItem !== false),
+    telegramReportIncludeRetailStock: telegramReportIncludeRetailStockEl ? telegramReportIncludeRetailStockEl.checked : (s.telegramReportIncludeRetailStock !== false),
+    autoUploadToGoogleDrive: autoUploadDriveEl ? autoUploadDriveEl.checked : (s.autoUploadToGoogleDrive || false),
+    googleDriveUploadUrl: gdriveUrlEl ? gdriveUrlEl.value.trim() : (s.googleDriveUploadUrl || ''),
+    googleDriveFolderId: gdriveFolderEl ? gdriveFolderEl.value.trim() : (s.googleDriveFolderId || ''),
+    webPushVapidKey: webPushVapidKeyEl ? webPushVapidKeyEl.value.trim() : (s.webPushVapidKey || ''),
+    kitchenNotifyAccepted: kitchenNotifyAcceptedEl ? kitchenNotifyAcceptedEl.checked : (s.kitchenNotifyAccepted !== false),
+    kitchenNotifyReady: kitchenNotifyReadyEl ? kitchenNotifyReadyEl.checked : (s.kitchenNotifyReady !== false),
+    zaloOaEnabled: zaloOaEnabledEl ? zaloOaEnabledEl.checked : (s.zaloOaEnabled !== false),
+    zaloNotifyReady: zaloNotifyReadyEl ? zaloNotifyReadyEl.checked : (s.zaloNotifyReady !== false),
+    zaloNotifyDelay: zaloNotifyDelayEl ? zaloNotifyDelayEl.checked : (s.zaloNotifyDelay !== false),
+    zaloMessagePrefix: zaloMessagePrefixEl ? zaloMessagePrefixEl.value.trim() : (s.zaloMessagePrefix || '[XE KHO POS]'),
+    zaloGroupLabel: zaloGroupLabelEl ? zaloGroupLabelEl.value.trim() : (s.zaloGroupLabel || ''),
+    ocrMode: (ocrModeEl && ['auto', 'offline', 'online'].includes(ocrModeEl.value)) ? ocrModeEl.value : (s.ocrMode || 'auto'),
+    photoRetentionDays: photoRetentionEl ? Math.max(0, parseInt(photoRetentionEl.value, 10) || 0) : Number(s.photoRetentionDays || 0),
+    activeAIEngine: 'deepseek',
+    forceOffline: !!s.forceOffline,
+    appTheme: selectedTheme,
+    // Payment watcher
+    sepayToken:     (() => { const el = document.getElementById('set-sepayToken'); return el ? el.value.trim() : (s.sepayToken || ''); })(),
+    autoPayDetect:  (() => { const el = document.getElementById('set-autoPayDetect'); return el ? el.checked : (s.autoPayDetect || false); })(),
+    paySoundVolume: (() => { const el = document.getElementById('set-paySound'); return el ? Number(el.value) : (s.paySoundVolume ?? 80); })(),
+  };
+  
+  // Apply theme immediately
+  applyTheme(selectedTheme);
+  
+  // FIX 4: Ghi settings lên Firestore (đồng bộ đa thiết bị)
+  if (window.DB && window.DB.Settings) {
+    try {
+      const {
+        telegramReportEnabled,
+        telegramReportSendHour,
+        telegramReportSendMinute,
+        telegramReportIncludeRevenue,
+        telegramReportIncludePaymentBreakdown,
+        telegramReportIncludeInvoiceCount,
+        telegramReportIncludeTopItem,
+        telegramReportIncludeRetailStock,
+        ...generalSettings
+      } = updated;
+
+      await window.DB.Settings.save(generalSettings);
+
+      if (window.DB.Settings.saveTelegramReportSettings) {
+        await window.DB.Settings.saveTelegramReportSettings({
+          enabled: telegramReportEnabled,
+          sendHour: telegramReportSendHour,
+          sendMinute: telegramReportSendMinute,
+          includeRevenue: telegramReportIncludeRevenue,
+          includePaymentBreakdown: telegramReportIncludePaymentBreakdown,
+          includeInvoiceCount: telegramReportIncludeInvoiceCount,
+          includeTopItem: telegramReportIncludeTopItem,
+          includeRetailStock: telegramReportIncludeRetailStock,
+        });
+      }
+    } catch (e) {
+      console.warn('[Settings] Cloud save error:', e);
+    }
+  }
+  Store.setSettings(updated); // Giữ LocalStorage fallback offline
+  // Update VAT display after save
+  const vatDisplay = document.getElementById('vat-current-display');
+  if(vatDisplay) vatDisplay.textContent = newTaxRate + '%';
+
+  // Nếu số bàn thay đổi: rebuild danh sách bàn và reset active orders
+  if(newTableCount !== oldTableCount) {
+    Store.rebuildTables(newTableCount);
+    // Cloud sync: khởi tạo bàn trống lên Firestore
+    if (window.DB && window.DB.Tables && window.DB.Tables.initTables) {
+      window.DB.Tables.initTables(newTableCount).catch(e => console.warn('[Tables] Cloud init error:', e));
+    }
+    // Xoá các order của bàn vượt số lượng mới (Local)
+    const orders = Store.getOrders();
+    Object.keys(orders).forEach(tid => {
+      if(parseInt(tid) > newTableCount) delete orders[tid];
+    });
+    Store.setOrders(orders);
+    // Xoá cached order items
+    Object.keys(orderItems).forEach(tid => {
+      if(parseInt(tid) > newTableCount) delete orderItems[tid];
+    });
+  }
+
+  applyStoreSettings();
+  updateStorageQuotaInfo();
+  if(storageQuotaEl) storageQuotaEl.value = storageQuotaMb;
+  showToast('✅ Đã lưu cài đặt!' + (newTableCount !== oldTableCount ? ` Sơ đồ bàn cập nhật: ${newTableCount} bàn.` : ''), 'success');
+}
+
+function getLocalStorageUsageBytes() {
+  if (window.XekhoApp?.utils?.storage?.getLocalStorageUsageBytes) return window.XekhoApp.utils.storage.getLocalStorageUsageBytes();
+  try {
+    let total = 0;
+    for(let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || '';
+      const val = localStorage.getItem(key) || '';
+      total += (key.length + val.length) * 2;
+    }
+    return total;
+  } catch(_) {
+    return 0;
+  }
+}
+
+function formatBytes(bytes) {
+  if (window.XekhoApp?.utils?.storage?.formatBytes) return window.XekhoApp.utils.storage.formatBytes(bytes);
+  const mb = bytes / (1024 * 1024);
+  if(mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function updateStorageQuotaInfo() {
+  const infoEl = document.getElementById('storage-quota-info');
+  if(!infoEl) return;
+  const s = Store.getSettings();
+  const quotaMb = Math.min(500, Math.max(10, Number(s.storageQuotaMb || 500)));
+  const usedBytes = getLocalStorageUsageBytes();
+  const quotaBytes = quotaMb * 1024 * 1024;
+  const usedPercent = quotaBytes > 0 ? Math.min(999, (usedBytes / quotaBytes) * 100) : 0;
+  const status = usedBytes > quotaBytes ? '⚠️ Vượt quota' : (usedPercent >= 85 ? '⚠️ Sắp đầy' : '✅ Bình thường');
+  // iOS Safari / WKWebView giới hạn localStorage khoảng 5-10 MB thực tế
+  const BROWSER_LIMIT_NOTE = 'ℹ️ Lưu ý: Trình duyệt iPhone/Safari giới hạn localStorage khoảng <b>5–10 MB</b>. Quota cài đặt chỉ dùng để cảnh báo trước trong app.';
+  infoEl.innerHTML = `Đang dùng: <b>${formatBytes(usedBytes)}</b> / ${quotaMb} MB (${usedPercent.toFixed(1)}%) · ${status}<br><span style="font-size:10px;color:var(--text3);line-height:1.6">${BROWSER_LIMIT_NOTE}</span>`;
+  infoEl.style.color = usedBytes > quotaBytes ? 'var(--danger)' : (usedPercent >= 85 ? 'var(--warning)' : 'var(--text2)');
+}
+
+function handleLogoUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('⚠️ Ảnh quá lớn. Chọn ảnh < 2MB', 'danger');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    const s = Store.getSettings();
+    s.storeLogo = dataUrl;
+    Store.setSettings(s);
+    applyStoreSettings();
+    renderSettings();
+    showToast('✅ Đã cập nhật logo!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeLogo() {
+  const s = Store.getSettings();
+  s.storeLogo = null;
+  Store.setSettings(s);
+  applyStoreSettings();
+  renderSettings();
+  showToast('🗑️ Đã xoá logo!', 'success');
+}
+
+// ============================================================
+// PAYMENT WATCHER để Tự đăng nhận tiền QR Banking
+// ============================================================
+
+/**
+ * Phát âm thanh nhận tiền (coin/chime) bằng Web Audio API.
+ * Không cần file âm thanh nào đểđơg hợp ngay trên thiết bđ.
+ * @param {number} vol - 0..1
+ */
+function playPaymentSound(vol = 0.8) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const notes = [
+      { freq: 523.25, start: 0,    dur: 0.18 },  // C5
+      { freq: 659.25, start: 0.12, dur: 0.18 },  // E5
+      { freq: 783.99, start: 0.24, dur: 0.18 },  // G5
+      { freq: 1046.5, start: 0.36, dur: 0.36 },  // C6
+    ];
+
+    notes.forEach(({ freq, start, dur }) => {
+      // Sine oscillator
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + start;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(vol * 0.5, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+
+      // Harmonics (overtone for coin feel)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.type = 'triangle';
+      osc2.frequency.value = freq * 2.75;
+      gain2.gain.setValueAtTime(0, t);
+      gain2.gain.linearRampToValueAtTime(vol * 0.15, t + 0.01);
+      gain2.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.6);
+      osc2.start(t);
+      osc2.stop(t + dur);
+    });
+
+    // Auto-close context sau 2 giây
+    setTimeout(() => { try { ctx.close(); } catch(_) {} }, 2000);
+  } catch (e) {
+    console.warn('[PaySound] Web Audio failed:', e.message);
+  }
+}
+
+function testPaySound() {
+  const s = Store.getSettings();
+  const vol = (Number(s.paySoundVolume ?? 80)) / 100;
+  playPaymentSound(vol);
+  showToast('🔊 Đã thử âm thanh nhận tiền!', 'success');
+}
+
+// ------- Watcher state -------
+let _payWatchTimer    = null;
+let _payWatchAmount   = 0;
+let _payWatchStart    = 0;   // Timestamp khi bắt đầu watch (ms)
+let _payWatchSeenTxIds = new Set(); // IDs đã xử lý để tránh double-trigger
+let _payWatchConfirmed = false;
+
+/**
+ * Gọi API để lấy 20 giao dịch gần nhất.
+ */
+async function fetchRecentTransactions(token) {
+  if (!token) return [];
+
+  // SePay: https://my.sepay.vn/userapi/transactions/list
+  const res = await fetch('https://my.sepay.vn/userapi/transactions/list?limit=20', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error(`SePay HTTP ${res.status}`);
+  const data = await res.json();
+  // data.transactions[].amount_in, .id, .transaction_date, .description
+  const records = (data.transactions || []).map(t => ({
+    id:     String(t.id),
+    amount: Number(t.amount_in || 0),
+    desc:   t.description || '',
+    when:   t.transaction_date || '',
+  }));
+  return records;
+}
+
+/**
+ * Bắt đầu polling khi bill được hiển thị.
+ * @param {number} expectedAmount - Số tiền cần nhận
+ * @param {string} billNo        - Mã bill để tham chiếu
+ */
+function startPaymentWatcher(expectedAmount, billNo) {
+  const s = Store.getSettings();
+  if (!s.autoPayDetect || !s.sepayToken) return;
+
+  stopPaymentWatcher(); // Dừng watcher cũ nếu có
+
+  _payWatchAmount    = expectedAmount;
+  _payWatchStart     = Date.now();
+  _payWatchSeenTxIds = new Set();
+  _payWatchConfirmed = false;
+
+  // Hiển thị trạng thái đang chờ
+  _payWatchUpdateStatus('⏳ Đang chờ thanh toán (SePay)...', 'var(--text3)');
+
+  const token = s.sepayToken;
+  const vol   = (Number(s.paySoundVolume ?? 80)) / 100;
+
+  const poll = async () => {
+    if (_payWatchConfirmed) return;
+
+    // Dừng sau 30 phút để không poll mãi
+    if (Date.now() - _payWatchStart > 30 * 60 * 1000) {
+      stopPaymentWatcher();
+      _payWatchUpdateStatus('Đã hết thời gian chờ (30 phút)', 'var(--text3)');
+      return;
+    }
+
+    try {
+      const txns = await fetchRecentTransactions(token);
+
+      // Tìm giao dịch khớp: đúng số tiền + trong vòng 5 phút kể từ khi mở bill
+      const match = txns.find(t => {
+        if (_payWatchSeenTxIds.has(t.id)) return false;
+        if (t.amount !== _payWatchAmount) return false;
+        if (!t.when) return true; // Nếu không có time, chấp nhận
+        const txTime = new Date(t.when).getTime();
+        return (txTime >= _payWatchStart - 5 * 60 * 1000); // ±5 phút
+      });
+
+      if (match) {
+        _payWatchConfirmed = true;
+        _payWatchSeenTxIds.add(match.id);
+        stopPaymentWatcher();
+        onPaymentReceived(match, billNo, vol);
+      }
+    } catch (err) {
+      // Lỗi mạng thì lặng im, tiếp tục poll
+      console.warn('[PayWatcher] poll error:', err.message);
+      _payWatchUpdateStatus('⚠️ Đang kiểm tra qua SePay... (lỗi kết nối tạm thời)', 'var(--warning)');
+    }
+
+    // Đặt lịch poll tiếp (5 giây)
+    if (!_payWatchConfirmed) {
+      _payWatchTimer = setTimeout(poll, 5000);
+    }
+  };
+
+  // Bắt đầu poll ngay sau 1 giây (cho QR hiển thị xong)
+  _payWatchTimer = setTimeout(poll, 1000);
+}
+
+/** Dừng polling */
+function stopPaymentWatcher() {
+  if (_payWatchTimer) { clearTimeout(_payWatchTimer); _payWatchTimer = null; }
+}
+
+/** Cập nhật dòng trạng thái trong bill modal */
+function _payWatchUpdateStatus(text, color) {
+  const el = document.getElementById('pay-watch-status');
+  if (!el) return;
+  el.textContent = repairVietnameseText(text);
+  el.style.color = color || 'var(--text3)';
+}
+
+/**
+ * Được gọi khi phát hiện giao dịch khớp.
+ * Phát âm thanh và hiển thị thông báo lớn để tự điền phương thức "bank" vào xác nhận.
+ */
+function onPaymentReceived(tx, billNo, vol) {
+  // 1) Âm thanh
+  playPaymentSound(vol);
+
+  // 2) Cập nhật trạng thái trong bill
+  _payWatchUpdateStatus(
+    `💸 Đã nhận ${fmtFull(tx.amount)} · ${tx.when ? fmtDateTime(tx.when) : 'vừa xong'}`,
+    'var(--success)'
+  );
+
+  // 3) Nút thanh toán chuyển sang màu xanh nổi bật
+  const payBtn = document.getElementById('bill-pay-btn');
+  if (payBtn) {
+    payBtn.textContent = '💳 Xác nhận đã nhận tiền';
+    payBtn.classList.remove('btn-success');
+    payBtn.classList.add('btn-success');
+    payBtn.style.animation = 'pulse-pay 0.8s ease 3';
+  }
+
+  // 4) Hiển thị toast toàn màn hình
+  showPaymentBanner(tx.amount, tx.desc);
+
+  // 5) Haptic (nếu có)
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+
+/**
+ * Hiển thị banner lớn "Đã nhận tiền" phủ lên màn hình ngắn.
+ */
+function showPaymentBanner(amount, desc) {
+  let banner = document.getElementById('pay-received-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'pay-received-banner';
+    banner.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9999',
+      'display:flex', 'flex-direction:column',
+      'align-items:center', 'justify-content:center',
+      'background:rgba(0,0,0,0.82)',
+      'backdrop-filter:blur(8px)',
+      'animation:fadeInPay 0.35s ease',
+      'cursor:pointer',
+    ].join(';');
+    banner.onclick = () => {
+      banner.style.opacity = '0';
+      setTimeout(() => { try { banner.remove(); } catch(_){} }, 300);
+    };
+    document.body.appendChild(banner);
+  }
+
+  banner.innerHTML = `
+    <div style="text-align:center;padding:32px;max-width:320px">
+      <div style="font-size:72px;line-height:1;margin-bottom:16px;animation:bounceIn 0.5s ease">💸</div>
+      <div style="font-size:22px;font-weight:800;color:#00D68F;margin-bottom:8px">ĐÃ NHẬN TIỀN!</div>
+      <div style="font-size:32px;font-weight:900;color:#fff;margin-bottom:12px">${fmtFull(amount)}</div>
+      ${desc ? `<div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:20px;line-height:1.4">${desc}</div>` : ''}
+      <div style="font-size:12px;color:rgba(255,255,255,0.5)">Chạm để đóng</div>
+    </div>
+  `;
+  banner.style.opacity = '1';
+  banner.style.display = 'flex';
+
+  // Tự tắt sau 6 giây
+  setTimeout(() => {
+    if (banner && banner.parentNode) {
+      banner.style.opacity = '0';
+      banner.style.transition = 'opacity 0.4s';
+      setTimeout(() => { try { banner.remove(); } catch(_){} }, 400);
+    }
+  }, 6000);
+}
+
+// ============================================================
+// BACKUP
+// ============================================================
+
+/**
+ * Tự dọn nhẹ dữ liệu nặng trong localStorage (không xóa hẳn) để giảm dung lượng trước khi backup.
+ * - Bỏ photos khỏi lịch sử đơn (nếu còn lưu sau khi clean job)
+ * - Giới hạn AI history xuống 60 entry
+ * Trả về số bytes tiết kiệm được.
+ */
+function pruneBeforeBackup() {
+  let freed = 0;
+  try {
+    // Trim AI history -> 60 entries
+    const ai = Store.getAIHistory() || [];
+    if(ai.length > 60) {
+      const before = JSON.stringify(ai).length;
+      Store.setAIHistory(ai.slice(-60));
+      freed += before - JSON.stringify(Store.getAIHistory()).length;
+    }
+    // Strip large photos still embedded in history entries
+    const hist = Store.getHistory() || [];
+    let histChanged = false;
+    const cleanHist = hist.map(o => {
+      if(!o || !Array.isArray(o.photos) || !o.photos.length) return o;
+      histChanged = true;
+      return { ...o, photos: [] };
+    });
+    if(histChanged) {
+      const before = JSON.stringify(hist).length;
+      Store.set('gkhl_history', cleanHist);
+      freed += before - JSON.stringify(cleanHist).length;
+    }
+  } catch(_) {}
+  return freed;
+}
+
+function manualBackup() {
+  try {
+    // Bước 1: Tự dọn data nặng (silent) trước khi lưu
+    pruneBeforeBackup();
+
+    // Bước 2: Ghi snapshot backup cục bộ
+    const snapshot = Store.saveLocalBackup();
+    renderBackupList();
+    const last = Store.getLastBackupTime();
+    const lastEl = document.getElementById('last-backup-time');
+    if(lastEl) lastEl.textContent = last ? fmtDateTime(last) : '';
+    updateStorageQuotaInfo();
+
+    if(!snapshot) {
+      // Trường hợp localStorage browser đầy (iOS Safari giđi hạn ~5-10 MB thực tế)
+      // Không tự động xuất file (gây phiền rồi) — để hỏi người dùng thao tác.
+      showToast(
+        '⚠️ Bộ nhớ trình duyệt đầy (iOS/Safari giới hạn ~5–10 MB). ' +
+        'Hãy bấm "📤 Xuất file" để lưu backup ra máy.',
+        'warning',
+        6000
+      );
+      return;
+    }
+    showToast('✅ Đã backup thành công!', 'success');
+  } catch(err) {
+    // Catch lỗi QuotaExceededError bất kỳ cấp nào
+    if(err.name === 'QuotaExceededError' || /quota/i.test(err.message || '')) {
+      updateStorageQuotaInfo();
+      showToast(
+        '⚠️ Bộ nhớ trình duyệt bị đầy. Hãy bấm "📤 Xuất file" hoặc "🧹 Dọn dữ liệu nặng" rồi thử lại.',
+        'warning',
+        6000
+      );
+    } else {
+      showToast('❌ Backup thất bại: ' + (err.message || err), 'danger');
+    }
+  }
+}
+
+function exportBackup() {
+  try {
+    const snapshot = Store.getFullBackup();
+    const json = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const date = new Date().toISOString().slice(0,10);
+    a.href     = url;
+    a.download = `pos_backup_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ Đã xuất file backup!', 'success');
+  } catch(err) {
+    showToast('❌ Xuất thất bại: ' + err.message, 'danger');
+  }
+}
+
+/** Xuất chỉ mục cài đặt đã lưu trong bộ nhớ (sau khi bấm Lưu cài đặt), không gồm menu/đơn hàng/... */
+function exportSettingsBackup() {
+  try {
+    const settings = Store.getSettings();
+    const payload = {
+      type: 'gkhl_settings_backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `pos_cai_dat_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ Đã xuất file cài đặt đã lưu.', 'success');
+  } catch(err) {
+    showToast('❌ Xuất cài đặt thất bại: ' + (err.message || err), 'danger');
+  }
+}
+
+async function cleanupHeavyData() {
+  if(!confirm('Dọn dữ liệu nặng sẽ xóa ảnh order, ảnh chứng từ nhập hàng và giữ lại 120 tin nhắn AI mới nhất. Tiếp tục')) return;
+  try {
+    const history = Store.getHistory() || [];
+    let removedOrderPhotos = 0;
+    
+    // Xóa ảnh của các đơn và lịch sử khỏi bộ nhớ PhotoDB
+    for(const o of history) {
+      if(o && o.historyId) {
+         await PhotoDB.remove('history_' + o.historyId);
+         removedOrderPhotos++; // Chấp nhận đếm vo vì không tải dataUrl ra nữa
+      }
+    }
+    // Vẫn cập nhật lại mảng history cho chắc đỡ không còn base64 lọt nào
+    const nextHistory = history.map(o => {
+      if(!o || typeof o !== 'object') return o;
+      const photos = Array.isArray(o.photos) ? o.photos : [];
+      return photos.length ? { ...o, photos: [] } : o;
+    });
+    Store.set('gkhl_history', nextHistory);
+
+    const purchaseMap = purchasePhotoCache || {};
+    let removedPurchasePhotos = Object.keys(purchaseMap).length;
+    
+    purchasePhotoCache = {};
+    orderPhotoCache = {};
+    await Store.setPurchasePhotosAsync({});
+    await Store.setOrderPhotosAsync({});
+
+    const aiHistory = Store.getAIHistory() || [];
+    const trimmedAiHistory = aiHistory.slice(-120);
+    const removedAiMessages = Math.max(0, aiHistory.length - trimmedAiHistory.length);
+    Store.setAIHistory(trimmedAiHistory);
+
+    renderBackupList();
+    renderOrderHistoryList();
+    updateStorageQuotaInfo();
+    showToast(`✅ Đã dọn dữ liệu nặng: ${removedOrderPhotos + removedPurchasePhotos} ảnh, ${removedAiMessages} tin AI cũ.`, 'success');
+  } catch(err) {
+    showToast('❌ Dọn dữ liệu thất bại: ' + (err.message || err), 'danger');
+  }
+}
+
+function excelThinBorder() {
+  if (window.XekhoApp?.utils?.excel?.excelThinBorder) return window.XekhoApp.utils.excel.excelThinBorder();
+  const color = { argb: 'FFAAAAAA' };
+  return {
+    top: { style: 'thin', color },
+    left: { style: 'thin', color },
+    bottom: { style: 'thin', color },
+    right: { style: 'thin', color },
+  };
+}
+
+function excelColLetter(n) {
+  if (window.XekhoApp?.utils?.excel?.excelColLetter) return window.XekhoApp.utils.excel.excelColLetter(n);
+  let s = '';
+  let x = n;
+  while(x > 0) {
+    const r = (x - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    x = Math.floor((x - 1) / 26);
+  }
+  return s;
+}
+
+function excelFmtVnInt(n) {
+  if (window.XekhoApp?.utils?.excel?.excelFmtVnInt) return window.XekhoApp.utils.excel.excelFmtVnInt(n);
+  return (Math.round(Number(n) || 0)).toLocaleString('vi-VN');
+}
+
+function applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol }) {
+  if (window.XekhoApp?.utils?.excel?.applyReportTitleBlock) return window.XekhoApp.utils.excel.applyReportTitleBlock(ws, { title, periodLabel, exportDateStr, lastCol });
+  const end = excelColLetter(lastCol);
+  ws.mergeCells(`A1:${end}1`);
+  const t = ws.getCell('A1');
+  t.value = title;
+  t.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+  t.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  ws.getRow(1).height = 28;
+
+  ws.getCell('A2').value = 'Kỳ báo cáo:';
+  ws.getCell('B2').value = periodLabel;
+  ws.getCell('A3').value = 'Ngày xuất:';
+  ws.getCell('B3').value = exportDateStr;
+  ws.getCell('A2').font = { bold: true, size: 11 };
+  ws.getCell('A3').font = { bold: true, size: 11 };
+  ws.getCell('B2').font = { size: 11 };
+  ws.getCell('B3').font = { size: 11 };
+  ['A2', 'B2', 'A3', 'B3'].forEach(a => {
+    ws.getCell(a).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+  });
+  ws.getColumn(1).width = Math.max(ws.getColumn(1).width || 0, 14);
+  ws.getColumn(2).width = Math.max(ws.getColumn(2).width || 0, 30);
+  ws.getRow(4).height = 6;
+}
+
+function paintExcelHeaderRow(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.paintExcelHeaderRow) return window.XekhoApp.utils.excel.paintExcelHeaderRow(ws, rowIndex, colCount);
+  const row = ws.getRow(rowIndex);
+  for(let c = 1; c <= colCount; c++) {
+    const cell = row.getCell(c);
+    cell.font = { bold: true, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+    cell.border = excelThinBorder();
+  }
+  row.height = 22;
+}
+
+function paintExcelTotalRow(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.paintExcelTotalRow) return window.XekhoApp.utils.excel.paintExcelTotalRow(ws, rowIndex, colCount);
+  const row = ws.getRow(rowIndex);
+  for(let c = 1; c <= colCount; c++) {
+    const cell = row.getCell(c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } };
+    cell.border = excelThinBorder();
+  }
+}
+
+function setRowBorders(ws, rowIndex, colCount) {
+  if (window.XekhoApp?.utils?.excel?.setRowBorders) return window.XekhoApp.utils.excel.setRowBorders(ws, rowIndex, colCount);
+  for(let c = 1; c <= colCount; c++) {
+    ws.getRow(rowIndex).getCell(c).border = excelThinBorder();
+  }
+}
+
+async function exportReportExcel(override = {}) {
+  if (window.XekhoApp?.report?.exportReportExcel) return window.XekhoApp.report.exportReportExcel(override);
+  const typeEl   = document.getElementById('set-reportExportType');
+  const periodEl = document.getElementById('set-reportExportPeriod');
+  const dateEl   = document.getElementById('set-reportExportDate');
+
+  const typeRaw = override.type || (typeEl ? typeEl.value : 'revenue');
+  const type = String(typeRaw || 'revenue').trim().toLowerCase();
+  const period = override.period || (periodEl ? periodEl.value : 'today');
+  const date   = override.date   || (dateEl   ? dateEl.value   : '');
+
+  const skipLocalDownload = !!override.skipLocalDownload;
+  const forceUploadToDrive = override.uploadToDrive === true;
+
+  const ExcelJSLib = typeof ExcelJS !== 'undefined' ? ExcelJS : (typeof window !== 'undefined' ? window.ExcelJS : undefined);
+  if(!ExcelJSLib) {
+    showToast('Không tải được thư viđơ Excel. Vui lòng tải lại trang.', 'danger');
+    return false;
+  }
+
+  const opts = {};
+  if(period === 'day' && date) opts.date = date;
+
+  const fmtDateCell = (iso, onlyDate = false) => {
+    if(!iso) return '';
+    const d = new Date(iso);
+    if(Number.isNaN(d.getTime())) return '';
+    return onlyDate ? d.toISOString().slice(0, 10) : d.toLocaleString('vi-VN');
+  };
+
+  const exportDateStr = new Date().toLocaleString('vi-VN');
+  const periodLabel = (() => {
+    if(period === 'today') return 'Hôm nay';
+    if(period === 'day' && date) {
+      const d = new Date(`${date}T12:00:00`);
+      return Number.isNaN(d.getTime()) ? 'Ngày cụ thể' : `Ngày ${d.toLocaleDateString('vi-VN')}`;
+    }
+    if(period === 'day') return 'Ngày cụ thể';
+    if(period === 'week') return '7 ngày gần nhất';
+    if(period === 'month') return 'Tháng hiện tại';
+    return 'Tất cả';
+  })();
+
+  const getFilteredPurchases = () => {
+    const purchases = Store.getPurchases();
+    const now = new Date();
+    return purchases.filter(p => {
+      const d = new Date(p.date);
+      if(Number.isNaN(d.getTime())) return false;
+      if(period === 'today') return d.toDateString() === now.toDateString();
+      if(period === 'day' && date) return d.toDateString() === new Date(date).toDateString();
+      if(period === 'week') return (now - d) / 86400000 <= 7;
+      if(period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return true;
+    });
+  };
+
+  const HEADER_ROW = 5;
+  const settings = Store.getSettings();
+  const vatRate = settings.taxRate != null ? Number(settings.taxRate) : 0; // % VAT from settings
+
+  const fillRevenueSheet = ws => {
+    const lastCol = 9;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO DOANH THU (THEO MON)',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const vatLabel = vatRate > 0 ? `Thuế VAT (${vatRate}%)` : 'Thuế VAT (0%)';
+    const headers = [
+      'TT', 'Ngày bán', 'Mã sản phẩm', 'Tên sản phẩm', 'Sđ lượng bán',
+      'Đơn giá (VND)', 'Thành tiền (VND)', vatLabel, 'Sau VAT (VND)',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 5; c <= 9; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+
+    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    const totals = { qty: 0, gross: 0, vat: 0, net: 0 };
+    orders.forEach(o => {
+      (o.items || []).forEach(item => {
+        const qty = Number(item.qty || 0);
+        const price = Number(item.price || 0);
+        const gross = qty * price;
+        const vat = vatRate > 0 ? Math.round(gross * vatRate / 100) : 0;
+        const net = gross - vat;
+        const row = ws.getRow(r);
+        row.getCell(1).value = stt++;
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(2).value = fmtDateCell(o.paidAt, true);
+        row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(3).value = item.id || '';
+        row.getCell(4).value = item.name || '';
+        row.getCell(5).value = qty;
+        row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(6).value = excelFmtVnInt(price);
+        row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(7).value = excelFmtVnInt(gross);
+        row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(8).value = excelFmtVnInt(vat);
+        row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(9).value = excelFmtVnInt(net);
+        row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+        setRowBorders(ws, r, lastCol);
+        totals.qty += qty;
+        totals.gross += gross;
+        totals.vat += vat;
+        totals.net += net;
+        r++;
+      });
+    });
+
+    ws.mergeCells(r, 1, r, 4);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(5).value = totals.qty;
+    tr.getCell(5).font = { bold: true };
+    tr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = excelFmtVnInt(totals.gross);
+    tr.getCell(7).font = { bold: true };
+    tr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totals.vat);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = excelFmtVnInt(totals.net);
+    tr.getCell(9).font = { bold: true };
+    tr.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 12 }, { width: 12 }, { width: 32 },
+      { width: 14 }, { width: 16 }, { width: 18 }, { width: 16 }, { width: 20 },
+    ];
+  };
+
+  // Sheet đầy đủ lịch sử đơn hàng (theo đơn, không theo từng món)
+  const fillOrdersSheet = ws => {
+    const lastCol = 14;
+    applyReportTitleBlock(ws, {
+      title: 'LỊCH SỬ ĐƠN HÀNG (ĐẦY ĐỦ)',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const vatLabel = vatRate > 0 ? `VAT (${vatRate}%)` : 'VAT';
+    const headers = [
+      'TT', 'Mã đơn', 'Thời gian', 'Bàn/Kênh', 'Danh sách món',
+      'Tiền hàng (VND)', 'Giảm giá (VND)', 'Phí ship (VND)', vatLabel,
+      'Tổng cộng (VND)', 'Giá vốn (VND)', 'Lãi gộp (VND)', 'PT Thanh toán', 'Ghi chú',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(3).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(4).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(5).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 6; c <= 12; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(13).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hr.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const orders = filterHistory(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalRevenue = 0, totalDiscount = 0, totalShipping = 0, totalVat = 0, totalCost = 0;
+    orders.forEach(o => {
+      const itemsTotal = (o.items||[]).reduce((s,i) => s + i.price*i.qty, 0);
+      const discount = Number(o.discount || 0);
+      const shipping = Number(o.shipping || 0);
+      const vatAmt = Number(o.vatAmount || 0);
+      const cost = Number(o.cost || 0);
+      const total = Number(o.total || 0);
+      const gross = total - cost;
+      const payLabel = o.payMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt';
+      const itemsText = (o.items||[]).map(i => `${i.name} x${i.qty} (${excelFmtVnInt(i.price*i.qty)}đ)`).join('; ');
+
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = o.id || (o.historyId || '');
+      row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(3).value = fmtDateCell(o.paidAt);
+      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(4).value = o.tableName || '';
+      row.getCell(4).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(5).value = itemsText;
+      row.getCell(5).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      row.getCell(6).value = excelFmtVnInt(itemsTotal);
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(7).value = excelFmtVnInt(discount);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(shipping);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = excelFmtVnInt(vatAmt);
+      row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(10).value = excelFmtVnInt(total);
+      row.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(10).font = { bold: true };
+      row.getCell(11).value = excelFmtVnInt(cost);
+      row.getCell(11).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(12).value = excelFmtVnInt(gross);
+      row.getCell(12).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(13).value = payLabel;
+      row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(14).value = o.note || '';
+      row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      setRowBorders(ws, r, lastCol);
+      totalRevenue += total;
+      totalDiscount += discount;
+      totalShipping += shipping;
+      totalVat += vatAmt;
+      totalCost += cost;
+      r++;
+    });
+
+    // Total row
+    ws.mergeCells(r, 1, r, 5);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = `TỔNG (${orders.length} đơn)`;
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = excelFmtVnInt(totalDiscount);
+    tr.getCell(7).font = { bold: true };
+    tr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totalShipping);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = excelFmtVnInt(totalVat);
+    tr.getCell(9).font = { bold: true };
+    tr.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(10).value = excelFmtVnInt(totalRevenue);
+    tr.getCell(10).font = { bold: true };
+    tr.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(11).value = excelFmtVnInt(totalCost);
+    tr.getCell(11).font = { bold: true };
+    tr.getCell(11).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(12).value = excelFmtVnInt(totalRevenue - totalCost);
+    tr.getCell(12).font = { bold: true };
+    tr.getCell(12).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(13).value = '';
+    tr.getCell(14).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 18 }, { width: 20 }, { width: 16 }, { width: 50 },
+      { width: 16 }, { width: 14 }, { width: 14 }, { width: 12 },
+      { width: 16 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 24 },
+    ];
+  };
+
+
+  const fillExpenseSheet = ws => {
+    const lastCol = 6;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO CHI PHÍ',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = ['TT', 'Ngày chi', 'Mã chi phí', 'Nđi dung', 'Danh mục', 'Sđ tiền (VND)'];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 5; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(6).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+
+    const expenses = filterExpenses(period === 'day' ? 'day' : period, opts);
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let total = 0;
+    expenses.forEach(e => {
+      const amount = Number(e.amount || 0);
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = fmtDateCell(e.date, true);
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).value = e.id || '';
+      row.getCell(4).value = e.name || '';
+      row.getCell(5).value = e.category || '';
+      row.getCell(6).value = excelFmtVnInt(amount);
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      setRowBorders(ws, r, lastCol);
+      total += amount;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 5);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(6).value = excelFmtVnInt(total);
+    tr.getCell(6).font = { bold: true };
+    tr.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [{ width: 6 }, { width: 12 }, { width: 12 }, { width: 28 }, { width: 14 }, { width: 18 }];
+  };
+
+  const fillPurchaseSheet = ws => {
+    const lastCol = 10;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO NHẬP HÀNG',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = [
+      'TT', 'Ngày nhập', 'Mã phiếu', 'Nguyên liệu', 'Số lượng', 'Đơn vị',
+      'Đơn giá (VND)', 'Thành tiền (VND)', 'Nhà cung cấp', 'Ghi chú',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(6).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 7; c <= 8; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(9).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    hr.getCell(10).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const filtered = getFilteredPurchases();
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalQty = 0;
+    let totalAmount = 0;
+    filtered.forEach(p => {
+      const qty = Number(p.qty || 0);
+      const amount = Number(p.price || 0);
+      const cpu = Number(p.costPerUnit || 0);
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = fmtDateCell(p.date, true);
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).value = p.id || '';
+      row.getCell(4).value = p.name || '';
+      row.getCell(5).value = qty;
+      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(6).value = p.unit || '';
+      row.getCell(7).value = excelFmtVnInt(cpu);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(amount);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = p.supplier || '';
+      row.getCell(10).value = p.note || '';
+      setRowBorders(ws, r, lastCol);
+      totalQty += qty;
+      totalAmount += amount;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 4);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(5).value = totalQty;
+    tr.getCell(5).font = { bold: true };
+    tr.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(6).value = '';
+    tr.getCell(7).value = '';
+    tr.getCell(8).value = excelFmtVnInt(totalAmount);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = '';
+    tr.getCell(10).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [
+      { width: 6 }, { width: 12 }, { width: 12 }, { width: 24 }, { width: 10 }, { width: 8 },
+      { width: 14 }, { width: 16 }, { width: 20 }, { width: 24 },
+    ];
+  };
+
+  const fillInventorySheet = ws => {
+    const lastCol = 9;
+    applyReportTitleBlock(ws, {
+      title: 'BÁO CÁO TỒN KHO',
+      periodLabel,
+      exportDateStr,
+      lastCol,
+    });
+    const headers = [
+      'TT', 'Mã hàng', 'Tên nguyên liệu', 'Đơn vị', 'Tồn hiện tại', 'Tồn tối thiểu',
+      'Giá vốn (VND)', 'Giá trị tồn (VND)', 'Trạng thái',
+    ];
+    headers.forEach((h, i) => { ws.getRow(HEADER_ROW).getCell(i + 1).value = h; });
+    paintExcelHeaderRow(ws, HEADER_ROW, lastCol);
+    const hr = ws.getRow(HEADER_ROW);
+    hr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    for(let c = 2; c <= 4; c++) hr.getCell(c).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    for(let c = 5; c <= 7; c++) hr.getCell(c).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+    hr.getCell(9).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+    const inv = Store.getInventory() || [];
+    let r = HEADER_ROW + 1;
+    let stt = 1;
+    let totalValue = 0;
+    inv.forEach(i => {
+      const qty = Number(i.qty || 0);
+      const min = Number(i.minQty || 0);
+      const cost = Number(i.costPerUnit || 0);
+      const value = qty * cost;
+      const status = qty <= 0 ? 'Hết hàng' : (qty <= min ? 'Sắp hết' : 'Bình thường');
+      const row = ws.getRow(r);
+      row.getCell(1).value = stt++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = i.id || '';
+      row.getCell(3).value = i.name || '';
+      row.getCell(4).value = i.unit || '';
+      row.getCell(5).value = qty;
+      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(6).value = min;
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(7).value = excelFmtVnInt(cost);
+      row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(8).value = excelFmtVnInt(value);
+      row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(9).value = status;
+      setRowBorders(ws, r, lastCol);
+      totalValue += value;
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 7);
+    const tr = ws.getRow(r);
+    tr.getCell(1).value = 'TỔNG';
+    tr.getCell(1).font = { bold: true };
+    tr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tr.getCell(8).value = excelFmtVnInt(totalValue);
+    tr.getCell(8).font = { bold: true };
+    tr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    tr.getCell(9).value = '';
+    paintExcelTotalRow(ws, r, lastCol);
+
+    ws.autoFilter = {
+      from: { row: HEADER_ROW, column: 1 },
+      to: { row: HEADER_ROW, column: lastCol },
+    };
+    ws.columns = [{ width: 6 }, { width: 12 }, { width: 28 }, { width: 8 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 14 }];
+  };
+
+  const workbook = new ExcelJSLib.Workbook();
+  workbook.creator = 'Ganh Kho POS';
+  let filename = 'bao_cao_tong_hop';
+
+  if(type === 'revenue') {
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_doanh_thu';
+  } else if(type === 'orders') {
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    filename = 'lich_su_don_hang';
+  } else if(type === 'expense') {
+    fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_chi_phi';
+  } else if(type === 'purchase') {
+    fillPurchaseSheet(workbook.addWorksheet('NhapHang', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_nhap_hang';
+  } else if(type === 'inventory') {
+    fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_ton_kho';
+  } else if(type === 'all') {
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
+    fillExpenseSheet(workbook.addWorksheet('ChiPhi', { views: [{ showGridLines: true }] }));
+    fillPurchaseSheet(workbook.addWorksheet('NhapHang', { views: [{ showGridLines: true }] }));
+    fillInventorySheet(workbook.addWorksheet('TonKho', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_tong_hop';
+  } else {
+    fillOrdersSheet(workbook.addWorksheet('LichSuDon', { views: [{ showGridLines: true }] }));
+    fillRevenueSheet(workbook.addWorksheet('DoanhThu_TheoMon', { views: [{ showGridLines: true }] }));
+    filename = 'bao_cao_doanh_thu';
+  }
+
+  const wbout = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const dateStr = new Date().toISOString().slice(0,10);
+  const downloadName = `${filename}_${dateStr}.xlsx`;
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  if(!skipLocalDownload) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const s = Store.getSettings();
+  const wantsUpload = forceUploadToDrive || (override.uploadToDrive !== false && s.autoUploadToGoogleDrive);
+  let uploadOk = null;
+  let uploadDriveOpaque = false;
+
+  if(wantsUpload) {
+    const { uploadUrl, folderId } = getGoogleDriveConfigFromUi();
+    if(!uploadUrl || !folderId) {
+      if(forceUploadToDrive) {
+        showToast('Thiếu URL Web App hoặc ID thư mục Google Drive.', 'warning');
+        return false;
+      }
+      if(s.autoUploadToGoogleDrive && !skipLocalDownload) {
+        showToast('⚠️ Bật tự đẩy sau xuất nhưng thiếu URL hoặc ID thư mục Google Drive.', 'warning');
+      }
+    } else {
+      try {
+        const up = await uploadFileToGoogleDriveByEndpoint({
+          uploadUrl,
+          folderId,
+          filename: downloadName,
+          mimeType,
+          blob,
+        });
+        uploadOk = true;
+        uploadDriveOpaque = !!(up && up.opaque);
+      } catch(err) {
+        console.warn('uploadFileToGoogleDrive error', err);
+        uploadOk = false;
+        uploadDriveOpaque = false;
+        if(forceUploadToDrive) {
+          showToast('⚠️ Đẩy lên Google Drive thất bại: ' + (err.message || err), 'warning');
+          return false;
+        }
+        showToast('⚠️ Upload Google Drive thất bại: ' + (err.message || err), 'warning');
+      }
+    }
+  }
+
+  if(!skipLocalDownload) {
+    if(uploadOk === true && s.autoUploadToGoogleDrive) {
+      showToast(uploadDriveOpaque
+        ? 'Đã xuất Excel. Đã gửi bản sao lên Drive — vui lòng kiểm tra thư mục (trình duyệt có thể không đọc được phản hồi).'
+        : 'Đã xuất file báo cáo Excel và đẩy bản .xlsx lên Google Drive.', 'success');
+    } else {
+      showToast('Đã xuất file báo cáo Excel.', 'success');
+    }
+  } else if(uploadOk === true) {
+    showToast(uploadDriveOpaque
+      ? '✅ Đã gửi file .xlsx lên Drive. Mọi thư mục đã chọn đã xác nhận (chế độ tương thích CORS: không đọc được phản hồi chi tiết).'
+      : '✅ Đã đẩy file báo cáo (.xlsx) lên thư mục Google Drive đã chọn.', 'success');
+  }
+
+  return true;
+}
+
+async function blobToBase64(blob) {
+  if (window.XekhoApp?.utils?.storage?.blobToBase64) return window.XekhoApp.utils.storage.blobToBase64(blob);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result || '';
+      const base64 = dataUrl.toString().split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Không đọc được file để upload.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function normalizeGoogleScriptWebAppUrl(raw) {
+  if (window.XekhoApp?.utils?.storage?.normalizeGoogleScriptWebAppUrl) return window.XekhoApp.utils.storage.normalizeGoogleScriptWebAppUrl(raw);
+  let u = String(raw || '').trim();
+  if(!u) return '';
+  u = u.replace(/\s+/g, '');
+  if(/\/usercodeapp\.app$/i.test(u) || /script\.googleusercontent\.com/i.test(u)) {
+    return u;
+  }
+  return u.replace(/\/$/, '');
+}
+
+function isGoogleAppsScriptWebAppUrl(u) {
+  if (window.XekhoApp?.utils?.storage?.isGoogleAppsScriptWebAppUrl) return window.XekhoApp.utils.storage.isGoogleAppsScriptWebAppUrl(u);
+  if(!u) return false;
+  return /script\.google\.com\/macros\/s\//i.test(u)
+    || /script\.googleusercontent\.com\/macros\/exec/i.test(u);
+}
+
+/**
+ * Google Apps Script /exec thường chặn CORS khi POST application/json (preflight OPTIONS).
+ * Gửi body là JSON nhưng Content-Type: text/plain đă tránh preflight để doPost vẫn JSON.parse(postData.contents).
+ * Nếu vẫn Failed to fetch: thử mode no-cors (không đọc được phản hđi, coi như đã gửi).
+ */
+async function uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob }) {
+  if (window.XekhoApp?.utils?.storage?.uploadFileToGoogleDriveByEndpoint) return window.XekhoApp.utils.storage.uploadFileToGoogleDriveByEndpoint({ uploadUrl, folderId, filename, mimeType, blob });
+  const url = normalizeGoogleScriptWebAppUrl(uploadUrl);
+  if(!url) {
+    throw new Error('Thiếu URL Web App.');
+  }
+  if(!/^https:\/\//i.test(url)) {
+    throw new Error('URL Web App phải dùng https://');
+  }
+  if(/\/dev($|\?)/i.test(url)) {
+    throw new Error('Không dùng URL /dev. Hãy triđơ khai Web App và dùng URL kết thúc /exec (hoặc URL triđơ khai đầy đủ Google cung cấp).');
+  }
+
+  const base64Data = await blobToBase64(blob);
+  const payload = { filename, mimeType, base64Data, folderId };
+  const body = JSON.stringify(payload);
+
+  const readResponse = async (res) => {
+    const text = await res.text();
+    if(!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch(_) {
+      return { _raw: text };
+    }
+  };
+
+  const assertOk = (data, res) => {
+    if(data && data.success === false) {
+      throw new Error(data.message || data.error || 'Google Drive từ chđi lưu file.');
+    }
+    if(!res.ok) {
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+  };
+
+  const postCorsPlain = async (contentType) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      redirect: 'follow',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+    const data = await readResponse(res);
+    assertOk(data, res);
+    return { data, opaque: false };
+  };
+
+  const tryNoCorsPlain = async () => {
+    for(const ct of ['text/plain;charset=UTF-8', 'text/plain']) {
+      try {
+        await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          redirect: 'follow',
+          cache: 'no-store',
+          credentials: 'omit',
+          headers: { 'Content-Type': ct },
+          body,
+        });
+        return { opaque: true };
+      } catch(e) {
+        /* thử Content-Type khác */
+      }
+    }
+    throw new Error('Không gửi được tđi Web App (kiđm tra mạng hoặc URL).');
+  };
+
+  const isNetErr = (err) => {
+    const msg = String(err && err.message != null ? err.message : err);
+    return !!(err && (err.name === 'TypeError' || /Failed to fetch|NetworkError|network error|Load failed|aborted/i.test(msg)));
+  };
+
+  let lastNet = null;
+  for(const ct of ['text/plain;charset=UTF-8', 'text/plain']) {
+    try {
+      return await postCorsPlain(ct);
+    } catch(err) {
+      if(!isNetErr(err)) throw err;
+      lastNet = err;
+      console.warn('[Drive] Lđi mạng/CORS vđi Content-Type', ct, err);
+    }
+  }
+
+  if(!isGoogleAppsScriptWebAppUrl(url)) {
+    throw new Error('Failed to fetch để URL phải là Web App Google (dạng script.google.com/.../exec). Kiđm tra HTTPS, mạng, hoặc tắt extension chặn script.google.com.');
+  }
+
+  console.warn('[Drive] Chuyển sang no-cors (chỉ phù hợp với Web App Google):', lastNet);
+  return tryNoCorsPlain();
+}
+
+function getWeekStartKey(d) {
+  if (window.XekhoApp?.utils?.date?.getWeekStartKey) return window.XekhoApp.utils.date.getWeekStartKey(d);
+  const x = new Date(d);
+  x.setHours(0,0,0,0);
+  const diff = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - diff);
+  return x.toISOString().slice(0,10);
+}
+
+async function autoExportReportsIfNeeded() {
+  const s = Store.getSettings();
+  const now = new Date();
+
+  if(s.autoExportWeekly) {
+    const weekKey = getWeekStartKey(now);
+    const last = Store.getLastReportExportWeeklyKey();
+    if(weekKey && last !== weekKey) {
+      const pushDrive = !!s.autoPushWeeklyReportToGoogleDrive;
+      const ok = await exportReportExcel({
+        type: s.reportExportType,
+        period: 'week',
+        skipLocalDownload: pushDrive,
+        uploadToDrive: pushDrive ? true : undefined,
+      });
+      if(ok) Store.setLastReportExportWeeklyKey(weekKey);
+    }
+  }
+
+  if(s.autoExportMonthly) {
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const last = Store.getLastReportExportMonthlyKey();
+    if(monthKey && last !== monthKey) {
+      const ok = await exportReportExcel({ type: s.reportExportType, period: 'month' });
+      if(ok) Store.setLastReportExportMonthlyKey(monthKey);
+    }
+  }
+}
+
+function importBackup() {
+  const input = document.createElement('input');
+  input.type  = 'file';
+  input.accept= '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        
+        // Khôi phục vào localStorage trưđc (fallback)
+        Store.restoreFromBackup(backup);
+        
+        // Nếu đang kết nối Cloud và là admin, đồng bộ thẳng lên Cloud
+        if (window.DB && isAdminUser()) {
+           showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
+           await window.DB.migrateJson(backup, false);
+           showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
+        } else if (window.appState) {
+           // Nạp tạm vào appState để UI có thể đọc ngay (chế độ offline hoặc local)
+           Object.entries(backup.data).forEach(([k, v]) => {
+             if (Array.isArray(window.appState[k])) window.appState[k] = v;
+             else if (k === 'settings') window.appState.settings = v;
+           });
+        }
+        
+        orderItems = {};
+        applyStoreSettings();
+        renderPage(currentPage);
+        updateAlertBadge();
+        showToast(`✅ Đã khôi phục từ backup ${backup.exportedAt ? fmtDate(backup.exportedAt) : ''}!`, 'success');
+      } catch(err) {
+        showToast('❌ File không hợp lệ: ' + err.message, 'danger');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function renderBackupList() {
+  const backups = Store.getLocalBackups();
+  const el = document.getElementById('backup-list');
+  if(!el) return;
+  el.innerHTML = backups.length ? backups.map((b, i) =>
+    `<div class="list-item">
+      <div class="list-item-icon" style="background:rgba(0,149,255,0.1)">💾</div>
+      <div class="list-item-content">
+        <div class="list-item-title">${i === 0 ? '⭐ ' : ''}Backup ${i+1}</div>
+        <div class="list-item-sub">${b.label || fmtDate(b.date)} · ${(b.size/1024).toFixed(1)} KB</div>
+      </div>
+      <div style="display:flex;gap:4px">
+        ${i === 0 ? `<button class="btn btn-xs btn-secondary" onclick="restoreLatestBackup()">↩️</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="deleteBackup(${i})" title="Xóa backup này">🗑️</button>
+      </div>
+    </div>`
+  ).join('') : '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">Chưa có backup nào</div>';
+}
+
+function deleteBackup(index) {
+  if(!confirm(`Xóa backup ${index+1}? Hành động này không thể hoàn tác.`)) return;
+  Store.deleteLocalBackup(index);
+  renderBackupList();
+  showToast('🗑️ Đã xóa backup', 'success');
+}
+
+function restoreLatestBackup() {
+  if(!confirm('Khôi phục backup gần nhất? Dữ liệu hiện tại sẽ bị ghi đè.')) return;
+  const raw = localStorage.getItem('gkhl_backup_latest');
+  if(!raw) { showToast('❌ Không tìm thấy backup', 'danger'); return; }
+  try {
+    const backup = JSON.parse(raw);
+    
+    Store.restoreFromBackup(backup);
+    
+    if (window.DB && isAdminUser()) {
+       showToast('⏳ Đang đồng bộ backup lên Cloud...', 'info');
+       window.DB.migrateJson(backup, false).then(() => {
+         showToast('✅ Đã đồng bộ backup lên Cloud thành công!', 'success');
+       }).catch(err => {
+         showToast('❌ Lỗi đồng bộ: ' + err.message, 'danger');
+       });
+    } else if (window.appState) {
+       Object.entries(backup.data).forEach(([k, v]) => {
+         if (Array.isArray(window.appState[k])) window.appState[k] = v;
+         else if (k === 'settings') window.appState.settings = v;
+       });
+    }
+
+    orderItems = {};
+    applyStoreSettings();
+    renderPage(currentPage);
+    updateAlertBadge();
+    showToast('✅ Đã khôi phục backup!', 'success');
+  } catch(err) {
+    showToast('❌ Khôi phục thất bại', 'danger');
+  }
+}
+
+
+// ============================================================
+// PAGE: NCC (NHÀ CUNG CẤP)
+// ============================================================
+function renderNCC() {
+  const suppliers = Store.getSuppliers();
+  const purchases = Store.getPurchases();
+  const el = document.getElementById('ncc-list');
+  if (!el) return;
+
+  if (suppliers.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-text">Chưa có nhà cung cấp nào<br><small>Nhấn "+ Thêm NCC" để bắt đầu</small></div></div>`;
+    return;
+  }
+
+  el.innerHTML = suppliers.map(s => {
+    // Tính doanh số nhập theo từng NCC
+    const myPurchases = purchases.filter(p => p.supplierId === s.id || p.supplier === s.name);
+    const totalAmount = myPurchases.reduce((sum, p) => sum + p.price, 0);
+    const thisMonth = myPurchases.filter(p => {
+      const d = new Date(p.date); const now = new Date();
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).reduce((sum, p) => sum + p.price, 0);
+
+    const debtLabels = { immediate: 'Tiền ngay', weekly: 'Ghi đầu theo tuần', monthly: 'Ghi đầu theo tháng', credit: 'Công nợ dài hạn' };
+    const debtLabel = debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ';
+
+    return `<div class="list-item" style="flex-direction:column;align-items:flex-start;gap:6px;cursor:pointer" onclick="openNCCDetail('${s.id}')">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+        <div>
+          <div class="list-item-title" style="font-size:15px">${s.name}</div>
+          ${s.phone ? `<div class="list-item-sub">📞 ${s.phone}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editNCC('${s.id}')">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteNCC('${s.id}')">🗑️</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text2)">
+        ${s.address ? `<span>📍 ${s.address}</span>` : ''}
+        <span>📋 ${debtLabel}</span>
+        <span>📅 Tháng này: <b style="color:var(--primary)">${fmt(thisMonth)}đ</b></span>
+        <span>💰 Tổng: ${fmt(totalAmount)}đ</span>
+      </div>
+      ${s.products && s.products.length ? `<div style="font-size:11px;color:var(--text3)">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function openAddNCCModal() {
+  const form = document.getElementById('ncc-form');
+  if (!form) return;
+  delete form.dataset.editId;
+  form.reset();
+  document.getElementById('ncc-modal-title').textContent = '🏭 Thêm Nhà Cung Cấp';
+  document.getElementById('ncc-modal').classList.add('active');
+}
+
+function editNCC(id) {
+  const s = Store.getSuppliers().find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('ncc-form').dataset.editId = id;
+  document.getElementById('ncc-edit-name').value = s.name || '';
+  document.getElementById('ncc-edit-phone').value = s.phone || '';
+  document.getElementById('ncc-edit-address').value = s.address || '';
+  document.getElementById('ncc-edit-debt').value = s.debtPolicy || 'immediate';
+  document.getElementById('ncc-edit-products').value = (s.products || []).join(', ');
+  document.getElementById('ncc-edit-notes').value = s.notes || '';
+  document.getElementById('ncc-modal-title').textContent = '✏️ Sửa Nhà Cung Cấp';
+  document.getElementById('ncc-modal').classList.add('active');
+}
+
+function submitNCC(e) {
+  e.preventDefault();
+  const name = document.getElementById('ncc-edit-name').value.trim();
+  if (!name) return;
+  const phone = document.getElementById('ncc-edit-phone').value.trim();
+  const address = document.getElementById('ncc-edit-address').value.trim();
+  const debtPolicy = document.getElementById('ncc-edit-debt').value;
+  const productsRaw = document.getElementById('ncc-edit-products').value.trim();
+  const products = productsRaw ? productsRaw.split(',').map(x => x.trim()).filter(Boolean) : [];
+  const notes = document.getElementById('ncc-edit-notes').value.trim();
+  const form = document.getElementById('ncc-form');
+  const editId = form.dataset.editId;
+
+  if (editId) {
+    Store.updateSupplier(editId, { name, phone, address, debtPolicy, products, notes });
+    showToast('✅ Đã cập nhật nhà cung cấp!', 'success');
+  } else {
+    Store.addSupplier({ id: uid(), name, phone, address, debtPolicy, products, notes });
+    showToast('✅ Đã thêm nhà cung cấp!', 'success');
+    // Cập nhật dropdown trong purchase modal
+    renderPurchaseSupplierDropdown();
+  }
+  document.getElementById('ncc-modal').classList.remove('active');
+  renderNCC();
+}
+
+function deleteNCC(id) {
+  const s = Store.getSuppliers().find(x => x.id === id);
+  if (!confirm(`Xoá nhà cung cấp "${s?.name || ''}"?`)) return;
+  Store.deleteSupplier(id);
+  renderNCC();
+  showToast('🗑️ Đã xoá nhà cung cấp', 'success');
+}
+
+function openNCCDetail(id) {
+  const s = Store.getSuppliers().find(x => x.id === id);
+  if (!s) return;
+  const purchases = Store.getPurchases().filter(p => p.supplierId === id || p.supplier === s.name);
+  const debtLabels = { immediate: 'Tiền ngay', weekly: 'Ghi đầu theo tuần', monthly: 'Ghi đầu theo tháng', credit: 'Công nợ dài hạn' };
+
+  const now = new Date();
+  const thisMonth = purchases.filter(p => { const d = new Date(p.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+  const thisWeek  = purchases.filter(p => (now - new Date(p.date)) / 86400000 <= 7);
+  const total     = purchases.reduce((s, p) => s + p.price, 0);
+  const monthAmt  = thisMonth.reduce((s, p) => s + p.price, 0);
+  const weekAmt   = thisWeek.reduce((s, p) => s + p.price, 0);
+
+  const detailEl = document.getElementById('ncc-detail-content');
+  if (!detailEl) return;
+  detailEl.innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:18px;font-weight:800">${s.name}</div>
+      ${s.phone ? `<div style="color:var(--text2);margin-top:4px">📞 ${s.phone}</div>` : ''}
+      ${s.address ? `<div style="color:var(--text2)">📍 ${s.address}</div>` : ''}
+      <div style="color:var(--text2)">📋 Chính sách: ${debtLabels[s.debtPolicy] || s.debtPolicy || 'Chưa rõ'}</div>
+      ${s.products?.length ? `<div style="color:var(--text3);font-size:12px;margin-top:6px">Hàng cung cấp: ${s.products.join(', ')}</div>` : ''}
+      ${s.notes ? `<div style="color:var(--text3);font-size:12px;margin-top:4px;border-left:2px solid var(--border);padding-left:8px">${s.notes}</div>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+      <div class="stat-card" style="padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--text3)">Tuần này</div>
+        <div style="font-size:15px;font-weight:700;color:var(--primary)">${fmt(weekAmt)}đ</div>
+      </div>
+      <div class="stat-card" style="padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--text3)">Tháng này</div>
+        <div style="font-size:15px;font-weight:700;color:var(--info)">${fmt(monthAmt)}đ</div>
+      </div>
+      <div class="stat-card" style="padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--text3)">Tổng cộng</div>
+        <div style="font-size:15px;font-weight:700;color:var(--success)">${fmt(total)}đ</div>
+      </div>
+    </div>
+    <div style="font-weight:600;margin-bottom:8px">📦 Lịch sử nhập hàng (${purchases.length} lần)</div>
+    ${purchases.slice(0,10).map(p => `
+      <div class="list-item" style="padding:8px 0">
+        <div class="list-item-content">
+          <div class="list-item-title">${p.name}</div>
+          <div class="list-item-sub">${p.qty} ${p.unit||'phần'} · ${fmtDate(p.date)}</div>
+        </div>
+        <div class="list-item-right"><div class="list-item-amount">${fmt(p.price)}đ</div></div>
+      </div>`).join('') || '<div style="color:var(--text3);text-align:center;padding:12px">Chưa có lịch sử nhập hàng</div>'}
+  `;
+  document.getElementById('ncc-detail-modal').classList.add('active');
+}
+
+// Điền supplier dropdown trong purchase modal
+function renderPurchaseSupplierDropdown() {
+  const sel = document.getElementById('pur-supplier-select');
+  if (!sel) return;
+  const suppliers = Store.getSuppliers();
+  sel.innerHTML = `<option value="">-- Chọn NCC (tuỳ chọn) --</option>` +
+    suppliers.map(s => `<option value="${s.id}" data-phone="${s.phone||''}" data-addr="${s.address||''}" data-name="${s.name}">${s.name}</option>`).join('');
+}
+
+function onSupplierSelect(select) {
+  const opt = select.options[select.selectedIndex];
+  const phoneEl = document.getElementById('pur-supplier-phone');
+  const addrEl  = document.getElementById('pur-supplier-addr');
+  const nameEl  = document.getElementById('pur-supplier');
+  if (!opt || !opt.value) {
+    if (phoneEl) phoneEl.value = '';
+    if (addrEl) addrEl.value = '';
+    if (nameEl) nameEl.value = '';
+    return;
+  }
+  if (phoneEl) phoneEl.value = opt.dataset.phone || '';
+  if (addrEl)  addrEl.value  = opt.dataset.addr  || '';
+  if (nameEl)  nameEl.value  = opt.dataset.name  || '';
+}
+
+function syncPurchaseSupplierSelectFromPurchase(p) {
+  const sel = document.getElementById('pur-supplier-select');
+  if (!sel || !p) return;
+  if (p.supplierId) {
+    sel.value = String(p.supplierId);
+    if (sel.value === String(p.supplierId)) return;
+  }
+  const target = String(p.supplier || '').trim();
+  if (!target) {
+    sel.value = '';
+    return;
+  }
+  for (let i = 0; i < sel.options.length; i++) {
+    const opt = sel.options[i];
+    const nm = String(opt.dataset.name || '').trim();
+    if (nm && nm === target) {
+      sel.selectedIndex = i;
+      return;
+    }
+  }
+  sel.value = '';
+}
+
+// Legacy duplicate AI block removed for maintainability.
+
+/**
+ * KDS Monitor - Man hinh theo doi mon cho bep (read-only, no interaction)
+ * Hien thi tat ca mon co kitchenStatus = pending | cooking tu tat ca don dang mo.
+ */
+function renderKdsMonitor() {
+  const listEl  = document.getElementById('kds-monitor-list');
+  const badgeEl = document.getElementById('kds-monitor-badge');
+  if (!listEl) return;
+  const rows = [];
+  const now  = Date.now();
+  const cloudOrders = (window.appState && typeof window.appState.orders === 'object')
+    ? window.appState.orders : null;
+  if (cloudOrders) {
+    Object.entries(cloudOrders).forEach(([tableId, order]) => {
+      if (!order || order.status === 'cancelled') return;
+      const items = Array.isArray(order.items) ? order.items : [];
+      const tableName = order.tableName || `Ban ${tableId}`;
+      items.forEach(item => {
+        const ks = String(item.kitchenStatus || '').toLowerCase();
+        if (ks !== 'pending' && ks !== 'cooking') return;
+        const sentAt = Number(item.kitchenSentAt || 0);
+        rows.push({ tableName, item, ks, elapsedMs: sentAt > 0 ? now - sentAt : 0 });
+      });
+    });
+  } else {
+    const orders = Store.getOrders();
+    Object.entries(orders).forEach(([tableId, items]) => {
+      const tableName = tableId === 'takeaway' ? 'Mang ve' : `Ban ${tableId}`;
+      (Array.isArray(items) ? items : []).forEach(item => {
+        const ks = String(item.kitchenStatus || '').toLowerCase();
+        if (ks !== 'pending' && ks !== 'cooking') return;
+        const sentAt = Number(item.kitchenSentAt || 0);
+        rows.push({ tableName, item, ks, elapsedMs: sentAt > 0 ? now - sentAt : 0 });
+      });
+    });
+  }
+  rows.sort((a, b) => b.elapsedMs - a.elapsedMs);
+  const count = rows.length;
+  if (badgeEl) {
+    badgeEl.textContent = `${count} mon`;
+    badgeEl.style.background = count > 0 ? 'var(--danger)' : '';
+    badgeEl.style.color      = count > 0 ? '#fff' : '';
+  }
+  if (!count) {
+    listEl.innerHTML = `<div class="empty-state" style="padding:20px;font-size:13px;">
+      <div style="font-size:28px;margin-bottom:6px;">✅</div>
+      <div>Chưa có món nào đang chờ bếp</div>
+    </div>`;
+    return;
+  }
+  function _fmtWait(ms) {
+    if (!ms || ms < 0) return '-';
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }
+  const headerHtml = `<div class="kds-monitor-head">
+    <div>Bàn</div><div>Món</div><div>SL</div><div>Chờ</div><div>Trạng thái</div>
+  </div>`;
+  const rowsHtml = rows.map(({ tableName, item, ks, elapsedMs }) => {
+    const isOverdue = elapsedMs >= 8 * 60 * 1000;
+    const isCooking = ks === 'cooking';
+    const rowClass = isOverdue ? ' overdue' : isCooking ? ' cooking' : '';
+    const chipClass = isCooking ? ' cooking' : '';
+    const label  = isCooking ? 'Đang làm' : 'Chờ làm';
+    const tShort = String(tableName).replace('Bàn ', 'B');
+    return `<div class="kds-monitor-row${rowClass}">
+      <div class="kds-monitor-table">${tShort}</div>
+      <div class="kds-monitor-dish">
+        <div class="kds-monitor-dish-name">${item.name||'Món'}</div>
+        ${item.note ? `<div class="kds-monitor-dish-note">📝 ${item.note}</div>` : ''}
+      </div>
+      <div class="kds-monitor-qty">x${Number(item.qty||1)}</div>
+      <div class="kds-monitor-wait${isOverdue ? ' overdue' : ''}">${_fmtWait(elapsedMs)}</div>
+      <div class="kds-monitor-status"><span class="kds-monitor-chip${chipClass}">${label}</span></div>
+    </div>`;
+  }).join('');
+  listEl.innerHTML = headerHtml + rowsHtml;
+}
+
+function getKitchenRoutingLabel(value) {
+    if (window.XekhoApp?.utils?.parser?.getKitchenRoutingLabel) return window.XekhoApp.utils.parser.getKitchenRoutingLabel(value);
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'kitchen_1') return 'Bếp 1';
+    if (normalized === 'kitchen_2') return 'Bếp 2';
+    if (normalized === 'skip') return 'Không qua bếp';
+    return 'Cả 2 bếp';
+  }
+
+let customerRequestFabLayoutObserver = null;
+let customerRequestFabResizeBound = false;
+
+function syncCustomerRequestFabLayout() {
+  const fab = document.getElementById('customer-request-fab');
+  if (!fab) return;
+
+  const spans = fab.querySelectorAll('span');
+  const iconEl = spans[0] || null;
+  const labelEl = spans[1] || null;
+  const countEl = document.getElementById('customer-request-fab-count') || spans[2] || null;
+  const count = Number(String(countEl?.textContent || '0').replace(/[^\d]/g, '')) || 0;
+  const isMobile = window.innerWidth <= 768;
+
+  if (!isMobile) {
+    fab.style.left = '';
+    fab.style.top = '';
+    fab.style.right = '18px';
+    fab.style.bottom = 'calc(var(--nav-height,70px) + var(--safe-bottom, env(safe-area-inset-bottom,0px)) + 86px)';
+    fab.style.width = '';
+    fab.style.height = '';
+    fab.style.minWidth = '';
+    fab.style.minHeight = '48px';
+    fab.style.padding = '12px 14px';
+    fab.style.borderRadius = '16px';
+    fab.style.gap = '8px';
+    fab.style.alignItems = 'center';
+    fab.style.justifyContent = 'center';
+    fab.style.boxShadow = '0 10px 28px rgba(0,0,0,0.28)';
+    fab.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (fab.dataset.mobileCompact === '1') delete fab.dataset.mobileCompact;
+    if (labelEl) labelEl.style.display = '';
+    if (iconEl) iconEl.style.fontSize = '';
+    if (countEl) {
+      countEl.style.position = '';
+      countEl.style.top = '';
+      countEl.style.right = '';
+      countEl.style.minWidth = '24px';
+      countEl.style.height = '24px';
+      countEl.style.padding = '0 6px';
+      countEl.style.fontSize = '12px';
+      countEl.style.boxShadow = '';
+    }
+    return;
+  }
+
+  fab.dataset.mobileCompact = '1';
+  fab.style.left = 'auto';
+  fab.style.right = '12px';
+  fab.style.top = 'calc(var(--header-height,56px) + env(safe-area-inset-top,0px) + 14px)';
+  fab.style.bottom = 'auto';
+  fab.style.width = '46px';
+  fab.style.height = '46px';
+  fab.style.minWidth = '46px';
+  fab.style.minHeight = '46px';
+  fab.style.padding = '0';
+  fab.style.borderRadius = '14px';
+  fab.style.gap = '0';
+  fab.style.alignItems = 'center';
+  fab.style.justifyContent = 'center';
+  fab.style.boxShadow = '0 8px 24px rgba(0,0,0,0.26)';
+  fab.style.display = count > 0 ? 'inline-flex' : 'none';
+
+  if (labelEl) labelEl.style.display = 'none';
+  if (iconEl) iconEl.style.fontSize = '18px';
+  if (countEl) {
+    countEl.style.position = 'absolute';
+    countEl.style.top = '-6px';
+    countEl.style.right = '-6px';
+    countEl.style.minWidth = '22px';
+    countEl.style.height = '22px';
+    countEl.style.padding = '0 5px';
+    countEl.style.fontSize = '11px';
+    countEl.style.boxShadow = '0 4px 12px rgba(0,0,0,0.22)';
+  }
+}
+
+function startCustomerRequestFabLayoutSync() {
+  if (typeof MutationObserver !== 'function') {
+    try { syncCustomerRequestFabLayout(); } catch (_) {}
+    return;
+  }
+
+  if (!customerRequestFabLayoutObserver) {
+    customerRequestFabLayoutObserver = new MutationObserver(() => {
+      try { syncCustomerRequestFabLayout(); } catch (_) {}
+    });
+    customerRequestFabLayoutObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+  }
+
+  if (!customerRequestFabResizeBound) {
+    customerRequestFabResizeBound = true;
+    window.addEventListener('resize', () => {
+      try { syncCustomerRequestFabLayout(); } catch (_) {}
+    });
+  }
+
+  try { syncCustomerRequestFabLayout(); } catch (_) {}
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    try { startCustomerRequestFabLayoutSync(); } catch (_) {}
+  }, { once: true });
+} else {
+  setTimeout(() => {
+    try { startCustomerRequestFabLayoutSync(); } catch (_) {}
+  }, 0);
+}
+
+// ============================================================
+// DAILY REVENUE TARGET & PROGRESS BAR
+// ============================================================
+function updateDailyTargetProgressBar() {
+  const targetVal = 5000000;
+  
+  // Calculate paid total from history (today)
+  const history = _getHistory();
+  const todayDs = new Date().toDateString();
+  const todayPaidOrders = history.filter(o => o.paidAt && new Date(o.paidAt).toDateString() === todayDs && isVisibleHistoryOrderForUi(o));
+  const paidTotal = todayPaidOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+
+  // Calculate unpaid total from active orders
+  const orders = _getOrders();
+  let unpaidTotal = 0;
+  for (const tableId in orders) {
+    const orderItems = orders[tableId] || [];
+    if (orderItems.length === 0) continue;
+    
+    const itemsTotal = orderItems.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
+    const extras = getOrderExtrasForTable(tableId);
+    let discount = 0;
+    if (extras.discountType === 'percent') {
+      discount = Math.round((itemsTotal * (extras.discountInput || 0)) / 100);
+    } else {
+      discount = extras.discountInput || extras.discount || 0;
+    }
+    const subtotal = Math.max(0, itemsTotal - discount + extras.shipping);
+    const taxRate = (() => { try { const s = Store.getSettings(); return s.taxRate != null ? Number(s.taxRate) : 0; } catch(_) { return 0; } })();
+    const vatAmount = taxRate > 0 ? Math.round(subtotal * taxRate / 100) : 0;
+    const total = subtotal + vatAmount;
+    
+    unpaidTotal += total;
+  }
+
+  // Update UI elements if they exist
+  const pctText = document.getElementById('target-progress-percentage');
+  const ratioText = document.getElementById('target-progress-ratio');
+  const paidBar = document.getElementById('target-progress-paid');
+  const unpaidBar = document.getElementById('target-progress-unpaid');
+  const paidText = document.getElementById('target-progress-paid-text');
+  const unpaidText = document.getElementById('target-progress-unpaid-text');
+
+  if (pctText && ratioText && paidBar && unpaidBar && paidText && unpaidText) {
+    const totalRatio = paidTotal / targetVal;
+    const totalPercentage = Math.round(totalRatio * 100);
+    
+    pctText.textContent = totalPercentage + '%';
+    ratioText.textContent = fmt(paidTotal) + 'đ / ' + fmt(targetVal) + 'đ';
+    
+    paidText.textContent = fmt(paidTotal) + 'đ';
+    unpaidText.textContent = fmt(unpaidTotal) + 'đ';
+    
+    const paidWidth = Math.min(100, (paidTotal / targetVal) * 100);
+    const unpaidWidth = Math.min(100 - paidWidth, (unpaidTotal / targetVal) * 100);
+    
+    paidBar.style.width = paidWidth + '%';
+    unpaidBar.style.width = unpaidWidth + '%';
+  }
+
+  // Confetti trigger check
+  if (paidTotal >= targetVal) {
+    const todayStr = new Date().toLocaleDateString('en-US');
+    const storageKey = 'target_confetti_played_' + todayStr;
+    if (!localStorage.getItem(storageKey)) {
+      localStorage.setItem(storageKey, 'true');
+      triggerConfetti(paidTotal);
+    }
+  }
+}
+
+function triggerConfetti(paidAmount) {
+  if (window.confetti) {
+    runConfettiEffects(paidAmount);
+  } else {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
+    script.onload = () => {
+      runConfettiEffects(paidAmount);
+    };
+    script.onerror = () => {
+      runEmojiConfetti(paidAmount);
+    };
+    document.head.appendChild(script);
+  }
+}
+
+function runConfettiEffects(paidAmount) {
+  const duration = 5 * 1000;
+  const animationEnd = Date.now() + duration;
+  const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999999 };
+
+  function randomInRange(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  const interval = setInterval(function() {
+    const timeLeft = animationEnd - Date.now();
+
+    if (timeLeft <= 0) {
+      return clearInterval(interval);
+    }
+
+    const particleCount = 50 * (timeLeft / duration);
+    window.confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+    window.confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+  }, 250);
+
+  showTargetCongratsModal(paidAmount);
+}
+
+function runEmojiConfetti(paidAmount) {
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100vw';
+  container.style.height = '100vh';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '9999999';
+  document.body.appendChild(container);
+
+  const emojis = ['🍢', '🍻', '🎉', '💰', '💵', '🌟', '✨', '🔥'];
+  const particleCount = 100;
+
+  for (let i = 0; i < particleCount; i++) {
+    const p = document.createElement('div');
+    p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    p.style.position = 'absolute';
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.top = '-50px';
+    p.style.fontSize = (Math.random() * 20 + 20) + 'px';
+    p.style.transition = 'transform ' + (Math.random() * 3 + 2) + 's linear, opacity ' + (Math.random() * 3 + 2) + 's ease-out';
+    p.style.transform = 'translateY(0) rotate(0deg)';
+    container.appendChild(p);
+
+    setTimeout(() => {
+      p.style.transform = 'translateY(' + (window.innerHeight + 100) + 'px) rotate(' + (Math.random() * 720 - 360) + 'deg)';
+      p.style.opacity = '0';
+    }, 50);
+  }
+
+  setTimeout(() => {
+    container.remove();
+  }, 5000);
+
+  showTargetCongratsModal(paidAmount);
+}
+
+function showTargetCongratsModal(paidAmount) {
+  const modal = document.getElementById('target-congrats-modal');
+  if (modal) {
+    const amtEl = document.getElementById('target-congrats-amount');
+    if (amtEl) {
+      amtEl.textContent = fmt(paidAmount) + 'đ';
+    }
+    modal.classList.add('active');
+  }
+}
+
+function closeTargetCongratsModal() {
+  const modal = document.getElementById('target-congrats-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+window.closeTargetCongratsModal = closeTargetCongratsModal;
+
+window.triggerConfettiTest = function() {
+  const history = _getHistory();
+  const todayDs = new Date().toDateString();
+  const todayPaidOrders = history.filter(o => o.paidAt && new Date(o.paidAt).toDateString() === todayDs && isVisibleHistoryOrderForUi(o));
+  const paidTotal = todayPaidOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  triggerConfetti(paidTotal || 5000000);
+};
+
