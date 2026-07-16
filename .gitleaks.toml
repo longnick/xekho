@@ -1,0 +1,22 @@
+title = "XE KHO secret scanning"
+
+[extend]
+useDefault = true
+
+# Firebase web API keys are public client identifiers. Security depends on
+# Firebase Rules, App Check, API restrictions, and allowed referrers.
+[[allowlists]]
+description = "Firebase web client configuration"
+paths = [
+  '''^db\.js$''',
+  '''^firebase-messaging-sw\.js$''',
+  '''^kitchen\.html$'''
+]
+regexTarget = "match"
+regexes = ['''AIza[0-9A-Za-z_-]{35}''']
+
+[[allowlists]]
+description = "Documentation placeholder authorization headers"
+paths = ['''^TELEGRAM_REPORT_SETUP\.md$''']
+regexTarget = "line"
+regexes = ['''Authorization:\s*Bearer\s+[^\s]+''']
