@@ -38,6 +38,15 @@ const {
   createRateLimiter,
 } = require('./utils/httpSecurity');
 const {
+  authorizeCallable,
+  CALLABLE_ALLOWED_ROLES,
+} = require('./utils/callableAuthorization');
+const {
+  makeCallableHandlers,
+  toSafeCallableError,
+  toSafeManagedUserError,
+} = require('./callableHandlers');
+const {
   isAuthenticTelegramWebhook,
   extractTelegramWebhookSecret,
   isTelegramWebhookBodySizeAllowed,
@@ -3505,28 +3514,37 @@ async function cancelCustomerPaymentTelegram(requestId) {
   return { ok: true, request: current, nextStatus: 'cancelled' };
 }
 
+const r2CallableHandlers = makeCallableHandlers({
+  authorize: (request, capability) => authorizeCallable(request, {
+    db,
+    auth: admin.auth(),
+    allowedRoles: CALLABLE_ALLOWED_ROLES[capability],
+  }),
+  createManagedUser,
+  userManagementDeps: {
+    auth: admin.auth(),
+    db,
+    now: () => FieldValue.serverTimestamp(),
+  },
+  runAskPosChatbot,
+  approveOnlineOrder: approveOnlineOrderInternal,
+  rejectOnlineOrder: rejectOnlineOrderInternal,
+  HttpsError,
+});
+
 exports.manageUserAccount = onCall({
   region: 'asia-southeast1',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    return await createManagedUser(request, {
-      auth: admin.auth(),
-      db,
-      now: () => FieldValue.serverTimestamp(),
-    });
+    return await r2CallableHandlers.manageUserAccount(request);
   } catch (error) {
-    const allowedCodes = new Set(['unauthenticated', 'permission-denied', 'invalid-argument', 'already-exists']);
-    const code = allowedCodes.has(error?.code) ? error.code : 'internal';
-    if (code === 'internal') {
-      logger.error('manageUserAccount failed', {
-        code: error?.code || 'unknown',
-        message: error?.message || String(error),
-        uid: request.auth?.uid || '',
-      });
-      throw new HttpsError(code, 'Không thể quản lý tài khoản nhân viên.');
-    }
-    throw new HttpsError(code, error.message);
+    logger.error('manageUserAccount failed', {
+      code: error?.code || 'unknown',
+      message: error?.message || String(error),
+      uid: request.auth?.uid || '',
+    });
+    throw toSafeManagedUserError(error, HttpsError);
   }
 });
 
@@ -3534,23 +3552,15 @@ exports.askPosChatbot = onCall({
   region: 'asia-southeast1',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Bạn cần đăng nhập để dùng trợ lý báo cáo POS.');
-  }
-  const userMessage = String(request.data?.userMessage || '').trim();
-  if (!userMessage) {
-    throw new HttpsError('invalid-argument', 'Thiếu userMessage.');
-  }
   try {
-    return await runAskPosChatbot(userMessage);
+    return await r2CallableHandlers.askPosChatbot(request);
   } catch (error) {
     logger.error('askPosChatbot failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
       uid: request.auth?.uid || '',
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể hỏi trợ lý POS.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể hỏi trợ lý POS.');
   }
 });
 
@@ -3559,22 +3569,13 @@ exports.approveOnlineOrder = onCall({
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await approveOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.approveOnlineOrder(request);
   } catch (error) {
     logger.error('approveOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể xác nhận đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể xác nhận đơn online.');
   }
 });
 
@@ -3583,22 +3584,13 @@ exports.rejectOnlineOrder = onCall({
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await rejectOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.rejectOnlineOrder(request);
   } catch (error) {
     logger.error('rejectOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể hủy đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể hủy đơn online.');
   }
 });
 

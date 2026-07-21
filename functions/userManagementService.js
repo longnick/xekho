@@ -8,18 +8,20 @@ function nowValue(now) {
   return typeof now === 'function' ? now() : now;
 }
 
-async function createManagedUser(request, { auth, db, now = () => new Date().toISOString() }) {
+async function createManagedUser(request, { auth, db, actor, now = () => new Date().toISOString() }) {
   if (!request?.auth?.uid) {
     const error = new Error('Authentication is required.');
     error.code = 'unauthenticated';
     throw error;
   }
 
+  if (!actor?.uid || actor.uid !== request.auth.uid) {
+    const error = new Error('Server-authorized actor is required.');
+    error.code = 'unauthenticated';
+    throw error;
+  }
+
   const input = normalizeManagedUserInput(request.data);
-  const actor = {
-    uid: request.auth.uid,
-    ...(request.auth.token || {}),
-  };
   assertCanManageRole(actor, input.role);
 
   let createdUser = null;
