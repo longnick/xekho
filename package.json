@@ -22,8 +22,8 @@
     "test:rules": "npx firebase-tools emulators:exec --project xekho-rules-test --only firestore \"npm run test:rules:emulator\"",
     "test:rules:red-evidence:emulator": "jest --runInBand --testMatch '**/red-vulnerabilities.evidence.js'",
     "test:rules:red-evidence": "npx firebase-tools emulators:exec --project xekho-rules-test --only firestore \"npm run test:rules:red-evidence:emulator\"",
-    "test:functions-security": "jest --runInBand functions/httpEndpointWiring.test.js functions/utils/httpSecurity.test.js functions/userManagementService.test.js functions/utils/userManagement.test.js functions/utils/legacyAdminEndpoint.test.js functions/dependencyRuntimeCompatibility.test.js functions/nodeNlpIntentCompatibility.test.js",
-    "check:functions": "node --check functions/index.js && node --check functions/createAdminUser.js && node --check functions/userManagementService.js && node --check functions/utils/httpSecurity.js && node --check functions/utils/userManagement.js && node --check functions/utils/legacyAdminEndpoint.js",
+    "test:functions-security": "jest --runInBand functions/httpEndpointWiring.test.js functions/utils/httpSecurity.test.js functions/userManagementService.test.js functions/utils/userManagement.test.js functions/utils/legacyAdminEndpoint.test.js functions/dependencyRuntimeCompatibility.test.js functions/nodeNlpIntentCompatibility.test.js functions/telegram/webhookSecurity.test.js functions/telegram/webhookWiring.test.js",
+    "check:functions": "node --check functions/index.js && node --check functions/createAdminUser.js && node --check functions/userManagementService.js && node --check functions/utils/httpSecurity.js && node --check functions/utils/userManagement.js && node --check functions/utils/legacyAdminEndpoint.js && node --check functions/telegram/webhookSecurity.js",
     "verify:hosting-dist": "node scripts/verify-hosting-dist.js",
     "test:browser-smoke": "node scripts/ci-browser-smoke.js",
     "check:dependency-audit": "node scripts/check-dependency-audit.js"
