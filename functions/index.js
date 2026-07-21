@@ -37,6 +37,15 @@ const {
   validateBase64Media,
   createRateLimiter,
 } = require('./utils/httpSecurity');
+const {
+  isAuthenticTelegramWebhook,
+  extractTelegramWebhookSecret,
+  isTelegramWebhookBodySizeAllowed,
+  isTelegramWriteCallbackData,
+  isAuthorizedTelegramWriteActor,
+  createRateLimiter: createTelegramRateLimiter,
+  DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES,
+} = require('./telegram/webhookSecurity');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -127,6 +136,8 @@ const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
+const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
+const telegramWebhookRateLimiter = createTelegramRateLimiter({ limit: 120, windowMs: 60000 });
 const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
@@ -1370,9 +1381,10 @@ function getTelegramAssistantBotName() {
 }
 
 function getTelegramOwnerChatIds() {
+  // Write callbacks use only explicit owner configuration and fail closed when empty.
+  // Hardcoded fallback removed to enforce explicit config for mutation allowlist.
   return uniqueTokens([
     TELEGRAM_OWNER_CHAT_ID.value(),
-    DEFAULT_TELEGRAM_OWNER_CHAT_ID,
   ]);
 }
 
@@ -4322,11 +4334,30 @@ exports.telegramWebhook = onRequest({
   region: 'asia-southeast1',
   memory: '512MiB',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
-  secrets: [VERTEX_SERVICE_ACCOUNT_JSON],
+  secrets: [VERTEX_SERVICE_ACCOUNT_JSON, TELEGRAM_WEBHOOK_SECRET],
 }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+
+    // Sprint 1 security: reject forged/oversized webhook calls before any logging or DB work.
+    const configuredWebhookSecret = String(TELEGRAM_WEBHOOK_SECRET.value() || '').trim();
+    const providedWebhookSecret = extractTelegramWebhookSecret(req);
+    if (!isAuthenticTelegramWebhook({
+      configuredSecret: configuredWebhookSecret,
+      providedSecret: providedWebhookSecret,
+    })) {
+      return json(res, 401, { ok: false, error: 'Unauthorized' });
+    }
+    if (!isTelegramWebhookBodySizeAllowed(req, DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES)) {
+      return json(res, 413, { ok: false, error: 'Payload too large' });
+    }
+    // Rate-limit key: use req.ip (platform-derived, trusted proxy context).
+    // Do not split x-forwarded-for and trust first hop (client-controlled).
+    const rateLimitKey = String(req.ip || req.socket?.remoteAddress || 'unknown').trim();
+    if (!telegramWebhookRateLimiter.take(`ip:${rateLimitKey}`)) {
+      return json(res, 429, { ok: false, error: 'Too many requests' });
+    }
 
     const botToken = getTelegramAssistantBotToken();
     const callbackQuery = req.body?.callback_query || null;
@@ -4383,6 +4414,21 @@ exports.telegramWebhook = onRequest({
         const chartIdFromCallback = parseTelegramChartCallbackData(callbackData);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
+
+        // Sprint 1 security: mutating callbacks require an authorized owner context
+        // (allowlist = owner chat/user IDs; fail-closed when allowlist empty).
+        if (isTelegramWriteCallbackData(callbackData) && !isAuthorizedTelegramWriteActor({
+          allowlist: getTelegramOwnerChatIds(),
+          chatId: userContext.chatId,
+          userId: userContext.userId,
+        })) {
+          await answerTelegramCallback({
+            callbackQueryId: callbackQuery.id,
+            text: 'Không có quyền thực hiện thao tác này.',
+            botToken,
+          }).catch(() => {});
+          return json(res, 200, { ok: false, skipped: 'unauthorized-write-callback' });
+        }
 
         if (chartIdFromCallback) {
           const chartId = chartIdFromCallback;
