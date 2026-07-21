@@ -1,5 +1,5 @@
 const ALLOWED_ROLES = new Set(['staff', 'kitchen', 'manager', 'admin']);
-const ADMIN_CLAIM_ROLES = new Set(['admin', 'owner']);
+const ADMIN_CLAIM_ROLES = new Set(['admin', 'owner', 'superadmin']);
 const MANAGER_ASSIGNABLE_ROLES = new Set(['staff', 'kitchen']);
 const MIN_PASSWORD_LENGTH = 12;
 const STAFF_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
