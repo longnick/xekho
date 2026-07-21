@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { NlpManager } = require('node-nlp');
+const { Nlp } = require('@nlpjs/nlp');
 const iconv = require('iconv-lite');
 
 function normalizeVi(text) {
@@ -199,14 +199,7 @@ class NLPEngine {
     const training = JSON.parse(fs.readFileSync(this.trainingPath, 'utf8'));
     const intents = training?.intents || {};
 
-    let manager = null;
-    try {
-      manager = new NlpManager({ languages: ['vi'], forceNER: false, autoSave: false });
-      manager.nlp.settings.autoSave = false;
-    } catch (_) {
-      manager = new NlpManager({ languages: ['en'], forceNER: false, autoSave: false });
-      this.language = 'en';
-    }
+    const manager = new Nlp({ languages: ['vi'], autoSave: false });
 
     Object.entries(intents).forEach(([intent, meta]) => {
       const phrases = Array.isArray(meta?.phrases) ? meta.phrases : [];
@@ -218,7 +211,7 @@ class NLPEngine {
       });
     });
 
-    await manager.train();
+    await manager.nluManager.train({ log: false });
     this.manager = manager;
     this.trained = true;
   }
