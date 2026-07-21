@@ -36,6 +36,10 @@ const {
   isContentLengthAllowed,
   validateBase64Media,
   createRateLimiter,
+  validateTrustedHttpsUrl,
+  isPrivateIpAddress,
+  readBodyWithLimit,
+  fetchTrustedImage,
 } = require('./utils/httpSecurity');
 const {
   authorizeCallable,
@@ -4154,6 +4158,11 @@ const HTTP_JSON_MAX_BYTES = 64 * 1024;
 const OCR_REQUEST_MAX_BYTES = 8 * 1024 * 1024;
 const AI_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const AI_AUDIO_MAX_BYTES = 8 * 1024 * 1024;
+// R3 SSRF allowlist for outbound image fetches (adminGenerateMenuDescription).
+// Exact trusted Firebase Storage host + configured project bucket only.
+const TRUSTED_STORAGE_HOSTS = ['firebasestorage.googleapis.com'];
+const TRUSTED_STORAGE_BUCKETS = [String(process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '').trim() || 'xekho-release-canonical.appspot.com'];
+const TRUSTED_IMAGE_FETCH_MAX_BYTES = 5 * 1024 * 1024;
 const VOICE_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
 const AI_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
 const OCR_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
@@ -4206,7 +4215,6 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
       await sendTelegramHtmlMessage({ chatId: targetChatId, botToken, text });
       return json(res, 200, {
         ok: true,
-        actor,
         chatId: targetChatId,
         rangeLabel: report.rangeLabel,
         revenue: report.revenue,
@@ -4219,7 +4227,7 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4236,11 +4244,11 @@ exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_
       const range = buildAdsDateRangeFromText(customText, debugNow, { defaultYesterday: false });
       const report = await buildAdsRevenueTelegramData(range);
       const message = buildAdsRevenueTelegramMessage(report);
-      return json(res, 200, { ok: true, actor, report, message, rangeLabel: report.rangeLabel });
+      return json(res, 200, { ok: true, report, message, rangeLabel: report.rangeLabel });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('adsRevenueReportApi failed', { error: message, responseData: err?.response?.data || null });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4267,14 +4275,14 @@ exports.testPaymentBillTelegram = onRequest({ region: DEFAULT_REGION, memory: HE
       } else {
         result = await confirmCustomerPaymentBillTelegram(requestId);
       }
-      return json(res, 200, { ok: true, actor, result });
+      return json(res, 200, { ok: true, result });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('testPaymentBillTelegram failed', {
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4307,7 +4315,6 @@ exports.testCompletedOrderTelegram = onRequest({
       await sendCompletedOrderTelegram(historyId, order);
       return json(res, 200, {
         ok: true,
-        actor,
         historyId,
         targetChatIds: getCompletedOrderTelegramTargetChatIds(),
       });
@@ -4317,7 +4324,7 @@ exports.testCompletedOrderTelegram = onRequest({
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -5118,7 +5125,6 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
 
       return json(res, 200, {
         ok: true,
-        actor,
         totalHistoryDocs: rawOrders.length,
         duplicateGroupCount: duplicatesToArchive.length,
         archivedDocCount: duplicatesToArchive.length,
@@ -5133,7 +5139,7 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, status, { ok: false, error: message || 'Request failed' });
+      return json(res, status, { ok: false, error: status === 403 ? 'forbidden' : (status === 401 ? 'unauthenticated' : 'admin_action_failed') });
     }
   });
 });
@@ -5867,14 +5873,10 @@ exports.adminProbeVertex = onRequest({
 
       return json(res, 200, {
         ok: true,
-        actor,
-        projectId,
         location: requestedLocation,
         requestedModel,
         usedModel: modelName,
         authStrategy,
-        authSource,
-        availableAuthSources: authContexts.map(ctx => ctx.source),
         text: collectTextFromPayload(payload).trim(),
         modelVersion: String(payload?.modelVersion || ''),
         usageMetadata: payload?.usageMetadata || null,
@@ -5885,7 +5887,7 @@ exports.adminProbeVertex = onRequest({
       });
       return json(res, 500, {
         ok: false,
-        error: err?.message || 'Vertex probe failed',
+        error: 'vertex_probe_failed',
       });
     }
   });
@@ -6182,6 +6184,7 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
 
     try {
       const actor = await verifyAdminRequest(req);
@@ -6198,7 +6201,17 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
 
       const contentType = String(match[1] || 'image/jpeg').trim();
       const base64Payload = String(match[2] || '').trim();
-      const buffer = Buffer.from(base64Payload, 'base64');
+      const imageCheck = validateBase64Media({
+        value: base64Payload,
+        mimeType: contentType,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
+
+      const buffer = imageCheck.buffer;
       const saved = await saveMenuImageBuffer({
         productId,
         fileName,
@@ -6215,13 +6228,12 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         contentType,
-        actor,
       });
     } catch (err) {
       logger.error('adminUploadMenuImage failed', {
         error: err?.message || String(err),
       });
-      return json(res, 500, { ok: false, error: err?.message || 'Upload failed' });
+      return json(res, 500, { ok: false, error: 'upload_failed' });
     }
   });
 });
@@ -6469,7 +6481,7 @@ exports.purchaseOcr = onRequest({
       return json(res, 200, { ok: true, ...parsed });
     } catch (error) {
       logger.error('purchaseOcr failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'OCR failed' });
+      return json(res, 500, { ok: false, error: 'ocr_failed' });
     }
   });
 });
@@ -6567,7 +6579,7 @@ exports.aiRouter = onRequest({
         ok: false,
         status: 'error',
         provider: 'vertex',
-        error: String(error?.message || error || 'AI router failed'),
+        error: 'ai_router_failed',
       });
     }
   });
@@ -6631,11 +6643,10 @@ exports.adminGenerateMenuImage = onRequest({ region: 'asia-southeast1' }, (req, 
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         promptUsed: prompt,
-        actor,
       });
     } catch (error) {
       logger.error('adminGenerateMenuImage (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI image generation failed' });
+      return json(res, 500, { ok: false, error: 'image_generation_failed' });
     }
   });
 });
@@ -6673,19 +6684,38 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       const parts = [{ text: prompt }];
       let usedImage = false;
       if (imageUrl) {
-        try {
-          const imageRes = await fetch(imageUrl);
-          const contentType = String(imageRes.headers.get('content-type') || 'image/jpeg');
-          if (imageRes.ok && /^image\//i.test(contentType)) {
-            const bytes = Buffer.from(await imageRes.arrayBuffer());
-            parts.push({ inlineData: { mimeType: contentType, data: bytes.toString('base64') } });
-            usedImage = true;
+        const urlCheck = validateTrustedHttpsUrl(imageUrl, {
+          allowedHosts: TRUSTED_STORAGE_HOSTS,
+          allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+        });
+        if (urlCheck.ok) {
+          try {
+            const imageResult = await fetchTrustedImage(imageUrl, {
+              allowedHosts: TRUSTED_STORAGE_HOSTS,
+              allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+              maxBytes: TRUSTED_IMAGE_FETCH_MAX_BYTES,
+              timeoutMs: 5000,
+              maxRedirects: 1,
+            });
+            if (imageResult.ok) {
+              parts.push({ inlineData: { mimeType: imageResult.mimeType, data: imageResult.buffer.toString('base64') } });
+              usedImage = true;
+            } else {
+              logger.warn('adminGenerateMenuDescription image fetch rejected', {
+                productId,
+                reason: imageResult.reason,
+              });
+            }
+          } catch (imageErr) {
+            logger.warn('adminGenerateMenuDescription image fetch failed', {
+              productId,
+              error: imageErr?.message || String(imageErr),
+            });
           }
-        } catch (imageErr) {
-          logger.warn('adminGenerateMenuDescription image fetch failed', {
+        } else {
+          logger.warn('adminGenerateMenuDescription image URL not trusted', {
             productId,
-            imageUrl,
-            error: imageErr?.message || String(imageErr),
+            reason: urlCheck.reason,
           });
         }
       }
@@ -6719,7 +6749,7 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       });
     } catch (error) {
       logger.error('adminGenerateMenuDescription (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI description generation failed' });
+      return json(res, 500, { ok: false, error: 'description_generation_failed' });
     }
   });
 });
