@@ -32,12 +32,35 @@ service cloud.firestore {
         && userDoc().data.staffId == staffId;
     }
 
-    function validOwnShiftCreate() {
-      return hasStaffIdentity(request.resource.data.staffId)
-        && request.resource.data.status == 'open'
+    function validOwnShiftCreate(docId) {
+      return request.resource.data.keys().hasAll([
+          'shiftId', 'dailyId', 'staffId', 'staffName', 'dateKey', 'checkInAt',
+          'checkInAtMs', 'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status',
+          'source', 'location', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'shiftId', 'dailyId', 'staffId', 'staffName', 'dateKey', 'checkInAt',
+          'checkInAtMs', 'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status',
+          'source', 'location', 'createdAt', 'updatedAt'
+        ])
+        && hasStaffIdentity(request.resource.data.staffId)
+        && docId == request.resource.data.shiftId
+        && request.resource.data.dailyId == request.resource.data.staffId + '_' + request.resource.data.dateKey
+        && request.resource.data.shiftId == request.resource.data.dailyId + '_' + string(request.resource.data.checkInAtMs)
+        && getAfter(/databases/$(database)/documents/attendance_daily/$(request.resource.data.dailyId)).data.status == 'open'
+        && request.resource.data.staffId is string
+        && request.resource.data.staffName is string
+        && request.resource.data.dateKey is string
+        && request.resource.data.checkInAt is string
+        && request.resource.data.checkInAtMs is int
         && request.resource.data.checkOutAt == null
         && request.resource.data.checkOutAtMs == null
-        && request.resource.data.durationMinutes == null;
+        && request.resource.data.durationMinutes == null
+        && request.resource.data.status == 'open'
+        && request.resource.data.source == 'web'
+        && request.resource.data.location is map
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
     }
 
     function validOwnShiftClose() {
@@ -45,8 +68,71 @@ service cloud.firestore {
         && resource.data.status == 'open'
         && request.resource.data.status == 'closed'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status', 'checkoutLocation'
-        ]);
+          'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status', 'checkoutLocation', 'updatedAt'
+        ])
+        && request.resource.data.checkOutAt is string
+        && request.resource.data.checkOutAtMs is int
+        && request.resource.data.checkOutAtMs >= resource.data.checkInAtMs
+        && request.resource.data.durationMinutes is int
+        && request.resource.data.durationMinutes >= 0
+        && request.resource.data.checkoutLocation is map
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    // Staff check-in/out writes only operational timestamps, state, and location.
+    // Payroll, rates, payable totals, expenses, and adjustment/audit fields stay admin-only.
+    function validOwnDailyCreate(docId) {
+      return request.resource.data.keys().hasAll([
+          'dailyId', 'staffId', 'staffName', 'dateKey', 'firstCheckInAt',
+          'firstCheckInAtMs', 'lastCheckOutAt', 'lastCheckOutAtMs', 'status',
+          'source', 'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'dailyId', 'staffId', 'staffName', 'dateKey', 'firstCheckInAt',
+          'firstCheckInAtMs', 'lastCheckOutAt', 'lastCheckOutAtMs', 'status',
+          'source', 'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+        ])
+        && hasStaffIdentity(request.resource.data.staffId)
+        && docId == request.resource.data.dailyId
+        && request.resource.data.dailyId == request.resource.data.staffId + '_' + request.resource.data.dateKey
+        && request.resource.data.staffId is string
+        && request.resource.data.staffName is string
+        && request.resource.data.dateKey is string
+        && request.resource.data.firstCheckInAt is string
+        && request.resource.data.firstCheckInAtMs is int
+        && request.resource.data.lastCheckOutAt == null
+        && request.resource.data.lastCheckOutAtMs == null
+        && request.resource.data.status == 'open'
+        && request.resource.data.source == 'web'
+        && request.resource.data.locationDistanceMeters is number
+        && request.resource.data.lastLocationAt is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validOwnDailyOperationalUpdate() {
+      return hasStaffIdentity(resource.data.staffId)
+        && ((resource.data.status == 'open'
+          && request.resource.data.status == 'closed'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastCheckOutAt', 'lastCheckOutAtMs', 'status', 'checkoutLocation',
+            'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+          ])
+          && request.resource.data.lastCheckOutAt is string
+          && request.resource.data.lastCheckOutAtMs is int
+          && request.resource.data.lastCheckOutAtMs >= resource.data.firstCheckInAtMs
+          && request.resource.data.checkoutLocation is map)
+        || (resource.data.status == 'closed'
+          && request.resource.data.status == 'open'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastCheckOutAt', 'lastCheckOutAtMs', 'status', 'source',
+            'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+          ])
+          && request.resource.data.lastCheckOutAt == null
+          && request.resource.data.lastCheckOutAtMs == null
+          && request.resource.data.source == 'web'))
+        && request.resource.data.locationDistanceMeters is number
+        && request.resource.data.lastLocationAt is string
+        && request.resource.data.updatedAt is timestamp;
     }
 
     // Role, UID↔staff mapping, disable state, and payroll fields are
@@ -147,12 +233,14 @@ service cloud.firestore {
       // Staff may inspect only their mapped own records; payroll reconciliation
       // is manager/admin-only because amounts are business-critical.
       allow read: if isAdmin() || hasStaffIdentity(resource.data.staffId);
-      allow create, update, delete: if isAdmin();
+      allow create: if isAdmin() || validOwnDailyCreate(docId);
+      allow update: if isAdmin() || validOwnDailyOperationalUpdate();
+      allow delete: if isAdmin();
     }
 
     match /attendance_shifts/{docId} {
       allow read: if isAdmin() || hasStaffIdentity(resource.data.staffId);
-      allow create: if isAdmin() || validOwnShiftCreate();
+      allow create: if isAdmin() || validOwnShiftCreate(docId);
       allow update: if isAdmin() || validOwnShiftClose();
       allow delete: if isAdmin();
     }

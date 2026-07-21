@@ -321,6 +321,7 @@ function showLockScreen(show) {
   if (!lockScreen) return;
   lockScreen.classList.toggle('active', !!show);
   syncAuthScrollLock();
+  try { renderWebAttendancePanel(); } catch(_) {}
 }
 
 syncAuthScrollLock();
@@ -336,6 +337,7 @@ function updateLockScreenUI(reason = '') {
     pinInput.value = '';
     setTimeout(() => pinInput.focus(), 0);
   }
+  try { renderWebAttendancePanel(); } catch(_) {}
 }
 
 function ensureHeaderLockButton() {
@@ -837,6 +839,7 @@ function applyRoleRights() {
   }
 
   updateKitchenBadge(Number(document.getElementById('kitchen-notif-badge')?.dataset.count || 0));
+  try { updateShiftBtnUI(); } catch (_) {}
 }
 
 function stopKitchenNotificationListener() {
@@ -1344,13 +1347,17 @@ function _getAttendanceDailyRows() {
 }
 
 function _attendanceDateFilterRange() {
-  const today = formatLocalDateKey(new Date());
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
   const fromEl = document.getElementById('attendance-from-date');
   const toEl = document.getElementById('attendance-to-date');
-  if (fromEl && !fromEl.value) fromEl.value = today;
+  // PHASE_H_ATTENDANCE_DEFAULT_MONTH_RANGE — default must show existing rows
+  // from earlier in the current month; today→today makes the screen look broken.
+  if (fromEl && !fromEl.value) fromEl.value = monthStart;
   if (toEl && !toEl.value) toEl.value = today;
   return {
-    fromDate: fromEl?.value || today,
+    fromDate: fromEl?.value || monthStart,
     toDate: toEl?.value || today,
   };
 }
@@ -1434,6 +1441,160 @@ async function savePayrollProfile() {
   }
 }
 
+// PHASE_E_OVERNIGHT_HELPERS
+/**
+ * Derive the effective totalMinutes for a daily row from absolute timestamps when
+ * the stored value is missing, zero, or negative (e.g. overnight shifts where naive
+ * date-scoped subtraction would return a negative number).
+ * Falls back to stored value when it is already valid (> 0).
+ * @param {Object} row - attendance_daily row from appState.attendanceDaily
+ * @returns {number} totalMinutes (always >= 0)
+ */
+function _attendanceTimestampMs(value) {
+  if (!value) return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value?.toDate) return value.toDate().getTime();
+  if (value?.seconds) return Number(value.seconds) * 1000;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function _positiveMinutesFromRange(startValue, endValue) {
+  const inMs = _attendanceTimestampMs(startValue);
+  const outMs = _attendanceTimestampMs(endValue);
+  if (inMs > 0 && outMs > inMs) return Math.round((outMs - inMs) / 60000);
+  if (outMs > 0 && outMs <= inMs) return 0;
+  return -1;
+}
+
+function _computeAttendanceRowMinutes(row = {}) {
+  const derived = _positiveMinutesFromRange(
+    row.firstCheckInAtMs || row.checkInAtMs || row.firstCheckInAt || row.checkInAt,
+    row.lastCheckOutAtMs || row.checkOutAtMs || row.lastCheckOutAt || row.checkOutAt
+  );
+  const stored = Number(row.totalMinutes || 0) || 0;
+  if (derived > 0 && stored <= 0) return derived;
+  if (derived > 0 && stored > 0) return stored;
+  if (stored > 0) return stored;
+  return 0;
+}
+
+function _computeAttendancePayableMinutes(row = {}) {
+  const derivedTotal = _computeAttendanceRowMinutes(row);
+  const stored = Number(row.payableMinutes ?? -1);
+  if (stored > 0) return stored;
+  if (stored === 0 && derivedTotal <= 0) return 0;
+  return _roundAttendancePayableMinutes(derivedTotal);
+}
+
+function _computeAttendanceWage(row = {}) {
+  const stored = Number(row.totalWage || 0) || 0;
+  if (stored > 0) return stored;
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const payableMinutes = _computeAttendancePayableMinutes(row);
+  return Math.round((payableMinutes / 60) * hourlyRate);
+}
+
+/**
+ * Derive the effective durationMinutes for a single shift row from absolute timestamps.
+ * Uses stored durationMinutes when valid; otherwise computes from checkInAt/checkOutAt ms.
+ * @param {Object} s - attendance_shifts row
+ * @returns {number} durationMinutes (always >= 0), or -1 when shift is still open
+ */
+function _computeShiftDurationMinutes(s = {}) {
+  const derived = _positiveMinutesFromRange(
+    s.checkInAtMs || s.checkInAt,
+    s.checkOutAtMs || s.checkOutAt
+  );
+  const stored = Number(s.durationMinutes ?? -1);
+  if (derived > 0 && stored <= 0) return derived;
+  if (stored >= 0) return stored;
+  return derived;
+}
+// END_PHASE_E_OVERNIGHT_HELPERS
+
+// PHASE_A_ATTENDANCE_DASHBOARD
+// PHASE_F_ATTENDANCE_VIEW_ACTIONS
+/**
+ * Reset attendance filters to the current month range and all statuses,
+ * then re-render the attendance table.
+ * Solves: status stuck on 'Đã điều chỉnh' with no matching rows.
+ */
+function resetAttendanceFilters() {
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl   = document.getElementById('attendance-to-date');
+  const staffEl  = document.getElementById('attendance-staff-filter');
+  const statusEl = document.getElementById('attendance-status-filter');
+  if (fromEl)  fromEl.value  = monthStart;
+  if (toEl)    toEl.value    = today;
+  if (staffEl)  staffEl.value  = '';
+  if (statusEl) statusEl.value = '';
+  renderAttendanceManagement();
+  showAttendanceResults();
+}
+
+/**
+ * Scroll / focus the attendance results area so it is visible on mobile,
+ * then trigger a fresh render.
+ * PHASE_G_ATTENDANCE_STAFF_FALLBACK: shows a toast hint when the list is still
+ * empty/null after rendering so the user never gets a silent no-op.
+ */
+function showAttendanceResults() {
+  renderAttendanceManagement();
+  const listEl = document.getElementById('attendance-management-list');
+  if (listEl) {
+    listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // PHASE_G_SHOW_RESULTS_FEEDBACK — give visible feedback if nothing rendered
+  if (!listEl || !listEl.firstChild || listEl.innerHTML.trim() === '') {
+    showToast('⏳ Đang tải dữ liệu chấm công, vui lòng thử lại sau.', 'info', 3000);
+  }
+}
+// END_PHASE_F_ATTENDANCE_VIEW_ACTIONS
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_G_ATTENDANCE_STAFF_FALLBACK
+// Build staff filter options from two sources merged together:
+//   1. Staff collection rows in appState.staff  (authoritative when present)
+//   2. staffId / staffName pairs found in attendance_daily + attendance_shifts
+//      rows already loaded in appState — used as fallback when Staff listener
+//      is empty, late, or permission-blocked.
+// Returns an array of { id, name } objects deduplicated by id.
+// ─────────────────────────────────────────────────────────────────────────────
+function _getAttendanceStaffOptions() {
+  // Source 1: Staff collection
+  const staffList = Array.isArray(window.appState?.staff) ? window.appState.staff : [];
+  const map = new Map();
+  for (const s of staffList) {
+    const sid = String(s.staff_id || s.id || '').trim();
+    if (sid) map.set(sid, { id: sid, name: s.full_name || s.name || sid });
+  }
+
+  // Source 2: attendance_daily rows
+  const dailyRows = Array.isArray(window.appState?.attendanceDaily) ? window.appState.attendanceDaily : [];
+  for (const r of dailyRows) {
+    const sid = String(r.staffId || '').trim();
+    if (sid && !map.has(sid)) {
+      map.set(sid, { id: sid, name: r.staffName || sid });
+    }
+  }
+
+  // Source 3: attendance_shifts rows
+  const shiftRows = Array.isArray(window.appState?.attendanceShifts) ? window.appState.attendanceShifts : [];
+  for (const s of shiftRows) {
+    const sid = String(s.staffId || '').trim();
+    if (sid && !map.has(sid)) {
+      map.set(sid, { id: sid, name: s.staffName || sid });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+// END_PHASE_G_ATTENDANCE_STAFF_FALLBACK
+
 function renderAttendanceManagement() {
   renderPayrollProfile();
   const section = document.getElementById('settings-attendance-management');
@@ -1444,99 +1605,764 @@ function renderAttendanceManagement() {
   }
   section.style.display = 'block';
 
+  // PHASE_C_QA_ATTENDANCE_SAMPLE — inject QA banner when qaAttendance=1 URL param is active
+  const qaMode = _isQaAttendanceMode();
+  const existingQaBanner = document.getElementById('qa-attendance-banner');
+  if (qaMode && !existingQaBanner) {
+    const banner = document.createElement('div');
+    banner.id = 'qa-attendance-banner';
+    banner.style.cssText = 'background:rgba(234,179,8,0.15);border:1px solid rgba(234,179,8,0.5);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    banner.innerHTML = `
+      <span style="font-size:16px">🧪</span>
+      <span style="flex:1"><strong>Dữ liệu mẫu cục bộ</strong> — chỉ để test bộ lọc, không ghi Firestore.</span>
+      <button type="button" class="btn btn-xs btn-warning" onclick="_loadQaAttendanceSample()">Tải dữ liệu mẫu</button>
+      <button type="button" class="btn btn-xs btn-outline" onclick="_resetQaAttendanceSample()">Xóa mẫu</button>
+    `;
+    section.insertBefore(banner, section.firstChild);
+  } else if (!qaMode && existingQaBanner) {
+    existingQaBanner.remove();
+  }
+
   const listEl = document.getElementById('attendance-management-list');
   const summaryEl = document.getElementById('attendance-summary');
   if (!listEl) return;
 
-  const { fromDate, toDate } = _attendanceDateFilterRange();
-  const rows = _getAttendanceDailyRows()
-    .filter(row => String(row.dateKey || '') >= fromDate && String(row.dateKey || '') <= toDate)
-    .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || String(a.staffName || '').localeCompare(String(b.staffName || '')));
-
-  const totalMinutes = rows.reduce((sum, row) => sum + (Number(row.totalMinutes || 0) || 0), 0);
-  const payableMinutes = rows.reduce((sum, row) => sum + (Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0), 0);
-  const totalWage = rows.reduce((sum, row) => sum + (Number(row.totalWage || 0) || 0), 0);
-  const openCount = rows.filter(row => String(row.status || '') === 'open').length;
-  if (summaryEl) {
-    summaryEl.innerHTML = `
-      <div class="stat-card"><div class="stat-label">Ngày công</div><div class="stat-value">${fmt(rows.length)}</div></div>
-      <div class="stat-card"><div class="stat-label">Giờ tính lương</div><div class="stat-value">${(payableMinutes / 60).toFixed(2)}h</div></div>
-      <div class="stat-card"><div class="stat-label">Tổng lương</div><div class="stat-value">${fmt(totalWage)}đ</div></div>
-      <div class="stat-card"><div class="stat-label">Giờ thực tế</div><div class="stat-value">${(totalMinutes / 60).toFixed(2)}h</div></div>
-    `;
-  }
-
-  if (!rows.length) {
-    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏱️</div><div class="empty-text">Chưa có dòng chấm công trong khoảng ngày này</div></div>';
+  // --- Degraded state: DB / appState not ready ---
+  if (!window.appState) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang kết nối cơ sở dữ liệu…</div></div>';
     return;
   }
 
-  listEl.innerHTML = rows.map(row => {
+  const allStaff = _getManagedStaff(true);
+
+  // PHASE_G_ATTENDANCE_STAFF_FALLBACK — combined staff options: Staff collection
+  // rows first; fall back to staffId/staffName pairs from attendance rows when
+  // the Staff listener is empty, late, or permission-blocked.
+  const staffOptions = _getAttendanceStaffOptions();
+
+  // Warning banner when Staff collection is empty but attendance data exists
+  const existingStaffFallbackBanner = document.getElementById('attendance-staff-fallback-banner');
+  const attendanceHasRows = Array.isArray(window.appState.attendanceDaily) && window.appState.attendanceDaily.length > 0;
+  if (allStaff.length === 0 && attendanceHasRows) {
+    if (!existingStaffFallbackBanner) {
+      const banner = document.createElement('div');
+      banner.id = 'attendance-staff-fallback-banner';
+      banner.style.cssText = 'background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.45);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--text1)';
+      banner.textContent = 'Không tải được danh sách nhân viên từ Staff, đang dùng dữ liệu chấm công.';
+      const listEl2 = document.getElementById('attendance-management-list');
+      if (listEl2 && listEl2.parentNode) listEl2.parentNode.insertBefore(banner, listEl2);
+    }
+  } else if (existingStaffFallbackBanner) {
+    existingStaffFallbackBanner.remove();
+  }
+
+  // --- Populate staff filter select ---
+  const staffFilterEl = document.getElementById('attendance-staff-filter');
+  if (staffFilterEl && staffOptions.length) {
+    const currentStaffVal = staffFilterEl.value;
+    const staffOptHtml = staffOptions
+      .map(s => {
+        const sel = s.id === currentStaffVal ? ' selected' : '';
+        return `<option value="${_escapeHtml(s.id)}"${sel}>${_escapeHtml(s.name)}</option>`;
+      })
+      .join('');
+    // Only rebuild if options changed (avoid disrupting selection)
+    // CSS selectors do not support [value!=""] — use :not() so clicking
+    // "Xem bảng chấm công" never throws a SyntaxError in real browsers.
+    // PHASE_H_ATTENDANCE_SELECTOR_FIX
+    const optionCount = staffFilterEl.querySelectorAll('option:not([value=""])').length;
+    if (optionCount !== staffOptions.length) {
+      const blankSel = !currentStaffVal ? ' selected' : '';
+      staffFilterEl.innerHTML = `<option value=""${blankSel}>Tất cả nhân viên</option>${staffOptHtml}`;
+    }
+  }
+
+  const { fromDate, toDate } = _attendanceDateFilterRange();
+  // PHASE_A_FILTER_STAFF_STATUS
+  const staffFilterVal = staffFilterEl ? staffFilterEl.value : '';
+  const statusFilterEl = document.getElementById('attendance-status-filter');
+  const statusFilterVal = statusFilterEl ? statusFilterEl.value : '';
+
+  const allDailyRows = _getAttendanceDailyRows();
+
+  // --- Loading state: listeners active but data not yet arrived ---
+  if (!Array.isArray(window.appState.attendanceDaily)) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Đang tải dữ liệu chấm công…</div></div>';
+    return;
+  }
+
+  // --- No staff state: only block if BOTH staff list AND attendance rows are absent ---
+  // PHASE_G_ATTENDANCE_STAFF_FALLBACK: when Staff listener is empty/late but
+  // attendance_daily already has rows, skip this gate so the payroll table still renders.
+  if (allStaff.length === 0 && !attendanceHasRows) {
+    if (summaryEl) summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">Chưa có nhân viên. Thêm nhân viên trong tab Nhân sự trước.</div></div>';
+    return;
+  }
+
+  const rows = allDailyRows
+    .filter(row => {
+      const dk = String(row.dateKey || '');
+      if (dk < fromDate || dk > toDate) return false;
+      if (staffFilterVal && String(row.staffId || '') !== staffFilterVal) return false;
+      const rowStatus = String(row.status || 'closed');
+      if (statusFilterVal && rowStatus !== statusFilterVal) return false;
+      return true;
+    })
+    .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || String(a.staffName || '').localeCompare(String(b.staffName || '')));
+
+  // --- Summary cards ---
+  const uniqueStaffIds = new Set(rows.map(r => String(r.staffId || '')).filter(Boolean));
+  const openCount = rows.filter(row => String(row.status || 'closed') === 'open').length;
+  const totalMinutes = rows.reduce((sum, row) => sum + _computeAttendanceRowMinutes(row), 0);
+  const payableMinutes = rows.reduce((sum, row) => sum + _computeAttendancePayableMinutes(row), 0);
+  const totalWage = rows.reduce((sum, row) => sum + _computeAttendanceWage(row), 0);
+  const missingExpenseCount = rows.filter(row => !row.expenseId && String(row.status || 'closed') !== 'open').length;
+
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Nhân viên</div><div class="stat-value">${fmt(uniqueStaffIds.size)}</div></div>
+      <div class="stat-card"><div class="stat-label">Đang làm</div><div class="stat-value">${fmt(openCount)}</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ tính lương</div><div class="stat-value">${(payableMinutes / 60).toFixed(2)}h</div></div>
+      <div class="stat-card"><div class="stat-label">Tổng lương</div><div class="stat-value">${fmt(totalWage)}đ</div></div>
+      <div class="stat-card"><div class="stat-label">Giờ thực tế</div><div class="stat-value">${(totalMinutes / 60).toFixed(2)}h</div></div>
+      ${missingExpenseCount > 0 ? `<div class="stat-card"><div class="stat-label">Thiếu chi phí</div><div class="stat-value" style="color:var(--danger)">${fmt(missingExpenseCount)}</div></div>` : ''}
+    `;
+  }
+
+  // PHASE_E_NO_DATA_MESSAGE — no data at all (distinct from filter-empty)
+  if (allDailyRows.length === 0) {
+    listEl.innerHTML = '<div class="empty-state" id="attendance-no-data-msg"><div class="empty-icon">📋</div><div class="empty-text">Chưa có dữ liệu chấm công</div></div>';
+    return;
+  }
+
+  // --- Empty rows state (filters hiding everything) ---
+  if (!rows.length) {
+    listEl.innerHTML = `
+      <div class="empty-state attendance-filter-empty-state">
+        <div class="empty-icon">⏱️</div>
+        <div class="empty-text">Chưa có dòng chấm công phù hợp bộ lọc này</div>
+        <button type="button" class="btn btn-sm btn-primary attendance-clear-filter-btn" onclick="resetAttendanceFilters()" style="margin-top:12px">🔄 Xóa bộ lọc</button>
+      </div>`;
+    return;
+  }
+
+  // PHASE_B_ROW_CARDS
+  // PHASE_E_PAYROLL_TABLE — salary/payroll table view
+  const toTs = val => val?.toDate ? val.toDate().toISOString() : val;
+  const tableRows = rows.map(row => {
     const dailyId = row.dailyId || row.id || `${row.staffId}_${row.dateKey}`;
     const status = String(row.status || 'closed');
-    const statusBadge = status === 'open'
-      ? '<span class="badge badge-warning">Đang làm</span>'
-      : '<span class="badge badge-success">Đã chốt</span>';
-    const inTime = row.firstCheckInAt ? fmtTime(row.firstCheckInAt?.toDate ? row.firstCheckInAt.toDate().toISOString() : row.firstCheckInAt) : '--:--';
-    const outTime = row.lastCheckOutAt ? fmtTime(row.lastCheckOutAt?.toDate ? row.lastCheckOutAt.toDate().toISOString() : row.lastCheckOutAt) : '--:--';
-    const actualHours = ((Number(row.totalMinutes || 0) || 0) / 60).toFixed(2);
-    const payableHours = ((Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0) / 60).toFixed(2);
+    let statusBadge;
+    if (status === 'open') {
+      statusBadge = '<span class="badge badge-warning">Đang làm</span>';
+    } else if (status === 'adjusted') {
+      statusBadge = '<span class="badge badge-info">Đã điều chỉnh</span>';
+    } else {
+      statusBadge = '<span class="badge badge-success">Đã chốt</span>';
+    }
+
+    const inTime = row.firstCheckInAt ? fmtTime(toTs(row.firstCheckInAt)) : '--:--';
+    // Show overnight indicator when checkout is on a different calendar day than checkin
+    let outTime = '--:--';
+    let overnightBadge = '';
+    if (row.lastCheckOutAt) {
+      outTime = fmtTime(toTs(row.lastCheckOutAt));
+      const inDay = row.firstCheckInAt ? String(toTs(row.firstCheckInAt) || '').slice(0, 10) : '';
+      const outDay = String(toTs(row.lastCheckOutAt) || '').slice(0, 10);
+      if (inDay && outDay && outDay > inDay) {
+        overnightBadge = ' <span title="Ra ca qua ngày hôm sau" style="font-size:10px;opacity:0.7">🌙+1</span>';
+      }
+    }
+
+    // PHASE_E_OVERNIGHT_GUARD — use overnight-safe minute computation
+    const effectiveTotalMinutes = _computeAttendanceRowMinutes(row);
+    const effectivePayableMinutes = _computeAttendancePayableMinutes(row);
+
+    const actualHours = (effectiveTotalMinutes / 60).toFixed(2);
+    const payableHoursVal = (effectivePayableMinutes / 60).toFixed(2);
+    const hourlyRate = Number(row.hourlyRate || 0);
+    const wage = _computeAttendanceWage(row);
+
+    // Expense / status cell
+    let statusCell;
+    if (row.expenseId) {
+      statusCell = `${statusBadge}<br><span style="font-size:11px;color:var(--text2)">💰 ${_escapeHtml(row.expenseId)}</span>`;
+    } else if (status !== 'open') {
+      statusCell = `${statusBadge}<br><span style="font-size:11px;color:var(--danger)">⚠️ Thiếu chi phí</span>`;
+    } else {
+      statusCell = statusBadge;
+    }
+
+    // PHASE_B_AUDIT_DISPLAY — audit line in detail cell
+    const auditTip = (row.adjustedBy || row.adjustedAt)
+      ? ` title="Chỉnh bởi ${_escapeHtml(String(row.adjustedBy || ''))} ${row.adjustedAt ? String(row.adjustedAt).slice(0, 16).replace('T', ' ') : ''}"`
+      : '';
+    const adjustNote = row.adjustReason
+      ? `<br><span style="font-size:10px;color:var(--text2)" ${auditTip}>📝 ${_escapeHtml(row.adjustReason)}</span>`
+      : (auditTip ? `<span${auditTip}>🔧</span>` : '');
+
+    const detailPanelId = _attendanceDetailPanelId(dailyId);
     return `
-      <div class="list-item">
-        <div class="list-item-icon" style="background:rgba(14,165,233,0.12)">⏱️</div>
-        <div class="list-item-content">
-          <div class="list-item-title">${_escapeHtml(row.staffName || 'Nhân viên')} ${statusBadge}</div>
-          <div class="list-item-sub">${_escapeHtml(row.dateKey || '')} · Vào ${inTime} · Ra ${outTime} · Tính lương ${payableHours}h · Thực tế ${actualHours}h · ${fmt(Number(row.hourlyRate || 0))}đ/giờ</div>
-          ${row.expenseId ? `<div class="list-item-sub">Chi phí lương: ${_escapeHtml(row.expenseId)}</div>` : ''}
-        </div>
-        <div class="list-item-right">
-          <div class="list-item-amount">${fmt(Number(row.totalWage || 0))}đ</div>
-          <button type="button" class="btn btn-xs btn-secondary" onclick="adjustAttendanceDaily('${_escapeHtml(dailyId)}')">Sửa</button>
-        </div>
-      </div>
+      <tr>
+        <td style="white-space:nowrap">${_escapeHtml(row.dateKey || '')}${adjustNote}</td>
+        <td>${_escapeHtml(row.staffName || 'Nhân viên')}</td>
+        <td style="white-space:nowrap">${inTime}</td>
+        <td style="white-space:nowrap">${outTime}${overnightBadge}</td>
+        <td style="text-align:right">${actualHours}h</td>
+        <td style="text-align:right">${payableHoursVal}h</td>
+        <td style="text-align:right">${fmt(hourlyRate)}đ</td>
+        <td style="text-align:right;font-weight:600">${fmt(wage)}đ</td>
+        <td>${statusCell}</td>
+        <td style="white-space:nowrap">
+          <button type="button" class="btn btn-xs btn-secondary" onclick="adjustAttendanceDaily(${_escapeJsString(dailyId)})">Sửa</button>
+          <button type="button" class="btn btn-xs btn-outline attendance-detail-toggle" data-daily-id="${_escapeHtml(dailyId)}" onclick="toggleAttendanceShiftDetail(${_escapeJsString(dailyId)})">Chi tiết</button>
+        </td>
+      </tr>
+      <tr id="${detailPanelId}-row" style="display:none">
+        <td colspan="10" style="padding:0 0 6px 0">
+          <div id="${detailPanelId}" class="attendance-shift-detail-panel" style="padding:6px 8px;background:var(--bg2);border-radius:4px"></div>
+        </td>
+      </tr>
     `;
   }).join('');
+
+  listEl.innerHTML = `
+    <div style="overflow-x:auto">
+      <table class="attendance-payroll-table" style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg2);text-align:left">
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Ngày / ca</th>
+            <th style="padding:7px 8px;border-bottom:2px solid var(--border)">Nhân viên</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Vào</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Ra</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Giờ thực tế</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Giờ tính lương</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Lương/giờ</th>
+            <th style="padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--border)">Tiền lương</th>
+            <th style="padding:7px 8px;white-space:nowrap;border-bottom:2px solid var(--border)">Trạng thái / chi phí</th>
+            <th style="padding:7px 8px;border-bottom:2px solid var(--border)">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="attendance-payroll-tbody">
+          ${tableRows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+// END_PHASE_A_ATTENDANCE_DASHBOARD
+
+// PHASE_B_SHIFT_DETAIL
+/**
+ * Toggle (expand/collapse) the per-day shift detail panel for a daily row.
+ * Reads window.appState.attendanceShifts; matches defensively by dailyId OR staffId+dateKey.
+ * @param {string} dailyId
+ */
+function toggleAttendanceShiftDetail(dailyId) {
+  const panelId = _attendanceDetailPanelId(dailyId);
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  // Support both table-row wrapper (new payroll table) and legacy standalone panel
+  const rowWrapper = document.getElementById(panelId + '-row');
+  if (rowWrapper) {
+    if (rowWrapper.style.display !== 'none') {
+      rowWrapper.style.display = 'none';
+      return;
+    }
+    panel.innerHTML = _renderAttendanceShiftDetailHtml(dailyId);
+    rowWrapper.style.display = '';
+    return;
+  }
+  // Legacy fallback: standalone panel (no -row wrapper)
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+  // Render shift rows into panel before showing
+  panel.innerHTML = _renderAttendanceShiftDetailHtml(dailyId);
+  panel.style.display = 'block';
 }
 
-async function adjustAttendanceDaily(dailyId) {
+function _attendanceDetailPanelId(dailyId) {
+  return `attendance-detail-${String(dailyId || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+/**
+ * Build the HTML for shift detail panel given a dailyId.
+ * Matching: exact dailyId if present; OR same staffId + dateKey (defensive).
+ * Reads appState.attendanceShifts.
+ * @param {string} dailyId
+ * @returns {string}
+ */
+function _renderAttendanceShiftDetailHtml(dailyId) {
+  // PHASE_B_READS_ATTENDANCE_SHIFTS
+  const allShifts = Array.isArray(window.appState && window.appState.attendanceShifts)
+    ? window.appState.attendanceShifts
+    : [];
+
+  // Find the daily row for this dailyId so we can fall back to staffId+dateKey match
+  const dailyRow = _getAttendanceDailyRows().find(r => String(r.dailyId || r.id || `${r.staffId}_${r.dateKey}`) === String(dailyId));
+  const rowStaffId = dailyRow ? String(dailyRow.staffId || '') : '';
+  const rowDateKey = dailyRow ? String(dailyRow.dateKey || '') : '';
+
+  // PHASE_B_DEFENSIVE_SHIFT_MATCH — match by dailyId exact OR staffId+dateKey fallback
+  const shifts = allShifts.filter(s => {
+    if (s.dailyId && String(s.dailyId) === String(dailyId)) return true;
+    if (rowStaffId && rowDateKey) {
+      return String(s.staffId || '') === rowStaffId && String(s.dateKey || '') === rowDateKey;
+    }
+    return false;
+  });
+
+  if (shifts.length === 0) {
+    // PHASE_B_SHIFT_EMPTY_STATE
+    return '<div style="color:var(--text2);font-size:12px;padding:4px 0">— Không có lượt chấm công nào</div>';
+  }
+
+  const toTs = val => val?.toDate ? val.toDate().toISOString() : val;
+  return shifts
+    .slice()
+    .sort((a, b) => {
+      const aMs = Number(a.checkInAtMs || 0);
+      const bMs = Number(b.checkInAtMs || 0);
+      return aMs - bMs;
+    })
+    .map(s => {
+      const inTs = toTs(s.checkInAt);
+      const outTs = toTs(s.checkOutAt);
+      const inDisp = inTs ? fmtTime(inTs) : '--:--';
+      // PHASE_E_SHIFT_OVERNIGHT_DURATION — use absolute-timestamp helper; show +1 when out is next day
+      let outDisp = '--:--';
+      let overnightTag = '';
+      if (outTs) {
+        outDisp = fmtTime(outTs);
+        const inDay = inTs ? inTs.slice(0, 10) : '';
+        const outDay = outTs.slice(0, 10);
+        if (inDay && outDay && outDay > inDay) {
+          overnightTag = ' <span title="Ra ca qua ngày hôm sau" style="font-size:10px;opacity:0.7">🌙+1</span>';
+        }
+      }
+      // Use overnight-safe duration (never negative)
+      const durMins = _computeShiftDurationMinutes(s);
+      const dur = durMins >= 0
+        ? `${durMins} phút`
+        : (s.status === 'open' ? '<span style="color:var(--text3)">Đang làm</span>' : '—');
+      // PHASE_B_SOURCE_DISPLAY — show Telegram badge when source=telegram
+      const sourceBadge = String(s.source || '') === 'telegram'
+        ? '<span style="background:rgba(37,161,244,0.15);color:#25a1f4;border-radius:4px;padding:1px 5px;font-size:10px;margin-left:4px">Telegram</span>'
+        : (s.source ? `<span style="background:var(--bg3);border-radius:4px;padding:1px 5px;font-size:10px;margin-left:4px">${_escapeHtml(String(s.source))}</span>` : '');
+      // Optional audit/meta fields if present
+      const metaLine = (s.location || s.device || s.photo)
+        ? `<span style="color:var(--text2);font-size:10px"> · ${[s.location ? '📍' : '', s.device ? '📱' : '', s.photo ? '📷' : ''].filter(Boolean).join('')}</span>`
+        : '';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;border-bottom:1px dashed var(--border)">
+        <span style="color:var(--text2)">▶</span>
+        <span>Vào <strong>${inDisp}</strong> → Ra <strong>${outDisp}</strong>${overnightTag}</span>
+        <span style="color:var(--text2)">${dur}</span>
+        ${sourceBadge}${metaLine}
+      </div>`;
+    })
+    .join('');
+}
+// END_PHASE_B_SHIFT_DETAIL
+
+// PHASE_B_ADJUST_MODAL
+/**
+ * Open audit-safe adjustment modal for a daily attendance row.
+ * Replaces prompt-based adjustment. Admin-only guard preserved.
+ * @param {string} dailyId
+ */
+function adjustAttendanceDaily(dailyId) {
+  // PHASE_B_ADMIN_ONLY_GUARD
   if (!isAdminUser()) {
     showToast('Chỉ admin mới được sửa chấm công.', 'danger');
     return;
   }
   const row = _getAttendanceDailyRows().find(item => String(item.dailyId || item.id || '') === String(dailyId));
   if (!row) return;
-  const currentHours = ((Number(row.payableMinutes ?? row.totalMinutes ?? 0) || 0) / 60).toFixed(2);
-  const nextHoursRaw = prompt(`Nhập giờ tính lương cho ${row.staffName || 'nhân viên'} ngày ${row.dateKey}:`, currentHours);
-  if (nextHoursRaw === null) return;
-  const nextHours = Number(String(nextHoursRaw).replace(',', '.'));
+
+  // Default payable hours from existing payableMinutes / payableHours / totalMinutes
+  const defaultMinutes = Number(row.payableMinutes ?? (row.payableHours != null ? Number(row.payableHours) * 60 : row.totalMinutes ?? 0)) || 0;
+  const defaultHours = (defaultMinutes / 60).toFixed(2);
+  const hourlyRate = Number(row.hourlyRate || 0) || 0;
+  const oldWage = Number(row.totalWage || 0);
+
+  // Remove any existing adjustment modal before opening a new one
+  const existing = document.getElementById('attendance-adjust-modal');
+  if (existing) existing.remove();
+
+  // PHASE_B_MODAL_INJECT — inject modal dynamically like existing shift-modal pattern
+  const modalEl = document.createElement('div');
+  modalEl.className = 'modal-overlay active';
+  modalEl.id = 'attendance-adjust-modal';
+  modalEl.setAttribute('onclick', "if(event.target===this)this.classList.remove('active')");
+  modalEl.innerHTML = `
+    <div class="modal-sheet" style="max-width:420px">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <div class="modal-title">✏️ Điều chỉnh chấm công</div>
+        <button class="modal-close" onclick="document.getElementById('attendance-adjust-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body" style="padding-bottom:20px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+          ${_escapeHtml(row.staffName || 'Nhân viên')} · ${_escapeHtml(row.dateKey || '')}
+        </div>
+        <div class="input-group">
+          <label class="input-label">Giờ tính lương *</label>
+          <input class="input" id="adj-hours" type="number" min="0" step="0.01" value="${_escapeHtml(defaultHours)}" placeholder="0.00" oninput="_updateAdjustWagePreview(${_escapeJsString(dailyId)})">
+        </div>
+        <div class="input-group" style="margin-top:8px">
+          <label class="input-label">Lý do điều chỉnh * <span style="color:var(--danger)">(bắt buộc)</span></label>
+          <textarea class="input" id="adj-reason" rows="2" placeholder="Nhập lý do…" style="resize:vertical" oninput="_updateAdjustWagePreview(${_escapeJsString(dailyId)})"></textarea>
+        </div>
+        <div id="adj-preview" style="background:var(--bg3);border-radius:8px;padding:10px;margin-top:10px;font-size:13px">
+          <div>Lương cũ: <strong>${fmt(oldWage)}đ</strong></div>
+          <div id="adj-preview-new">Lương mới: <strong>${fmt(oldWage)}đ</strong></div>
+          <div id="adj-preview-delta" style="color:var(--text2)">Chênh lệch: 0đ</div>
+        </div>
+        <div id="adj-reason-error" style="color:var(--danger);font-size:12px;margin-top:6px;display:none">⚠️ Vui lòng nhập lý do điều chỉnh.</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button type="button" class="btn btn-primary" style="flex:1" onclick="_confirmAdjustAttendanceDaily(${_escapeJsString(dailyId)})">✅ Xác nhận</button>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('attendance-adjust-modal').remove()">Hủy</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modalEl);
+
+  // Pre-populate preview with stored hourly rate
+  window._attendanceAdjustMeta = { dailyId, hourlyRate, oldWage, row };
+  _updateAdjustWagePreview(dailyId);
+}
+
+/**
+ * Update wage preview in the adjustment modal whenever hours input changes.
+ * @param {string} _dailyId - unused but kept for signature symmetry
+ */
+function _updateAdjustWagePreview(_dailyId) {
+  // PHASE_B_PREVIEW_WAGE_DELTA
+  const meta = window._attendanceAdjustMeta;
+  if (!meta) return;
+  const hoursEl = document.getElementById('adj-hours');
+  if (!hoursEl) return;
+  const newHours = Number(String(hoursEl.value).replace(',', '.'));
+  const hourlyRate = meta.hourlyRate || 0;
+  const oldWage = meta.oldWage || 0;
+  const newWage = Number.isFinite(newHours) && newHours >= 0
+    ? Math.round(newHours * hourlyRate)
+    : oldWage;
+  const delta = newWage - oldWage;
+  const previewNewEl = document.getElementById('adj-preview-new');
+  const previewDeltaEl = document.getElementById('adj-preview-delta');
+  if (previewNewEl) previewNewEl.innerHTML = `Lương mới: <strong>${fmt(newWage)}đ</strong>`;
+  if (previewDeltaEl) {
+    const sign = delta > 0 ? '+' : '';
+    previewDeltaEl.textContent = `Chênh lệch: ${sign}${fmt(delta)}đ`;
+    previewDeltaEl.style.color = delta > 0 ? 'var(--success)' : delta < 0 ? 'var(--danger)' : 'var(--text2)';
+  }
+}
+
+/**
+ * Confirm handler for the attendance adjustment modal.
+ * Validates hours >= 0 and reason non-empty; writes to Firestore; re-renders.
+ * @param {string} dailyId
+ */
+async function _confirmAdjustAttendanceDaily(dailyId) {
+  if (!isAdminUser()) return;
+
+  const hoursEl = document.getElementById('adj-hours');
+  const reasonEl = document.getElementById('adj-reason');
+  const reasonErrorEl = document.getElementById('adj-reason-error');
+  if (!hoursEl || !reasonEl) return;
+
+  const nextHours = Number(String(hoursEl.value).replace(',', '.'));
+  const reason = String(reasonEl.value).trim();
+
+  // PHASE_B_REASON_REQUIRED_VALIDATION
+  if (!reason) {
+    if (reasonErrorEl) reasonErrorEl.style.display = 'block';
+    reasonEl.focus();
+    return;
+  }
+  if (reasonErrorEl) reasonErrorEl.style.display = 'none';
+
   if (!Number.isFinite(nextHours) || nextHours < 0) {
     showToast('Số giờ không hợp lệ.', 'warning');
     return;
   }
+
+  const meta = window._attendanceAdjustMeta;
+  const row = meta ? meta.row : _getAttendanceDailyRows().find(item => String(item.dailyId || item.id || '') === String(dailyId));
+  if (!row) return;
+
+  // QA_ATTENDANCE_NO_FIRESTORE_WRITE_GUARD — block Firestore writes for sample rows
+  if (row.qaSample) {
+    showToast('🧪 Dữ liệu mẫu QA — chỉ đọc cục bộ, không ghi Firestore.', 'warning', 4000);
+    document.getElementById('attendance-adjust-modal')?.remove();
+    window._attendanceAdjustMeta = null;
+    return;
+  }
+
   const hourlyRate = Number(row.hourlyRate || 0) || 0;
   const payableMinutes = Math.round(nextHours * 60);
   const totalWage = Math.round(nextHours * hourlyRate);
+
   try {
     await window.DB?.Attendance?.updateDaily?.(dailyId, {
       payableMinutes,
       payableHours: Number(nextHours.toFixed(2)),
       totalWage,
       status: 'adjusted',
+      adjustReason: reason,
       adjustedBy: currentUser?.username || currentUser?.name || 'admin',
       adjustedAt: new Date().toISOString(),
     });
+
+    // PHASE_B_EXPENSE_UPDATE_WITH_REASON — update linked expense with reason in note
     if (row.expenseId && window.DB?.Expenses?.update) {
       await window.DB.Expenses.update(row.expenseId, {
         amount: totalWage,
-        note: `${nextHours.toFixed(2)} giờ tính lương x ${fmt(hourlyRate)}đ/giờ (admin chỉnh)`,
+        note: `${nextHours.toFixed(2)} giờ tính lương x ${fmt(hourlyRate)}đ/giờ (admin chỉnh) — ${reason}`,
       });
     }
+
     showToast('✅ Đã cập nhật chấm công và chi phí lương', 'success');
+    document.getElementById('attendance-adjust-modal')?.remove();
+    window._attendanceAdjustMeta = null;
+    renderAttendanceManagement();
   } catch (err) {
     console.error(err);
     showToast('Lỗi cập nhật chấm công: ' + (err?.message || err), 'danger');
   }
 }
+// END_PHASE_B_ADJUST_MODAL
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_C_QA_ATTENDANCE_SAMPLE
+// QA-only local sample-data mode for the attendance admin dashboard.
+// Activated via URL: ?qaAttendance=1
+// NO network / Firestore / localStorage writes. Memory only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when QA attendance sample mode is active.
+ * Gate: URLSearchParams(location.search).get('qaAttendance') === '1'
+ * @returns {boolean}
+ */
+function _isQaAttendanceMode() {
+  try {
+    return new URLSearchParams(window.location.search).get('qaAttendance') === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Load deterministic in-memory sample attendance data into window.appState only.
+ * QA_ATTENDANCE_LOCAL_ONLY — NO DB.Attendance / DB.Expenses / fetch / localStorage calls.
+ * @returns {void}
+ */
+function _loadQaAttendanceSample() {
+  // QA_ATTENDANCE_LOCAL_ONLY — only write to window.appState, no network, no DB calls
+  if (!window.appState) window.appState = {};
+
+  const now = new Date();
+  // Compute date keys for today, yesterday, and a third older date
+  const todayKey = formatLocalDateKey(now);
+  const yesterdayDate = new Date(now.getTime() - 86400000);
+  const yesterdayKey = formatLocalDateKey(yesterdayDate);
+  const olderDate = new Date(now.getTime() - 3 * 86400000);
+  const olderKey = formatLocalDateKey(olderDate);
+
+  // --- Sample staff (2 active) ---
+  const sampleStaff = [
+    {
+      staff_id: 'qa-attendance-staff-001',
+      id: 'qa-attendance-staff-001',
+      full_name: 'Nguyễn QA Alpha',
+      name: 'Nguyễn QA Alpha',
+      status: 'active',
+      hourly_rate: 25000,
+      role: 'staff',
+      qaSample: true,
+    },
+    {
+      staff_id: 'qa-attendance-staff-002',
+      id: 'qa-attendance-staff-002',
+      full_name: 'Trần QA Beta',
+      name: 'Trần QA Beta',
+      status: 'active',
+      hourly_rate: 30000,
+      role: 'staff',
+      qaSample: true,
+    },
+  ];
+
+  // --- Sample attendance_daily rows (4 rows, ≥3 date keys, all 3 statuses) ---
+  const sampleDaily = [
+    {
+      dailyId: 'qa-attendance-daily-001',
+      id: 'qa-attendance-daily-001',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: todayKey,
+      firstCheckInAt: `${todayKey}T08:00:00.000Z`,
+      lastCheckOutAt: null,
+      totalMinutes: 120,
+      payableMinutes: 120,
+      payableHours: 2.0,
+      hourlyRate: 25000,
+      totalWage: 50000,
+      status: 'open',
+      expenseId: null,
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-002',
+      id: 'qa-attendance-daily-002',
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: todayKey,
+      firstCheckInAt: `${todayKey}T07:30:00.000Z`,
+      lastCheckOutAt: `${todayKey}T15:30:00.000Z`,
+      totalMinutes: 480,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 30000,
+      totalWage: 240000,
+      status: 'closed',
+      expenseId: 'qa-expense-001',
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-003',
+      id: 'qa-attendance-daily-003',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: yesterdayKey,
+      firstCheckInAt: `${yesterdayKey}T08:15:00.000Z`,
+      lastCheckOutAt: `${yesterdayKey}T16:45:00.000Z`,
+      totalMinutes: 510,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 25000,
+      totalWage: 200000,
+      status: 'adjusted',
+      expenseId: 'qa-expense-002',
+      adjustReason: 'Dữ liệu mẫu QA — đã điều chỉnh thủ công',
+      adjustedBy: 'qa-admin',
+      adjustedAt: `${yesterdayKey}T17:00:00.000Z`,
+      qaSample: true,
+    },
+    {
+      dailyId: 'qa-attendance-daily-004',
+      id: 'qa-attendance-daily-004',
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: olderKey,
+      firstCheckInAt: `${olderKey}T09:00:00.000Z`,
+      lastCheckOutAt: `${olderKey}T17:00:00.000Z`,
+      totalMinutes: 480,
+      payableMinutes: 480,
+      payableHours: 8.0,
+      hourlyRate: 30000,
+      totalWage: 240000,
+      status: 'closed',
+      expenseId: null,
+      qaSample: true,
+    },
+  ];
+
+  // --- Sample attendance_shifts (3 shifts, matching daily rows by dailyId + staffId+dateKey) ---
+  const sampleShifts = [
+    {
+      shiftId: 'qa-attendance-shift-001',
+      id: 'qa-attendance-shift-001',
+      dailyId: 'qa-attendance-daily-001',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: todayKey,
+      checkInAt: `${todayKey}T08:00:00.000Z`,
+      checkOutAt: null,
+      checkInAtMs: new Date(`${todayKey}T08:00:00.000Z`).getTime(),
+      checkOutAtMs: null,
+      durationMinutes: null,
+      source: 'telegram',
+      qaSample: true,
+    },
+    {
+      shiftId: 'qa-attendance-shift-002',
+      id: 'qa-attendance-shift-002',
+      dailyId: 'qa-attendance-daily-003',
+      staffId: 'qa-attendance-staff-001',
+      staffName: 'Nguyễn QA Alpha',
+      dateKey: yesterdayKey,
+      checkInAt: `${yesterdayKey}T08:15:00.000Z`,
+      checkOutAt: `${yesterdayKey}T16:45:00.000Z`,
+      checkInAtMs: new Date(`${yesterdayKey}T08:15:00.000Z`).getTime(),
+      checkOutAtMs: new Date(`${yesterdayKey}T16:45:00.000Z`).getTime(),
+      durationMinutes: 510,
+      source: 'telegram',
+      qaSample: true,
+    },
+    {
+      shiftId: 'qa-attendance-shift-003',
+      id: 'qa-attendance-shift-003',
+      // No dailyId — exercises staffId+dateKey fallback match
+      staffId: 'qa-attendance-staff-002',
+      staffName: 'Trần QA Beta',
+      dateKey: todayKey,
+      checkInAt: `${todayKey}T07:30:00.000Z`,
+      checkOutAt: `${todayKey}T15:30:00.000Z`,
+      checkInAtMs: new Date(`${todayKey}T07:30:00.000Z`).getTime(),
+      checkOutAtMs: new Date(`${todayKey}T15:30:00.000Z`).getTime(),
+      durationMinutes: 480,
+      source: 'telegram',
+      qaSample: true,
+    },
+  ];
+
+  // Merge: keep real rows/shifts/staff, add sample items (avoid duplicating qa items)
+  const existingStaff = Array.isArray(window.appState.staff) ? window.appState.staff.filter(s => !s.qaSample) : [];
+  const existingDaily = Array.isArray(window.appState.attendanceDaily) ? window.appState.attendanceDaily.filter(r => !r.qaSample) : [];
+  const existingShifts = Array.isArray(window.appState.attendanceShifts) ? window.appState.attendanceShifts.filter(s => !s.qaSample) : [];
+
+  window.appState.staff = [...existingStaff, ...sampleStaff];
+  window.appState.attendanceDaily = [...existingDaily, ...sampleDaily];
+  window.appState.attendanceShifts = [...existingShifts, ...sampleShifts];
+
+  // Set date filter to cover all sample dates (olderKey → todayKey)
+  const fromEl = document.getElementById('attendance-from-date');
+  const toEl = document.getElementById('attendance-to-date');
+  if (fromEl) fromEl.value = olderKey;
+  if (toEl) toEl.value = todayKey;
+
+  renderAttendanceManagement();
+  showToast('🧪 Đã tải dữ liệu mẫu QA — chỉ trong bộ nhớ, không ghi Firestore', 'info', 5000);
+}
+
+/**
+ * Clear all qaSample attendance rows/shifts/staff from window.appState and re-render.
+ * Only removes items tagged with qaSample: true.
+ */
+function _resetQaAttendanceSample() {
+  if (!window.appState) return;
+  if (Array.isArray(window.appState.staff)) {
+    window.appState.staff = window.appState.staff.filter(s => !s.qaSample);
+  }
+  if (Array.isArray(window.appState.attendanceDaily)) {
+    window.appState.attendanceDaily = window.appState.attendanceDaily.filter(r => !r.qaSample);
+  }
+  if (Array.isArray(window.appState.attendanceShifts)) {
+    window.appState.attendanceShifts = window.appState.attendanceShifts.filter(s => !s.qaSample);
+  }
+  renderAttendanceManagement();
+  showToast('🧹 Đã xóa dữ liệu mẫu QA khỏi bộ nhớ', 'info');
+}
+// END_PHASE_C_QA_ATTENDANCE_SAMPLE
 
 function syncCurrentStaffSession() {
   if (!currentUser) return;
@@ -1762,7 +2588,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (key === 'inventory' && typeof currentPage !== 'undefined' && currentPage === 'inventory') {
       try { renderInventory(); } catch(_) {}
     }
-    if (key === 'attendanceDaily' || key === 'attendanceShifts' || key === 'staff') renderAttendanceManagement();
+    if (key === 'attendanceDaily' || key === 'attendanceShifts' || key === 'staff') {
+      renderAttendanceManagement();
+      try { renderWebAttendancePanel(); } catch(_) {}
+      try { updateShiftBtnUI(); } catch(_) {}
+    }
     if (key === 'staff') syncCurrentStaffSession();
     if (key === 'menu') {
       renderMenuItems();
@@ -3242,7 +4072,549 @@ function renderTables() {
   }).join('');
   try { renderKdsMonitor(); } catch(_) {}
   try { updateDailyTargetProgressBar(); } catch(e) { console.error("Error updating daily target progress bar:", e); }
+  try { renderWebAttendancePanel(); } catch(_) {}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_D_WEB_ATTENDANCE
+// Direct web check-in/check-out from the Staff PIN lock screen.
+// No admin approval; salary expense synced on checkout close.
+// Geolocation is required: success only when distance to shop is < 15m.
+// ─────────────────────────────────────────────────────────────────────────────
+const SHOP_LOCATION_LAT = 11.537108;
+const SHOP_LOCATION_LNG = 107.823279;
+const ATTENDANCE_MAX_DISTANCE_METERS = 15;
+
+function _getAttendanceStaffFromPinInput(showErrors = false) {
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  if (!/^\d{4}$/.test(pin)) {
+    if (showErrors) showToast('Nhập mã PIN 4 số trước khi chấm công.', 'warning');
+    return null;
+  }
+  const staff = _findStaffByPin(pin);
+  if (!staff) {
+    if (showErrors) showToast('PIN không đúng, không thể chấm công.', 'danger');
+    return null;
+  }
+  return { staff, pin, user: _buildCurrentUserFromStaff(staff, pin) };
+}
+
+function _getAttendanceActorFromCurrentUser() {
+  if (!currentUser) return null;
+  const staffId = currentUser.staff_id || currentUser.id || '';
+  const staff = Array.isArray(window.appState?.staff)
+    ? window.appState.staff.find(s => String(s.staff_id || s.id || '') === String(staffId))
+    : null;
+  return { staff, pin: currentUser.pin || '', user: currentUser };
+}
+
+function _attendanceIdentityFromActor(actor) {
+  const user = actor?.user || actor || {};
+  const staff = actor?.staff || null;
+  const staffId = user.staff_id || user.id || (staff ? _getStaffIdentity(staff) : '');
+  const staffName = user.name || user.username || staff?.full_name || staff?.username || staffId;
+  const hourlyRate = Number(staff?.hourly_rate ?? staff?.hourlyRate ?? user.hourly_rate ?? user.hourlyRate ?? 0) || 0;
+  return { staffId: String(staffId || ''), staffName, hourlyRate };
+}
+
+// PHASE_ATTENDANCE_OVERNIGHT_CHECKOUT
+function _findLatestOpenAttendanceShift(staffId) {
+  const shifts = Array.isArray(window.appState?.attendanceShifts) ? window.appState.attendanceShifts : [];
+  return shifts
+    .filter(s => String(s.staffId || '') === String(staffId) && s.status === 'open')
+    .sort((a, b) => Number(b.checkInAtMs || 0) - Number(a.checkInAtMs || 0))[0] || null;
+}
+
+function _findOpenAttendanceDailyForShift(staffId, shift) {
+  const dailyId = String(shift?.dailyId || '');
+  return _getAttendanceDailyRows().find(row =>
+    String(row.staffId || '') === String(staffId)
+      && row.status === 'open'
+      && (dailyId
+        ? String(row.dailyId || row.id || '') === dailyId
+        : String(row.dateKey || '') === String(shift?.dateKey || ''))
+  ) || null;
+}
+
+/**
+ * Render the web attendance quick panel on the PIN lock screen.
+ * It reads the current 4-digit PIN, resolves that staff member, and enables the correct attendance action.
+ */
+function renderWebAttendancePanel() {
+  const card = document.getElementById('web-attendance-card');
+  if (!card) return;
+
+  const infoEl = document.getElementById('web-attendance-info');
+  const statusEl = document.getElementById('web-attendance-status');
+  const checkinBtn = document.getElementById('web-attendance-checkin-btn');
+  const checkoutBtn = document.getElementById('web-attendance-checkout-btn');
+  if (!infoEl || !statusEl || !checkinBtn || !checkoutBtn) return;
+
+  const pin = String(document.getElementById('pin-code-input')?.value || '').trim();
+  const resolved = /^\d{4}$/.test(pin) ? _getAttendanceStaffFromPinInput(false) : null;
+  if (!resolved) {
+    card.style.display = '';
+    statusEl.textContent = /^\d{4}$/.test(pin) ? 'PIN không đúng' : 'Nhập PIN';
+    statusEl.className = /^\d{4}$/.test(pin) ? 'badge badge-danger' : 'badge badge-secondary';
+    infoEl.innerHTML = 'Nhập mã PIN 4 số rồi bấm <strong>Vào ca</strong>/<strong>Ra ca</strong>. Chỉ thành công khi định vị cách quán dưới <strong>15m</strong>.';
+    checkinBtn.disabled = true;
+    checkoutBtn.disabled = true;
+    checkinBtn.style.opacity = '0.4';
+    checkoutBtn.style.opacity = '0.4';
+    return;
+  }
+
+  const { staffId, staffName } = _attendanceIdentityFromActor(resolved);
+  const openShift = _findLatestOpenAttendanceShift(staffId);
+  const openRow = _findOpenAttendanceDailyForShift(staffId, openShift);
+  const dateKey = openRow?.dateKey || formatLocalDateKey(new Date());
+
+  card.style.display = '';
+  infoEl.innerHTML = `<strong>${_escapeHtml(staffName)}</strong> · ${_escapeHtml(dateKey)}<br><span style="color:var(--text3)">Yêu cầu định vị: cách quán &lt; 15m.</span>`;
+  if (openRow) {
+    const inTime = openRow.firstCheckInAt
+      ? new Date(openRow.firstCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '–';
+    statusEl.textContent = `Đang làm · Vào ${inTime}`;
+    statusEl.className = 'badge badge-success';
+    checkinBtn.disabled = true;
+    checkoutBtn.disabled = false;
+    checkinBtn.style.opacity = '0.4';
+    checkoutBtn.style.opacity = '';
+  } else {
+    statusEl.textContent = 'Chưa vào ca';
+    statusEl.className = 'badge badge-secondary';
+    checkinBtn.disabled = false;
+    checkoutBtn.disabled = true;
+    checkinBtn.style.opacity = '';
+    checkoutBtn.style.opacity = '0.4';
+  }
+}
+
+function _roundAttendancePayableMinutes(totalMinutes) {
+  const minutes = Math.max(0, Math.round(Number(totalMinutes || 0) || 0));
+  const wholeHoursMinutes = Math.floor(minutes / 60) * 60;
+  const leftoverMinutes = minutes % 60;
+  if (leftoverMinutes < 30) return wholeHoursMinutes;
+  if (leftoverMinutes < 55) return wholeHoursMinutes + 30;
+  return wholeHoursMinutes + 60;
+}
+
+// PHASE_D_WEB_ATTENDANCE_CHECKIN
+function _distanceMetersBetween(lat1, lng1, lat2, lng2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const r = 6371000;
+  const dLat = toRad(Number(lat2) - Number(lat1));
+  const dLng = toRad(Number(lng2) - Number(lng1));
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(Number(lat1))) * Math.cos(toRad(Number(lat2))) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function _getBrowserPositionForAttendance() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation || !navigator.geolocation.getCurrentPosition) {
+      reject(new Error('Trình duyệt không hỗ trợ định vị.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    });
+  });
+}
+
+async function _requireAttendanceLocationGate() {
+  let pos;
+  try {
+    pos = await _getBrowserPositionForAttendance();
+  } catch (err) {
+    const msg = err?.code === 1
+      ? 'Bạn cần cho phép định vị để chấm công.'
+      : 'Không lấy được định vị. Vui lòng bật GPS/Wi‑Fi và thử lại.';
+    showToast(msg, 'danger', 5000);
+    throw err;
+  }
+  const lat = Number(pos.coords?.latitude);
+  const lng = Number(pos.coords?.longitude);
+  const accuracy = Number(pos.coords?.accuracy || 0) || null;
+  const distanceMeters = Math.round(_distanceMetersBetween(lat, lng, SHOP_LOCATION_LAT, SHOP_LOCATION_LNG));
+  if (!Number.isFinite(distanceMeters) || distanceMeters > ATTENDANCE_MAX_DISTANCE_METERS) {
+    // PHASE_D_GEOFENCE_ERROR_MSG: exact required message for out-of-range
+    showToast('bạn đang ở quá xa vị trí chấm công cho phép', 'danger', 6000);
+    throw new Error(`attendance_location_too_far:${distanceMeters}`);
+  }
+  return {
+    latitude: lat,
+    longitude: lng,
+    accuracy,
+    distanceMeters,
+    shopLatitude: SHOP_LOCATION_LAT,
+    shopLongitude: SHOP_LOCATION_LNG,
+  };
+}
+
+async function webAttendanceCheckInFromPin() {
+  const resolved = _getAttendanceStaffFromPinInput(true);
+  if (!resolved) {
+    renderWebAttendancePanel();
+    return;
+  }
+  const button = document.getElementById('web-attendance-checkin-btn');
+  if (button?.dataset.pending === '1') return;
+  if (button) {
+    button.dataset.pending = '1';
+    button.disabled = true;
+    button.textContent = '⏳ Đang định vị...';
+  }
+  try {
+    await _webAttendanceCheckInForActor(resolved);
+  } catch (err) {
+    console.warn('[webAttendanceCheckInFromPin]', err);
+  } finally {
+    if (button) {
+      delete button.dataset.pending;
+      button.textContent = '✅ Vào ca';
+    }
+    renderWebAttendancePanel();
+  }
+}
+
+async function webAttendanceCheckOutFromPin() {
+  const resolved = _getAttendanceStaffFromPinInput(true);
+  if (!resolved) {
+    renderWebAttendancePanel();
+    return;
+  }
+  const button = document.getElementById('web-attendance-checkout-btn');
+  if (button?.dataset.pending === '1') return;
+  if (button) {
+    button.dataset.pending = '1';
+    button.disabled = true;
+    button.textContent = '⏳ Đang ra ca...';
+  }
+  try {
+    await _webAttendanceCheckOutForActor(resolved);
+  } catch (err) {
+    console.warn('[webAttendanceCheckOutFromPin]', err);
+  } finally {
+    if (button) {
+      delete button.dataset.pending;
+      button.textContent = '🏁 Ra ca';
+    }
+    renderWebAttendancePanel();
+  }
+}
+
+/**
+ * Backward-compatible entrypoint for any older page-level button.
+ * Current UI calls webAttendanceCheckInFromPin() from the PIN lock screen.
+ */
+async function webAttendanceCheckIn() {
+  const actor = _getAttendanceActorFromCurrentUser();
+  if (!actor) {
+    showToast('Nhập PIN ở màn khóa để chấm công.', 'warning');
+    return;
+  }
+  try {
+    await _webAttendanceCheckInForActor(actor);
+  } catch (err) {
+    console.warn('[webAttendanceCheckIn]', err);
+  }
+}
+
+async function _webAttendanceCheckInForActor(actor) {
+  if (!window.DB?.Attendance?.setDaily) {
+    showToast('Cơ sở dữ liệu chưa sẵn sàng.', 'warning');
+    return;
+  }
+
+  const { staffId, staffName, hourlyRate } = _attendanceIdentityFromActor(actor);
+  if (!staffId) {
+    showToast('Không xác định được nhân viên.', 'danger');
+    return;
+  }
+  const dateKey = formatLocalDateKey(new Date());
+  const deterministicDailyId = `${staffId}_${dateKey}`;
+
+  // Prevent duplicate open shift today, but allow a second shift after a prior checkout.
+  const existingToday = _getAttendanceDailyRows().find(r =>
+    String(r.staffId || '') === String(staffId) &&
+    String(r.dateKey || '') === dateKey
+  );
+  const existingOpen = existingToday && String(existingToday.status || '') === 'open';
+  if (existingOpen) {
+    showToast('Bạn đã có ca đang mở hôm nay. Hãy bấm "Ra ca" trước.', 'warning');
+    return;
+  }
+
+  const location = await _requireAttendanceLocationGate();
+  const now = new Date();
+  const checkInAt = now.toISOString();
+  const checkInAtMs = now.getTime();
+  const dailyId = existingToday?.dailyId || existingToday?.id || deterministicDailyId;
+  const shiftId = `${dailyId}_${checkInAtMs}`;
+  try {
+    const dailyPayload = {
+      dailyId,
+      staffId,
+      staffName,
+      dateKey,
+      firstCheckInAt: existingToday?.firstCheckInAt || checkInAt,
+      firstCheckInAtMs: existingToday?.firstCheckInAtMs || checkInAtMs,
+      lastCheckOutAt: null,
+      lastCheckOutAtMs: null,
+      status: 'open',
+      source: 'web',
+      locationDistanceMeters: location.distanceMeters,
+      lastLocationAt: checkInAt,
+    };
+    const shiftPayload = {
+      shiftId,
+      dailyId,
+      staffId,
+      staffName,
+      dateKey,
+      checkInAt,
+      checkInAtMs,
+      checkOutAt: null,
+      checkOutAtMs: null,
+      durationMinutes: null,
+      status: 'open',
+      source: 'web',
+      location,
+    };
+
+    // PHASE_ATTENDANCE_ATOMIC_WRITE — one Firestore round trip and one atomic commit.
+    await window.DB.Attendance.setDailyAndShift(dailyId, dailyPayload, shiftId, shiftPayload);
+
+    if (Array.isArray(window.appState.attendanceDaily)) {
+      const idx = window.appState.attendanceDaily.findIndex(r => String(r.dailyId || r.id || '') === dailyId);
+      const newRow = { dailyId, id: dailyId, staffId, staffName, dateKey, firstCheckInAt: existingToday?.firstCheckInAt || checkInAt,
+        firstCheckInAtMs: existingToday?.firstCheckInAtMs || checkInAtMs, lastCheckOutAt: null, lastCheckOutAtMs: null,
+        status: 'open', source: 'web', locationDistanceMeters: location.distanceMeters, lastLocationAt: checkInAt };
+      if (idx >= 0) window.appState.attendanceDaily[idx] = { ...window.appState.attendanceDaily[idx], ...newRow };
+      else window.appState.attendanceDaily.unshift(newRow);
+    }
+    if (Array.isArray(window.appState.attendanceShifts)) {
+      window.appState.attendanceShifts.unshift({ shiftId, id: shiftId, dailyId, staffId, staffName, dateKey,
+        checkInAt, checkInAtMs, checkOutAt: null, checkOutAtMs: null, durationMinutes: null,
+        status: 'open', source: 'web', location });
+    }
+
+    showToast(`✅ Đã vào ca — ${staffName} · cách quán ${fmt(location.distanceMeters)}m`, 'success');
+    renderWebAttendancePanel();
+    try { updateShiftBtnUI(); } catch (_) {}
+    return { ok: true, staffId, staffName, dailyId, shiftId };
+  } catch (err) {
+    console.error('[webAttendanceCheckIn]', err);
+    if (String(err?.message || err || '').startsWith('attendance_location_too_far:')) return null;
+    showToast('Lỗi chấm công vào ca: ' + (err?.message || err), 'danger');
+    return null;
+  }
+}
+
+// PHASE_D_WEB_ATTENDANCE_CHECKOUT
+/**
+ * Backward-compatible entrypoint for any older page-level button.
+ * Current UI calls webAttendanceCheckOutFromPin() from the PIN lock screen.
+ */
+async function webAttendanceCheckOut() {
+  const actor = _getAttendanceActorFromCurrentUser();
+  if (!actor) {
+    showToast('Nhập PIN ở màn khóa để chấm công.', 'warning');
+    return;
+  }
+  try {
+    await _webAttendanceCheckOutForActor(actor);
+  } catch (err) {
+    console.warn('[webAttendanceCheckOut]', err);
+  }
+}
+
+async function _webAttendanceCheckOutForActor(actor, options = {}) {
+  if (!window.DB?.Attendance?.closeShiftAndDaily) {
+    showToast('Cơ sở dữ liệu chưa sẵn sàng.', 'warning');
+    return { ok: false, reason: 'db-not-ready' };
+  }
+
+  const { staffId, staffName } = _attendanceIdentityFromActor(actor);
+  const openShift = _findLatestOpenAttendanceShift(staffId);
+  const openRow = _findOpenAttendanceDailyForShift(staffId, openShift);
+  if (!openRow) {
+    showToast('Không tìm thấy ca đang mở.', 'warning');
+    return { ok: false, reason: 'no-open-daily' };
+  }
+  const dailyId = openRow.dailyId || openRow.id;
+  const dateKey = openRow.dateKey;
+
+  if (!openShift) {
+    showToast('Không tìm thấy ca đang mở.', 'warning');
+    return { ok: false, reason: 'no-open-shift' };
+  }
+
+  const location = await _requireAttendanceLocationGate();
+  const now = new Date();
+  const checkOutAt = now.toISOString();
+  const checkOutAtMs = now.getTime();
+  const checkInAtMs = openShift.checkInAtMs || new Date(openShift.checkInAt || 0).getTime();
+  const durationMinutes = Math.max(0, Math.round((checkOutAtMs - checkInAtMs) / 60000));
+
+  const hourlyRate = Number(openRow.hourlyRate || 0) || 0;
+  const previousTotalMinutes = Number(openRow.totalMinutes || 0) || 0;
+  const totalMinutes = previousTotalMinutes + durationMinutes;
+  const payableMinutes = _roundAttendancePayableMinutes(totalMinutes);
+  const payableHours = Number((payableMinutes / 60).toFixed(2));
+  const totalWage = Math.round(payableHours * hourlyRate);
+  const shiftId = openShift.shiftId || openShift.id;
+
+  try {
+    const canWritePayroll = isAdminUser();
+    const shiftClose = {
+      checkOutAt,
+      checkOutAtMs,
+      durationMinutes,
+      status: 'closed',
+      checkoutLocation: location,
+    };
+    const dailyClose = {
+      lastCheckOutAt: checkOutAt,
+      lastCheckOutAtMs: checkOutAtMs,
+      status: 'closed',
+      locationDistanceMeters: location.distanceMeters,
+      lastLocationAt: checkOutAt,
+      checkoutLocation: location,
+      ...(canWritePayroll ? { totalMinutes, payableMinutes, payableHours, totalWage } : {}),
+    };
+
+    // PHASE_ATTENDANCE_ATOMIC_CHECKOUT — attendance state never splits across documents.
+    await window.DB.Attendance.closeShiftAndDaily(shiftId, shiftClose, dailyId, dailyClose);
+
+    // Payroll expense is admin-only and intentionally follows the attendance batch.
+    // ponytail: failure leaves a closed, consistent attendance pair; admin retries/reconciles this deterministic ID.
+    const expenseId = `attendance_${dailyId}`;
+    let expenseSaved = false;
+    if (canWritePayroll && window.DB?.Expenses?.set) {
+      try {
+        await window.DB.Expenses.set(expenseId, {
+          name: `Lương nhân viên — ${staffName} — ${dateKey}`,
+          category: 'Lương nhân viên',
+          amount: totalWage,
+          date: checkOutAt,
+          note: `Lương nhân viên ${staffName} · ${dateKey} · ${payableHours.toFixed(2)}h x ${Math.round(hourlyRate)}đ/h (web)`,
+        });
+        expenseSaved = true;
+      } catch (expenseErr) {
+        console.error('[webAttendanceCheckOut] payroll expense reconciliation needed', expenseErr);
+        showToast(`Đã ra ca. Chi phí lương cần đối soát: ${expenseId}`, 'warning', 7000);
+      }
+    }
+
+    if (expenseSaved) {
+      await window.DB.Attendance.updateDaily(dailyId, { expenseId });
+    }
+    // PHASE_ATTENDANCE_EXPENSE_LOCAL_TRUTH — never show an unsaved expense link.
+    const persistedExpenseId = openRow.expenseId || null;
+    const linkedExpenseId = expenseSaved ? expenseId : persistedExpenseId;
+    const expenseReconcileNeeded = canWritePayroll && !linkedExpenseId;
+
+    if (Array.isArray(window.appState.attendanceDaily)) {
+      const idx = window.appState.attendanceDaily.findIndex(r => String(r.dailyId || r.id || '') === dailyId);
+      if (idx >= 0) {
+        window.appState.attendanceDaily[idx] = {
+          ...window.appState.attendanceDaily[idx],
+          lastCheckOutAt: checkOutAt, lastCheckOutAtMs: checkOutAtMs, status: 'closed', locationDistanceMeters: location.distanceMeters,
+          checkoutLocation: location,
+          ...(canWritePayroll ? { totalMinutes, payableMinutes, payableHours, totalWage } : {}),
+          ...(linkedExpenseId ? { expenseId: linkedExpenseId } : { expenseId: null, expenseReconcileNeeded }),
+        };
+      }
+    }
+    if (Array.isArray(window.appState.attendanceShifts)) {
+      const si = window.appState.attendanceShifts.findIndex(s => String(s.shiftId || s.id || '') === String(shiftId));
+      if (si >= 0) {
+        window.appState.attendanceShifts[si] = {
+          ...window.appState.attendanceShifts[si],
+          checkOutAt, checkOutAtMs, durationMinutes, status: 'closed', checkoutLocation: location,
+        };
+      }
+    }
+
+    if (!options.suppressSuccessToast) {
+      showToast(`🏁 Đã ra ca — ${staffName} · ${durationMinutes}p · cách quán ${fmt(location.distanceMeters)}m`, 'success');
+    }
+    renderWebAttendancePanel();
+    try { updateShiftBtnUI(); } catch (_) {}
+    return { ok: true, staffId, staffName, dailyId, shiftId, durationMinutes, totalMinutes, payableMinutes, payableHours, totalWage,
+      expenseId: linkedExpenseId, expenseSaved, expenseReconcileNeeded };
+  } catch (err) {
+    console.error('[webAttendanceCheckOut]', err);
+    if (String(err?.message || err || '').startsWith('attendance_location_too_far:')) return { ok: false, reason: 'location-too-far' };
+    showToast('Lỗi chấm công ra ca: ' + (err?.message || err), 'danger');
+    return { ok: false, reason: 'error', error: err?.message || String(err) };
+  }
+}
+
+// END_PHASE_D
+
+// PHASE_J_STATUS_BAR_ATTENDANCE_CHECKOUT
+// The dashboard status card doubles as the nearest checkout action for a staff
+// member who is already checked in and has unlocked the POS with their PIN.
+function renderStatusBarAttendanceCheckout() {
+  const btn = document.getElementById('btn-ket-ca');
+  const statusLabel = document.getElementById('shift-status-label');
+  const statusText = document.getElementById('shift-status-text');
+  if (!btn || !statusLabel || !statusText) return;
+
+  const actor = _getAttendanceActorFromCurrentUser();
+  const { staffId } = _attendanceIdentityFromActor(actor);
+  const openShift = staffId && _findLatestOpenAttendanceShift(staffId);
+  const openRow = staffId && _findOpenAttendanceDailyForShift(staffId, openShift);
+  if (!openRow) return;
+
+  const inTime = openRow.firstCheckInAt
+    ? new Date(openRow.firstCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    : '--:--';
+  statusLabel.textContent = 'Trạng thái chấm công';
+  statusText.textContent = `Đang làm · Vào ${inTime}`;
+  btn.textContent = '🏁 Chấm công ra';
+  btn.style.background = 'linear-gradient(135deg, #f97316, #ea580c)';
+  btn.setAttribute('data-attendance-status-checkout', 'true');
+  btn.onclick = (event) => {
+    event.stopPropagation();
+    statusBarAttendanceCheckoutAction();
+  };
+}
+
+async function statusBarAttendanceCheckoutAction() {
+  const btn = document.getElementById('btn-ket-ca');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang checkout…';
+  }
+  try {
+    const actor = _getAttendanceActorFromCurrentUser();
+    if (!actor) {
+      showToast('Không xác định được tài khoản. Vui lòng đăng nhập lại.', 'warning');
+      return;
+    }
+
+    const checkoutResult = await _webAttendanceCheckOutForActor(actor, { suppressSuccessToast: true });
+    if (!checkoutResult?.ok) return;
+
+    const minutes = Math.max(0, Number(checkoutResult.durationMinutes || 0));
+    const durationLabel = minutes >= 60
+      ? `${Math.floor(minutes / 60)} giờ${minutes % 60 ? ` ${minutes % 60} phút` : ''}`
+      : `${minutes} phút`;
+    showToast(`bạn đã checkout thành công, tổng giờ làm ca này là ${durationLabel}`, 'success', 7000);
+  } catch (err) {
+    console.warn('[statusBarAttendanceCheckoutAction]', err);
+  } finally {
+    try { updateShiftBtnUI(); } catch (_) {}
+  }
+}
+// END_PHASE_J_STATUS_BAR_ATTENDANCE_CHECKOUT
 
 function openOnlineOrdersPanel() {
   const modal = document.getElementById('online-orders-modal');
@@ -7842,7 +9214,12 @@ function updateShiftBtnUI() {
   const shift = Store.getCurrentShift();
   const btn = document.getElementById('btn-ket-ca');
   const statusText = document.getElementById('shift-status-text');
+  const statusLabel = document.getElementById('shift-status-label');
   if (!btn) return;
+  btn.disabled = false;
+  btn.onclick = null;
+  btn.removeAttribute('data-attendance-status-checkout');
+  if (statusLabel) statusLabel.textContent = 'Trạng thái ca làm việc';
   if (shift) {
     btn.innerHTML = '🔒 Đóng Ca';
     btn.style.background = 'linear-gradient(135deg, #f43f5e, #e11d48)';
@@ -7852,6 +9229,7 @@ function updateShiftBtnUI() {
     btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
     if(statusText) statusText.innerHTML = `<span style="color:var(--text2)">Chưa mở ca</span>`;
   }
+  renderStatusBarAttendanceCheckout();
 }
 
 function openShiftModal(shift) {
