@@ -76,7 +76,7 @@ let cachedAiDeps = null;
 function getAiDeps() {
   if (cachedAiDeps) return cachedAiDeps;
   cachedAiDeps = {
-    NlpManager: require('node-nlp').NlpManager,
+    Nlp: require('@nlpjs/nlp').Nlp,
     training: require('./POS_NLU_Training.json'),
     geminiTools: require('./geminiTools').geminiTools,
     ...require('./firestoreMegaTools'),
@@ -2789,12 +2789,11 @@ let nlp = { ready: false, manager: null, trainedAt: 0 };
 async function ensureNlp() {
   const now = Date.now();
   if (nlp.ready && now - nlp.trainedAt < 10 * 60 * 1000) return nlp.manager;
-  const { NlpManager, training } = getAiDeps();
+  const { Nlp, training } = getAiDeps();
 
   const catalog = await getProductCatalog();
   const itemSamples = catalog.slice(0, 25).map(x => x.name);
-  const manager = new NlpManager({ languages: ['vi'], autoSave: false, forceNER: false });
-  manager.settings.autoSave = false;
+  const manager = new Nlp({ languages: ['vi'], autoSave: false });
 
   const intents = training?.intents || {};
   Object.entries(intents).forEach(([intent, meta]) => {
@@ -2807,7 +2806,7 @@ async function ensureNlp() {
     });
   });
 
-  await manager.train();
+  await manager.nluManager.train({ log: false });
   nlp = { ready: true, manager, trainedAt: now };
   return manager;
 }
