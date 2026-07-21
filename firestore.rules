@@ -19,6 +19,137 @@ service cloud.firestore {
       return userRole() in ['admin', 'manager'];
     }
 
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // `staffId` lives in users/{uid} and is provisioned only by the Admin SDK.
+    // It is never a browser-writable claim, so it is safe as the binding for
+    // limited staff attendance access.
+    function hasStaffIdentity(staffId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.staffId == staffId;
+    }
+
+    function validOwnShiftCreate(docId) {
+      return request.resource.data.keys().hasAll([
+          'shiftId', 'dailyId', 'staffId', 'staffName', 'dateKey', 'checkInAt',
+          'checkInAtMs', 'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status',
+          'source', 'location', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'shiftId', 'dailyId', 'staffId', 'staffName', 'dateKey', 'checkInAt',
+          'checkInAtMs', 'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status',
+          'source', 'location', 'createdAt', 'updatedAt'
+        ])
+        && hasStaffIdentity(request.resource.data.staffId)
+        && docId == request.resource.data.shiftId
+        && request.resource.data.dailyId == request.resource.data.staffId + '_' + request.resource.data.dateKey
+        && request.resource.data.shiftId == request.resource.data.dailyId + '_' + string(request.resource.data.checkInAtMs)
+        && getAfter(/databases/$(database)/documents/attendance_daily/$(request.resource.data.dailyId)).data.status == 'open'
+        && request.resource.data.staffId is string
+        && request.resource.data.staffName is string
+        && request.resource.data.dateKey is string
+        && request.resource.data.checkInAt is string
+        && request.resource.data.checkInAtMs is int
+        && request.resource.data.checkOutAt == null
+        && request.resource.data.checkOutAtMs == null
+        && request.resource.data.durationMinutes == null
+        && request.resource.data.status == 'open'
+        && request.resource.data.source == 'web'
+        && request.resource.data.location is map
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validOwnShiftClose() {
+      return hasStaffIdentity(resource.data.staffId)
+        && resource.data.status == 'open'
+        && request.resource.data.status == 'closed'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'checkOutAt', 'checkOutAtMs', 'durationMinutes', 'status', 'checkoutLocation', 'updatedAt'
+        ])
+        && request.resource.data.checkOutAt is string
+        && request.resource.data.checkOutAtMs is int
+        && request.resource.data.checkOutAtMs >= resource.data.checkInAtMs
+        && request.resource.data.durationMinutes is int
+        && request.resource.data.durationMinutes >= 0
+        && request.resource.data.checkoutLocation is map
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    // Staff check-in/out writes only operational timestamps, state, and location.
+    // Payroll, rates, payable totals, expenses, and adjustment/audit fields stay admin-only.
+    function validOwnDailyCreate(docId) {
+      return request.resource.data.keys().hasAll([
+          'dailyId', 'staffId', 'staffName', 'dateKey', 'firstCheckInAt',
+          'firstCheckInAtMs', 'lastCheckOutAt', 'lastCheckOutAtMs', 'status',
+          'source', 'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'dailyId', 'staffId', 'staffName', 'dateKey', 'firstCheckInAt',
+          'firstCheckInAtMs', 'lastCheckOutAt', 'lastCheckOutAtMs', 'status',
+          'source', 'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+        ])
+        && hasStaffIdentity(request.resource.data.staffId)
+        && docId == request.resource.data.dailyId
+        && request.resource.data.dailyId == request.resource.data.staffId + '_' + request.resource.data.dateKey
+        && request.resource.data.staffId is string
+        && request.resource.data.staffName is string
+        && request.resource.data.dateKey is string
+        && request.resource.data.firstCheckInAt is string
+        && request.resource.data.firstCheckInAtMs is int
+        && request.resource.data.lastCheckOutAt == null
+        && request.resource.data.lastCheckOutAtMs == null
+        && request.resource.data.status == 'open'
+        && request.resource.data.source == 'web'
+        && request.resource.data.locationDistanceMeters is number
+        && request.resource.data.lastLocationAt is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validOwnDailyOperationalUpdate() {
+      return hasStaffIdentity(resource.data.staffId)
+        && ((resource.data.status == 'open'
+          && request.resource.data.status == 'closed'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastCheckOutAt', 'lastCheckOutAtMs', 'status', 'checkoutLocation',
+            'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+          ])
+          && request.resource.data.lastCheckOutAt is string
+          && request.resource.data.lastCheckOutAtMs is int
+          && request.resource.data.lastCheckOutAtMs >= resource.data.firstCheckInAtMs
+          && request.resource.data.checkoutLocation is map)
+        || (resource.data.status == 'closed'
+          && request.resource.data.status == 'open'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastCheckOutAt', 'lastCheckOutAtMs', 'status', 'source',
+            'locationDistanceMeters', 'lastLocationAt', 'updatedAt'
+          ])
+          && request.resource.data.lastCheckOutAt == null
+          && request.resource.data.lastCheckOutAtMs == null
+          && request.resource.data.source == 'web'))
+        && request.resource.data.locationDistanceMeters is number
+        && request.resource.data.lastLocationAt is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    // Role, UID↔staff mapping, disable state, and payroll fields are
+    // server-owned. A signed-in client may only update this narrow self-profile
+    // allowlist; account provisioning and role changes use a privileged callable.
+    function validSelfUserProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'displayName',
+        'username',
+        'photoURL',
+        'fcmTokens',
+        'pushPermission',
+        'pushTokenUpdatedAt',
+        'updatedAt'
+      ]);
+    }
+
     function isKitchen() {
       return userRole() == 'kitchen';
     }
@@ -93,17 +224,47 @@ service cloud.firestore {
     }
 
     match /Staff/{staffId} {
-      allow read: if signedIn();
+      allow get: if isAdmin() || hasStaffIdentity(staffId);
+      allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
+    match /attendance_daily/{docId} {
+      // Staff may inspect only their mapped own records; payroll reconciliation
+      // is manager/admin-only because amounts are business-critical.
+      allow read: if isAdmin() || hasStaffIdentity(resource.data.staffId);
+      allow create: if isAdmin() || validOwnDailyCreate(docId);
+      allow update: if isAdmin() || validOwnDailyOperationalUpdate();
+      allow delete: if isAdmin();
+    }
+
+    match /attendance_shifts/{docId} {
+      allow read: if isAdmin() || hasStaffIdentity(resource.data.staffId);
+      allow create: if isAdmin() || validOwnShiftCreate(docId);
+      allow update: if isAdmin() || validOwnShiftClose();
+      allow delete: if isAdmin();
+    }
+
     match /config/{docId} {
-      allow read, write: if signedIn();
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /users/{userId} {
-      allow read: if signedIn();
-      allow write: if signedIn() && !isKitchen();
+      // Personnel-directory access is needed by the manager/admin UI. Ordinary
+      // accounts may inspect only their own profile.
+      allow get: if isSelf(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      // Browser provisioning and direct role mutations are deliberately denied.
+      // Admin SDK / the authenticated management callable writes these documents.
+      allow create, delete: if false;
+      allow update: if isSelf(userId) && validSelfUserProfileUpdate();
     }
 
     match /tables/{docId} {
@@ -122,31 +283,38 @@ service cloud.firestore {
     }
 
     match /menu/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /inventory/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /history/{docId} {
-      allow read, write: if signedIn();
+      allow read: if isAdmin();
+      // Browser clients may create a completed record only through an
+      // administrator/manager POS session. Final history is never mutable from
+      // the browser; reconciliation/cancellation uses privileged backend code.
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     match /expenses/{docId} {
-      allow read, write: if signedIn();
+      allow read, write: if isAdmin();
     }
 
     match /purchases/{docId} {
-      allow read, write: if signedIn();
+      allow read, write: if isAdmin();
     }
 
     match /suppliers/{docId} {
-      allow read, write: if signedIn();
+      allow read, write: if isAdmin();
     }
 
     match /shiftLogs/{docId} {
-      allow read, write: if signedIn();
+      allow read, write: if isAdmin();
     }
 
     match /kitchen_notifications/{docId} {
@@ -160,8 +328,34 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
+    match /media_assets/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_asset_tags/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_asset_scores/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /refined_media_assets/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /media_embeddings/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /unitConversions/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /pending_users/{docId} {
@@ -174,11 +368,13 @@ service cloud.firestore {
     }
 
     match /Inventory_Items/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /Recipes_BOM/{docId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /{document=**} {
