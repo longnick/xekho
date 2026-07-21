@@ -1272,14 +1272,16 @@ onAuthStateChanged(_auth, async user => {
   window.appState.uid     = user.uid;
   window.appState.userDoc = { uid: user.uid, email: user.email, role, displayName, username };
 
-  // Setup presence RTDB
-  await _setupPresence(user.uid, displayName || username);
+  // PHASE_LOGIN_AUTH_FAST_PATH: profile is authoritative; presence is optional.
+  _dispatchEvent('db:authProfileReady', { userDoc: window.appState.userDoc });
+  _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
 
   // Bắt đầu lắng nghe Firestore
   _listen();
   _listenMasterCollections();
 
-  _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
+  // Presence is auxiliary and must not hold PIN/login rendering.
+  _setupPresence(user.uid, displayName || username).catch(err => console.warn('[DB] presence unavailable:', err));
   console.log('[DB] Auth OK –', role, user.email);
 });
 
@@ -2296,6 +2298,10 @@ const Expenses = {
     await _safeUpdateDoc(_doc('expenses', id), sanitize(data), `expenses.update(${id})`);
   },
 
+  async set(id, data) {
+    await _safeSetDoc(_doc('expenses', id), sanitize({ ...data, id }), { merge: true }, `expenses.set(${id})`);
+  },
+
   async delete(id) {
     await _safeDeleteDoc(_doc('expenses', id), `expenses.delete(${id})`);
   },
@@ -2304,6 +2310,35 @@ const Expenses = {
 const Attendance = {
   getDaily() { return window.appState.attendanceDaily || []; },
   getShifts() { return window.appState.attendanceShifts || []; },
+
+  async setDaily(dailyId, data) {
+    await _safeSetDoc(_doc('attendance_daily', dailyId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), { merge: true }, `attendance_daily.set(${dailyId})`);
+  },
+
+  async createShift(shiftId, data) {
+    await _safeSetDoc(_doc('attendance_shifts', shiftId), sanitize({
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }), undefined, `attendance_shifts.create(${shiftId})`);
+  },
+
+  async setDailyAndShift(dailyId, dailyData, shiftId, shiftData) {
+    const batch = writeBatch(_db);
+    batch.set(_doc('attendance_daily', dailyId), sanitize({
+      ...dailyData,
+      updatedAt: serverTimestamp(),
+    }), { merge: true });
+    batch.set(_doc('attendance_shifts', shiftId), sanitize({
+      ...shiftData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    await batch.commit();
+  },
 
   async updateDaily(dailyId, data) {
     await _safeUpdateDoc(_doc('attendance_daily', dailyId), sanitize({
@@ -2317,6 +2352,19 @@ const Attendance = {
       ...data,
       updatedAt: serverTimestamp(),
     }), `attendance_shifts.update(${shiftId})`);
+  },
+
+  async closeShiftAndDaily(shiftId, shiftData, dailyId, dailyData) {
+    const batch = writeBatch(_db);
+    batch.update(_doc('attendance_shifts', shiftId), sanitize({
+      ...shiftData,
+      updatedAt: serverTimestamp(),
+    }));
+    batch.update(_doc('attendance_daily', dailyId), sanitize({
+      ...dailyData,
+      updatedAt: serverTimestamp(),
+    }));
+    await batch.commit();
   },
 };
 

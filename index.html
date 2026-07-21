@@ -168,6 +168,7 @@
             </div>
           </div>
         </div>
+
       </div>
 
       <!-- ========== PAGE: ORDERS ========== -->
@@ -1051,7 +1052,7 @@
               </div>
               <button type="button" class="btn btn-sm btn-secondary" data-esm-render-refresh="renderAttendanceManagement">Làm mới</button>
             </div>
-            <div class="form-row" style="margin-bottom:12px">
+            <div class="form-row" style="margin-bottom:8px">
               <div class="input-group">
                 <label class="input-label">Từ ngày</label>
                 <input class="input" id="attendance-from-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
@@ -1061,8 +1062,30 @@
                 <input class="input" id="attendance-to-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
               </div>
             </div>
+            <div class="form-row" style="margin-bottom:12px">
+              <div class="input-group">
+                <label class="input-label">Nhân viên</label>
+                <select class="input" id="attendance-staff-filter" data-esm-render-refresh="renderAttendanceManagement">
+                  <option value="">Tất cả nhân viên</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Trạng thái</label>
+                <select class="input" id="attendance-status-filter" data-esm-render-refresh="renderAttendanceManagement">
+                  <option value="">Tất cả</option>
+                  <option value="open">Đang làm</option>
+                  <option value="closed">Đã chốt</option>
+                  <option value="adjusted">Đã điều chỉnh</option>
+                </select>
+              </div>
+            </div>
+            <!-- PHASE_F_ATTENDANCE_VIEW_ACTIONS: action row for mobile visibility -->
+            <div id="attendance-view-actions" class="attendance-view-actions">
+              <button type="button" class="btn btn-primary attendance-view-btn" onclick="showAttendanceResults()">📋 Xem bảng chấm công</button>
+              <button type="button" class="btn btn-secondary attendance-reset-btn" onclick="resetAttendanceFilters()">🔄 Bỏ lọc</button>
+            </div>
             <div id="attendance-summary" class="stats-grid" style="margin-bottom:12px"></div>
-            <div id="attendance-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+            <div id="attendance-management-list"></div>
           </div>
         </div>
 
@@ -2283,10 +2306,27 @@
         <form id="pin-form" onsubmit="handlePinSubmit(event)">
           <div class="input-group">
             <label class="input-label">Mã PIN</label>
-            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="1234" autocomplete="one-time-code" required>
+            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="1234" autocomplete="one-time-code" required oninput="renderWebAttendancePanel()">
           </div>
           <button type="submit" class="btn btn-primary btn-block">Mở khóa</button>
         </form>
+
+        <!-- Phase D: Web Attendance Quick Panel on PIN screen -->
+        <div class="card" id="web-attendance-card" style="margin-top:12px;">
+          <div class="card-header">
+            <div class="card-title">🕐 Chấm công web</div>
+            <span id="web-attendance-status" class="badge badge-secondary">Nhập PIN</span>
+          </div>
+          <div style="padding:12px 16px;">
+            <div id="web-attendance-info" style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.45">
+              Nhập mã PIN 4 số rồi bấm Vào ca/Ra ca. Hệ thống chỉ chấm công khi định vị cách quán dưới 15m.
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="web-attendance-checkin-btn" class="btn btn-sm btn-primary" onclick="webAttendanceCheckInFromPin()" disabled>✅ Vào ca</button>
+              <button id="web-attendance-checkout-btn" class="btn btn-sm btn-secondary" onclick="webAttendanceCheckOutFromPin()" disabled>🏁 Ra ca</button>
+            </div>
+          </div>
+        </div>
 
         <button id="lock-screen-logout-btn" type="button" class="btn btn-secondary btn-block" style="margin-top:10px;display:none" onclick="handleLogout()">Đổi tài khoản Firebase</button>
       </div>
@@ -2301,7 +2341,7 @@
   <script src="app/utils/format.js?v=20260604-exact-price-ui"></script>
   <script src="store.js?v=20260501-2"></script>
   <!-- ✅ Bước 1: db.js (Firebase Data Layer) phải load TRƯỚC app.js -->
-  <script type="module" src="db.js?v=20260619-table-special-cleanup"></script>
+  <script type="module" src="db.js?v=20260721-attendance-latency"></script>
   <script src="app/utils/dom.js?v=20260710-render-safety"></script>
   <script src="app/ui/toast.js?v=20260602-refactor-toast-ui"></script>
   <script src="app/ui/theme.js?v=20260602-refactor-theme-ui"></script>
@@ -2324,7 +2364,7 @@
   <script src="ai-actions.js?v=20260509-utf8fix"></script>
   <script src="ai-ui.js?v=20260509-utf8fix"></script>
   <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
-  <script src="app.js?v=20260710-render-safety"></script>
+  <script src="app.js?v=20260721-attendance-latency"></script>
   <!-- POS Offline Backup: Sprint 19 production with auto sync -->
   <script src="offlineBackup.js?v=20260601-sprint19"></script>
   <script src="offlineSync.js?v=20260601-sprint19"></script>
