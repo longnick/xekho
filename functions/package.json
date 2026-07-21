@@ -8,12 +8,12 @@
   "dependencies": {
     "@google-cloud/aiplatform": "^6.7.0",
     "@google/genai": "^2.9.0",
+    "@nlpjs/nlp": "5.0.0-alpha.5",
     "axios": "^1.18.1",
     "cors": "^2.8.5",
     "firebase-admin": "^13.10.0",
     "firebase-functions": "^7.2.5",
     "google-auth-library": "^9.15.1",
-    "node-nlp": "^3.10.2",
     "sharp": "^0.34.5"
   }
 }
