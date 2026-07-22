@@ -31,6 +31,9 @@ const telegramOnlineOrders = require('./telegram/online-orders');
 const generalUtils = require('./utils/general');
 const kitchenDeviceFeed = require('./kitchenDeviceFeed');
 const scriptableFinanceWidget = require('./scriptableFinanceWidget');
+const { createZaloWebhookHandler } = require('./zalo/webhook');
+const { sendZaloBotText } = require('./zalo/reminder');
+const { parseStaffCommand, buildStaffCommandReply } = require('./zalo/staffCommands');
 const { createManagedUser } = require('./userManagementService');
 const {
   authorizeRequest,
@@ -149,6 +152,8 @@ const VERTEX_TEXT_MODEL = defineString('VERTEX_TEXT_MODEL', { default: 'gemini-3
 const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen-3.0-generate-001' });
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
+const ZALO_BOT_WEBHOOK_SECRET = defineSecret('ZALO_BOT_WEBHOOK_SECRET');
+const ZALO_BOT_TOKEN = defineSecret('ZALO_BOT_TOKEN');
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
 const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
 const telegramWebhookRateLimiter = createTelegramRateLimiter({ limit: 120, windowMs: 60000 });
@@ -4340,6 +4345,32 @@ exports.testCompletedOrderTelegram = onRequest({
     }
   });
 });
+
+exports.zaloWebhook = onRequest({
+  region: DEFAULT_REGION,
+  memory: HEAVY_FUNCTION_MEMORY,
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+  secrets: [ZALO_BOT_WEBHOOK_SECRET, ZALO_BOT_TOKEN],
+}, createZaloWebhookHandler({
+  getSecret: () => ZALO_BOT_WEBHOOK_SECRET.value(),
+  logger,
+  onEvent: async ({ event, messageText }) => {
+    if (event.chatType !== 'GROUP') return;
+    const command = parseStaffCommand(messageText);
+    const reply = buildStaffCommandReply(command);
+    if (!reply) return;
+    await sendZaloBotText({
+      botToken: ZALO_BOT_TOKEN.value(),
+      chatId: event.chatId,
+      text: reply,
+    });
+    logger.info('zalo_staff_command_replied', {
+      messageId: event.messageId,
+      chatId: event.chatId,
+      command,
+    });
+  },
+}));
 
 exports.telegramWebhook = onRequest({
   region: 'asia-southeast1',
