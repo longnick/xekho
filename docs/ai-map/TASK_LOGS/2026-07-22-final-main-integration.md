@@ -31,3 +31,10 @@
 
 - Source integration candidate: locally green, pending independent review and GitHub PR checks.
 - Production: not deployed; real-device authenticated QA, role/staff mapping review, staged deploy approval, and live smoke remain required.
+
+## GitHub PR correction
+
+- Closed merge-history PR #3 after Gitleaks correctly scanned inherited pre-sanitization history and found historical findings; no allowlist bypass was added.
+- GitHub Frontend jobs exposed missing `functions/node_modules` before root Jest discovery; CI now installs the Functions lockfile in each Frontend matrix job.
+- GitHub Rules job exposed Firebase CLI's Java 21 floor; CI now installs Temurin 21 before Emulator tests.
+- Final handoff uses a single-parent snapshot commit based on current `main`, with this reviewed tree, so old pre-sanitization history is not introduced into `main`.
