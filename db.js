@@ -184,6 +184,8 @@ window.appState = {
   settings:   null,
   users:      null,
   staff:      null,
+  attendanceDaily: null,
+  attendanceShifts: null,
   history:    null,
   expenses:   null,
   purchases:  null,
@@ -491,7 +493,7 @@ async function repairVietnameseNow(options = {}) {
 
 // Đếm số snapshot đã ready để biết khi nào appState.ready = true
 let _snapshotReadyCount  = 0;
-const TOTAL_SNAPSHOTS    = 13;   // settings, settings/financial_profile, tables, orders, onlineOrders, dailyRevenueSnapshots, menu, inventory, users, staff, history, expenses, purchases
+const TOTAL_SNAPSHOTS    = 16;   // settings, settings/financial_profile, settings/telegram_report, tables, orders, onlineOrders, dailyRevenueSnapshots, menu, inventory, users, staff, attendanceDaily, attendanceShifts, history, expenses, purchases
 
 function _markSnapshotReady() {
   _snapshotReadyCount++;
@@ -931,6 +933,23 @@ function _listen() {
     _dispatchEvent('db:update', { key: 'settings' });
   }, _snapErr('settings/financial_profile')));
 
+  // 5a.2 Telegram report settings
+  _unsubs.push(onSnapshot(doc(_db, 'settings', 'telegram_report'), snap => {
+    const saved = snap.exists() ? (snap.data() || {}) : {};
+    const patch = {};
+    for (const [k, v] of Object.entries(saved)) {
+      if (k.startsWith('telegramReport')) {
+        patch[k] = v;
+      } else {
+        const prefixedKey = 'telegramReport' + k.charAt(0).toUpperCase() + k.slice(1);
+        patch[prefixedKey] = v;
+      }
+    }
+    _mergeRuntimeSettingsPatch(patch);
+    _markSnapshotReady();
+    _dispatchEvent('db:update', { key: 'settings' });
+  }, _snapErr('settings/telegram_report')));
+
   // 5b. Tables  (sắp xếp theo id)
   _unsubs.push(onSnapshot(query(_col('tables'), orderBy('id')), snap => {
     window.appState.tables = snap.docs.map(_fromDoc).filter(Boolean);
@@ -959,7 +978,7 @@ function _listen() {
       const rows = snap.docs
         .map(_fromDoc)
         .filter(Boolean)
-        .filter(order => String(order?.status || '').toLowerCase() !== 'completed');
+        .filter(order => isActiveOnlineOrderForTables(order));
       window.appState.onlineOrders = rows;
       _markSnapshotReady();
       _dispatchEvent('db:update', { key: 'onlineOrders' });
@@ -1033,19 +1052,65 @@ function _listen() {
     }
   }, _snapErr('inventory')));
 
-  // 5f. Users
-  _unsubs.push(onSnapshot(_col('users'), snap => {
-    window.appState.users = snap.docs.map(_fromDoc).filter(Boolean);
-    _markSnapshotReady();
-    _dispatchEvent('db:update', { key: 'users' });
-  }, _snapErr('users')));
+  // 5f. Users: personnel directory is manager/admin-only. Other authenticated
+  // users may listen only to their own profile, matching the Firestore Rules.
+  const sessionRole = String(window.appState?.userDoc?.role || '').trim().toLowerCase();
+  const canReadUserDirectory = ['admin', 'manager'].includes(sessionRole);
+  const mappedStaffId = String(window.appState?.userDoc?.staffId || '').trim();
+  const usersListener = canReadUserDirectory
+    ? onSnapshot(_col('users'), snap => {
+      window.appState.users = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'users' });
+    }, _snapErr('users'))
+    : onSnapshot(_doc('users', window.appState.uid), snap => {
+      window.appState.users = snap.exists() ? [_fromDoc(snap)].filter(Boolean) : [];
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'users' });
+    }, _snapErr('users.self'));
+  _unsubs.push(usersListener);
 
-  // 5f+. Staff (PIN login + personnel management)
-  _unsubs.push(onSnapshot(query(_col('Staff'), orderBy('full_name')), snap => {
-    window.appState.staff = snap.docs.map(_fromDoc).filter(Boolean);
-    _markSnapshotReady();
-    _dispatchEvent('db:update', { key: 'staff' });
-  }, _snapErr('Staff')));
+  // 5f+. Staff: manager/admin reads the directory; a staff account gets only
+  // its server-mapped personnel record.
+  const staffListener = canReadUserDirectory
+    ? onSnapshot(query(_col('Staff'), orderBy('full_name')), snap => {
+      window.appState.staff = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'staff' });
+    }, _snapErr('Staff'))
+    : onSnapshot(_doc('Staff', mappedStaffId), snap => {
+      window.appState.staff = snap.exists() ? [_fromDoc(snap)].filter(Boolean) : [];
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'staff' });
+    }, _snapErr('Staff.self'));
+  _unsubs.push(staffListener);
+
+  // 5f++. Attendance (Telegram checkin/checkout + daily payroll). Staff
+  // identities are mapped server-side in users/{uid}. Avoid a directory query
+  // for staff because Rules intentionally permit only their own rows.
+  const attendanceDailyQuery = canReadUserDirectory
+    ? query(_col('attendance_daily'), orderBy('dateKey', 'desc'), limit(180))
+    : query(_col('attendance_daily'), where('staffId', '==', mappedStaffId), limit(180));
+  const attendanceShiftQuery = canReadUserDirectory
+    ? query(_col('attendance_shifts'), orderBy('checkInAtMs', 'desc'), limit(240))
+    : query(_col('attendance_shifts'), where('staffId', '==', mappedStaffId), limit(240));
+  _unsubs.push(onSnapshot(
+    attendanceDailyQuery,
+    snap => {
+      window.appState.attendanceDaily = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'attendanceDaily' });
+    }, _snapErr('attendance_daily')
+  ));
+
+  _unsubs.push(onSnapshot(
+    attendanceShiftQuery,
+    snap => {
+      window.appState.attendanceShifts = snap.docs.map(_fromDoc).filter(Boolean);
+      _markSnapshotReady();
+      _dispatchEvent('db:update', { key: 'attendanceShifts' });
+    }, _snapErr('attendance_shifts')
+  ));
 
   // 5g. History  (500 đơn mới nhất – đủ cho báo cáo tháng)
   _unsubs.push(onSnapshot(
@@ -1137,6 +1202,13 @@ function _snapErr(name) {
   return e => console.error(`[DB] onSnapshot error [${name}]:`, e);
 }
 
+function isActiveOnlineOrderForTables(order) {
+  if (!order || order.hidden === true || order.deletedAt || order.deletedFromAppAt || order.archivedAt) return false;
+  const status = String(order.status || 'pending').trim().toLowerCase();
+  if (['completed', 'closed', 'cancelled', 'canceled', 'rejected', 'declined', 'expired', 'archived', 'deleted'].includes(status)) return false;
+  if (order.cancelledAt || order.canceledAt || order.cancelReason) return false;
+  return ['pending', 'approved', 'pos_sync', 'preparing', 'ready_to_serve', 'delivering'].includes(status);
+}
 
 // ============================================================
 // §6  FIREBASE AUTH  +  RBAC
@@ -1156,6 +1228,8 @@ onAuthStateChanged(_auth, async user => {
     window.appState.settings = null;
     window.appState.users = null;
     window.appState.staff = null;
+    window.appState.attendanceDaily = null;
+    window.appState.attendanceShifts = null;
     window.appState.history = null;
     window.appState.expenses = null;
     window.appState.purchases = null;
@@ -1174,34 +1248,19 @@ onAuthStateChanged(_auth, async user => {
   _snapshotReadyCount = 0;
   window.appState.ready = false;
 
-  // Đọc / tạo document users/{uid}
-  const uRef  = _doc('users', user.uid);
-  const uSnap = await getDoc(uRef);
-
-  let role        = 'staff';
-  let displayName = user.displayName || user.email;
-  let username    = user.email.split('@')[0];
-
-  if (uSnap.exists()) {
-    const d = uSnap.data();
-    role        = d.role        || 'staff';
-    displayName = d.displayName || displayName;
-    username    = d.username    || username;
-  } else {
-    // Lần đầu đăng nhập → tạo doc
-    role = (user.email === OWNER_EMAIL) ? 'admin' : 'staff';
-    await setDoc(uRef, sanitize({
-      uid:         user.uid,
-      email:       user.email,
-      displayName,
-      username,
-      role,
-      createdAt:   serverTimestamp(),
-    }));
+  // User profiles and roles are provisioned server-side. A browser must never
+  // create its own profile or infer an elevated role from an email address.
+  if (!uSnap.exists()) {
+    console.warn('[DB] Thiếu hồ sơ quyền server-side; đăng xuất an toàn.', user.uid);
+    _dispatchEvent('db:authProfileMissing', { uid: user.uid });
+    await signOut(_auth);
+    return;
   }
 
-  // Email chủ quán luôn là admin (bảo đảm không bị hạ quyền)
-  if (user.email === OWNER_EMAIL) role = 'admin';
+  const d = uSnap.data();
+  let role = d.role || 'staff';
+  let displayName = d.displayName || user.displayName || user.email;
+  let username = d.username || user.email.split('@')[0];
 
   // Tài khoản bị vô hiệu hóa → đăng xuất ngay
   if (role === 'disabled') {
@@ -1213,14 +1272,16 @@ onAuthStateChanged(_auth, async user => {
   window.appState.uid     = user.uid;
   window.appState.userDoc = { uid: user.uid, email: user.email, role, displayName, username };
 
-  // Setup presence RTDB
-  await _setupPresence(user.uid, displayName || username);
+  // PHASE_LOGIN_AUTH_FAST_PATH: profile is authoritative; presence is optional.
+  _dispatchEvent('db:authProfileReady', { userDoc: window.appState.userDoc });
+  _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
 
   // Bắt đầu lắng nghe Firestore
   _listen();
   _listenMasterCollections();
 
-  _dispatchEvent('db:signedIn', { userDoc: window.appState.userDoc });
+  // Presence is auxiliary and must not hold PIN/login rendering.
+  _setupPresence(user.uid, displayName || username).catch(err => console.warn('[DB] presence unavailable:', err));
   console.log('[DB] Auth OK –', role, user.email);
 });
 
@@ -1239,9 +1300,12 @@ const Auth = {
     return signOut(_auth);
   },
 
-  /** Tạo tài khoản Firebase Auth mới (dùng từ màn hình quản lý nhân viên) */
-  async createUser(email, password) {
-    return createUserWithEmailAndPassword(_auth, email, password);
+  /**
+   * Client-side account creation is disabled. Personnel accounts must be
+   * provisioned through `DB.Users.add`, which calls the authenticated backend.
+   */
+  async createUser() {
+    throw new Error('Client-side account creation is disabled; use DB.Users.add.');
   },
 
   get currentUser() { return _auth.currentUser; },
@@ -1400,6 +1464,18 @@ const Orders = {
     const snap = await getDocs(query(
       _col('orders'),
       where('onlineOrderCode', '==', cleanCode),
+      limit(1)
+    ));
+    const docSnap = snap.docs[0] || null;
+    return docSnap ? _fromDoc(docSnap) : null;
+  },
+
+  async findByClientOrderId(clientOrderId) {
+    const cleanId = String(clientOrderId || '').trim();
+    if (!cleanId) return null;
+    const snap = await getDocs(query(
+      _col('orders'),
+      where('clientOrderId', '==', cleanId),
       limit(1)
     ));
     const docSnap = snap.docs[0] || null;
@@ -1701,6 +1777,7 @@ const Menu = {
       display_name: item.name || ref.id,
       category: item.category || 'Khac',
       sell_price: Number(item.price || 0),
+      price: Number(item.price || 0),
       image_url: item.image_url || '',
       item_type: _appMenuTypeToMaster(item.itemType),
       aliases: item.aliases || '',
@@ -1722,7 +1799,11 @@ const Menu = {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(data, 'name')) payload.display_name = data.name;
     if (Object.prototype.hasOwnProperty.call(data, 'category')) payload.category = data.category;
-    if (Object.prototype.hasOwnProperty.call(data, 'price')) payload.sell_price = Number(data.price || 0);
+    if (Object.prototype.hasOwnProperty.call(data, 'price')) {
+      const nextPrice = Number(data.price || 0);
+      payload.sell_price = nextPrice;
+      payload.price = nextPrice;
+    }
     if (Object.prototype.hasOwnProperty.call(data, 'image_url')) payload.image_url = data.image_url;
     if (Object.prototype.hasOwnProperty.call(data, 'hidden')) payload.hidden = !!data.hidden;
     if (Object.prototype.hasOwnProperty.call(data, 'itemType')) payload.item_type = _appMenuTypeToMaster(data.itemType);
@@ -1936,7 +2017,55 @@ const Settings = {
 
   /** Lưu settings – thay Store.setSettings() */
   async save(data) {
-    await _safeSetDoc(_settingsDoc(), { ...data }, { merge: true }, 'settings.save');
+    const cleanData = { ...data };
+    const reportPatch = {};
+    let hasReportKeys = false;
+    for (const key of Object.keys(cleanData)) {
+      if (key.startsWith('telegramReport')) {
+        const cleanKey = key.slice(14); // strip 'telegramReport'
+        const normalizedKey = cleanKey.charAt(0).toLowerCase() + cleanKey.slice(1);
+        reportPatch[normalizedKey] = cleanData[key];
+        delete cleanData[key];
+        hasReportKeys = true;
+      }
+    }
+    if (hasReportKeys) {
+      await Settings.saveTelegramReportSettings(reportPatch).catch(err => {
+        console.warn('[DB] Failed to save telegram report settings:', err);
+      });
+    }
+    await _safeSetDoc(_settingsDoc(), cleanData, { merge: true }, 'settings.save');
+  },
+
+  /** Đọc cấu hình báo cáo Telegram riêng biệt */
+  async getTelegramReportSettings() {
+    try {
+      const snap = await getDoc(doc(_db, 'settings', 'telegram_report'));
+      return snap.exists() ? snap.data() : null;
+    } catch (e) {
+      console.warn('[DB] getTelegramReportSettings failed:', e);
+      return null;
+    }
+  },
+
+  /** Lưu cấu hình báo cáo Telegram riêng biệt */
+  async saveTelegramReportSettings(patch) {
+    const ref = doc(_db, 'settings', 'telegram_report');
+    await _safeSetDoc(ref, {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: _getAuditActor()
+    }, { merge: true }, 'telegram_report.save');
+  },
+
+  /** Lưu cấu hình tài chính: lương quản lý tháng + chi phí cố định */
+  async saveFinancialProfile(patch) {
+    const ref = doc(_db, 'settings', 'financial_profile');
+    await _safeSetDoc(ref, {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: _getAuditActor()
+    }, { merge: true }, 'financial_profile.save');
   },
 };
 
@@ -1944,84 +2073,58 @@ const Settings = {
 // ============================================================
 // §13  USERS API  –  thay Store.getUsers / setUsers
 // ============================================================
+const _manageUserAccountCallable = httpsCallable(_functions, 'manageUserAccount');
+const SELF_SERVICE_USER_FIELDS = new Set([
+  'displayName',
+  'username',
+  'photoURL',
+  'fcmTokens',
+  'pushPermission',
+  'pushTokenUpdatedAt',
+]);
+
 const Users = {
-  /** Lấy danh sách users – thay Store.getUsers() */
+  /** Lấy danh sách users – manager/admin see directory; other roles see self. */
   getAll() { return window.appState.users; },
 
-  /** Sửa thông tin user (role, displayName, password...) */
-  async update(uid, data) {
-    await _safeUpdateDoc(_doc('users', uid), data, `users.update(${uid})`);
+  /** Only the currently authenticated user may update the self-profile allowlist. */
+  async update(uid, data = {}) {
+    const currentUid = String(_auth.currentUser?.uid || '');
+    if (!currentUid || String(uid) !== currentUid) {
+      throw new Error('Chỉ được cập nhật hồ sơ của chính mình.');
+    }
+    const keys = Object.keys(data);
+    if (keys.some(key => !SELF_SERVICE_USER_FIELDS.has(key))) {
+      throw new Error('Trường hồ sơ này phải được quản lý bởi máy chủ.');
+    }
+    await _safeUpdateDoc(_doc('users', currentUid), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), 'users.updateSelfProfile');
   },
 
-  /** Đặt role cho user */
-  async setRole(uid, role) {
-    await _safeUpdateDoc(_doc('users', uid), { role }, `users.setRole(${uid})`);
+  /** Direct role mutation is intentionally unavailable in the browser. */
+  async setRole() {
+    throw new Error('Role phải được quản lý qua backend có xác thực.');
   },
 
-  /** Vô hiệu hóa user */
-  async disable(uid) {
-    await _safeUpdateDoc(_doc('users', uid), { role: 'disabled' }, `users.disable(${uid})`);
+  /** Direct account disabling is intentionally unavailable in the browser. */
+  async disable() {
+    throw new Error('Vô hiệu hóa tài khoản phải được quản lý qua backend có xác thực.');
   },
 
   /**
-   * FIX 3: Tạo tài khoản nhân viên mới MÀ KHÔNG văng phiên Admin.
-   * Dùng Secondary Firebase App ("GhostApp") để createUser,
-   * sau đó đăng xuất app phụ và xóa nó. Admin không bị ảnh hưởng.
-   * @param {string} email
-   * @param {string} password
-   * @param {string} displayName
-   * @param {string} role - 'staff' | 'admin'
+   * Creates a Firebase Auth account and its role-bearing users document through
+   * the authenticated callable. Passwords never enter Firestore or logs.
    */
   async add(email, password, displayName, role = 'staff') {
-    let ghostApp;
-    try {
-      // Khởi tạo Firebase App phụ (ghost) tạm thời
-      const { initializeApp: _initApp, deleteApp } = await import(
-        'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'
-      );
-      const { getAuth: _getAuth,
-              createUserWithEmailAndPassword: _createUser,
-              signOut: _signOut } = await import(
-        'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'
-      );
-
-      ghostApp  = _initApp(FIREBASE_CONFIG, `GhostApp_${Date.now()}`);
-      const ghostAuth = _getAuth(ghostApp);
-
-      // Tạo tài khoản trên Ghost app
-      const cred = await _createUser(ghostAuth, email, password);
-      const newUid = cred.user.uid;
-
-      // Đăng xuất ngay khỏi ghost auth (không ảnh hưởng _auth chính)
-      await _signOut(ghostAuth);
-
-      // Ghi document user vào Firestore bằng app chính (Admin)
-      const username = displayName || email.split('@')[0];
-      await setDoc(_doc('users', newUid), sanitize({
-        uid: newUid,
-        email,
-        displayName: displayName || username,
-        username,
-        role,
-        createdAt: serverTimestamp(),
-      }));
-
-      // Dọn sạch Ghost App
-      await deleteApp(ghostApp);
-      ghostApp = null;
-
-      console.log('[DB] Users.add: Tạo thành công nhân viên', email, '| role:', role);
-      return { success: true, uid: newUid };
-    } catch (err) {
-      if (ghostApp) {
-        try {
-          const { deleteApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-          await deleteApp(ghostApp);
-        } catch(_) {}
-      }
-      console.error('[DB] Users.add error:', err);
-      throw err;
-    }
+    const response = await _manageUserAccountCallable({
+      email,
+      password,
+      displayName,
+      role,
+    });
+    return { success: true, ...(response?.data || {}) };
   },
 };
 
@@ -2063,6 +2166,11 @@ const Staff = {
       pin_code: String(data?.pin_code || '').trim(),
       role: String(data?.role || 'staff').trim().toLowerCase(),
       status: String(data?.status || 'active').trim().toLowerCase(),
+      hourly_rate: Number(data?.hourly_rate || 0) || 0,
+      telegram_user_id: String(data?.telegram_user_id || '').trim() || null,
+      telegram_username: String(data?.telegram_username || '').trim() || null,
+      telegram_chat_id: String(data?.telegram_chat_id || '').trim() || null,
+      require_location_checkin: data?.require_location_checkin === true,
     });
     await _safeSetDoc(ref, _withCreateAudit(payload), undefined, `Staff.add(${ref.id})`);
     return ref.id;
@@ -2074,6 +2182,11 @@ const Staff = {
       pin_code: data?.pin_code != null ? String(data.pin_code).trim() : undefined,
       role: data?.role != null ? String(data.role).trim().toLowerCase() : undefined,
       status: data?.status != null ? String(data.status).trim().toLowerCase() : undefined,
+      hourly_rate: data?.hourly_rate != null ? (Number(data.hourly_rate || 0) || 0) : undefined,
+      telegram_user_id: data?.telegram_user_id != null ? (String(data.telegram_user_id || '').trim() || null) : undefined,
+      telegram_username: data?.telegram_username != null ? (String(data.telegram_username || '').trim() || null) : undefined,
+      telegram_chat_id: data?.telegram_chat_id != null ? (String(data.telegram_chat_id || '').trim() || null) : undefined,
+      require_location_checkin: data?.require_location_checkin != null ? data.require_location_checkin === true : undefined,
     });
     await _safeUpdateDoc(_doc('Staff', staffId), _withUpdateAudit(payload), `Staff.update(${staffId})`);
   },
@@ -2185,8 +2298,73 @@ const Expenses = {
     await _safeUpdateDoc(_doc('expenses', id), sanitize(data), `expenses.update(${id})`);
   },
 
+  async set(id, data) {
+    await _safeSetDoc(_doc('expenses', id), sanitize({ ...data, id }), { merge: true }, `expenses.set(${id})`);
+  },
+
   async delete(id) {
     await _safeDeleteDoc(_doc('expenses', id), `expenses.delete(${id})`);
+  },
+};
+
+const Attendance = {
+  getDaily() { return window.appState.attendanceDaily || []; },
+  getShifts() { return window.appState.attendanceShifts || []; },
+
+  async setDaily(dailyId, data) {
+    await _safeSetDoc(_doc('attendance_daily', dailyId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), { merge: true }, `attendance_daily.set(${dailyId})`);
+  },
+
+  async createShift(shiftId, data) {
+    await _safeSetDoc(_doc('attendance_shifts', shiftId), sanitize({
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }), undefined, `attendance_shifts.create(${shiftId})`);
+  },
+
+  async setDailyAndShift(dailyId, dailyData, shiftId, shiftData) {
+    const batch = writeBatch(_db);
+    batch.set(_doc('attendance_daily', dailyId), sanitize({
+      ...dailyData,
+      updatedAt: serverTimestamp(),
+    }), { merge: true });
+    batch.set(_doc('attendance_shifts', shiftId), sanitize({
+      ...shiftData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    await batch.commit();
+  },
+
+  async updateDaily(dailyId, data) {
+    await _safeUpdateDoc(_doc('attendance_daily', dailyId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), `attendance_daily.update(${dailyId})`);
+  },
+
+  async updateShift(shiftId, data) {
+    await _safeUpdateDoc(_doc('attendance_shifts', shiftId), sanitize({
+      ...data,
+      updatedAt: serverTimestamp(),
+    }), `attendance_shifts.update(${shiftId})`);
+  },
+
+  async closeShiftAndDaily(shiftId, shiftData, dailyId, dailyData) {
+    const batch = writeBatch(_db);
+    batch.update(_doc('attendance_shifts', shiftId), sanitize({
+      ...shiftData,
+      updatedAt: serverTimestamp(),
+    }));
+    batch.update(_doc('attendance_daily', dailyId), sanitize({
+      ...dailyData,
+      updatedAt: serverTimestamp(),
+    }));
+    await batch.commit();
   },
 };
 
@@ -2659,8 +2837,8 @@ async function migrateLocalToFirestore(isDryRun = true) {
  * seedTablesIfEmpty(tableCount)
  *
  * Kiểm tra collection 'tables' trên Firestore.
- * Nếu CHƯ A CÓ BẬN NÀO hết → khởi tạo đủ tableCount bàn trống.
- * Náº¿u ÄÃ£ cÃ³ dá»¯ liá»u â khÃ´ng lÃ m gÃ¬ (chá»ng ghi ÄÃ¨).
+ * Nếu CHƯA CÓ BÀN NÀO hết → khởi tạo đủ tableCount bàn trống.
+ * Nếu đã có dữ liệu → không làm gì (chống ghi đè).
  *
  * Mục đích: Tránh lỗi "failed-precondition" khi app.js cố
  *   query/update một document bàn chưa tồn tại trên Firestore.
@@ -2779,7 +2957,7 @@ async function forceMigrateToCloud() {
   console.log(`- Đã bơm ${invData.length} Kho`);
   console.log(`- Đã đẩy Cấu hình Default Settings`);
   
-  alert('ÄÃ BÆ M Dá»® LIá»U LÃN CLOUD THÃNH CÃNG! TrÃ¬nh duyá»t sáº½ ÄÆ°á»£c táº£i láº¡i ngay.');
+  alert('ĐÃ BƠM DỮ LIỆU LÊN CLOUD THÀNH CÔNG! Trình duyệt sẽ được tải lại ngay.');
   window.location.reload();
 }
 
@@ -2944,7 +3122,7 @@ async function migrateFromBackupJson(backupObj, isDryRun = true) {
     });
 
     if (isDryRun) {
-      console.groupCollapsed('[migrateJson ð] users (password ÄÃ£ bá» loáº¡i bá»)');
+      console.groupCollapsed('[migrateJson 🔍] users (password đã bị loại bỏ)');
       console.table(usersClean);
       console.groupEnd();
     } else {
@@ -3002,6 +3180,115 @@ const Storage = {
       console.warn('[DB] Lỗi xóa ảnh Storage (có thể file không tồn tại):', err);
     }
   }
+};
+
+const MEDIA_REFINERY_FUNCTION_BASE = 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/mediaRefineryApi';
+
+async function _mediaRefineryRequest(path, options = {}) {
+  const authUser = _auth.currentUser;
+  if (!authUser?.getIdToken) {
+    throw new Error('Chưa có phiên đăng nhập Firebase để gọi media-refinery.');
+  }
+  const token = await authUser.getIdToken();
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...(options.headers || {}),
+  };
+  const init = { method, headers };
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(options.body || {});
+  }
+  const response = await fetch(`${MEDIA_REFINERY_FUNCTION_BASE}${path}`, init);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    throw new Error(data?.error || `Media-refinery request failed (${response.status})`);
+  }
+  return data;
+}
+
+function _toQueryString(params = {}) {
+  const sp = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    sp.set(key, String(value));
+  });
+  const qs = sp.toString();
+  return qs ? `?${qs}` : '';
+}
+
+const MediaRefinery = {
+  CONTENT_ALLOWED_STATUSES: ['REFINED', 'TAGGED', 'PUBLISH_READY', 'HERO_ASSET'],
+
+  async ingest(payload = {}) {
+    return _mediaRefineryRequest('/ingest', { method: 'POST', body: payload });
+  },
+
+  async list(params = {}) {
+    return _mediaRefineryRequest(`/assets${_toQueryString(params)}`);
+  },
+
+  async get(assetId) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}`);
+  },
+
+  async score(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/score`, { method: 'POST', body: payload });
+  },
+
+  async refine(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/refine`, { method: 'POST', body: payload });
+  },
+
+  async qa(assetId, payload = {}) {
+    const id = String(assetId || '').trim();
+    if (!id) throw new Error('Thiếu assetId.');
+    return _mediaRefineryRequest(`/assets/${encodeURIComponent(id)}/qa`, { method: 'POST', body: payload });
+  },
+
+  async search(params = {}) {
+    return _mediaRefineryRequest(`/search${_toQueryString(params)}`);
+  },
+
+  async publishReady(params = {}) {
+    return _mediaRefineryRequest(`/publish-ready${_toQueryString(params)}`);
+  },
+
+  async createBrief(payload = {}) {
+    return _mediaRefineryRequest('/create-brief', { method: 'POST', body: payload });
+  },
+
+  async assertPublishReady(params = {}) {
+    const result = await this.publishReady(params);
+    if (!result.can_generate_post) {
+      const err = new Error(result.reason || 'Không có media publish-ready.');
+      err.result = result;
+      throw err;
+    }
+    return result;
+  },
+
+  listenAssets(handler, options = {}) {
+    if (typeof handler !== 'function') return () => {};
+    const status = String(options.status || '').trim();
+    const productId = String(options.productId || '').trim();
+    let q = _col('media_assets');
+    const constraints = [];
+    if (status) constraints.push(where('status', '==', status));
+    if (productId) constraints.push(where('detected_product_id', '==', productId));
+    constraints.push(limit(Math.max(1, Math.min(100, Number(options.limit || 50) || 50))));
+    q = query(q, ...constraints);
+    return onSnapshot(q, snap => {
+      handler(snap.docs.map(_fromDoc).filter(Boolean), snap);
+    }, _snapErr('media_assets'));
+  },
 };
 
 
@@ -3118,6 +3405,7 @@ window.DB = {
   Settings,
   Users,
   Staff,
+  Attendance,
   History,
   HistoryArchive,
   Expenses,
@@ -3130,6 +3418,7 @@ window.DB = {
   SystemLogs,
   ShiftLogs,    // FIX 3: Chốt ca Cloud
   Storage,
+  MediaRefinery,
 
   // Công cụ di trú dữ liệu
   migrate:     migrateLocalToFirestore,

@@ -7,8 +7,10 @@ const { defineSecret, defineString } = require('firebase-functions/params');
 const axios = require('axios');
 const cors = require('cors')({ origin: true });
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const sharp = require('sharp');
+const { GoogleGenAI, Type } = require('@google/genai');
 const {
   getVertexCredentials,
   getVertexAuthContexts,
@@ -19,18 +21,62 @@ const {
   collectFunctionCalls,
   collectInlineImage,
 } = require('./vertexAi');
+const textUtils = require('./utils/text');
+const telegramSend = require('./telegram/send');
+const telegramKitchen = require('./telegram/kitchen');
+const telegramReports = require('./telegram/reports');
+const telegramAds = require('./telegram/ads');
+const telegramOrders = require('./telegram/orders');
+const telegramOnlineOrders = require('./telegram/online-orders');
+const generalUtils = require('./utils/general');
+const kitchenDeviceFeed = require('./kitchenDeviceFeed');
+const { createManagedUser } = require('./userManagementService');
+const {
+  authorizeRequest,
+  isContentLengthAllowed,
+  validateBase64Media,
+  createRateLimiter,
+  validateTrustedHttpsUrl,
+  isPrivateIpAddress,
+  readBodyWithLimit,
+  fetchTrustedImage,
+} = require('./utils/httpSecurity');
+const {
+  authorizeCallable,
+  CALLABLE_ALLOWED_ROLES,
+} = require('./utils/callableAuthorization');
+const {
+  makeCallableHandlers,
+  toSafeCallableError,
+  toSafeManagedUserError,
+} = require('./callableHandlers');
+const {
+  isAuthenticTelegramWebhook,
+  extractTelegramWebhookSecret,
+  isTelegramWebhookBodySizeAllowed,
+  isTelegramWriteCallbackData,
+  isAuthorizedTelegramWriteActor,
+  createRateLimiter: createTelegramRateLimiter,
+  DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES,
+} = require('./telegram/webhookSecurity');
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const db = admin.firestore();
+telegramAds.setAdsRevenueDataDependencies({
+  queryHistoryRevenue,
+  queryManualAdsDailyStats,
+  fetchMetaAdsInsights,
+  loadTelegramReportFinancialProfile,
+});
 let cachedAiDeps = null;
 
 function getAiDeps() {
   if (cachedAiDeps) return cachedAiDeps;
   cachedAiDeps = {
-    NlpManager: require('node-nlp').NlpManager,
+    Nlp: require('@nlpjs/nlp').Nlp,
     training: require('./POS_NLU_Training.json'),
     geminiTools: require('./geminiTools').geminiTools,
     ...require('./firestoreMegaTools'),
@@ -38,11 +84,7 @@ function getAiDeps() {
   return cachedAiDeps;
 }
 
-function chunkArray(arr, size) {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
-  return chunks;
-}
+function chunkArray(arr, size) { return textUtils.chunkArray(arr, size); }
 
 async function buildRestockMapFromHistoryOrder(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
@@ -102,22 +144,27 @@ const DEEPSEEK_MODEL = defineString('DEEPSEEK_MODEL', { default: 'deepseek-chat'
 const VERTEX_SERVICE_ACCOUNT_JSON = defineSecret('VERTEX_SERVICE_ACCOUNT_JSON');
 const VERTEX_PROJECT_ID = defineString('VERTEX_PROJECT_ID', { default: 'pos-v2-909ff' });
 const VERTEX_LOCATION = defineString('VERTEX_LOCATION', { default: 'global' });
-const VERTEX_TEXT_MODEL = defineString('VERTEX_TEXT_MODEL', { default: 'gemini-2.5-flash' });
+const VERTEX_TEXT_MODEL = defineString('VERTEX_TEXT_MODEL', { default: 'gemini-3.5-flash' });
 const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen-3.0-generate-001' });
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
+const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
+const telegramWebhookRateLimiter = createTelegramRateLimiter({ limit: 120, windowMs: 60000 });
 const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
 const TELEGRAM_OWNER_CHAT_ID = defineString('TELEGRAM_OWNER_CHAT_ID', { default: '' });
+const TELEGRAM_ASSISTANT_BOT_NAME = defineString('TELEGRAM_ASSISTANT_BOT_NAME', { default: 'XE KHO Owner Assistant' });
 const TELEGRAM_COMPLETED_ORDER_CHAT_ID = defineString('TELEGRAM_COMPLETED_ORDER_CHAT_ID', { default: '' });
 const TELEGRAM_KITCHEN_READY_CHAT_ID = defineString('TELEGRAM_KITCHEN_READY_CHAT_ID', { default: '' });
 const TELEGRAM_KITCHEN_READY_BOT_TOKEN = defineString('TELEGRAM_KITCHEN_READY_BOT_TOKEN', { default: '' });
 const META_AD_ACCOUNT_ID = defineString('META_AD_ACCOUNT_ID', { default: '' });
 const META_ACCESS_TOKEN = defineString('META_ACCESS_TOKEN', { default: '' });
 const KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID = defineString('KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID', { default: '' });
+const KITCHEN_DEVICE_TOKEN = defineString('KITCHEN_DEVICE_TOKEN', { default: '' });
 const OWNER_EMAIL = 'owner@ganhkho.vn';
+const DEFAULT_TELEGRAM_OWNER_CHAT_ID = '6496387732';
 const DEFAULT_REGION = 'asia-southeast1';
 const HEAVY_FUNCTION_MEMORY = '512MiB';
 const FUNCTIONS_RUNTIME_SERVICE_ACCOUNT = 'functions-runtime@pos-v2-909ff.iam.gserviceaccount.com';
@@ -147,8 +194,17 @@ function getVertexRuntimeConfig() {
         ? configuredProjectId
         : (credentialProjectId || configuredProjectId || 'pos-v2-909ff'),
     location: String(VERTEX_LOCATION.value() || '').trim() || 'global',
-    textModel: String(VERTEX_TEXT_MODEL.value() || '').trim() || 'gemini-2.5-flash',
+    textModel: String(VERTEX_TEXT_MODEL.value() || '').trim() || 'gemini-3.5-flash',
     imageModel: String(VERTEX_IMAGE_MODEL.value() || '').trim() || 'imagen-3.0-generate-001',
+  };
+}
+
+function getBigQueryRuntimeConfig() {
+  return {
+    enabled: true,
+    projectId: String(process.env.BIGQUERY_PROJECT_ID || VERTEX_PROJECT_ID.value() || 'pos-v2-909ff').trim(),
+    datasetId: String(process.env.BIGQUERY_DATASET_ID || '').trim(),
+    salesTable: String(process.env.BIGQUERY_SALES_TABLE || '').trim(),
   };
 }
 
@@ -156,7 +212,7 @@ function buildVertexTextModels(preferredModel = '') {
   return [
     preferredModel,
     getVertexRuntimeConfig().textModel,
-    'gemini-2.5-flash',
+    'gemini-3.5-flash',
     'gemini-2.0-flash-001',
     'gemini-2.0-flash',
   ].filter((name, index, arr) => name && arr.indexOf(name) === index);
@@ -169,6 +225,282 @@ function buildVertexImageModels(preferredModel = '') {
     'imagen-3.0-generate-001',
     'imagen-4.0-fast-generate-001',
   ].filter((name, index, arr) => name && arr.indexOf(name) === index);
+}
+
+const POS_CHATBOT_MODEL = 'gemini-2.5-flash';
+
+const getProfitReportTool = {
+  functionDeclarations: [
+    {
+      name: 'getProfitReportTool',
+      description: 'Truy vấn báo cáo lợi nhuận POS theo khoảng thời gian và thứ tự sắp xếp. Dùng khi người dùng hỏi doanh thu, lãi/lỗ, món lãi cao/thấp hoặc báo cáo kinh doanh.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          timeframe: {
+            type: Type.STRING,
+            description: "Khoảng thời gian báo cáo. Ví dụ: 'today', 'current_month', 'last_month'.",
+            enum: ['today', 'current_month', 'last_month'],
+          },
+          sort: {
+            type: Type.STRING,
+            description: "Sắp xếp kết quả theo lợi nhuận: 'highest' hoặc 'lowest'.",
+            enum: ['highest', 'lowest'],
+          },
+        },
+        required: ['timeframe'],
+      },
+    },
+  ],
+};
+
+function getPosChatbotAi() {
+  // Keep SDK initialization lazy so local syntax checks do not require runtime Gemini credentials.
+  const apiKey = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+  if (apiKey) return new GoogleGenAI({ apiKey });
+  const vertexConfig = getVertexRuntimeConfig();
+  if (vertexConfig.projectId) {
+    return new GoogleGenAI({
+      vertexai: true,
+      project: vertexConfig.projectId,
+      location: vertexConfig.location || 'global',
+    });
+  }
+  const ai = new GoogleGenAI();
+  return ai;
+}
+
+function getGenAiText(response = {}) {
+  if (typeof response.text === 'string') return response.text.trim();
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  return parts.map((part) => part?.text || '').join('').trim();
+}
+
+function getGenAiFunctionCallParts(response = {}) {
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  const functionCallParts = parts.filter((part) => part?.functionCall?.name);
+  if (functionCallParts.length) return functionCallParts;
+  return (response.functionCalls || []).map((functionCall) => ({ functionCall }));
+}
+
+function getVietnamDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return {
+    year: Number(parts.year || 0),
+    month: Number(parts.month || 0),
+    day: Number(parts.day || 0),
+  };
+}
+
+function buildVietnamPosReportRange(timeframe = 'current_month', now = new Date()) {
+  const normalized = ['today', 'current_month', 'last_month'].includes(timeframe) ? timeframe : 'current_month';
+  const parts = getVietnamDateParts(now);
+  const startUtcFromVietnam = (year, month, day) => new Date(Date.UTC(year, month - 1, day) - (7 * 60 * 60 * 1000));
+  if (normalized === 'today') {
+    const from = startUtcFromVietnam(parts.year, parts.month, parts.day);
+    const to = startUtcFromVietnam(parts.year, parts.month, parts.day + 1);
+    return { from, to, label: 'Hôm nay', timeframe: normalized };
+  }
+  if (normalized === 'last_month') {
+    const from = startUtcFromVietnam(parts.year, parts.month - 1, 1);
+    const to = startUtcFromVietnam(parts.year, parts.month, 1);
+    return { from, to, label: 'Tháng trước', timeframe: normalized };
+  }
+  const from = startUtcFromVietnam(parts.year, parts.month, 1);
+  const to = startUtcFromVietnam(parts.year, parts.month + 1, 1);
+  return { from, to, label: 'Tháng này', timeframe: normalized };
+}
+
+function buildMockProfitReport(args = {}, reason = 'fallback') {
+  const timeframe = String(args.timeframe || 'current_month').trim() || 'current_month';
+  const sort = String(args.sort || 'highest').trim() || 'highest';
+  return {
+    bestSellerItem: 'Ốc Nướng Nabi',
+    profit: 15200000,
+    time: timeframe === 'today' ? 'Hôm nay' : (timeframe === 'last_month' ? 'Tháng trước' : 'Tháng này'),
+    timeframe,
+    sort,
+    orderCount: 0,
+    topItems: [],
+    dataSource: `mock-${reason}`,
+  };
+}
+
+async function getProfitReport(args = {}) {
+  const timeframe = String(args.timeframe || 'current_month').trim() || 'current_month';
+  const sort = String(args.sort || 'highest').trim() || 'highest';
+  const range = buildVietnamPosReportRange(timeframe);
+
+  try {
+    const historySnap = await db.collection('history').get();
+    const itemMap = new Map();
+    let orderCount = 0;
+    let revenue = 0;
+    let cost = 0;
+
+    historySnap.docs.forEach(doc => {
+      const order = { docId: doc.id, ...(doc.data() || {}) };
+      if (!isVisibleHistoryOrderForReports(order)) return;
+      const paidAt = coerceHistoryDate(order.paidAt || order.timestamp);
+      if (!(paidAt instanceof Date) || Number.isNaN(paidAt.getTime())) return;
+      if (paidAt < range.from || paidAt >= range.to) return;
+
+      orderCount += 1;
+      revenue += Number(order.total || 0) || 0;
+      const items = Array.isArray(order.items) ? order.items : [];
+      items.forEach(item => {
+        const name = String(item?.name || '').trim();
+        const qty = Number(item?.qty || 0) || 0;
+        const unitPrice = Number(item?.price || item?.unitPrice || 0) || 0;
+        const unitCost = Number(item?.cost || item?.unitCost || 0) || 0;
+        if (!name || !(qty > 0)) return;
+        if (!itemMap.has(name)) {
+          itemMap.set(name, {
+            name,
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            grossProfit: 0,
+          });
+        }
+        const row = itemMap.get(name);
+        const lineRevenue = unitPrice * qty;
+        const lineCost = unitCost * qty;
+        row.qty += qty;
+        row.revenue += lineRevenue;
+        row.cost += lineCost;
+        row.grossProfit += (lineRevenue - lineCost);
+        cost += lineCost;
+      });
+    });
+
+    const topItems = [...itemMap.values()]
+      .map(item => ({
+        ...item,
+        profit: item.grossProfit,
+      }))
+      .sort((a, b) => {
+        const primary = sort === 'lowest' ? a.grossProfit - b.grossProfit : b.grossProfit - a.grossProfit;
+        if (primary !== 0) return primary;
+        return b.revenue - a.revenue;
+      })
+      .slice(0, 5);
+
+    if (!topItems.length) return buildMockProfitReport({ timeframe: range.timeframe, sort }, 'empty-live-data');
+
+    const best = topItems[0];
+    return {
+      bestSellerItem: best.name,
+      profit: Math.round(best.grossProfit),
+      time: range.label,
+      timeframe: range.timeframe,
+      sort,
+      orderCount,
+      revenue: Math.round(revenue),
+      cost: Math.round(cost),
+      grossProfit: Math.round(revenue - cost),
+      topItems: topItems.map(item => ({
+        name: item.name,
+        qty: item.qty,
+        revenue: Math.round(item.revenue),
+        cost: Math.round(item.cost),
+        grossProfit: Math.round(item.grossProfit),
+      })),
+      range: {
+        from: range.from.toISOString(),
+        toExclusive: range.to.toISOString(),
+        timezone: 'Asia/Ho_Chi_Minh',
+      },
+      dataSource: 'firestore-history-readonly',
+    };
+  } catch (error) {
+    logger.warn('getProfitReport Firestore read failed; falling back to mock report', {
+      error: error?.message || String(error),
+      timeframe,
+      sort,
+    });
+    return buildMockProfitReport({ timeframe, sort }, 'firestore-error');
+  }
+}
+
+async function runAskPosChatbot(userMessage) {
+  const ai = getPosChatbotAi();
+  const contents = [
+    {
+      role: 'user',
+      parts: [{ text: userMessage }],
+    },
+  ];
+  const config = {
+    tools: [getProfitReportTool],
+    temperature: 0.2,
+    systemInstruction: 'Bạn là trợ lý báo cáo POS của Xe Khô Chữa Lành. Không bịa số liệu. Khi câu hỏi cần doanh thu/lợi nhuận/báo cáo thật, hãy gọi tool phù hợp rồi diễn giải dữ liệu trả về bằng tiếng Việt tự nhiên, ngắn gọn.',
+  };
+
+  const response = await ai.models.generateContent({
+    model: POS_CHATBOT_MODEL,
+    contents,
+    config,
+  });
+
+  const functionCallParts = getGenAiFunctionCallParts(response);
+  if (!functionCallParts.length) {
+    return {
+      ok: true,
+      answer: getGenAiText(response),
+      usedTool: false,
+    };
+  }
+
+  const functionResponseParts = [];
+  for (const part of functionCallParts) {
+    const functionCall = part.functionCall || {};
+    if (functionCall.name !== 'getProfitReportTool') {
+      throw new HttpsError('failed-precondition', `Gemini yêu cầu tool chưa hỗ trợ: ${functionCall.name || 'unknown'}`);
+    }
+    const report = await getProfitReport(functionCall.args || {});
+    functionResponseParts.push({
+      functionResponse: {
+        name: functionCall.name,
+        response: report,
+      },
+    });
+  }
+
+  contents.push({
+    role: 'model',
+    // Preserve the original functionCall parts exactly as returned by Gemini.
+    parts: functionCallParts,
+  });
+  contents.push({
+    role: 'user',
+    parts: functionResponseParts,
+  });
+
+  const finalResponse = await ai.models.generateContent({
+    model: POS_CHATBOT_MODEL,
+    contents,
+    config,
+  });
+
+  return {
+    ok: true,
+    answer: getGenAiText(finalResponse),
+    usedTool: true,
+    toolCalls: functionCallParts.map((part) => ({
+      name: part.functionCall?.name || '',
+      args: part.functionCall?.args || {},
+    })),
+    toolData: functionResponseParts.map((part) => part.functionResponse?.response || {}),
+  };
 }
 
 async function runVertexToolLoop({
@@ -214,7 +546,10 @@ async function runVertexToolLoop({
 
     contents.push({
       role: 'model',
-      parts: functionCalls.map((call) => ({
+      // Preserve the original functionCall parts exactly as returned by Gemini.
+      // Newer Gemini/Vertex models attach thoughtSignature metadata to function-call
+      // parts and require it on the follow-up request that provides tool responses.
+      parts: functionCalls.map((call) => call.part || ({
         functionCall: {
           name: call.name,
           args: call.args || {},
@@ -232,6 +567,7 @@ async function runVertexToolLoop({
         source,
         noPersist,
         previewOnly,
+        bigQueryConfig: getBigQueryRuntimeConfig(),
       });
       toolResults.push(toolResult);
       functionResponseParts.push({
@@ -261,203 +597,70 @@ function kitchenNotifDocRef(docId) {
 }
 
 function buildKitchenNotifMessage(notif = {}, options = {}) {
-  const type = String(notif.type || '').toLowerCase();
-  const tableName = String(notif.tableName || notif.tableId || 'Ban');
-  const items = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const body = items.join(', ');
-  const prefix = String(options.prefix || '').trim();
-  const prefixText = prefix ? `${prefix}\n` : '';
-  const groupLabel = String(options.groupLabel || '').trim();
-  const groupLine = groupLabel ? `\nNhóm: ${groupLabel}` : '';
-  if (type === 'ready') {
-    return {
-      title: `🍽️ ${tableName} - Xong rồi!`,
-      body: body || 'Mang ra ngay.',
-      zaloText: `✅ [XE KHÔ POS]\n${tableName} xong rồi! Mang ra ngay!\n\nMón:\n• ${items.join('\n• ') || 'Không có chi tiết'}`,
-    };
-  }
-  if (type === 'accepted') {
-    return {
-      title: `BẾP ĐÃ NHẬN - ${tableName}`,
-      body: body || 'Nhân viên theo dõi để lấy món khi cần.',
-      zaloText: '',
-    };
-  }
-  if (type === 'delay') {
-    return {
-      title: `⚠️ ${tableName} - Đang chậm`,
-      body: body || 'Báo khách chờ thêm.',
-      zaloText: `⚠️ [XE KHÔ POS]\n${tableName} đang chậm - Báo khách chờ thêm${items.length ? `\n\nMón:\n• ${items.join('\n• ')}` : ''}`,
-    };
-  }
-  return {
-    title: `📣 ${tableName}`,
-    body: body || String(notif.message || 'Có cập nhật từ bếp'),
-    zaloText: '',
-  };
+  return telegramKitchen.buildKitchenNotifMessage(notif, options);
 }
 
 function parseKitchenItemSummary(itemText = '') {
-  const raw = String(itemText || '').trim();
-  if (!raw) return null;
-
-  const match = raw.match(/^(.*?)\s*x\s*(\d+(?:[.,]\d+)?)$/i);
-  if (!match) {
-    return {
-      name: raw,
-      qty: '',
-      summary: raw,
-    };
-  }
-
-  const name = String(match[1] || '').trim();
-  const qty = String(match[2] || '').replace(',', '.').trim();
-  return {
-    name: name || raw,
-    qty,
-    summary: `${name || raw} x${qty}`,
-  };
+  return telegramKitchen.parseKitchenItemSummary(itemText);
 }
 
 function buildTelegramFoodReadyMessage(notif = {}) {
-  const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const parsedItems = rawItems
-    .map(parseKitchenItemSummary)
-    .filter(Boolean);
-
-  const itemNames = parsedItems.length
-    ? parsedItems.map(item => item.name).join(', ')
-    : 'Khong co chi tiet';
-  const qtyText = parsedItems.length
-    ? parsedItems.map(item => item.qty ? `${item.name} x${item.qty}` : item.summary).join(', ')
-    : '';
-  const tableName = String(notif.tableName || notif.tableId || 'Khong ro');
-
-  return [
-    '🔔 MÓN ĐÃ XONG!',
-    '',
-    `Món: ${itemNames}`,
-    '',
-    `Bàn: ${tableName}`,
-    '',
-    `Số lượng: ${qtyText || 'Không rõ'}`,
-    '',
-    'Tiếp tục vui lòng lấy món!',
-  ].join('\n');
+  return telegramKitchen.buildTelegramFoodReadyMessage(notif);
 }
 
 function isKitchenOrderItemForTelegram(item = {}) {
-  const status = String(item?.kitchenStatus || '').trim().toLowerCase();
-  const itemType = String(item?.itemType || '').trim().toLowerCase();
-  const routing = String(item?.kitchenRouting || '').trim().toLowerCase();
-  const saleMode = String(item?.saleMode || '').trim().toLowerCase();
-  const forceKitchen = item?.forceKitchen === true;
-  if (status !== 'pending') return false;
-  if (!forceKitchen && (itemType === 'retail_item' || saleMode === 'retail' || item?.directSale === true)) return false;
-  if (!forceKitchen && routing === 'skip') return false;
-  return true;
+  return telegramKitchen.isKitchenOrderItemForTelegram(item);
 }
 
 function getKitchenOrderItemKey(item = {}, index = 0) {
-  return String(item?.lineItemId || `${item?.id || 'item'}:${item?.kitchenSentAt || 0}:${index}`);
+  return telegramKitchen.getKitchenOrderItemKey(item, index);
 }
 
 function getNewPendingKitchenItems(afterItems = [], beforeItems = []) {
-  const beforeKeys = new Set((Array.isArray(beforeItems) ? beforeItems : [])
-    .map((item, index) => {
-      const status = String(item?.kitchenStatus || '').trim().toLowerCase();
-      return status === 'pending' ? getKitchenOrderItemKey(item, index) : '';
-    })
-    .filter(Boolean));
-
-  return (Array.isArray(afterItems) ? afterItems : [])
-    .map((item, index) => ({ item, index, key: getKitchenOrderItemKey(item, index) }))
-    .filter(row => isKitchenOrderItemForTelegram(row.item) && !beforeKeys.has(row.key));
+  return telegramKitchen.getNewPendingKitchenItems(afterItems, beforeItems);
 }
 
 function buildTelegramNewKitchenOrderMessage(order = {}, rows = []) {
-  const tableName = String(order.tableName || order.tableId || 'Khong ro');
-  const itemLines = rows.length
-    ? rows.map(row => {
-      const item = row.item || {};
-      const qty = Number(item.qty || 0);
-      const note = String(item.note || '').trim();
-      return `• ${escapeTelegramHtml(item.name || 'Món')} x${escapeTelegramHtml(formatQtyVi(qty || 1))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-    }).join('\n')
-    : '• Không có chi tiết';
-
-  return [
-    '<b>🔔 CÓ MÓN MỚI</b>',
-    '',
-    `<b>Bàn/Đơn:</b> ${escapeTelegramHtml(tableName)}`,
-    `<b>Món mới:</b>`,
-    itemLines,
-    '',
-    '<i>Vui lòng kiểm tra màn hình bếp.</i>',
-  ].join('\n');
+  return telegramKitchen.buildTelegramNewKitchenOrderMessage(order, rows);
 }
 
 function buildTelegramFoodReadyMessageClean(notif = {}) {
-  const rawItems = Array.isArray(notif.items) ? notif.items.filter(Boolean) : [];
-  const parsedItems = rawItems
-    .map(item => parseKitchenItemSummary(normalizeTelegramText(item)))
-    .filter(Boolean);
-
-  const itemNames = parsedItems.length
-    ? parsedItems.map(item => item.name).join(', ')
-    : 'Không có chi tiết';
-  const qtyText = parsedItems.length
-    ? parsedItems.map(item => item.qty ? `${item.name} x${item.qty}` : item.summary).join(', ')
-    : '';
-  const tableName = normalizeTelegramTableLabel(notif.tableName || notif.tableId || '');
-
-  return [
-    '🔔 MÓN ĐÃ XONG!',
-    '',
-    `Món: ${itemNames}`,
-    '',
-    `Bàn: ${tableName}`,
-    '',
-    `Số lượng: ${qtyText || 'Không rõ'}`,
-    '',
-    'Tiếp tục vui lòng lấy món!',
-  ].join('\n');
+  return telegramKitchen.buildTelegramFoodReadyMessageClean(notif);
 }
 
 function buildTelegramNewKitchenOrderMessageClean(order = {}, rows = []) {
-  const tableName = normalizeTelegramTableLabel(order.tableName || order.tableId || '');
-  const itemLines = rows.length
-    ? rows.map(row => {
-      const item = row.item || {};
-      const qty = Number(item.qty || 0);
-      const note = normalizeTelegramText(String(item.note || '').trim());
-      const itemName = normalizeTelegramText(item.name || item.productName || 'Món');
-      return `• ${escapeTelegramHtml(itemName)} x${escapeTelegramHtml(formatQtyVi(qty || 1))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-    }).join('\n')
-    : '• Không có chi tiết';
+  return telegramKitchen.buildTelegramNewKitchenOrderMessageClean(order, rows);
+}
 
-  return [
-    '<b>🔔 CÓ MÓN MỚI</b>',
-    '',
-    `<b>Bàn/Đơn:</b> ${escapeTelegramHtml(tableName)}`,
-    '<b>Món mới:</b>',
-    itemLines,
-    '',
-    '<i>Vui lòng kiểm tra màn hình bếp.</i>',
-  ].join('\n');
+function getTelegramKitchenNewOrderBotToken() {
+  return String(
+    TELEGRAM_KITCHEN_READY_BOT_TOKEN.value()
+    || TELEGRAM_BOT_TOKEN.value()
+    || TELEGRAM_REPORT_BOT_TOKEN.value()
+    || ''
+  ).trim();
+}
+
+function getTelegramKitchenNewOrderChatId() {
+  return String(
+    TELEGRAM_KITCHEN_READY_CHAT_ID.value()
+    || KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID.value()
+    || TELEGRAM_GROUP_CHAT_ID.value()
+    || ''
+  ).trim();
 }
 
 async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
-  const botToken = getTelegramReportBotToken();
-  const chatId = String(KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID.value() || TELEGRAM_GROUP_CHAT_ID.value() || '').trim();
+  const botToken = getTelegramKitchenNewOrderBotToken();
+  const chatId = getTelegramKitchenNewOrderChatId();
   if (!botToken || !chatId || !rows.length) {
     logger.warn('Skipping kitchen new-order Telegram: missing token/chat/items', {
       orderId,
       hasBotToken: !!botToken,
-      chatId,
+      hasChatId: !!chatId,
       itemCount: rows.length,
     });
-    return;
+    return { ok: false, skipped: 'missing-config-or-items' };
   }
 
   const unsentRows = [];
@@ -483,7 +686,7 @@ async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
 
   if (!unsentRows.length) {
     logger.info('Skipping kitchen new-order Telegram: all items already sent', { orderId });
-    return;
+    return { ok: true, skipped: 'already-sent' };
   }
 
   const enrichedRows = await Promise.all(unsentRows.map(async row => {
@@ -497,53 +700,73 @@ async function sendKitchenNewOrderTelegram(orderId, order = {}, rows = []) {
     chatId,
     itemCount: unsentRows.length,
   });
+  return { ok: true, sent: true, chatId, itemCount: unsentRows.length };
 }
 
-function escapeTelegramHtml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function buildRowsForKitchenTelegramFromExecutedOrder(result = {}) {
+  const items = Array.isArray(result.items) ? result.items : [];
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      key: getKitchenOrderItemKey(item, index),
+    }))
+    .filter(row => isKitchenOrderItemForTelegram(row.item));
 }
 
-function scoreTelegramTextQuality(text = '') {
-  const value = String(text || '');
-  let score = 0;
-  score += (value.match(/\uFFFD/g) || []).length * 4;
-  score -= (value.match(/[À-ỹĐđ]/g) || []).length * 2;
-  return score;
+async function sendKitchenTelegramForExecutedOrder(result = {}) {
+  if (!result?.ok || String(result.actionType || '') !== 'goi_mon_ban') return { ok: false, skipped: 'not-order-action' };
+  const rows = buildRowsForKitchenTelegramFromExecutedOrder(result);
+  if (!rows.length) return { ok: false, skipped: 'no-kitchen-items' };
+  return sendKitchenNewOrderTelegram(result.orderId, {
+    id: result.orderId,
+    tableId: result.tableId,
+    tableName: result.tableName,
+    items: result.items || [],
+    status: 'open',
+  }, rows);
 }
 
-function fixTelegramMojibake(text = '') {
-  return String(text || '');
+function buildTelegramExecutedActionMessage(actionDocId, result = {}, kitchenResult = null) {
+  if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+    const items = Array.isArray(result.items) ? result.items : [];
+    const itemLines = items.length
+      ? items.map(item => `\u2022 ${normalizeTelegramText(item.name || 'M\u00f3n')} x${formatQtyVi(item.qty || 1)}`).join('\n')
+      : '\u2022 Kh\u00f4ng c\u00f3 chi ti\u1ebft';
+    const kitchenLine = kitchenResult?.ok
+      ? (kitchenResult.sent ? '\u0110\u00e3 g\u1eedi Telegram cho b\u1ebfp.' : 'Telegram b\u1ebfp: \u0111\u00e3 g\u1eedi tr\u01b0\u1edbc \u0111\u00f3 / kh\u00f4ng c\u1ea7n g\u1eedi l\u1ea1i.')
+      : `Telegram b\u1ebfp: ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c${kitchenResult?.skipped ? ` (${kitchenResult.skipped})` : ''}.`;
+    return [
+      '\u2705 \u0110\u00e3 l\u00ean \u0111\u01a1n th\u00e0nh c\u00f4ng.',
+      `B\u00e0n/\u0110\u01a1n: ${normalizeTelegramText(result.tableName || result.tableId || 'Kh\u00f4ng r\u00f5')}`,
+      `Order: ${String(result.orderId || '')}`,
+      `S\u1ed1 d\u00f2ng m\u00f3n m\u1edbi: ${String(result.itemCount || items.length || 0)}`,
+      `Tr\u1ea1ng th\u00e1i: ${result.appendedToExisting ? '\u0110\u00e3 c\u1ed9ng v\u00e0o \u0111\u01a1n \u0111ang m\u1edf' : '\u0110\u00e3 t\u1ea1o \u0111\u01a1n m\u1edbi'}`,
+      '',
+      'M\u00f3n:',
+      itemLines,
+      '',
+      kitchenLine,
+    ].join('\n');
+  }
+  return result?.ok
+    ? `\u2705 \u0110\u00e3 th\u1ef1c thi.\nM\u00e3: ${actionDocId}`
+    : `\u26a0\ufe0f Kh\u00f4ng th\u1ef1c thi \u0111\u01b0\u1ee3c.\n${result?.error || 'H\u00e0nh \u0111\u1ed9ng kh\u00f4ng c\u00f2n h\u1ee3p l\u1ec7.'}`;
 }
 
-function normalizeTelegramText(value = '') {
-  return fixTelegramMojibake(String(value || '')).replace(/\s+\n/g, '\n').trim();
-}
+function escapeTelegramHtml(text) { return textUtils.escapeTelegramHtml(text); }
 
-function normalizeTelegramTextPreserveLines(value = '') {
-  return fixTelegramMojibake(String(value || ''))
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/[ \t]+\n/g, '\n');
-}
+function scoreTelegramTextQuality(text = '') { return textUtils.scoreTelegramTextQuality(text); }
 
-function getTelegramProductDisplayName(product = {}, fallback = 'Món') {
-  return normalizeTelegramText(
-    String(product.display_name || product.name || fallback || 'Món').trim() || fallback,
-  );
-}
+function fixTelegramMojibake(text = '') { return textUtils.fixTelegramMojibake(text); }
 
-function shouldPreferTelegramCatalogName(currentName = '', product = {}) {
-  const candidate = String(currentName || '').trim();
-  const catalogName = String(product.display_name || product.name || '').trim();
-  if (!catalogName) return false;
-  if (!candidate) return true;
-  if (candidate.includes('\uFFFD')) return true;
-  if (!/[À-ỹĐđ]/.test(candidate) && /[À-ỹĐđ]/.test(catalogName)) return true;
-  return false;
-}
+function normalizeTelegramText(value = '') { return textUtils.normalizeTelegramText(value); }
+
+function normalizeTelegramTextPreserveLines(value = '') { return textUtils.normalizeTelegramTextPreserveLines(value); }
+
+function getTelegramProductDisplayName(product = {}, fallback = 'Món') { return textUtils.getTelegramProductDisplayName(product, fallback); }
+
+function shouldPreferTelegramCatalogName(currentName = '', product = {}) { return textUtils.shouldPreferTelegramCatalogName(currentName, product); }
 
 async function enrichTelegramItemsWithCatalog(items = []) {
   const list = Array.isArray(items) ? items : [];
@@ -563,127 +786,73 @@ async function enrichTelegramItemsWithCatalog(items = []) {
   });
 }
 
-function formatCurrencyVi(amount) {
-  return `${Number(amount || 0).toLocaleString('vi-VN')}đ`;
-}
+function formatCurrencyVi(amount) { return textUtils.formatCurrencyVi(amount); }
 
-function formatQtyVi(amount) {
-  const value = Number(amount || 0);
-  if (!Number.isFinite(value)) return '0';
-  if (Math.abs(value - Math.round(value)) < 1e-9) return Math.round(value).toLocaleString('vi-VN');
-  return value.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
+function formatQtyVi(amount) { return textUtils.formatQtyVi(amount); }
 
 function normalizeTelegramSmartReportText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramReports.normalizeTelegramSmartReportText(value);
 }
 
 function normalizeTelegramWildcardText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\u0111/g, 'd')
-    .replace(/\u0110/g, 'D')
-    .toLowerCase()
-    .replace(/[^a-z0-9?\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramReports.normalizeTelegramWildcardText(value);
 }
 
 function buildTelegramWildcardRegex(value = '') {
-  const normalized = normalizeTelegramWildcardText(value);
-  if (!normalized || !normalized.includes('?')) return null;
-  const escaped = normalized.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
-  const pattern = escaped
-    .replace(/\s+/g, '\\s+')
-    .replace(/(?:\\\?)+/g, '[a-z0-9]{0,3}');
-  if (!pattern) return null;
-  return new RegExp(`^${pattern}$`, 'i');
+  return telegramReports.buildTelegramWildcardRegex(value);
 }
 
 function parseTelegramLooseDateTime(value = '', fallbackNow = new Date()) {
-  const raw = normalizeTelegramSmartReportText(value);
-  if (!raw) return null;
-  if (['bay gio', 'hien tai', 'luc nay', 'now'].includes(raw)) return fallbackNow;
-
-  const relativeMatch = raw.match(/^(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(hom nay|hom qua)$/i);
-  if (relativeMatch) {
-    const nowParts = getVietnamDateParts(fallbackNow);
-    const base = new Date(fallbackNow);
-    const hour = Number(relativeMatch[1] || relativeMatch[3] || 0);
-    const minute = Number(relativeMatch[2] || relativeMatch[4] || 0);
-    const dayOffset = String(relativeMatch[5] || '').trim() === 'hom qua' ? -1 : 0;
-    const localDate = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day + dayOffset, hour, minute, 0) - 7 * 60 * 60 * 1000);
-    return Number.isNaN(localDate.getTime()) ? null : localDate;
-  }
-
-  const match = raw.match(
-    /(?:(\d{1,2})(?::(\d{1,2}))?|(\d{1,2})h(?:(\d{1,2}))?)?\s*(?:ngay\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/i,
-  );
-  if (!match) return null;
-
-  const nowParts = getVietnamDateParts(fallbackNow);
-  const hour = Number(match[1] || match[3] || 0);
-  const minute = Number(match[2] || match[4] || 0);
-  const day = Number(match[5] || 0);
-  const month = Number(match[6] || 0);
-  let year = Number(match[7] || nowParts.year);
-  if (year > 0 && year < 100) year += 2000;
-  if (!day || !month || !year) return null;
-
-  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0) - 7 * 60 * 60 * 1000);
+  return telegramReports.parseTelegramLooseDateTime(value, fallbackNow);
 }
 
 function formatTelegramSmartRangeLabel(from, toExclusive) {
-  return `từ ${formatTelegramDateTimeVi(from)} đến ${formatTelegramDateTimeVi(toExclusive)}`;
+  return telegramReports.formatTelegramSmartRangeLabel(from, toExclusive);
 }
 
 function parseTelegramSmartReportIntent(userText = '') {
+  return telegramReports.parseTelegramSmartReportIntent(userText);
+}
+
+function isTelegramAssistantCapabilityQuestion(userText = '') {
   const normalized = normalizeTelegramSmartReportText(userText);
-  if (!normalized) return null;
+  return /\b(ban|em|bot|tro ly|ai)\b.*\b(co the lam gi|lam duoc gi|giup duoc gi|biet lam gi)\b/.test(normalized)
+    || /\b(co the lam gi|lam duoc gi|giup duoc gi|biet lam gi)\b/.test(normalized);
+}
 
-  const metric = normalized.includes('doanh thu')
-    ? 'revenue'
-    : (
-      normalized.includes('loi nhuan')
-      || normalized.includes('lai gop')
-      || normalized.includes('lai bao nhieu')
-      || normalized.includes('lai ')
-    )
-      ? 'profit'
-      : (
-        normalized.includes('ban duoc bao nhieu')
-        || normalized.includes('duoc bao nhieu')
-        || normalized.includes('ban duoc may')
-        || normalized.includes('co bao nhieu don')
-      )
-        ? 'summary'
-        : '';
-  if (!metric) return null;
+function buildTelegramAssistantCapabilityResponse() {
+  return [
+    'Em là trợ lý AI của quán Xe Khô Chữa Lành, không chỉ trả lời command cố định.',
+    'Em có thể hiểu câu hỏi tự nhiên và dùng dữ liệu thật khi cần:',
+    '• Đọc Firebase/POS: doanh thu, số đơn, lãi gộp, tiền mặt/chuyển khoản, món bán, tồn kho, lịch sử nhập hàng, chi phí.',
+    '• Trả lời các câu như: “hôm qua bán bao nhiêu bia?”, “doanh thu từ 18h hôm qua đến bây giờ?”, “món mực 1 nắng nướng muối ớt giá bao nhiêu?”, “tồn kho bia còn bao nhiêu?”.',
+    '• Chủ động cảnh báo số liệu chưa tốt, so sánh cùng kỳ tháng trước và gợi ý cải thiện.',
+    '• Với báo cáo doanh thu/lợi nhuận/nhập hàng/chi phí, em có thể hiện nút xem biểu đồ và vẽ biểu đồ khi anh bấm.',
+    '• Tạo đề xuất thao tác như nhập hàng/sửa menu/gọi món, nhưng chỉ ghi dữ liệu sau khi anh xác nhận.',
+    'BigQuery: em đã có đường đọc BigQuery read-only để trả lời báo cáo khi Firebase/POS không đủ dữ liệu; chỉ đọc, không ghi/sửa dữ liệu.',
+  ].join('\n');
+}
 
-  const rangeMatch = normalized.match(/\btu\s+(.+?)\s+\bden\s+(bay gio|hien tai|luc nay|now)\b/i);
-  if (!rangeMatch) return null;
+function isTelegramPosChatbotFunctionCallingQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(doanh thu|loi nhuan|lai|lai gop|bao cao|mon nao|mat hang|ban chay|cao nhat|thap nhat|highest|lowest)\b/.test(n)
+    && /\b(hom nay|thang nay|thang truoc|doanh thu|loi nhuan|lai|bao cao|cao nhat|thap nhat)\b/.test(n);
+}
 
-  const itemMatch = normalized.match(/(?:doanh thu|loi nhuan|lai gop|lai)\s+(.+?)(?=\s+\btu\b|\s+\bhom nay\b|\s+\bngay\b|$)/i);
-  const itemName = String(itemMatch?.[1] || '').trim();
-  const from = parseTelegramLooseDateTime(rangeMatch[1], new Date());
-  if (!from) return null;
-  const toExclusive = new Date();
-  const rangeLabel = formatTelegramSmartRangeLabel(from, toExclusive);
-
+async function tryAnswerTelegramPosChatbotFunctionCalling(userText = '') {
+  if (!isTelegramPosChatbotFunctionCallingQuestion(userText)) return null;
+  const result = await runAskPosChatbot(userText);
+  if (!result?.answer) return null;
   return {
-    metric,
-    itemName: itemName || '',
-    rangeLabel,
-    from,
-    toExclusive,
+    text: result.answer,
+    pendingActions: [],
+    toolResults: [{
+      ok: true,
+      tool: 'getProfitReportTool',
+      usedTool: result.usedTool === true,
+      toolCalls: result.toolCalls || [],
+      toolData: result.toolData || [],
+    }],
   };
 }
 
@@ -697,7 +866,7 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
     ...(intent.itemName ? { ten_mon: intent.itemName } : {}),
     tu_thoi_diem: intent.from.toISOString(),
     den_thoi_diem: intent.toExclusive.toISOString(),
-  }, { db });
+  }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() });
 
   if (!report?.ok) {
     return {
@@ -756,6 +925,27 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
     };
   }
 
+  if (intent.metric === 'quantity') {
+    if (!intent.itemName || !report?.itemSummary) {
+      return {
+        intent,
+        report,
+        text: intent.itemName
+          ? `Em chưa tìm thấy dữ liệu bán ${intent.itemName} trong ${intent.rangeLabel}.`
+          : `Anh hỏi số lượng món nào trong ${intent.rangeLabel} ạ?`,
+      };
+    }
+    return {
+      intent,
+      report,
+      text: [
+        `${intent.rangeLabel.charAt(0).toUpperCase() + intent.rangeLabel.slice(1)}, quán bán được ${formatQtyVi(itemSummary.totalQty)} ${intent.itemName}.`,
+        `Doanh thu ${intent.itemName}: ${formatCurrencyVi(itemSummary.revenue)}.`,
+        `Lãi gộp: ${formatCurrencyVi(itemSummary.grossProfit)}.`,
+      ].join(' '),
+    };
+  }
+
   if (!intent.itemName) {
     return {
       intent,
@@ -786,106 +976,379 @@ async function tryAnswerTelegramSmartReportQuestion(userText = '') {
   };
 }
 
-const DEFAULT_TELEGRAM_REPORT_SETTINGS = {
-  enabled: true,
-  sendHour: 7,
-  sendMinute: 0,
-  includeRevenue: true,
-  includePaymentBreakdown: true,
-  includeInvoiceCount: true,
-  includeTopItem: true,
-  includeRetailStock: true,
-};
 
-function getVietnamDateParts(date = new Date()) {
-  const dtf = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  });
-  const parts = dtf.formatToParts(date);
-  const map = {};
-  parts.forEach(part => {
-    if (part.type !== 'literal') map[part.type] = part.value;
-  });
+function isTelegramProactiveOwnerInsightQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(canh bao|chu dong|goi y|tu van|so sanh|kinh doanh chua tot|tinh hinh kinh doanh|co gi bat thuong|phan tich quan)\b/.test(n);
+}
+
+function isTelegramMenuDataQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(gia bao nhieu|bao nhieu tien|gia may|gia mon|hinh anh|anh mon|mon .* gia)\b/.test(n)
+    && !/\b(doanh thu|loi nhuan|lai|ban duoc|nhap hang|chi phi)\b/.test(n);
+}
+
+function extractTelegramMenuQuery(userText = '') {
+  let n = normalizeTelegramSmartReportText(userText);
+  n = n.replace(/\?/g, ' ')
+    .replace(/\b(mon|hinh anh|anh mon|cho xem|xem|lay duoc|gia bao nhieu|bao nhieu tien|gia may|gia mon|co gia|la bao nhieu|bao nhieu|gia)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return n;
+}
+
+function tokenScore(query = '', name = '') {
+  const q = normalizeVi(query).split(/[^a-z0-9]+/).filter(Boolean);
+  const n = normalizeVi(name);
+  if (!q.length || !n) return 0;
+  let score = 0;
+  q.forEach(token => { if (n.includes(token)) score += token.length >= 3 ? 2 : 1; });
+  if (n.includes(normalizeVi(query))) score += 8;
+  return score / Math.max(1, q.length);
+}
+
+function normalizeMenuItemFromDoc(doc, sourceCollection) {
+  const data = doc.data ? (doc.data() || {}) : (doc || {});
+  const name = String(data.display_name || data.material_name || data.name || data.productName || data.item_name || data.inv_id || doc.id || '').trim();
+  const price = Number(data.sell_price ?? data.price ?? data.gia ?? data.unitPrice ?? 0) || 0;
+  const imageUrl = String(
+    data.image_url || data.imageUrl || data.realImageUrl || data.aiImageUrl || data.photoUrl || data.photo_url || data.thumbnailUrl || data.coverImageUrl || ''
+  ).trim();
   return {
-    year: Number(map.year),
-    month: Number(map.month),
-    day: Number(map.day),
-    hour: Number(map.hour),
-    minute: Number(map.minute),
+    id: String(data.item_id || data.inv_id || data.id || doc.id || '').trim(),
+    name,
+    price,
+    unit: String(data.base_unit || data.unit || data.don_vi || '').trim(),
+    category: String(data.category || data.group || '').trim(),
+    imageUrl,
+    hidden: data.hidden === true,
+    sourceCollection,
+    raw: data,
   };
 }
 
-function getVietnamBusinessReportRange(now = new Date()) {
-  const parts = getVietnamDateParts(now);
-  const todaySixAmUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -1, 0, 0, 0));
-  const latestWindowEnd = (parts.hour >= 6)
-    ? todaySixAmUtc
-    : new Date(todaySixAmUtc.getTime() - (24 * 60 * 60 * 1000));
-  const from = new Date(latestWindowEnd.getTime() - (24 * 60 * 60 * 1000));
-  const toExclusive = latestWindowEnd;
-  const labelStart = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(from);
-  const labelEnd = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(toExclusive.getTime() - 1));
+async function findTelegramMenuItem(query = '') {
+  const q = String(query || '').trim();
+  if (!q) return null;
+  const [productSnap, inventorySnap] = await Promise.all([
+    db.collection('Product_Catalog').get().catch(() => null),
+    db.collection('Inventory_Items').get().catch(() => null),
+  ]);
+  const items = [];
+  if (productSnap?.docs) productSnap.docs.forEach(doc => items.push(normalizeMenuItemFromDoc(doc, 'Product_Catalog')));
+  if (inventorySnap?.docs) inventorySnap.docs.forEach(doc => items.push(normalizeMenuItemFromDoc(doc, 'Inventory_Items')));
+  const ranked = items
+    .filter(item => !item.hidden && item.name && item.price > 0)
+    .map(item => ({ item, score: tokenScore(q, item.name) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || b.item.name.length - a.item.name.length);
+  return ranked[0]?.item || null;
+}
 
+async function tryAnswerTelegramMenuDataQuestion(userText = '') {
+  if (!isTelegramMenuDataQuestion(userText)) return null;
+  const query = extractTelegramMenuQuery(userText);
+  const item = await findTelegramMenuItem(query);
+  if (!item) {
+    return { text: `Em chưa tìm thấy món “${query || userText}” trong menu/kho. Anh gửi tên món rõ hơn giúp em nhé.` };
+  }
+  const lines = [
+    `${item.name} hiện có giá ${formatCurrencyVi(item.price)}${item.unit ? `/${item.unit}` : ''}.`,
+  ];
+  if (item.category) lines.push(`Nhóm: ${item.category}.`);
+  if (item.imageUrl) lines.push('Em gửi kèm hình món bên dưới.');
+  else lines.push('Món này hiện chưa có ảnh trong dữ liệu menu.');
   return {
-    from,
-    toExclusive,
-    label: `${labelStart} -> ${labelEnd}`,
+    text: lines.join('\n'),
+    photoUrl: item.imageUrl || '',
+    menuItem: item,
   };
+}
+
+function getCurrentAndPreviousMonthComparableRanges(now = new Date()) {
+  const parts = getVietnamDateParts(now);
+  const currentFrom = new Date(Date.UTC(parts.year, parts.month - 1, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const currentTo = now;
+  const prevMonth = parts.month === 1 ? 12 : parts.month - 1;
+  const prevYear = parts.month === 1 ? parts.year - 1 : parts.year;
+  const day = Math.min(parts.day, new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate());
+  const previousFrom = new Date(Date.UTC(prevYear, prevMonth - 1, 1, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const previousTo = new Date(Date.UTC(prevYear, prevMonth - 1, day, parts.hour, parts.minute, parts.second || 0) - 7 * 60 * 60 * 1000);
+  return { currentFrom, currentTo, previousFrom, previousTo };
+}
+
+function percentChange(current, previous) {
+  const c = Number(current || 0);
+  const p = Number(previous || 0);
+  if (!p && !c) return 0;
+  if (!p) return 100;
+  return ((c - p) / p) * 100;
+}
+
+function formatSignedPercent(value) {
+  const n = Number(value || 0);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)}%`;
+}
+
+async function createTelegramChartRequest({ chatId, title, kind = 'report', rows = [], summary = {}, source = {} }) {
+  const safeRows = (Array.isArray(rows) ? rows : [])
+    .map(row => ({ label: String(row.label || '').slice(0, 40), value: Number(row.value || 0) || 0 }))
+    .filter(row => row.label && Number.isFinite(row.value))
+    .slice(0, 8);
+  if (!safeRows.length) return '';
+  const ref = await db.collection('telegram_chart_requests').add({
+    chatId: String(chatId || ''),
+    title: String(title || 'Biểu đồ báo cáo').slice(0, 120),
+    kind: String(kind || 'report'),
+    rows: safeRows,
+    summary: sanitizeSimpleObject(summary),
+    source: sanitizeSimpleObject(source),
+    status: 'ready',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 6 * 60 * 60 * 1000)),
+  });
+  return ref.id;
+}
+
+function sanitizeSimpleObject(obj = {}) {
+  const out = {};
+  Object.entries(obj || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') out[key] = value;
+  });
+  return out;
+}
+
+function buildChartButtons(chartId) {
+  return chartId ? [[{ text: '📊 Có, vẽ biểu đồ', callback_data: `chart_${chartId}` }]] : [];
+}
+
+function parseTelegramChartCallbackData(callbackData = '') {
+  const data = String(callbackData || '').trim();
+  const match = data.match(/^(?:chart|show_chart|tg_chart|ve_bieu_do|draw_chart)[:_](.+)$/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function appendChartPrompt(text, chartId) {
+  if (!chartId) return text;
+  return `${text}\n\nBạn có muốn xem biểu đồ không?`;
+}
+
+function chartRowsFromReport(report = {}, intent = {}) {
+  const summary = report.summary || {};
+  const item = report.itemSummary || null;
+  if (item) {
+    return [
+      { label: 'Doanh thu', value: item.revenue || 0 },
+      { label: 'Giá vốn', value: item.cost || 0 },
+      { label: 'Lãi gộp', value: item.grossProfit || 0 },
+      { label: 'Số lượng', value: item.totalQty || 0 },
+    ];
+  }
+  return [
+    { label: 'Doanh thu', value: summary.revenue || 0 },
+    { label: 'Giá vốn', value: summary.cost || 0 },
+    { label: 'Lãi gộp', value: summary.grossProfit || 0 },
+    { label: 'Số đơn', value: summary.invoiceCount || 0 },
+  ];
+}
+
+async function prepareTelegramReportChart({ chatId, smartReportReply, title }) {
+  const report = smartReportReply?.report || {};
+  if (!report?.ok) return '';
+  return createTelegramChartRequest({
+    chatId,
+    title: title || `Báo cáo ${smartReportReply?.intent?.rangeLabel || ''}`.trim(),
+    kind: 'sales-report',
+    rows: chartRowsFromReport(report, smartReportReply?.intent || {}),
+    summary: report.summary || {},
+    source: { tool: report.tool || 'truy_van_bao_cao', rangeLabel: smartReportReply?.intent?.rangeLabel || '' },
+  });
+}
+
+async function tryAnswerTelegramProactiveOwnerInsight(userText = '', chatId = '') {
+  if (!isTelegramProactiveOwnerInsightQuestion(userText)) return null;
+  const { executeReportQuery } = getAiDeps();
+  const ranges = getCurrentAndPreviousMonthComparableRanges(new Date());
+  const [currentReport, previousReport] = await Promise.all([
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.currentFrom.toISOString(), den_thoi_diem: ranges.currentTo.toISOString(), gioi_han: 5 }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
+    executeReportQuery({ loai_bao_cao: 'tong_quan', tu_thoi_diem: ranges.previousFrom.toISOString(), den_thoi_diem: ranges.previousTo.toISOString(), gioi_han: 5 }, { db, fallbackBigQuery: true, bigQueryConfig: getBigQueryRuntimeConfig() }),
+  ]);
+  const cur = currentReport.summary || {};
+  const prev = previousReport.summary || {};
+  const revenueDelta = percentChange(cur.revenue, prev.revenue);
+  const profitDelta = percentChange(cur.grossProfit, prev.grossProfit);
+  const orderDelta = percentChange(cur.invoiceCount, prev.invoiceCount);
+  const margin = Number(cur.revenue || 0) > 0 ? (Number(cur.grossProfit || 0) / Number(cur.revenue || 0)) * 100 : 0;
+  const warnings = [];
+  if (revenueDelta < -10) warnings.push(`Doanh thu đang giảm ${formatSignedPercent(revenueDelta)} so với cùng kỳ tháng trước.`);
+  if (profitDelta < -10) warnings.push(`Lãi gộp giảm ${formatSignedPercent(profitDelta)} — cần kiểm tra giá vốn/khuyến mãi.`);
+  if (orderDelta < -10) warnings.push(`Số đơn giảm ${formatSignedPercent(orderDelta)} — cần kéo khách quay lại hoặc đẩy combo.`);
+  if (margin > 0 && margin < 35) warnings.push(`Biên lãi gộp chỉ khoảng ${margin.toFixed(1)}%, hơi thấp.`);
+  if (!warnings.length) warnings.push('Chưa thấy cảnh báo đỏ lớn; vẫn nên tối ưu món bán chạy và kiểm soát giá vốn.');
+  const suggestions = [
+    'Đẩy combo bia + món mồi có biên lãi tốt vào khung giờ thấp điểm.',
+    'Kiểm tra top món bán chạy: tăng trưng bày/ảnh/menu cho món có lãi cao, không chỉ món doanh thu cao.',
+    'Nếu số đơn giảm: chạy ưu đãi quay lại cho khách cũ hoặc nhắc bàn gọi thêm món mồi sau 20–30 phút.',
+  ];
+  const chartId = await createTelegramChartRequest({
+    chatId,
+    title: 'So sánh kinh doanh tháng này vs cùng kỳ tháng trước',
+    kind: 'owner-insight',
+    rows: [
+      { label: 'DT tháng này', value: cur.revenue || 0 },
+      { label: 'DT tháng trước', value: prev.revenue || 0 },
+      { label: 'Lãi tháng này', value: cur.grossProfit || 0 },
+      { label: 'Lãi tháng trước', value: prev.grossProfit || 0 },
+      { label: 'Đơn tháng này', value: cur.invoiceCount || 0 },
+      { label: 'Đơn tháng trước', value: prev.invoiceCount || 0 },
+    ],
+    summary: { revenue: cur.revenue || 0, previousRevenue: prev.revenue || 0, grossProfit: cur.grossProfit || 0, previousGrossProfit: prev.grossProfit || 0 },
+    source: { type: 'month-comparison' },
+  });
+  const text = [
+    '📌 Em xem nhanh tình hình kinh doanh cho chủ quán:',
+    `• Doanh thu tháng này: ${formatCurrencyVi(cur.revenue || 0)} (${formatSignedPercent(revenueDelta)} so với cùng kỳ tháng trước).`,
+    `• Lãi gộp: ${formatCurrencyVi(cur.grossProfit || 0)} (${formatSignedPercent(profitDelta)}).`,
+    `• Số đơn: ${formatQtyVi(cur.invoiceCount || 0)} (${formatSignedPercent(orderDelta)}).`,
+    '',
+    '⚠️ Cảnh báo/góc cần chú ý:',
+    ...warnings.map(w => `• ${w}`),
+    '',
+    '💡 Gợi ý cải thiện:',
+    ...suggestions.map(s => `• ${s}`),
+  ].join('\n');
+  return { text: appendChartPrompt(text, chartId), inlineButtons: buildChartButtons(chartId), toolResults: [currentReport, previousReport] };
+}
+
+function isTelegramFinanceReportQuestion(userText = '') {
+  const n = normalizeVi(userText);
+  return /\b(nhap hang|da nhap|tong tien nhap|chi phi|expense|cost)\b/.test(n);
+}
+
+async function querySimpleCollectionTotal(collectionNames = [], range = {}) {
+  let rows = [];
+  for (const name of collectionNames) {
+    const snap = await db.collection(name).get().catch(() => null);
+    if (!snap?.docs) continue;
+    rows = rows.concat(snap.docs.map(doc => ({ id: doc.id, collection: name, ...(doc.data() || {}) })));
+  }
+  const from = range.from;
+  const to = range.toExclusive || range.to || new Date();
+  const filtered = rows.filter(row => {
+    const raw = row.date || row.createdAt || row.paidAt || row.timestamp || row.ngay;
+    const d = raw?.toDate ? raw.toDate() : (raw ? new Date(raw) : null);
+    return d && !Number.isNaN(d.getTime()) && (!from || d >= from) && (!to || d < to);
+  });
+  return {
+    rows: filtered,
+    total: filtered.reduce((sum, row) => sum + (Number(row.total || row.amount || row.price || row.cost || row.tong_tien || 0) || 0), 0),
+    count: filtered.length,
+  };
+}
+
+async function tryAnswerTelegramFinanceReportQuestion(userText = '', chatId = '') {
+  if (!isTelegramFinanceReportQuestion(userText)) return null;
+  const n = normalizeVi(userText);
+  const intent = parseTelegramSmartReportIntent(userText) || (() => {
+    const scope = telegramReports.inferTelegramRelativeScope(normalizeTelegramSmartReportText(userText)) || 'hom_nay';
+    const r = telegramReports.buildTelegramRelativeReportRange(scope, new Date());
+    return { rangeLabel: r?.label || 'hôm nay', from: r?.from || new Date(Date.now() - 24*60*60*1000), toExclusive: r?.toExclusive || new Date() };
+  })();
+  const isPurchase = /\b(nhap hang|da nhap|tong tien nhap)\b/.test(n);
+  const result = isPurchase
+    ? await querySimpleCollectionTotal(['purchases'], { from: intent.from, toExclusive: intent.toExclusive })
+    : await querySimpleCollectionTotal(['expenses', 'Expense_Records', 'costs'], { from: intent.from, toExclusive: intent.toExclusive });
+  const label = isPurchase ? 'nhập hàng' : 'chi phí';
+  const chartId = await createTelegramChartRequest({
+    chatId,
+    title: `Báo cáo ${label} ${intent.rangeLabel}`,
+    kind: isPurchase ? 'purchases' : 'expenses',
+    rows: [
+      { label: `Tổng ${label}`, value: result.total || 0 },
+      { label: 'Số dòng', value: result.count || 0 },
+    ],
+    summary: { total: result.total || 0, count: result.count || 0 },
+    source: { type: label, rangeLabel: intent.rangeLabel },
+  });
+  const text = [
+    `Báo cáo ${label} ${intent.rangeLabel}:`,
+    `• Tổng tiền: ${formatCurrencyVi(result.total || 0)}.`,
+    `• Số dòng ghi nhận: ${formatQtyVi(result.count || 0)}.`,
+  ].join('\n');
+  return { text: appendChartPrompt(text, chartId), inlineButtons: buildChartButtons(chartId), toolResults: [{ ok: true, tool: isPurchase ? 'purchases' : 'expenses', ...result }] };
+}
+
+function escapeSvgText(text = '') {
+  return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[ch]));
+}
+
+async function renderTelegramChartPng(chart = {}) {
+  const rows = Array.isArray(chart.rows) ? chart.rows : [];
+  const width = 1100;
+  const height = 720;
+  const max = Math.max(1, ...rows.map(row => Math.abs(Number(row.value || 0))));
+  const barMax = 680;
+  const rowHeight = 62;
+  const top = 130;
+  const bars = rows.map((row, idx) => {
+    const y = top + idx * rowHeight;
+    const value = Number(row.value || 0);
+    const w = Math.max(4, Math.round((Math.abs(value) / max) * barMax));
+    const fill = value >= 0 ? '#E10600' : '#2A1608';
+    return `<g><text x="60" y="${y + 25}" font-size="24" fill="#2A1608">${escapeSvgText(row.label)}</text><rect x="330" y="${y}" width="${w}" height="34" rx="10" fill="${fill}"/><text x="${Math.min(1030, 345 + w)}" y="${y + 25}" font-size="22" fill="#2A1608">${escapeSvgText(formatCurrencyVi(value))}</text></g>`;
+  }).join('\n');
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#F9EAD1"/>
+<text x="60" y="70" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#2A1608">${escapeSvgText(chart.title || 'Biểu đồ báo cáo')}</text>
+<text x="60" y="105" font-family="Arial, sans-serif" font-size="20" fill="#2A1608">Xe Khô Chữa Lành • dữ liệu từ Firebase/POS</text>
+<g font-family="Arial, sans-serif">${bars}</g>
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function handleTelegramChartCallback({ chartId, callbackChatId, callbackQueryId, botToken }) {
+  const snap = await db.collection('telegram_chart_requests').doc(chartId).get();
+  if (!snap.exists) {
+    await answerTelegramCallback({ callbackQueryId, text: 'Biểu đồ đã hết hạn hoặc không còn dữ liệu.', botToken });
+    return { ok: false, error: 'chart_not_found' };
+  }
+  const chart = snap.data() || {};
+  if (String(chart.chatId || '') && String(chart.chatId) !== String(callbackChatId || '')) {
+    await answerTelegramCallback({ callbackQueryId, text: 'Biểu đồ này không thuộc chat hiện tại.', botToken });
+    return { ok: false, error: 'chat_mismatch' };
+  }
+  const png = await renderTelegramChartPng(chart);
+  await sendTelegramPhotoBuffer({
+    chatId: callbackChatId,
+    botToken,
+    photoBuffer: png,
+    caption: `📊 ${chart.title || 'Biểu đồ báo cáo'}`,
+    filename: `xekho-chart-${chartId}.png`,
+  });
+  await answerTelegramCallback({ callbackQueryId, text: 'Đã vẽ biểu đồ.', botToken });
+  await db.collection('telegram_chart_requests').doc(chartId).set({ viewedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  return { ok: true, chartId };
+}
+
+const DEFAULT_TELEGRAM_REPORT_SETTINGS = telegramReports.DEFAULT_TELEGRAM_REPORT_SETTINGS;
+
+function getVietnamBusinessReportRange(now = new Date()) {
+  return telegramReports.getVietnamBusinessReportRange(now);
 }
 
 function getTelegramReportSettings(raw = {}) {
-  const hour = Math.min(23, Math.max(0, parseInt(raw.telegramReportSendHour, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendHour));
-  const minute = Math.min(59, Math.max(0, parseInt(raw.telegramReportSendMinute, 10) || DEFAULT_TELEGRAM_REPORT_SETTINGS.sendMinute));
-  return {
-    enabled: raw.telegramReportEnabled !== false,
-    sendHour: hour,
-    sendMinute: minute,
-    includeRevenue: raw.telegramReportIncludeRevenue !== false,
-    includePaymentBreakdown: raw.telegramReportIncludePaymentBreakdown !== false,
-    includeInvoiceCount: raw.telegramReportIncludeInvoiceCount !== false,
-    includeTopItem: raw.telegramReportIncludeTopItem !== false,
-    includeRetailStock: raw.telegramReportIncludeRetailStock !== false,
-    lastSentRangeKey: String(raw.telegramReportLastSentRangeKey || '').trim(),
-  };
+  return telegramReports.getTelegramReportSettings(raw);
 }
 
 function getTelegramReportRangeKey(range) {
-  return `${range.from.toISOString()}__${range.toExclusive.toISOString()}`;
+  return telegramReports.getTelegramReportRangeKey(range);
 }
 
 function shouldSendTelegramReportNow(settings, now = new Date(), range = getVietnamBusinessReportRange(now)) {
-  if (!settings?.enabled) return { shouldSend: false, reason: 'disabled', range };
-  const parts = getVietnamDateParts(now);
-  const currentMinuteOfDay = (parts.hour * 60) + parts.minute;
-  const targetMinuteOfDay = (Number(settings.sendHour || 0) * 60) + Number(settings.sendMinute || 0);
-  if (currentMinuteOfDay < targetMinuteOfDay || currentMinuteOfDay >= (targetMinuteOfDay + 5)) {
-    return { shouldSend: false, reason: 'outside-window', range };
-  }
-  const rangeKey = getTelegramReportRangeKey(range);
-  if (String(settings.lastSentRangeKey || '') === rangeKey) {
-    return { shouldSend: false, reason: 'already-sent', range, rangeKey };
-  }
-  return { shouldSend: true, reason: 'ready', range, rangeKey };
+  return telegramReports.shouldSendTelegramReportNow(settings, now, range);
 }
 
 function getTelegramReportTargetChatIds() {
@@ -918,6 +1381,50 @@ function getTelegramReportBotToken() {
   ).trim();
 }
 
+function getTelegramAssistantBotToken() {
+  return String(
+    TELEGRAM_REPORT_BOT_TOKEN.value()
+    || TELEGRAM_BOT_TOKEN.value()
+    || ''
+  ).trim();
+}
+
+function getTelegramAssistantBotName() {
+  return String(TELEGRAM_ASSISTANT_BOT_NAME.value() || 'XE KHO Owner Assistant').trim();
+}
+
+function getTelegramOwnerChatIds() {
+  // Write callbacks use only explicit owner configuration and fail closed when empty.
+  // Hardcoded fallback removed to enforce explicit config for mutation allowlist.
+  return uniqueTokens([
+    TELEGRAM_OWNER_CHAT_ID.value(),
+  ]);
+}
+
+function isTelegramOwnerContext(context = {}) {
+  const allowlist = getTelegramOwnerChatIds();
+  const chatId = String(context.chatId || '').trim();
+  const userId = String(context.userId || '').trim();
+  return allowlist.some(id => id && (id === chatId || id === userId));
+}
+
+function buildTelegramOwnerOnlyMessage() {
+  return [
+    `Bot ${getTelegramAssistantBotName()} chỉ phục vụ chủ quán đã cấu hình.`,
+    'Tính năng doanh thu, báo cáo, AI trợ lý và nhập liệu thông minh chỉ mở cho Telegram ID chủ quán.',
+    'Nếu cần cấp quyền, dùng /chatid rồi cấu hình TELEGRAM_OWNER_CHAT_ID đúng ID đó.',
+  ].join('\n');
+}
+
+async function rejectTelegramOwnerOnlyAccess({ chatId, botToken }) {
+  if (!chatId || !botToken) return;
+  await sendTelegramTextMessage({
+    chatId,
+    botToken,
+    text: buildTelegramOwnerOnlyMessage(),
+  });
+}
+
 async function loadTelegramReportFinancialProfile() {
   const snap = await db.collection('settings').doc('financial_profile').get().catch(() => null);
   const data = snap?.exists ? (snap.data() || {}) : {};
@@ -940,262 +1447,53 @@ async function loadTelegramReportFinancialProfile() {
 }
 
 function getInclusiveVietnamDateCount(fromYmd, toYmd) {
-  const start = new Date(`${String(fromYmd || '').trim()}T00:00:00`);
-  const end = new Date(`${String(toYmd || '').trim()}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
-  return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+  return telegramReports.getInclusiveVietnamDateCount(fromYmd, toYmd);
 }
 
 function formatAchievementPercent(value = 0, target = 0) {
-  const safeTarget = Math.max(Number(target || 0) || 0, 1);
-  const percent = ((Number(value || 0) || 0) / safeTarget) * 100;
-  return `${percent.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`;
+  return telegramReports.formatAchievementPercent(value, target);
 }
 
 function buildMorningRevenueMood(report = {}) {
-  const target = Number(report.targetRevenueForRange || 0) || 0;
-  const revenue = Number(report.revenue || 0) || 0;
-  const percent = target > 0 ? (revenue / target) * 100 : 0;
-
-  if (target <= 0) {
-    return 'Hôm nay em chưa dám gáy vì Sprint 0 chưa cấu hình target doanh thu. Mình đặt target trước để bot tự soi cho chuẩn nhé.';
-  }
-  if (percent >= 120) {
-    return 'Hôm nay xin phép gáy thật to: quán đang vượt target rất đẹp, đội mình chạy bài và chốt đơn quá bén.';
-  }
-  if (percent >= 100) {
-    return 'Tin vui đầu ngày: đã chạm target doanh thu rồi, cứ giữ nhịp này là có quyền ngẩng cao đầu.';
-  }
-  if (percent >= 80) {
-    return 'Đang bám target khá sát rồi, chỉ cần rướn thêm một nhịp nữa là chạm mốc đẹp.';
-  }
-  if (percent >= 60) {
-    return 'Hôm nay hơi thiếu lửa một chút, chưa tệ nhưng cũng chưa đủ để gáy. Cần siết lại nội dung, offer và tốc độ chốt đơn.';
-  }
-  return 'Hôm nay em tự nhận là chưa làm tốt. Doanh thu còn dưới 60% target, lỗi tại em chưa kéo khách đủ mạnh. Em cần cố gắng hơn nữa để bù lại cho quán.';
+  return telegramReports.buildMorningRevenueMood(report);
 }
 
 async function sendTelegramHtmlMessage({ chatId, text, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(text).slice(0, 3900),
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramHtmlMessage({ chatId, text, botToken });
 }
 
 async function sendTelegramTextMessage({ chatId, text, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      disable_web_page_preview: true,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramTextMessage({ chatId, text, botToken });
 }
 
 async function sendTelegramActionConfirmation({ chatId, text, actionDocId, botToken }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  const docId = String(actionDocId || '').trim();
-  if (!finalBotToken || !finalChatId || !docId) {
-    throw new Error('Missing Telegram bot token, chat id or action doc id');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '✅ Xác nhận', callback_data: `confirm_${docId}` },
-          { text: '❌ Hủy', callback_data: `cancel_${docId}` },
-        ]],
-      },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramActionConfirmation({ chatId, text, actionDocId, botToken });
 }
 
 async function sendTelegramInlineMessage({ chatId, text, buttons = [], botToken, parseMode = 'HTML' }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  if (!finalBotToken || !finalChatId) {
-    throw new Error('Missing Telegram bot token or chat id');
-  }
-
-  const inline_keyboard = Array.isArray(buttons)
-    ? buttons
-        .map(row => (Array.isArray(row)
-          ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-          : []))
-        .filter(row => row.length > 0)
-    : [];
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendMessage`,
-    {
-      chat_id: finalChatId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      parse_mode: parseMode,
-      disable_web_page_preview: true,
-      reply_markup: inline_keyboard.length ? { inline_keyboard } : undefined,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramInlineMessage({ chatId, text, buttons, botToken, parseMode });
 }
 
 async function sendTelegramPhotoMessage({ chatId, photo, caption = '', botToken, parseMode = 'HTML', buttons = [] }) {
-  const finalBotToken = String(botToken || '').trim();
-  const finalChatId = String(chatId || '').trim();
-  const finalPhoto = String(photo || '').trim();
-  if (!finalBotToken || !finalChatId || !finalPhoto) {
-    throw new Error('Missing Telegram bot token, chat id or photo');
-  }
-
-  const response = await axios.post(
-    `https://api.telegram.org/bot${finalBotToken}/sendPhoto`,
-    {
-      chat_id: finalChatId,
-      photo: finalPhoto,
-      caption: normalizeTelegramTextPreserveLines(String(caption || '')).slice(0, 1000),
-      parse_mode: parseMode,
-      reply_markup: Array.isArray(buttons) && buttons.length
-        ? {
-            inline_keyboard: buttons.map(row => (Array.isArray(row)
-              ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-              : [])),
-          }
-        : undefined,
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000,
-    }
-  );
-
-  if (response?.data?.ok !== true) {
-    throw new Error(`Telegram API returned not ok: ${JSON.stringify(response?.data || {})}`);
-  }
-
-  return response.data;
+  return telegramSend.sendTelegramPhotoMessage({ chatId, photo, caption, botToken, parseMode, buttons });
 }
 
-function escapeXml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+async function sendTelegramPhotoBuffer({ chatId, photoBuffer, caption = '', botToken, parseMode = 'HTML', buttons = [], filename = 'chart.png', contentType = 'image/png' }) {
+  return telegramSend.sendTelegramPhotoBuffer({ chatId, photoBuffer, caption, botToken, parseMode, buttons, filename, contentType });
 }
+
+function escapeXml(text) { return textUtils.escapeXml(text); }
 
 async function answerTelegramCallback({ callbackQueryId, text, botToken }) {
-  if (!callbackQueryId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/answerCallbackQuery`,
-    {
-      callback_query_id: callbackQueryId,
-      text: normalizeTelegramText(String(text || '')).slice(0, 180),
-      show_alert: false,
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.answerTelegramCallback({ callbackQueryId, text, botToken });
 }
 
 async function editTelegramMessage({ chatId, messageId, text, botToken }) {
-  if (!chatId || !messageId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/editMessageText`,
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      reply_markup: { inline_keyboard: [] },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.editTelegramMessage({ chatId, messageId, text, botToken });
 }
 
 async function editTelegramInlineMessage({ chatId, messageId, text, buttons = [], botToken, parseMode = 'HTML' }) {
-  if (!chatId || !messageId) return null;
-  return axios.post(
-    `https://api.telegram.org/bot${botToken}/editMessageText`,
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      text: normalizeTelegramTextPreserveLines(String(text || '')).slice(0, 3900),
-      parse_mode: parseMode,
-      disable_web_page_preview: true,
-      reply_markup: Array.isArray(buttons) && buttons.length
-        ? {
-            inline_keyboard: buttons.map(row => (Array.isArray(row)
-              ? row.map(button => ({ ...button, text: normalizeTelegramText(button?.text || '') }))
-              : [])),
-          }
-        : { inline_keyboard: [] },
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-  ).catch(() => null);
+  return telegramSend.editTelegramInlineMessage({ chatId, messageId, text, buttons, botToken, parseMode });
 }
 
 function extractPendingActionsFromToolResults(toolResults = []) {
@@ -1209,39 +1507,7 @@ function extractPendingActionsFromToolResults(toolResults = []) {
 }
 
 async function getTelegramPhotoAsBase64({ botToken, photo }) {
-  const list = Array.isArray(photo) ? photo : [];
-  if (!list.length) throw new Error('Telegram photo is empty');
-  const best = list.slice().sort((a, b) => Number(b.file_size || 0) - Number(a.file_size || 0))[0];
-  const fileId = String(best.file_id || '').trim();
-  if (!fileId) throw new Error('Missing Telegram file_id');
-
-  const fileRes = await axios.get(
-    `https://api.telegram.org/bot${botToken}/getFile`,
-    { params: { file_id: fileId }, timeout: 15000 }
-  );
-  const filePath = String(fileRes?.data?.result?.file_path || '').trim();
-  if (!filePath) throw new Error('Telegram getFile did not return file_path');
-
-  const imageRes = await axios.get(
-    `https://api.telegram.org/file/bot${botToken}/${filePath}`,
-    { responseType: 'arraybuffer', timeout: 30000 }
-  );
-  const headerMimeType = String(imageRes.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
-  const normalizedPath = String(filePath || '').toLowerCase();
-  const inferredMimeType = normalizedPath.endsWith('.png')
-    ? 'image/png'
-    : normalizedPath.endsWith('.webp')
-      ? 'image/webp'
-      : normalizedPath.endsWith('.gif')
-        ? 'image/gif'
-        : 'image/jpeg';
-  const mimeType = headerMimeType && headerMimeType !== 'application/octet-stream'
-    ? headerMimeType
-    : inferredMimeType;
-  return {
-    base64: Buffer.from(imageRes.data).toString('base64'),
-    mimeType,
-  };
+  return telegramSend.getTelegramPhotoAsBase64({ botToken, photo });
 }
 
 function normalizeTelegramServiceMode(value = '') {
@@ -1858,126 +2124,47 @@ async function confirmTelegramOrderDraft({ draftId, chatId, messageId, botToken,
 }
 
 function getHistoryBusinessId(order) {
-  return String(order?.id || order?.historyId || order?.docId || '').trim() || String(order?.docId || '').trim();
+  return telegramOrders.getHistoryBusinessId(order);
 }
 
 function getHistoryVersionDate(order) {
-  const rawDate = order?.updatedAt || order?.paidAt || order?.timestamp || null;
-  if (rawDate instanceof Date) return rawDate;
-  if (rawDate?.toDate) return rawDate.toDate();
-  return new Date(rawDate || 0);
+  return telegramOrders.getHistoryVersionDate(order);
 }
 
 function getHistoryVersionTime(order) {
-  const date = getHistoryVersionDate(order);
-  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+  return telegramOrders.getHistoryVersionTime(order);
 }
 
 function isCompletedHistoryOrderForReports(order) {
-  const status = String(order?.status || '').trim().toLowerCase();
-  if (!status) return !order?.cancelledAt && !order?.cancelReason;
-  return status === 'completed' || status === 'closed';
+  return telegramOrders.isCompletedHistoryOrderForReports(order);
 }
 
 function isVisibleHistoryOrderForReports(order) {
-  if (!order || typeof order !== 'object') return false;
-  if (!isCompletedHistoryOrderForReports(order)) return false;
-  if (order.hidden === true) return false;
-  if (order.hiddenFromReports === true) return false;
-  if (order.hiddenFromHistory === true) return false;
-  if (order.deletedAt || order.deletedFromAppAt) return false;
-  if (order.archivedAt || order.archivedFromHistoryId) return false;
-  if (order.supersededAt || order.supersededByHistoryId) return false;
-  return true;
+  return telegramOrders.isVisibleHistoryOrderForReports(order);
 }
 
 function coerceHistoryDate(value) {
-  if (value instanceof Date) return value;
-  if (value?.toDate) return value.toDate();
-  if (typeof value === 'number') return new Date(value);
-  if (typeof value === 'string' && value.trim()) return new Date(value);
-  return null;
+  return telegramReports.coerceHistoryDate(value);
 }
 
 function formatTelegramDateTimeVi(value) {
-  const date = coerceHistoryDate(value);
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Không rõ';
-  return new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  return telegramReports.formatTelegramDateTimeVi(value);
 }
 
 function getTelegramPayMethodLabel(payMethod) {
-  const method = String(payMethod || '').trim().toLowerCase();
-  if (['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(method)) return 'Chuyển khoản';
-  if (['cash', 'tienmat', 'cashier'].includes(method)) return 'Tiền mặt';
-  return method || 'Không rõ';
+  return telegramReports.getTelegramPayMethodLabel(payMethod);
 }
 
 function isTelegramBankPayMethod(payMethod) {
-  return ['bank', 'transfer', 'qr', 'momo', 'zalopay'].includes(String(payMethod || '').trim().toLowerCase());
-}
-
-function normalizeTelegramTableLabel(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eề])$/i.test(raw)) return 'Mang về';
-  const fullMatch = raw.match(/^ban\s*(.+)$/i);
-  if (fullMatch?.[1]) return `Bàn ${fullMatch[1].trim()}`;
-  const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
-  return raw;
+  return telegramReports.isTelegramBankPayMethod(payMethod);
 }
 
 function extractTelegramCashierName(value) {
-// Override table normalization so customer-request flows do not render labels like duplicated "BAN".
-function normalizeTelegramTableLabel(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return 'Không rõ';
-  if (/^(takeaway|mang ve|mangv[eá»])$/i.test(raw)) return 'Mang về';
-
-  const repeatedPrefixMatch = raw.match(/^(?:b[aà]n?\s*)?(?:ban|b[aà]n)\s*(.+)$/i);
-  if (repeatedPrefixMatch?.[1]) return `Bàn ${repeatedPrefixMatch[1].trim()}`;
-
-  const shortMatch = raw.match(/^b\s*[- ]?\s*(\d+)$/i);
-  if (shortMatch?.[1]) return `Bàn ${shortMatch[1].trim()}`;
-
-  return raw;
-}
-
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof value !== 'object') return String(value).trim();
-
-  const candidates = [
-    value.name,
-    value.full_name,
-    value.fullName,
-    value.username,
-    value.displayName,
-    value.email,
-    value.id,
-    value.uid,
-  ];
-
-  for (const candidate of candidates) {
-    const name = String(candidate || '').trim();
-    if (name && name !== '[object Object]') return name;
-  }
-  return '';
+  return telegramOrders.extractTelegramCashierName(value);
 }
 
 function getVietnamDayRange(date = new Date()) {
-  const parts = getVietnamDateParts(date);
-  const from = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -7, 0, 0, 0));
-  const toExclusive = new Date(from.getTime() + (24 * 60 * 60 * 1000));
-  return { from, toExclusive };
+  return telegramAds.getVietnamDayRange(date);
 }
 
 async function buildTelegramCompletedOrderShiftSummary(order = {}) {
@@ -2012,313 +2199,26 @@ async function buildTelegramCompletedOrderShiftSummary(order = {}) {
 }
 
 function pickFirstPresentValue(...values) {
-  for (const value of values) {
-    if (value === undefined || value === null) continue;
-    if (typeof value === 'string' && !value.trim()) continue;
-    return value;
-  }
-  return null;
+  return telegramOrders.pickFirstPresentValue(...values);
 }
 
 function toTelegramMoneyNumber(...values) {
-  for (const value of values) {
-    const num = Number(value);
-    if (Number.isFinite(num)) return num;
-  }
-  return 0;
+  return telegramOrders.toTelegramMoneyNumber(...values);
 }
 
 function normalizeCompletedOrderItems(order = {}) {
-  const rawItems = pickFirstPresentValue(
-    Array.isArray(order.items) ? order.items : null,
-    Array.isArray(order.billItems) ? order.billItems : null,
-    Array.isArray(order.lineItems) ? order.lineItems : null,
-    Array.isArray(order.cartItems) ? order.cartItems : null,
-    Array.isArray(order.products) ? order.products : null
-  );
-
-  if (!Array.isArray(rawItems)) return [];
-
-  return rawItems.map(item => {
-    if (!item || typeof item !== 'object') return null;
-    const qty = toTelegramMoneyNumber(item.qty, item.quantity, item.count, 1) || 1;
-    const price = toTelegramMoneyNumber(item.price, item.unitPrice, item.sellPrice, item.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const cost = toTelegramMoneyNumber(item.cost, item.unitCost, item.baseCost, 0);
-    return {
-      ...item,
-      name: String(pickFirstPresentValue(item.name, item.itemName, item.productName, item.title, item.label, 'Món')).trim(),
-      qty,
-      price,
-      cost,
-      note: String(pickFirstPresentValue(item.note, item.notes, item.description, '') || '').trim(),
-    };
-  }).filter(Boolean);
+  return telegramOrders.normalizeCompletedOrderItems(order);
 }
 
 function calculateCompletedOrderSubtotal(items = []) {
-  return items.reduce((sum, item) => {
-    const qty = toTelegramMoneyNumber(item?.qty, 0);
-    const price = toTelegramMoneyNumber(item?.price, item?.subtotal && qty ? Number(item.subtotal) / qty : 0);
-    const lineTotal = qty > 0 ? qty * price : toTelegramMoneyNumber(item?.subtotal, item?.total, 0);
-    return sum + lineTotal;
-  }, 0);
+  return telegramOrders.calculateCompletedOrderSubtotal(items);
 }
 
 function normalizeCompletedOrderForTelegram(historyId, order = {}) {
-  const items = normalizeCompletedOrderItems(order);
-  const subtotalFromItems = calculateCompletedOrderSubtotal(items);
-  const discount = toTelegramMoneyNumber(order.discount, order.discountAmount, order.extras?.discount, 0);
-  const shipping = toTelegramMoneyNumber(order.shipping, order.shippingFee, order.deliveryFee, order.extras?.shipping, 0);
-  const vatAmount = toTelegramMoneyNumber(order.vatAmount, order.taxAmount, order.extras?.vatAmount, 0);
-  const subtotal = toTelegramMoneyNumber(order.subtotal, order.itemsTotal, order.amountBeforeTax, subtotalFromItems);
-  const total = toTelegramMoneyNumber(order.total, order.finalBillTotal, order.grandTotal, order.amount, order.totalAmount, subtotal - discount + shipping + vatAmount);
-  const cost = toTelegramMoneyNumber(
-    order.cost,
-    order.totalCost,
-    items.reduce((sum, item) => sum + (toTelegramMoneyNumber(item.cost, 0) * toTelegramMoneyNumber(item.qty, 0)), 0)
-  );
-
-  return {
-    ...order,
-    historyId: String(pickFirstPresentValue(order.historyId, order.docId, historyId, '') || '').trim(),
-    id: String(pickFirstPresentValue(order.id, order.billNo, order.orderId, historyId, '') || '').trim(),
-    billNo: String(pickFirstPresentValue(order.billNo, order.id, order.orderCode, order.historyId, historyId, '') || '').trim(),
-    tableId: String(pickFirstPresentValue(order.tableId, order.tableNumber, order.table, order.ban, '') || '').trim(),
-    tableName: String(pickFirstPresentValue(order.tableName, order.tableLabel, order.posTableName, order.channelName, order.tableId, order.tableNumber, '') || '').trim(),
-    payMethod: String(pickFirstPresentValue(order.payMethod, order.paymentMethod, order.payment?.method, '') || '').trim(),
-    paidAt: pickFirstPresentValue(order.paidAt, order.completedAt, order.closedAt, order.updatedAt, order.timestamp, order.createdAt),
-    note: String(pickFirstPresentValue(order.note, order.notes, order.message, '') || '').trim(),
-    discountNote: String(pickFirstPresentValue(order.discountNote, order.promotionName, order.discountReason, '') || '').trim(),
-    createdByName: pickFirstPresentValue(order.createdByName, order.cashierName, order.staffName, order.staff?.name, order.createdByName),
-    paidByName: pickFirstPresentValue(order.paidByName, order.cashierName, order.staffName, order.payment?.collectedByName, order.paidByName),
-    items,
-    subtotal,
-    discount,
-    shipping,
-    vatAmount,
-    total,
-    cost,
-  };
-}
-
-function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
-  const items = Array.isArray(order.items) ? order.items : [];
-  const tableName = String(order.tableName || order.tableId || 'Khong ro');
-  const billNo = String(order.id || order.billNo || order.historyId || historyId || '').trim() || 'Khong ro';
-  const paidAt = order.paidAt || order.updatedAt || order.timestamp || null;
-  const subtotal = items.reduce((sum, item) => {
-    const qty = Number(item?.qty || 0);
-    const price = Number(item?.price || 0);
-    return sum + (qty * price);
-  }, 0);
-  const discount = Number(order.discount || 0);
-  const shipping = Number(order.shipping || 0);
-  const vatAmount = Number(order.vatAmount || 0);
-  const total = Number(order.total || 0);
-  const note = String(order.note || '').trim();
-  const discountNote = String(order.discountNote || '').trim();
-  const cashier = String(order.createdBy || order.createdByName || order.paidByName || order.paidBy?.name || '').trim();
-
-  const itemLines = items.length
-    ? items.map(item => {
-      const name = String(item?.name || 'Mon').trim();
-      const qty = Number(item?.qty || 0) || 1;
-      const price = Number(item?.price || 0);
-      const lineTotal = price * qty;
-      const itemNote = String(item?.note || '').trim();
-      const noteText = itemNote ? ` (${escapeTelegramHtml(itemNote)})` : '';
-      return `• ${escapeTelegramHtml(name)} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${noteText}`;
-    }).join('\n')
-    : '• Khong co chi tiet';
-
-  const lines = [
-    '<b>✅ HOÀN TẤT ĐƠN HÀNG</b>',
-    '',
-    `<b>Hóa đơn:</b> ${escapeTelegramHtml(billNo)}`,
-    `<b>Bàn/Kênh:</b> ${escapeTelegramHtml(tableName)}`,
-    `<b>Thời gian:</b> ${escapeTelegramHtml(formatTelegramDateTimeVi(paidAt))}`,
-    `<b>Thanh toán:</b> ${escapeTelegramHtml(getTelegramPayMethodLabel(order.payMethod))}`,
-  ];
-
-  if (cashier) lines.push(`<b>Nhân viên:</b> ${escapeTelegramHtml(cashier)}`);
-  if (note) lines.push(`<b>Ghi chú:</b> ${escapeTelegramHtml(note)}`);
-
-  lines.push(
-    '',
-    '<b>Món:</b>',
-    itemLines,
-    '',
-    `<b>Tiền hàng:</b> ${escapeTelegramHtml(formatCurrencyVi(subtotal))}`
-  );
-
-  if (discount > 0) {
-    lines.push(`<b>Giảm giá${discountNote ? ` (${escapeTelegramHtml(discountNote)})` : ''}:</b> -${escapeTelegramHtml(formatCurrencyVi(discount))}`);
-  }
-  if (shipping > 0) lines.push(`<b>Phí giao hàng:</b> +${escapeTelegramHtml(formatCurrencyVi(shipping))}`);
-  if (vatAmount > 0) lines.push(`<b>VAT${order.taxRate ? ` (${escapeTelegramHtml(order.taxRate)}%)` : ''}:</b> +${escapeTelegramHtml(formatCurrencyVi(vatAmount))}`);
-
-  lines.push(`<b>TỔNG CỘNG:</b> ${escapeTelegramHtml(formatCurrencyVi(total))}`);
-  if (shiftSummary) {
-    lines.push(
-      `<i>Tổng đơn trong ca: ${escapeTelegramHtml(String(shiftSummary.totalOrders || 0))} · Tổng tiền trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.totalAmount || 0))}</i>`,
-      `<i>Tiền mặt trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.cashAmount || 0))} · Chuyển khoản trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.bankAmount || 0))}</i>`
-    );
-  }
-
-  return lines.join('\n');
+  return telegramOrders.normalizeCompletedOrderForTelegram(historyId, order);
 }
 
 // Override formatter with clean UTF-8 text to avoid mojibake in completed-order Telegram reports.
-function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
-  const items = Array.isArray(order.items) ? order.items : [];
-  const tableName = normalizeTelegramTableLabel(order.tableName || order.tableId || '');
-  const billNo = String(order.id || order.billNo || order.historyId || historyId || '').trim() || 'Không rõ';
-  const paidAt = order.paidAt || order.updatedAt || order.timestamp || null;
-  const subtotal = items.reduce((sum, item) => {
-    const qty = Number(item?.qty || 0);
-    const price = Number(item?.price || 0);
-    return sum + (qty * price);
-  }, 0);
-  const discount = Number(order.discount || 0);
-  const shipping = Number(order.shipping || 0);
-  const vatAmount = Number(order.vatAmount || 0);
-  const total = Number(order.total || 0);
-  const note = String(order.note || '').trim();
-  const discountNote = String(order.discountNote || '').trim();
-  const cashier = extractTelegramCashierName(
-    order.createdByName
-    || order.paidByName
-    || order.paidBy
-    || order.createdBy
-    || order.updatedBy
-  );
-
-  const itemLines = items.length
-    ? items.map(item => {
-      const name = String(item?.name || 'Món').trim();
-      const qty = Number(item?.qty || 0) || 1;
-      const price = Number(item?.price || 0);
-      const lineTotal = price * qty;
-      const itemNote = String(item?.note || '').trim();
-      const noteText = itemNote ? ` (${escapeTelegramHtml(itemNote)})` : '';
-      return `• ${escapeTelegramHtml(name)} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${noteText}`;
-    }).join('\n')
-    : '• Không có chi tiết';
-
-  const lines = [
-    '<b>✅ HOÀN TẤT ĐƠN HÀNG</b>',
-    '',
-    `<b>Hóa đơn:</b> ${escapeTelegramHtml(billNo)}`,
-    `<b>Bàn/Kênh:</b> ${escapeTelegramHtml(tableName)}`,
-    `<b>Thời gian:</b> ${escapeTelegramHtml(formatTelegramDateTimeVi(paidAt))}`,
-    `<b>Thanh toán:</b> ${escapeTelegramHtml(getTelegramPayMethodLabel(order.payMethod))}`,
-  ];
-
-  if (cashier) lines.push(`<b>Nhân viên:</b> ${escapeTelegramHtml(cashier)}`);
-  if (note) lines.push(`<b>Ghi chú:</b> ${escapeTelegramHtml(note)}`);
-
-  lines.push(
-    '',
-    '<b>Món:</b>',
-    itemLines,
-    '',
-    `<b>Tiền hàng:</b> ${escapeTelegramHtml(formatCurrencyVi(subtotal))}`
-  );
-
-  if (discount > 0) {
-    lines.push(`<b>Giảm giá${discountNote ? ` (${escapeTelegramHtml(discountNote)})` : ''}:</b> -${escapeTelegramHtml(formatCurrencyVi(discount))}`);
-  }
-  if (shipping > 0) lines.push(`<b>Phí giao hàng:</b> +${escapeTelegramHtml(formatCurrencyVi(shipping))}`);
-  if (vatAmount > 0) lines.push(`<b>VAT${order.taxRate ? ` (${escapeTelegramHtml(order.taxRate)}%)` : ''}:</b> +${escapeTelegramHtml(formatCurrencyVi(vatAmount))}`);
-
-  lines.push(`<b>TỔNG CỘNG:</b> ${escapeTelegramHtml(formatCurrencyVi(total))}`);
-  if (shiftSummary) {
-    lines.push(
-      `<i>Tổng đơn trong ca: ${escapeTelegramHtml(String(shiftSummary.totalOrders || 0))} · Tổng tiền trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.totalAmount || 0))}</i>`,
-      `<i>Tiền mặt trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.cashAmount || 0))} · Chuyển khoản trong ca: ${escapeTelegramHtml(formatCurrencyVi(shiftSummary.bankAmount || 0))}</i>`
-    );
-  }
-
-  return lines.join('\n');
-}
-
-async function sendCompletedOrderTelegram(historyId, order = {}) {
-  const botToken = getTelegramReportBotToken();
-  const targetChatIds = getCompletedOrderTelegramTargetChatIds();
-  if (!botToken || !targetChatIds.length) {
-    logger.warn('Skipping completed-order Telegram: missing token/chat', {
-      historyId,
-      hasBotToken: !!botToken,
-      targetChatIds,
-    });
-    return;
-  }
-
-  const dedupeId = String(historyId || order.historyId || order.id || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 1400);
-  const ref = db.collection('telegram_completed_order_sent').doc(dedupeId || db.collection('telegram_completed_order_sent').doc().id);
-  const created = await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    if (snap.exists) return false;
-    tx.set(ref, {
-      historyId: String(historyId || ''),
-      billNo: String(order.id || order.billNo || ''),
-      tableId: String(order.tableId || ''),
-      tableName: String(order.tableName || ''),
-      total: Number(order.total || 0),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
-
-  if (!created) {
-    logger.info('Skipping completed-order Telegram: already sent', { historyId });
-    return;
-  }
-
-  let shiftSummary = null;
-  try {
-    shiftSummary = await buildTelegramCompletedOrderShiftSummary(order);
-  } catch (error) {
-    logger.warn('Completed-order Telegram shift summary failed', {
-      historyId,
-      message: error?.message || String(error),
-    });
-  }
-
-  const enrichedItems = await enrichTelegramItemsWithCatalog(order.items || []);
-  const text = buildTelegramCompletedOrderMessage(historyId, {
-    ...order,
-    items: enrichedItems,
-  }, shiftSummary);
-  let lastError = null;
-  let sentChatId = '';
-  for (const chatId of targetChatIds) {
-    try {
-      await sendTelegramHtmlMessage({ chatId, text, botToken });
-      sentChatId = chatId;
-      break;
-    } catch (error) {
-      lastError = error;
-      logger.warn('Completed-order Telegram send failed for chat', {
-        historyId,
-        chatId,
-        error: error?.message || String(error),
-        responseData: error?.response?.data || null,
-      });
-    }
-  }
-
-  if (!sentChatId) {
-    throw lastError || new Error('No Telegram chat accepted completed-order notification');
-  }
-
-  logger.info('Completed-order Telegram sent', {
-    historyId,
-    chatId: sentChatId,
-    total: Number(order.total || 0),
-  });
-}
-
 // Final override: normalize completed-order payloads before formatting/sending.
 function buildTelegramCompletedOrderMessage(historyId, order = {}, shiftSummary = null) {
   const normalizedOrder = normalizeCompletedOrderForTelegram(historyId, order);
@@ -2627,169 +2527,55 @@ function buildConfiguredDailyReportTelegramMessage(report, options = {}) {
 }
 
 function uniqueTokens(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(Boolean))];
+  return telegramAds.uniqueTokens(values);
 }
 
 function normalizeVi(text) {
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/Ä‘/g, 'd')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return telegramAds.normalizeVi(text);
 }
 
 function parseTimeEntity(text) {
-  const t = normalizeVi(text);
-  if (!t) return null;
-  if (/(hom nay)\b/.test(t)) return { key: 'today', label: 'hôm nay' };
-  if (/(hom qua)\b/.test(t)) return { key: 'yesterday', label: 'hôm qua' };
-  if (/(tuan nay)\b/.test(t)) return { key: 'this_week', label: 'tuần này' };
-  if (/(thang nay)\b/.test(t)) return { key: 'this_month', label: 'tháng này' };
-  if (/(nam nay)\b/.test(t)) return { key: 'this_year', label: 'nm nay' };
-  return null;
+  return telegramAds.parseTimeEntity(text);
 }
 
 function buildDateRange(timeKey) {
-  const now = new Date();
-  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-  const endOfDay = d => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
-
-  if (timeKey === 'today') return { from: startOfDay(now), to: endOfDay(now) };
-  if (timeKey === 'yesterday') {
-    const d = new Date(now); d.setDate(d.getDate() - 1);
-    return { from: startOfDay(d), to: endOfDay(d) };
-  }
-  if (timeKey === 'this_week') {
-    const d = new Date(now);
-    const day = d.getDay();
-    const diff = (day === 0 ? -6 : 1) - day;
-    d.setDate(d.getDate() + diff);
-    return { from: startOfDay(d), to: endOfDay(now) };
-  }
-  if (timeKey === 'this_month') {
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: startOfDay(from), to: endOfDay(now) };
-  }
-  if (timeKey === 'this_year') {
-    const from = new Date(now.getFullYear(), 0, 1);
-    return { from: startOfDay(from), to: endOfDay(now) };
-  }
-  return { from: startOfDay(now), to: endOfDay(now) };
+  return telegramAds.buildDateRange(timeKey);
 }
 
 function formatPercentVi(value) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0%';
-  return `${numeric.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
+  return telegramAds.formatPercentVi(value);
 }
 
 function formatMultipleVi(value) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0x';
-  return `${numeric.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}x`;
+  return telegramAds.formatMultipleVi(value);
 }
 
 function getVietnamDateYmd(date = new Date()) {
-  const parts = getVietnamDateParts(date);
-  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  return telegramAds.getVietnamDateYmd(date);
 }
 
 function formatVietnamDateDisplayFromYmd(ymd) {
-  const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return String(ymd || '').trim();
-  return `${match[3]}/${match[2]}/${match[1]}`;
+  return telegramAds.formatVietnamDateDisplayFromYmd(ymd);
 }
 
 function buildVietnamAbsoluteDayRangeFromYmd(ymd) {
-  const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) throw new Error(`Invalid date format: ${ymd}`);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const from = new Date(Date.UTC(year, month - 1, day, -7, 0, 0, 0));
-  const toExclusive = new Date(from.getTime() + (24 * 60 * 60 * 1000));
-  return { from, toExclusive, ymd };
+  return telegramAds.buildVietnamAbsoluteDayRangeFromYmd(ymd);
 }
 
 function buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd) {
-  const start = buildVietnamAbsoluteDayRangeFromYmd(fromYmd);
-  const end = buildVietnamAbsoluteDayRangeFromYmd(toYmd);
-  if (end.from < start.from) throw new Error('Invalid date range');
-  return {
-    from: start.from,
-    toExclusive: new Date(end.toExclusive.getTime()),
-    fromYmd,
-    toYmd,
-    label: fromYmd === toYmd
-      ? formatVietnamDateDisplayFromYmd(fromYmd)
-      : `${formatVietnamDateDisplayFromYmd(fromYmd)} - ${formatVietnamDateDisplayFromYmd(toYmd)}`,
-  };
+  return telegramAds.buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd);
 }
 
 function parseExplicitDateInput(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  let match = raw.match(/\b(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})\b/);
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
-  }
-  match = raw.match(/\b(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b/);
-  if (match) {
-    return `${match[3]}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`;
-  }
-  return null;
+  return telegramAds.parseExplicitDateInput(text);
 }
 
 function getVietnamYesterdayYmd(now = new Date()) {
-  const todayRange = getVietnamDayRange(now);
-  const yesterdayStart = new Date(todayRange.from.getTime() - (24 * 60 * 60 * 1000));
-  return getVietnamDateYmd(yesterdayStart);
+  return telegramAds.getVietnamYesterdayYmd(now);
 }
 
 function buildAdsDateRangeFromText(text = '', now = new Date(), options = {}) {
-  const normalized = normalizeVi(text);
-  const defaultYesterday = options.defaultYesterday !== false;
-
-  const explicitDates = [...String(text || '').matchAll(/(\d{4}[\/-]\d{1,2}[\/-]\d{1,2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/g)]
-    .map(match => parseExplicitDateInput(match[1]))
-    .filter(Boolean);
-  if (explicitDates.length >= 2) {
-    return buildVietnamAbsoluteRangeFromYmds(explicitDates[0], explicitDates[1]);
-  }
-  if (explicitDates.length === 1) {
-    return buildVietnamAbsoluteRangeFromYmds(explicitDates[0], explicitDates[0]);
-  }
-
-  if (normalized.includes('hom qua')) {
-    const ymd = getVietnamYesterdayYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-  if (normalized.includes('hom nay')) {
-    const ymd = getVietnamDateYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-
-  const timeEntity = parseTimeEntity(text);
-  if (timeEntity) {
-    const baseRange = buildDateRange(timeEntity.key);
-    const fromYmd = getVietnamDateYmd(baseRange.from);
-    const toYmd = getVietnamDateYmd(baseRange.to);
-    return {
-      ...buildVietnamAbsoluteRangeFromYmds(fromYmd, toYmd),
-      label: timeEntity.label || `${formatVietnamDateDisplayFromYmd(fromYmd)} - ${formatVietnamDateDisplayFromYmd(toYmd)}`,
-    };
-  }
-
-  if (defaultYesterday) {
-    const ymd = getVietnamYesterdayYmd(now);
-    return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
-  }
-
-  const ymd = getVietnamDateYmd(now);
-  return buildVietnamAbsoluteRangeFromYmds(ymd, ymd);
+  return telegramAds.buildAdsDateRangeFromText(text, now, options);
 }
 
 async function queryManualAdsDailyStats(range) {
@@ -2833,48 +2619,11 @@ async function queryManualAdsDailyStats(range) {
 }
 
 function buildAdsChannelMetrics(input = {}) {
-  const spend = Number(input.spend || 0) || 0;
-  const clicks = Number(input.clicks || 0) || 0;
-  const interactions = Number(input.interactions || clicks || 0) || 0;
-  const impressions = Number(input.impressions || 0) || 0;
-  const reach = Number(input.reach || 0) || 0;
-  const purchases = Number(input.purchases || 0) || 0;
-  const addToCart = Number(input.addToCart || 0) || 0;
-  return {
-    ...input,
-    spend,
-    clicks,
-    interactions,
-    impressions,
-    reach,
-    purchases,
-    addToCart,
-    cpc: clicks > 0 ? spend / clicks : 0,
-    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
-    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-    cpa: purchases > 0 ? spend / purchases : 0,
-    conversionRate: clicks > 0 ? (purchases / clicks) * 100 : 0,
-  };
+  return telegramAds.buildAdsChannelMetrics(input);
 }
 
 function sumAdsChannels(channels = []) {
-  return buildAdsChannelMetrics(channels.reduce((sum, channel) => ({
-    spend: sum.spend + Number(channel?.spend || 0),
-    clicks: sum.clicks + Number(channel?.clicks || 0),
-    interactions: sum.interactions + Number(channel?.interactions || 0),
-    impressions: sum.impressions + Number(channel?.impressions || 0),
-    reach: sum.reach + Number(channel?.reach || 0),
-    purchases: sum.purchases + Number(channel?.purchases || 0),
-    addToCart: sum.addToCart + Number(channel?.addToCart || 0),
-  }), {
-    spend: 0,
-    clicks: 0,
-    interactions: 0,
-    impressions: 0,
-    reach: 0,
-    purchases: 0,
-    addToCart: 0,
-  }));
+  return telegramAds.sumAdsChannels(channels);
 }
 
 async function fetchMetaAdsInsights(range) {
@@ -2937,274 +2686,27 @@ async function fetchMetaAdsInsights(range) {
 }
 
 async function buildAdsRevenueTelegramData(range) {
-  const [posSummary, manualAds, metaAds, financialProfile] = await Promise.all([
-    queryHistoryRevenue({ from: range.from, to: new Date(range.toExclusive.getTime() - 1) }),
-    queryManualAdsDailyStats(range),
-    fetchMetaAdsInsights(range),
-    loadTelegramReportFinancialProfile(),
-  ]);
-
-  const facebook = (metaAds.source === 'meta-api')
-    ? metaAds
-    : (manualAds.facebook.spend > 0 || manualAds.facebook.clicks > 0 || manualAds.facebook.impressions > 0 ? buildAdsChannelMetrics({
-      configured: true,
-      source: 'manual',
-      spend: manualAds.facebook.spend,
-      clicks: manualAds.facebook.clicks,
-      interactions: manualAds.facebook.interactions,
-      impressions: manualAds.facebook.impressions,
-      reach: manualAds.facebook.reach,
-      purchases: manualAds.facebook.purchases,
-      addToCart: manualAds.facebook.addToCart,
-      warning: metaAds.error || '',
-    }) : metaAds);
-
-  const tiktok = (manualAds.tiktok.spend > 0 || manualAds.tiktok.clicks > 0 || manualAds.tiktok.impressions > 0)
-    ? buildAdsChannelMetrics({
-      configured: true,
-      source: 'manual',
-      spend: manualAds.tiktok.spend,
-      clicks: manualAds.tiktok.clicks,
-      interactions: manualAds.tiktok.interactions,
-      impressions: manualAds.tiktok.impressions,
-      reach: manualAds.tiktok.reach,
-      purchases: manualAds.tiktok.purchases,
-      addToCart: manualAds.tiktok.addToCart,
-    })
-    : buildAdsChannelMetrics({
-      configured: false,
-      source: 'missing-config',
-    });
-
-  const revenue = Number(posSummary.revenue || 0) || 0;
-  const orders = Number(posSummary.orders || 0) || 0;
-  const cost = Number(posSummary.cost || 0) || 0;
-  const grossProfit = Number(posSummary.grossProfit || (revenue - cost)) || 0;
-  const averageOrder = orders > 0 ? revenue / orders : 0;
-  const total = sumAdsChannels([facebook, tiktok]);
-  const totalAds = total.spend;
-  const roas = totalAds > 0 ? revenue / totalAds : 0;
-  const adsRevenueRatio = revenue > 0 ? (totalAds / revenue) * 100 : 0;
-  const attributedPurchases = total.purchases > 0 ? total.purchases : orders;
-  const cpa = attributedPurchases > 0 ? totalAds / attributedPurchases : 0;
-  const conversionRate = total.clicks > 0 && attributedPurchases > 0 ? (attributedPurchases / total.clicks) * 100 : 0;
-  const aov = orders > 0 ? revenue / orders : 0;
-  const adsAov = attributedPurchases > 0 ? revenue / attributedPurchases : 0;
-  const rangeDays = getInclusiveVietnamDateCount(range.fromYmd, range.toYmd);
-  const targetRevenueDaily = Number(financialProfile?.targetMonthlyRevenue || 0) > 0
-    ? Math.round((Number(financialProfile.targetMonthlyRevenue || 0) || 0) / 30)
-    : 0;
-  const targetRevenueForRange = targetRevenueDaily > 0 ? targetRevenueDaily * rangeDays : 0;
-  const revenueAchievementPercent = targetRevenueForRange > 0 ? (revenue / targetRevenueForRange) * 100 : 0;
-  const fixedCostDaily = Number(financialProfile?.dailyFixedCost || 0) || 0;
-  const fixedCostForRange = fixedCostDaily * rangeDays;
-  const profit = grossProfit - totalAds;
-  const profitAfterFixedCost = profit - fixedCostForRange;
-  const notes = [];
-  if (total.purchases <= 0 && orders > 0) notes.push('CPA/Conversion Rate đang dùng số đơn POS làm tham khảo vì chưa có Purchase từ pixel/API ads.');
-  if (facebook.error) notes.push(`Facebook Ads: ${facebook.error}`);
-  if (!tiktok.configured) notes.push('TikTok Ads: chưa cấu hình API hoặc chưa có dữ liệu nhập tay.');
-
-  return {
-    type: 'ads-revenue',
-    rangeLabel: range.label,
-    fromYmd: range.fromYmd,
-    toYmd: range.toYmd,
-    revenue,
-    orders,
-    cost,
-    grossProfit,
-    averageOrder,
-    facebook,
-    tiktok,
-    total,
-    totalAds,
-    roas,
-    adsRevenueRatio,
-    cpa,
-    conversionRate,
-    aov,
-    adsAov,
-    profit,
-    profitAfterFixedCost,
-    attributedPurchases,
-    financialProfile,
-    rangeDays,
-    targetRevenueDaily,
-    targetRevenueForRange,
-    revenueAchievementPercent,
-    fixedCostDaily,
-    fixedCostForRange,
-    notes,
-  };
+  return telegramAds.buildAdsRevenueTelegramData(range);
 }
 
 function buildAdsRevenueTelegramMessage(report, options = {}) {
-  return buildAdsRevenueDetailedMessage(report, options);
-  const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '📊 BÁO CÁO ADS + DOANH THU';
-  const singleDay = report.fromYmd === report.toYmd;
-  const dateLine = singleDay
-    ? `Ngày: ${escapeTelegramHtml(formatVietnamDateDisplayFromYmd(report.fromYmd))}`
-    : `Khoảng: ${escapeTelegramHtml(report.rangeLabel)}`;
-
-  const facebookMetricLabel = Number(report.facebook.interactions || 0) > 0 ? 'Click/tương tác' : 'Click';
-  const facebookLines = report.facebook.configured
-    ? [
-      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.spend))}</b>`,
-      `${facebookMetricLabel}: <b>${escapeTelegramHtml(String(Math.round(Number(report.facebook.interactions || report.facebook.clicks || 0))))}</b>`,
-      `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.facebook.cpc || 0))}</b>`,
-    ]
-    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-
-  const tiktokLines = report.tiktok.configured
-    ? [
-      `Chi phí: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.spend))}</b>`,
-      `Click: <b>${escapeTelegramHtml(String(Math.round(Number(report.tiktok.clicks || 0))))}</b>`,
-      `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(report.tiktok.cpc || 0))}</b>`,
-    ]
-    : ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-
-  const commentLine = report.totalAds > 0
-    ? `Hiệu quả tốt nếu biên lợi nhuận gộp > ${formatPercentVi(report.adsRevenueRatio)}.`
-    : 'Chưa có dữ liệu ads để tính tỷ lệ hiệu quả.';
-
-  const lines = [
-    `<b>${title}</b>`,
-    escapeTelegramHtml(dateLine),
-    '',
-    '<b>ðŸ’° POS</b>',
-    `Doanh thu: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `Số đơn: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
-    `TB/đơn: <b>${escapeTelegramHtml(formatCurrencyVi(report.averageOrder))}</b>`,
-    '',
-    '<b>ðŸ”µ Facebook</b>',
-    ...facebookLines,
-    '',
-    '<b>âš« TikTok</b>',
-    ...tiktokLines,
-    '',
-    '<b>📈 Tổng hợp</b>',
-    `Tổng ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
-    `ROAS tham khảo: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
-    `Ads / doanh thu: <b>${escapeTelegramHtml(formatPercentVi(report.adsRevenueRatio))}</b>`,
-    '',
-    '<b>Nhận xét</b>',
-    escapeTelegramHtml(commentLine),
-  ];
-
-  if (Array.isArray(report.notes) && report.notes.length) {
-    lines.push('', '<b>Ghi chú</b>');
-    report.notes.forEach(note => lines.push(`- ${escapeTelegramHtml(note)}`));
-  }
-
-  return lines.join('\n');
+  return telegramAds.buildAdsRevenueTelegramMessage(report, options);
 }
 
 function formatIntVi(value) {
-  return Math.round(Number(value || 0)).toLocaleString('vi-VN');
+  return telegramAds.formatIntVi(value);
 }
 
 function buildAdsChannelLines(channel = {}) {
-  if (!channel.configured) return ['<i>Chưa cấu hình hoặc chưa có dữ liệu.</i>'];
-  return [
-    `Spend: <b>${escapeTelegramHtml(formatCurrencyVi(channel.spend))}</b>`,
-    `Impression: <b>${escapeTelegramHtml(formatIntVi(channel.impressions))}</b>`,
-    `Reach: <b>${escapeTelegramHtml(formatIntVi(channel.reach))}</b>`,
-    `Click: <b>${escapeTelegramHtml(formatIntVi(channel.clicks))}</b>`,
-    `CPM: <b>${escapeTelegramHtml(formatCurrencyVi(channel.cpm || 0))}</b>`,
-    `CTR: <b>${escapeTelegramHtml(formatPercentVi(channel.ctr || 0))}</b>`,
-    `CPC: <b>${escapeTelegramHtml(formatCurrencyVi(channel.cpc || 0))}</b>`,
-    `Purchase: <b>${escapeTelegramHtml(formatIntVi(channel.purchases))}</b>`,
-    `Add to Cart: <b>${escapeTelegramHtml(formatIntVi(channel.addToCart))}</b>`,
-  ];
+  return telegramAds.buildAdsChannelLines(channel);
 }
 
 function buildAdsInsightLines(report = {}) {
-  const lines = [];
-  const grossMargin = Number(report.revenue || 0) > 0
-    ? (Number(report.grossProfit || 0) / Number(report.revenue || 1)) * 100
-    : 0;
-  if (Number(report.profit || 0) > 0) {
-    lines.push(`Đang lãi sau ads: ${formatCurrencyVi(report.profit)}. Giữ ngân sách và ưu tiên nhóm có CTR cao, CPC/CPA thấp.`);
-  } else if (Number(report.totalAds || 0) > 0) {
-    lines.push(`Đang âm sau ads: ${formatCurrencyVi(report.profit)}. Giảm nhóm ads CPC/CPA cao hoặc tăng AOV bằng combo/upsell.`);
-  } else {
-    lines.push('Chưa có spend ads để đánh giá hiệu quả marketing.');
-  }
-  if (Number(report.total?.ctr || 0) < 1 && Number(report.total?.impressions || 0) > 0) {
-    lines.push('CTR thấp: đổi creative, hook 3 giây đầu, ưu đãi rõ hơn hoặc tách lại đối tượng.');
-  }
-  if (Number(report.total?.clicks || 0) > 0 && Number(report.conversionRate || 0) < 2) {
-    lines.push('Conversion Rate thấp: kiểm tra landing/menu, tốc độ phản hồi, giá/ưu đãi và quy trình chốt đơn.');
-  }
-  if (Number(report.aov || 0) > 0) {
-    lines.push(`AOV POS ${formatCurrencyVi(report.aov)}; cần đẩy combo để AOV cao hơn CPA ${formatCurrencyVi(report.cpa)}.`);
-  }
-  lines.push(`Biên lợi nhuận gộp POS: ${formatPercentVi(grossMargin)}; ads/doanh thu: ${formatPercentVi(report.adsRevenueRatio || 0)}.`);
-  return lines;
+  return telegramAds.buildAdsInsightLines(report);
 }
 
 function buildAdsRevenueDetailedMessage(report, options = {}) {
-  const title = options.isTest ? '🧪 BÁO CÁO TEST ADS + DOANH THU' : '🌅 BÁO CÁO 7H ADS + DOANH THU';
-  const dateLine = report.fromYmd === report.toYmd
-    ? `Ngày: ${formatVietnamDateDisplayFromYmd(report.fromYmd)}`
-    : `Khoảng: ${report.rangeLabel}`;
-  const targetRevenueLine = Number(report.targetRevenueForRange || 0) > 0
-    ? `${formatCurrencyVi(report.revenue)} / ${formatCurrencyVi(report.targetRevenueForRange)} = ${formatAchievementPercent(report.revenue, report.targetRevenueForRange)}`
-    : 'Chưa có target doanh thu trong Sprint 0';
-  const moodLine = buildMorningRevenueMood(report);
-
-  const lines = [
-    `<b>${escapeTelegramHtml(title)}</b>`,
-    escapeTelegramHtml(dateLine),
-    '',
-    '<b>Tinh thần đầu ngày</b>',
-    escapeTelegramHtml(moodLine),
-    '',
-    '<b>Mốc target doanh thu</b>',
-    `Thực tế / target: <b>${escapeTelegramHtml(targetRevenueLine)}</b>`,
-    Number(report.targetRevenueDaily || 0) > 0
-      ? `Target ngày chuẩn: <b>${escapeTelegramHtml(formatCurrencyVi(report.targetRevenueDaily))}</b> | Số ngày tính: <b>${escapeTelegramHtml(String(report.rangeDays || 1))}</b>`
-      : '<i>Chưa cấu hình target doanh thu tháng trong Sprint 0.</i>',
-    '',
-    '<b>POS</b>',
-    `Doanh thu: <b>${escapeTelegramHtml(formatCurrencyVi(report.revenue))}</b>`,
-    `Số đơn: <b>${escapeTelegramHtml(String(report.orders))}</b>`,
-    `AOV POS: <b>${escapeTelegramHtml(formatCurrencyVi(report.aov || report.averageOrder))}</b>`,
-    `Giá vốn: <b>${escapeTelegramHtml(formatCurrencyVi(report.cost || 0))}</b>`,
-    `Lãi gộp: <b>${escapeTelegramHtml(formatCurrencyVi(report.grossProfit || 0))}</b>`,
-    '',
-    '<b>Facebook</b>',
-    ...buildAdsChannelLines(report.facebook),
-    '',
-    '<b>TikTok</b>',
-    ...buildAdsChannelLines(report.tiktok),
-    '',
-    '<b>Tổng hợp Ads + POS</b>',
-    `Spend: <b>${escapeTelegramHtml(formatCurrencyVi(report.totalAds))}</b>`,
-    `Click: <b>${escapeTelegramHtml(formatIntVi(report.total?.clicks || 0))}</b>`,
-    `Impression: <b>${escapeTelegramHtml(formatIntVi(report.total?.impressions || 0))}</b>`,
-    `Reach: <b>${escapeTelegramHtml(formatIntVi(report.total?.reach || 0))}</b>`,
-    `Purchase: <b>${escapeTelegramHtml(formatIntVi(report.total?.purchases || 0))}</b>`,
-    `Add to Cart: <b>${escapeTelegramHtml(formatIntVi(report.total?.addToCart || 0))}</b>`,
-    `ROAS: <b>${escapeTelegramHtml(formatMultipleVi(report.roas))}</b>`,
-    `CPA: <b>${escapeTelegramHtml(formatCurrencyVi(report.cpa || 0))}</b>`,
-    `Conversion Rate: <b>${escapeTelegramHtml(formatPercentVi(report.conversionRate || 0))}</b>`,
-    `AOV theo purchase: <b>${escapeTelegramHtml(formatCurrencyVi(report.adsAov || 0))}</b>`,
-    `Lợi nhuận sau ads: <b>${escapeTelegramHtml(formatCurrencyVi(report.profit || 0))}</b>`,
-    `Chi phí cố định kỳ này: <b>${escapeTelegramHtml(formatCurrencyVi(report.fixedCostForRange || 0))}</b>`,
-    `Lợi nhuận sau ads + chi phí cố định: <b>${escapeTelegramHtml(formatCurrencyVi(report.profitAfterFixedCost || 0))}</b>`,
-    '',
-    '<b>AI Insights</b>',
-    ...buildAdsInsightLines(report).map(line => `- ${escapeTelegramHtml(line)}`),
-  ];
-
-  if (Array.isArray(report.notes) && report.notes.length) {
-    lines.push('', '<b>Ghi chú</b>');
-    report.notes.forEach(note => lines.push(`- ${escapeTelegramHtml(note)}`));
-  }
-
-  return lines.join('\n');
+  return telegramAds.buildAdsRevenueDetailedMessage(report, options);
 }
 
 function extractTable(text) {
@@ -3287,12 +2789,11 @@ let nlp = { ready: false, manager: null, trainedAt: 0 };
 async function ensureNlp() {
   const now = Date.now();
   if (nlp.ready && now - nlp.trainedAt < 10 * 60 * 1000) return nlp.manager;
-  const { NlpManager, training } = getAiDeps();
+  const { Nlp, training } = getAiDeps();
 
   const catalog = await getProductCatalog();
   const itemSamples = catalog.slice(0, 25).map(x => x.name);
-  const manager = new NlpManager({ languages: ['vi'], autoSave: false, forceNER: false });
-  manager.nlp.settings.autoSave = false;
+  const manager = new Nlp({ languages: ['vi'], autoSave: false });
 
   const intents = training?.intents || {};
   Object.entries(intents).forEach(([intent, meta]) => {
@@ -3305,7 +2806,7 @@ async function ensureNlp() {
     });
   });
 
-  await manager.train();
+  await manager.nluManager.train({ log: false });
   nlp = { ready: true, manager, trainedAt: now };
   return manager;
 }
@@ -3684,16 +3185,7 @@ async function createOrReuseTelegramPaymentRequestByTable(tableNumber, userConte
 }
 
 function formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes = true } = {}) {
-  const list = Array.isArray(items) ? items : [];
-  if (!list.length) return `${bullet} Chưa có chi tiết món`;
-  return list.map(item => {
-    const name = normalizeTelegramText(String(item?.name || item?.productName || 'Món').trim());
-    const qty = Number(item?.qty || item?.quantity || 0) || 1;
-    const price = Number(item?.price || 0) || 0;
-    const lineTotal = price * qty;
-    const note = includeNotes ? normalizeTelegramText(String(item?.note || item?.notes || '').trim()) : '';
-    return `${bullet} ${escapeTelegramHtml(name || 'Món')} x${escapeTelegramHtml(formatQtyVi(qty))} - ${escapeTelegramHtml(formatCurrencyVi(lineTotal))}${note ? ` (${escapeTelegramHtml(note)})` : ''}`;
-  }).join('\n');
+  return telegramOnlineOrders.formatTelegramBillItemsClean(items = [], { bullet = '•', includeNotes = true } = {});
 }
 
 // Override table normalization for customer-request Telegram flows.
@@ -4025,27 +3517,68 @@ async function cancelCustomerPaymentTelegram(requestId) {
   return { ok: true, request: current, nextStatus: 'cancelled' };
 }
 
+const r2CallableHandlers = makeCallableHandlers({
+  authorize: (request, capability) => authorizeCallable(request, {
+    db,
+    auth: admin.auth(),
+    allowedRoles: CALLABLE_ALLOWED_ROLES[capability],
+  }),
+  createManagedUser,
+  userManagementDeps: {
+    auth: admin.auth(),
+    db,
+    now: () => FieldValue.serverTimestamp(),
+  },
+  runAskPosChatbot,
+  approveOnlineOrder: approveOnlineOrderInternal,
+  rejectOnlineOrder: rejectOnlineOrderInternal,
+  HttpsError,
+});
+
+exports.manageUserAccount = onCall({
+  region: 'asia-southeast1',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, async (request) => {
+  try {
+    return await r2CallableHandlers.manageUserAccount(request);
+  } catch (error) {
+    logger.error('manageUserAccount failed', {
+      code: error?.code || 'unknown',
+      message: error?.message || String(error),
+      uid: request.auth?.uid || '',
+    });
+    throw toSafeManagedUserError(error, HttpsError);
+  }
+});
+
+exports.askPosChatbot = onCall({
+  region: 'asia-southeast1',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, async (request) => {
+  try {
+    return await r2CallableHandlers.askPosChatbot(request);
+  } catch (error) {
+    logger.error('askPosChatbot failed', {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      uid: request.auth?.uid || '',
+    });
+    throw toSafeCallableError(error, HttpsError, 'Không thể hỏi trợ lý POS.');
+  }
+});
+
 exports.approveOnlineOrder = onCall({
   region: 'asia-southeast1',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await approveOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.approveOnlineOrder(request);
   } catch (error) {
     logger.error('approveOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể xác nhận đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể xác nhận đơn online.');
   }
 });
 
@@ -4054,22 +3587,13 @@ exports.rejectOnlineOrder = onCall({
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await rejectOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.rejectOnlineOrder(request);
   } catch (error) {
     logger.error('rejectOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể hủy đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể hủy đơn online.');
   }
 });
 
@@ -4251,188 +3775,35 @@ async function enrichTelegramKitchenSummaryItems(rawItems = []) {
 }
 
 function buildPosItemFromRequest(requestId, index, requestItem = {}, product = {}) {
-  const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
-  const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
-  const kitchenRouting = String(product.kitchenRouting || '').trim().toLowerCase() || (itemType === 'retail_item' ? 'skip' : 'all');
-  const qty = Number(requestItem.quantity || requestItem.qty || 1) || 1;
-  const lineItemId = `WEB-${String(requestId)}-${index + 1}`;
-  return {
-    id: String(requestItem.menuItemId || requestItem.id || '').trim(),
-    name: String(requestItem.name || product.display_name || product.name || 'Món').trim(),
-    price: Number(requestItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
-    qty,
-    note: String(requestItem.notes || requestItem.note || '').trim(),
-    lineItemId,
-    sourceRequestId: String(requestId),
-    source: 'customer_web',
-    sourceChannel: 'webapp-menu',
-    itemType,
-    kitchenRouting,
-    kitchenStatus: kitchenRouting === 'skip' ? 'skip' : 'pending',
-    saleMode: itemType === 'retail_item' ? 'retail' : 'dish',
-    directSale: itemType === 'retail_item',
-    forceKitchen: false,
-    linkedInventoryId: String(product.linkedInventoryId || '').trim() || null,
-  };
+  return telegramOnlineOrders.buildPosItemFromRequest(requestId, index, requestItem = {}, product = {});
 }
 
 function aggregateRequestStatusFromItems(items = []) {
-  const statuses = items
-    .map(item => String(item?.kitchenStatus || '').trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!statuses.length) return 'approved';
-  if (statuses.every(status => status === 'served')) return 'served';
-  if (statuses.every(status => ['done', 'served', 'skip'].includes(status))) return 'ready_to_serve';
-  if (statuses.some(status => status === 'cooking')) return 'preparing';
-  return 'approved';
+  return telegramOnlineOrders.aggregateRequestStatusFromItems(items = []);
 }
 
 function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {}) {
-  const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
-  const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
-  const kitchenRouting = String(product.kitchenRouting || '').trim().toLowerCase() || (itemType === 'retail_item' ? 'skip' : 'all');
-  const qty = Number(orderItem.quantity || orderItem.qty || 1) || 1;
-  const lineItemId = `ONL-${String(orderId)}-${index + 1}`;
-  return {
-    id: String(orderItem.productId || orderItem.menuItemId || orderItem.id || '').trim(),
-    name: String(orderItem.productName || orderItem.name || product.display_name || product.name || 'Món').trim(),
-    price: Number(orderItem.unitPrice ?? orderItem.price ?? product.sell_price ?? product.price ?? 0) || 0,
-    qty,
-    note: String(orderItem.note || orderItem.notes || '').trim(),
-    lineItemId,
-    onlineOrderId: String(orderId),
-    source: 'online_ordering',
-    sourceChannel: 'website',
-    itemType,
-    kitchenRouting,
-    kitchenStatus: kitchenRouting === 'skip' ? 'skip' : 'pending',
-    saleMode: itemType === 'retail_item' ? 'retail' : 'dish',
-    directSale: itemType === 'retail_item',
-    forceKitchen: false,
-    linkedInventoryId: String(product.linkedInventoryId || '').trim() || null,
-    kitchenSentAt: kitchenRouting === 'skip' ? null : Date.now(),
-  };
+  return telegramOnlineOrders.buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {});
 }
 
 function buildOnlineOrderTelegramStatusLabel(status) {
-  switch (String(status || '').trim().toLowerCase()) {
-    case 'approved':
-      return 'ĐÃ XÁC NHẬN';
-    case 'preparing':
-      return 'ĐANG LÀM';
-    case 'ready_to_serve':
-      return 'XONG';
-    case 'delivering':
-      return 'ANG GIAO';
-    case 'completed':
-      return 'ĐÃ GIAO';
-    case 'cancelled':
-    case 'rejected':
-      return 'ĐÃ HỦY';
-    default:
-      return 'CHỜ XÁC NHẬN';
-  }
+  return telegramOnlineOrders.buildOnlineOrderTelegramStatusLabel(status);
 }
 
 function buildOnlineOrderTelegramSummary(orderId, orderData = {}) {
-  const items = Array.isArray(orderData.items) ? orderData.items : [];
-  const itemLines = items.length
-    ? items.map((item) => {
-      const noteText = item.note ? ` (${item.note})` : '';
-      return `- ${item.productName || item.name || 'Món'} x${Number(item.quantity || item.qty || 0)}${noteText}`;
-    }).join('\n')
-    : '- Không có chi tiết';
-
-  const address = [
-    orderData.customer?.addressLine1,
-    orderData.customer?.ward,
-    orderData.customer?.district,
-    orderData.customer?.city,
-  ].filter(Boolean).join(', ');
-
-  return [
-    'ĐƠN ONLINE MỚI',
-    `Mã đơn: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
-    `Khách: ${String(orderData.customer?.fullName || '--').trim()}`,
-    `SDT: ${String(orderData.customer?.phone || '--').trim()}`,
-    `Địa chỉ: ${address || '--'}`,
-    `Thanh toán: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${String(orderData.paymentStatus || 'pending')}`,
-    `Tổng tiền: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
-    `Trạng thái: ${buildOnlineOrderTelegramStatusLabel(orderData.status)}`,
-    '',
-    'Món hàng:',
-    itemLines,
-  ].join('\n');
+  return telegramOnlineOrders.buildOnlineOrderTelegramSummary(orderId, orderData = {});
 }
 
 function buildOnlineOrderTelegramStatusLabelClean(status) {
-  switch (String(status || '').trim().toLowerCase()) {
-    case 'approved':
-      return 'ĐÃ XÁC NHẬN';
-    case 'preparing':
-      return 'ĐANG LÀM';
-    case 'ready_to_serve':
-      return 'XONG';
-    case 'delivering':
-      return 'ĐANG GIAO';
-    case 'completed':
-      return 'ĐÃ GIAO';
-    case 'cancelled':
-    case 'rejected':
-      return 'ĐÃ HỦY';
-    default:
-      return 'CHỜ XÁC NHẬN';
-  }
+  return telegramOnlineOrders.buildOnlineOrderTelegramStatusLabelClean(status);
 }
 
 function buildOnlineOrderTelegramSummaryClean(orderId, orderData = {}) {
-  const items = Array.isArray(orderData.items) ? orderData.items : [];
-  const itemLines = items.length
-    ? items.map((item) => {
-      const note = normalizeTelegramText(String(item.note || item.notes || '').trim());
-      const noteText = note ? ` (${note})` : '';
-      return `- ${normalizeTelegramText(item.productName || item.name || 'Món')} x${Number(item.quantity || item.qty || 0)}${noteText}`;
-    }).join('\n')
-    : '- Không có chi tiết';
-
-  const address = [
-    orderData.customer?.addressLine1,
-    orderData.customer?.ward,
-    orderData.customer?.district,
-    orderData.customer?.city,
-  ].filter(Boolean).map(part => normalizeTelegramText(part)).join(', ');
-
-  return [
-    'ĐƠN ONLINE MỚI',
-    `Mã đơn: ${String(orderData.orderCode || String(orderId).slice(-8).toUpperCase()).trim()}`,
-    `Khách: ${normalizeTelegramText(String(orderData.customer?.fullName || '--').trim())}`,
-    `SDT: ${String(orderData.customer?.phone || '--').trim()}`,
-    `Địa chỉ: ${address || '--'}`,
-    `Thanh toán: ${String(orderData.paymentMethod || 'cod').toUpperCase()} / ${normalizeTelegramText(String(orderData.paymentStatus || 'pending'))}`,
-    `Tổng tiền: ${formatCurrencyVi(Number(orderData.pricing?.total || 0) || 0)}`,
-    `Trạng thái: ${buildOnlineOrderTelegramStatusLabelClean(orderData.status)}`,
-    '',
-    'Món hàng:',
-    itemLines,
-  ].join('\n');
+  return telegramOnlineOrders.buildOnlineOrderTelegramSummaryClean(orderId, orderData = {});
 }
 
 function mapOnlineOrderStatusFromPosItems(order = {}, posItems = []) {
-  const orderStatus = String(order?.status || '').trim().toLowerCase();
-  if (['cancelled', 'rejected'].includes(orderStatus)) return orderStatus;
-  if (orderStatus === 'completed') return 'completed';
-
-  const statuses = (Array.isArray(posItems) ? posItems : [])
-    .map(item => String(item?.kitchenStatus || '').trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!statuses.length) return 'approved';
-  if (statuses.every(status => status === 'skip')) return 'approved';
-  if (statuses.every(status => ['served', 'skip'].includes(status))) return 'delivering';
-  if (statuses.every(status => ['done', 'served', 'skip'].includes(status))) return 'ready_to_serve';
-  if (statuses.some(status => status === 'cooking')) return 'preparing';
-  return 'approved';
+  return telegramOnlineOrders.mapOnlineOrderStatusFromPosItems(order = {}, posItems = []);
 }
 
 async function syncOnlineOrderTelegramMessage(orderId, orderData = {}, fallback = {}) {
@@ -4779,44 +4150,51 @@ async function queryPurchases(timeRange, itemName) {
 }
 
 function json(res, code, data) {
-  res.status(code).set('Content-Type', 'application/json; charset=utf-8').send(JSON.stringify(data));
+  return generalUtils.json(res, code, data);
 }
 
-exports.testDailyReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
-  cors(req, res, async () => {
-    if (req.method === 'OPTIONS') return res.status(204).send('');
-    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+const HTTP_JSON_MAX_BYTES = 64 * 1024;
+const OCR_REQUEST_MAX_BYTES = 8 * 1024 * 1024;
+const AI_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const AI_AUDIO_MAX_BYTES = 8 * 1024 * 1024;
+// R3 SSRF allowlist for outbound image fetches (adminGenerateMenuDescription).
+// Exact trusted Firebase Storage host + configured project bucket only.
+const TRUSTED_STORAGE_HOSTS = ['firebasestorage.googleapis.com'];
+const TRUSTED_STORAGE_BUCKETS = [String(process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '').trim() || 'xekho-release-canonical.appspot.com'];
+const TRUSTED_IMAGE_FETCH_MAX_BYTES = 5 * 1024 * 1024;
+const VOICE_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
+const AI_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
+const OCR_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
+const ADMIN_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
+const voiceRateLimiter = createRateLimiter({ limit: 30, windowMs: 60 * 1000 });
+const aiRateLimiter = createRateLimiter({ limit: 20, windowMs: 60 * 1000 });
 
-    try {
-      const actor = await verifyAdminRequest(req);
-      const debugNow = req.body?.debugNow ? String(req.body.debugNow) : null;
-      const result = await runDailyTelegramReport({
-        scheduleTime: new Date().toISOString(),
-        force: true,
-        isTest: true,
-        debugNow,
-      });
-
-      return json(res, 200, {
-        ok: true,
-        actor,
-        chatId: result.chatId,
-        revenue: result.report?.revenue || 0,
-        invoiceCount: result.report?.invoiceCount || 0,
-        rangeLabel: result.report?.rangeLabel || '',
-        debugNow,
-      });
-    } catch (err) {
-      const message = String(err?.message || err || '');
-      const status = /permission/i.test(message) ? 403 : (/token/i.test(message) ? 401 : 500);
-      logger.error('testDailyReportTelegram failed', {
-        error: message,
-        responseData: err?.response?.data || null,
-      });
-      return json(res, status, { ok: false, error: message || 'Request failed' });
-    }
+async function authorizePosHttpRequest(req, allowedRoles) {
+  return authorizeRequest(req, {
+    verifyIdToken: token => admin.auth().verifyIdToken(token),
+    getRole: async decoded => {
+      const uid = String(decoded?.uid || '').trim();
+      const userSnap = uid ? await db.collection('users').doc(uid).get().catch(() => null) : null;
+      return String(userSnap?.exists ? (userSnap.data()?.role || '') : (decoded?.role || '')).trim().toLowerCase();
+    },
+    allowedRoles,
   });
-});
+}
+
+function rejectHttpAuthorization(res, authResult) {
+  return json(res, authResult?.status || 401, {
+    ok: false,
+    error: authResult?.status === 403 ? 'forbidden' : 'unauthenticated',
+  });
+}
+
+function rejectOversizedRequest(res) {
+  return json(res, 413, { ok: false, error: 'payload_too_large' });
+}
+
+function rejectRateLimitedRequest(res) {
+  return json(res, 429, { ok: false, error: 'rate_limited' });
+}
 
 exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
@@ -4836,7 +4214,6 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
       await sendTelegramHtmlMessage({ chatId: targetChatId, botToken, text });
       return json(res, 200, {
         ok: true,
-        actor,
         chatId: targetChatId,
         rangeLabel: report.rangeLabel,
         revenue: report.revenue,
@@ -4849,7 +4226,7 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4866,11 +4243,11 @@ exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_
       const range = buildAdsDateRangeFromText(customText, debugNow, { defaultYesterday: false });
       const report = await buildAdsRevenueTelegramData(range);
       const message = buildAdsRevenueTelegramMessage(report);
-      return json(res, 200, { ok: true, actor, report, message, rangeLabel: report.rangeLabel });
+      return json(res, 200, { ok: true, report, message, rangeLabel: report.rangeLabel });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('adsRevenueReportApi failed', { error: message, responseData: err?.response?.data || null });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4897,14 +4274,14 @@ exports.testPaymentBillTelegram = onRequest({ region: DEFAULT_REGION, memory: HE
       } else {
         result = await confirmCustomerPaymentBillTelegram(requestId);
       }
-      return json(res, 200, { ok: true, actor, result });
+      return json(res, 200, { ok: true, result });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('testPaymentBillTelegram failed', {
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4937,7 +4314,6 @@ exports.testCompletedOrderTelegram = onRequest({
       await sendCompletedOrderTelegram(historyId, order);
       return json(res, 200, {
         ok: true,
-        actor,
         historyId,
         targetChatIds: getCompletedOrderTelegramTargetChatIds(),
       });
@@ -4947,7 +4323,7 @@ exports.testCompletedOrderTelegram = onRequest({
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4956,13 +4332,32 @@ exports.telegramWebhook = onRequest({
   region: 'asia-southeast1',
   memory: '512MiB',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
-  secrets: [VERTEX_SERVICE_ACCOUNT_JSON],
+  secrets: [VERTEX_SERVICE_ACCOUNT_JSON, TELEGRAM_WEBHOOK_SECRET],
 }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
 
-    const botToken = getTelegramReportBotToken();
+    // Sprint 1 security: reject forged/oversized webhook calls before any logging or DB work.
+    const configuredWebhookSecret = String(TELEGRAM_WEBHOOK_SECRET.value() || '').trim();
+    const providedWebhookSecret = extractTelegramWebhookSecret(req);
+    if (!isAuthenticTelegramWebhook({
+      configuredSecret: configuredWebhookSecret,
+      providedSecret: providedWebhookSecret,
+    })) {
+      return json(res, 401, { ok: false, error: 'Unauthorized' });
+    }
+    if (!isTelegramWebhookBodySizeAllowed(req, DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES)) {
+      return json(res, 413, { ok: false, error: 'Payload too large' });
+    }
+    // Rate-limit key: use req.ip (platform-derived, trusted proxy context).
+    // Do not split x-forwarded-for and trust first hop (client-controlled).
+    const rateLimitKey = String(req.ip || req.socket?.remoteAddress || 'unknown').trim();
+    if (!telegramWebhookRateLimiter.take(`ip:${rateLimitKey}`)) {
+      return json(res, 429, { ok: false, error: 'Too many requests' });
+    }
+
+    const botToken = getTelegramAssistantBotToken();
     const callbackQuery = req.body?.callback_query || null;
     const message = req.body?.message || req.body?.edited_message || null;
     const callbackData = String(callbackQuery?.data || '').trim();
@@ -4990,6 +4385,8 @@ exports.telegramWebhook = onRequest({
         chatType: String(callbackQuery?.message?.chat?.type || message?.chat?.type || ''),
         userId: userContext.userId,
         username: userContext.username,
+        assistantBotName: getTelegramAssistantBotName(),
+        ownerOnlyAllowed: isTelegramOwnerContext(userContext),
         hasCallback: !!callbackQuery,
         hasText: !!userText,
         hasPhoto: Array.isArray(message?.photo) && message.photo.length > 0,
@@ -5012,8 +4409,35 @@ exports.telegramWebhook = onRequest({
         const customerPaymentBankMatch = callbackData.match(/^cw_payment_bank_(.+)$/);
         const customerPaymentCancelMatch = callbackData.match(/^cw_payment_cancel_(.+)$/);
         const customerPaymentAckMatch = callbackData.match(/^cw_payment_ack_(.+)$/);
+        const chartIdFromCallback = parseTelegramChartCallbackData(callbackData);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
+
+        // Sprint 1 security: mutating callbacks require an authorized owner context
+        // (allowlist = owner chat/user IDs; fail-closed when allowlist empty).
+        if (isTelegramWriteCallbackData(callbackData) && !isAuthorizedTelegramWriteActor({
+          allowlist: getTelegramOwnerChatIds(),
+          chatId: userContext.chatId,
+          userId: userContext.userId,
+        })) {
+          await answerTelegramCallback({
+            callbackQueryId: callbackQuery.id,
+            text: 'Không có quyền thực hiện thao tác này.',
+            botToken,
+          }).catch(() => {});
+          return json(res, 200, { ok: false, skipped: 'unauthorized-write-callback' });
+        }
+
+        if (chartIdFromCallback) {
+          const chartId = chartIdFromCallback;
+          const result = await handleTelegramChartCallback({
+            chartId,
+            callbackChatId,
+            callbackQueryId: callbackQuery.id,
+            botToken,
+          });
+          return json(res, 200, { ok: !!result?.ok, callback: 'chart', result });
+        }
 
         if (onlineOrderApproveMatch || onlineOrderRejectMatch) {
           const targetId = String(
@@ -5045,8 +4469,8 @@ exports.telegramWebhook = onRequest({
             });
           } else {
             editText = onlineOrderApproveMatch
-              ? `⚠️ Không xác nhận được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`
-              : `⚠️ Không hủy được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `⚠️ Không xác nhận được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhân.'}`
+              : `⚠️ Không hủy được Ä‘Æ¡n online.\n${result?.error || 'Không rõ nguyên nhân.'}`;
           }
 
           await editTelegramMessage({
@@ -5151,19 +4575,19 @@ exports.telegramWebhook = onRequest({
               ? (result.alreadyFinalized
                 ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
                 : `✅ Ä Ã£ nhận thanh toÃ¡n tiá» n máº·t vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill tiá» n máº·t.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentBankMatch) {
             result = await closePosOrderFromTelegram(targetId, 'bank');
             notifyText = result.ok
               ? (result.alreadyFinalized
                 ? `✅ Bill ${result.billNo} đã được chốt trước đó cho ${result.tableLabel}.`
                 : `✅ Ä Ã£ nhận thanh toÃ¡n chuyá»ƒn khoáº£n vÃ  chá»‘t bill ${result.billNo} cho ${result.tableLabel}.`)
-              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              : `⚠️ KhÃ´ng chá»‘t Ä‘Æ°á»£c bill chuyá»ƒn khoáº£n.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else {
             result = await cancelCustomerPaymentTelegram(targetId);
             notifyText = result.ok
-              ? `ðŸ›‘ Đã hủy yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
-              : `⚠️ Không hủy được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `ðŸ›‘ Đã hủy yÃªu cáº§u tính tiền.\nMã: ${targetId}`
+              : `⚠️ Không hủy được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`;
           }
           await answerTelegramCallback({
             callbackQueryId: callbackQuery.id,
@@ -5194,33 +4618,33 @@ exports.telegramWebhook = onRequest({
           if (customerOrderApproveMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'approved');
             editText = result.ok
-              ? `✅ Đã duyệt yêu cầu gọi món.\nMÃ£: ${targetId}`
-              : `⚠️ Không duyệt được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã duyệt yêu cầu gọi món.\nMã: ${targetId}`
+              : `⚠️ Không duyệt được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerOrderRejectMatch) {
             result = await resolveCustomerOrderRequestTelegram(targetId, 'rejected');
             editText = result.ok
-              ? `❌ Đã từ chối yÃªu cáº§u gọi món.\nMÃ£: ${targetId}`
-              : `⚠️ Không từ chối được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `❌ Đã từ chối yÃªu cáº§u gọi món.\nMã: ${targetId}`
+              : `⚠️ Không từ chối được yÃªu cáº§u gọi món.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerServiceAckMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `✅ Đã nhận yêu cầu hỗ trợ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `⚠️ Không cập nhật được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã nhận yêu cầu hỗ trợ khÃ¡ch.\nMã: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerServiceDoneMatch) {
             result = await resolveCustomerServiceRequestTelegram(targetId, 'resolved');
             editText = result.ok
-              ? `✅ Ä Ã£ hoàn tất há»— trá»£ khÃ¡ch.\nMÃ£: ${targetId}`
-              : `⚠️ Không đóng được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ hoàn tất há»— trá»£ khÃ¡ch.\nMã: ${targetId}`
+              : `⚠️ Không đóng được yÃªu cáº§u há»— trá»£.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentConfirmMatch) {
             result = await confirmCustomerPaymentBillTelegram(targetId);
             editText = result.ok
-              ? `✅ Đã xác nhận bill tính tiền.\nMÃ£: ${targetId}\nBill: ${result.billNo || ''}`
-              : `⚠️ Không xác nhận được bill.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Đã xác nhận bill tính tiền.\nMã: ${targetId}\nBill: ${result.billNo || ''}`
+              : `⚠️ Không xác nhận được bill.\n${result.error || 'Không rõ nguyên nhân.'}`;
           } else if (customerPaymentAckMatch) {
             result = await resolveCustomerPaymentRequestTelegram(targetId, 'acknowledged');
             editText = result.ok
-              ? `✅ Ä Ã£ nhận yÃªu cáº§u tính tiền.\nMÃ£: ${targetId}`
-              : `⚠️ Không cập nhật được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`;
+              ? `✅ Ä Ã£ nhận yÃªu cáº§u tính tiền.\nMã: ${targetId}`
+              : `⚠️ Không cập nhật được yÃªu cáº§u tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`;
           }
 
           await answerTelegramCallback({
@@ -5246,16 +4670,41 @@ exports.telegramWebhook = onRequest({
         if (confirmMatch) {
           const { executePendingAction } = getAiDeps();
           const result = await executePendingAction(actionDocId, { db });
-          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? 'Đã thực thi.' : 'Không thực thi được.', botToken });
+          let kitchenResult = null;
+          if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+            try {
+              kitchenResult = await sendKitchenTelegramForExecutedOrder(result);
+            } catch (err) {
+              kitchenResult = { ok: false, error: err?.message || String(err) };
+              logger.error('Telegram kitchen send after confirm failed', {
+                actionDocId,
+                orderId: result.orderId || '',
+                error: kitchenResult.error,
+                responseData: err?.response?.data || null,
+              });
+            }
+          }
+          await answerTelegramCallback({ callbackQueryId: callbackQuery.id, text: result.ok ? '\u0110\u00e3 th\u1ef1c thi.' : 'Kh\u00f4ng th\u1ef1c thi \u0111\u01b0\u1ee3c.', botToken });
+          const executedActionMessage = buildTelegramExecutedActionMessage(actionDocId, result, kitchenResult);
           await editTelegramMessage({
             chatId: callbackChatId,
             messageId: callbackMessageId,
             botToken,
-            text: result.ok
-              ? `✅ Đã thực thi.\nMÃ£: ${actionDocId}`
-              : `⚠️ Không thực thi được.\n${result.error || 'Hành động không còn hợp lệ.'}`,
+            text: executedActionMessage,
           });
-          return json(res, 200, { ok: true, callback: 'confirm', result });
+          if (result?.ok && String(result.actionType || '') === 'goi_mon_ban') {
+            await sendTelegramTextMessage({
+              chatId: callbackChatId,
+              botToken,
+              text: executedActionMessage,
+            }).catch(err => logger.error('Telegram owner order confirmation send failed', {
+              actionDocId,
+              orderId: result.orderId || '',
+              error: err?.message || String(err),
+              responseData: err?.response?.data || null,
+            }));
+          }
+          return json(res, 200, { ok: true, callback: 'confirm', result, kitchenTelegram: kitchenResult });
         }
 
         const { cancelPendingAction } = getAiDeps();
@@ -5265,7 +4714,7 @@ exports.telegramWebhook = onRequest({
           chatId: callbackChatId,
           messageId: callbackMessageId,
           botToken,
-          text: `❌ Đã hủy.\nMÃ£: ${actionDocId}`,
+          text: `❌ Đã hủy.\nMã: ${actionDocId}`,
         });
         return json(res, 200, { ok: true, callback: 'cancel', result });
       }
@@ -5296,6 +4745,10 @@ exports.telegramWebhook = onRequest({
         || normalizedText.startsWith('bao cao ads')
         || normalizedText.startsWith('bao cao doanh thu ads');
       if (isAdsReportCommand) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-ads-report' });
+        }
         const reportRange = buildAdsDateRangeFromText(userText, new Date(), { defaultYesterday: false });
         const report = await buildAdsRevenueTelegramData(reportRange);
         const text = buildAdsRevenueTelegramMessage(report);
@@ -5311,9 +4764,9 @@ exports.telegramWebhook = onRequest({
           botToken,
           text: result.ok
             ? (result.reused
-              ? `✅ Đã gửi lại bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`
-              : `✅ Đã tạo yêu cầu tính tiền cho ${result.tableLabel}.\nBill: ${result.billNo}\nMÃ£ yÃªu cáº§u: ${result.requestId}`)
-            : `⚠️ Không tạo được yêu cầu tính tiền.\n${result.error || 'Không rõ nguyên nhÃ¢n.'}`,
+              ? `✅ Đã gửi lại bill táº¡m cá»§a ${result.tableLabel}.\nBill: ${result.billNo}\nMã yêu cầu: ${result.requestId}`
+              : `✅ Đã tạo yêu cầu tính tiền cho ${result.tableLabel}.\nBill: ${result.billNo}\nMã yêu cầu: ${result.requestId}`)
+            : `⚠️ Không tạo được yêu cầu tính tiền.\n${result.error || 'Không rõ nguyên nhân.'}`,
         });
         return json(res, 200, { ok: result.ok, command: 'telegram-table-payment', result });
       }
@@ -5381,6 +4834,10 @@ exports.telegramWebhook = onRequest({
           return json(res, 200, { ok: true, command: 'order-slip-draft', draftId: draft.draftId });
         }
 
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-photo-ai' });
+        }
         const image = await getTelegramPhotoAsBase64({ botToken, photo: message.photo });
         geminiResult = await askGeminiVisionForImport({
           caption: userText,
@@ -5389,6 +4846,10 @@ exports.telegramWebhook = onRequest({
           ...userContext,
         });
       } else if (message?.voice || message?.audio) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-voice-ai' });
+        }
         // Ưu tiên voice, rồi mới audio (podcast, file âm thanh đính kèm)
         const voiceObj = message.voice || message.audio;
         const voiceFileId = String(voiceObj?.file_id || '').trim();
@@ -5432,15 +4893,60 @@ exports.telegramWebhook = onRequest({
           return json(res, 200, { ok: true, skipped: 'voice-processing-error' });
         }
       } else if (userText) {
-        const smartReportReply = await tryAnswerTelegramSmartReportQuestion(userText);
-        if (smartReportReply?.text) {
+        if (!isTelegramOwnerContext(userContext)) {
+          await rejectTelegramOwnerOnlyAccess({ chatId, botToken });
+          return json(res, 200, { ok: true, skipped: 'owner-only-text-ai' });
+        }
+        if (isTelegramAssistantCapabilityQuestion(userText)) {
           geminiResult = {
-            text: smartReportReply.text,
+            text: buildTelegramAssistantCapabilityResponse(),
             pendingActions: [],
-            toolResults: smartReportReply.report ? [smartReportReply.report] : [],
+            toolResults: [],
           };
         } else {
-          geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
+          const menuDataReply = await tryAnswerTelegramMenuDataQuestion(userText);
+          const proactiveReply = menuDataReply ? null : await tryAnswerTelegramProactiveOwnerInsight(userText, chatId);
+          const financeReportReply = (menuDataReply || proactiveReply) ? null : await tryAnswerTelegramFinanceReportQuestion(userText, chatId);
+          const smartReportReply = (menuDataReply || proactiveReply || financeReportReply) ? null : await tryAnswerTelegramSmartReportQuestion(userText);
+          const posChatbotFunctionReply = (menuDataReply || proactiveReply || financeReportReply || smartReportReply) ? null : await tryAnswerTelegramPosChatbotFunctionCalling(userText);
+          if (menuDataReply?.text) {
+            geminiResult = {
+              text: menuDataReply.text,
+              photoUrl: menuDataReply.photoUrl || '',
+              pendingActions: [],
+              toolResults: menuDataReply.menuItem ? [{ ok: true, tool: 'tra_cuu_menu', item: menuDataReply.menuItem }] : [],
+            };
+          } else if (proactiveReply?.text) {
+            geminiResult = {
+              text: proactiveReply.text,
+              inlineButtons: proactiveReply.inlineButtons || [],
+              pendingActions: [],
+              toolResults: proactiveReply.toolResults || [],
+            };
+          } else if (financeReportReply?.text) {
+            geminiResult = {
+              text: financeReportReply.text,
+              inlineButtons: financeReportReply.inlineButtons || [],
+              pendingActions: [],
+              toolResults: financeReportReply.toolResults || [],
+            };
+          } else if (smartReportReply?.text) {
+            const chartId = await prepareTelegramReportChart({ chatId, smartReportReply });
+            geminiResult = {
+              text: appendChartPrompt(smartReportReply.text, chartId),
+              inlineButtons: buildChartButtons(chartId),
+              pendingActions: [],
+              toolResults: smartReportReply.report ? [smartReportReply.report] : [],
+            };
+          } else if (posChatbotFunctionReply?.text) {
+            geminiResult = {
+              text: posChatbotFunctionReply.text,
+              pendingActions: [],
+              toolResults: posChatbotFunctionReply.toolResults || [],
+            };
+          } else {
+            geminiResult = await askGeminiWithFirestoreTools(userText, { ...userContext, source: 'telegram_text' });
+          }
         }
       } else {
         await sendTelegramTextMessage({
@@ -5469,11 +4975,31 @@ exports.telegramWebhook = onRequest({
           });
         }
       } else {
-        await sendTelegramTextMessage({
-          chatId,
-          botToken,
-          text: geminiResult?.text || 'Dạ em chưa có câu trả lời phù hợp.',
-        });
+        const responseText = geminiResult?.text || 'Dạ em chưa có câu trả lời phù hợp.';
+        const inlineButtons = Array.isArray(geminiResult?.inlineButtons) ? geminiResult.inlineButtons : [];
+        const photoUrl = String(geminiResult?.photoUrl || '').trim();
+        if (photoUrl) {
+          await sendTelegramPhotoMessage({
+            chatId,
+            botToken,
+            photo: photoUrl,
+            caption: responseText,
+            buttons: inlineButtons,
+          });
+        } else if (inlineButtons.length) {
+          await sendTelegramInlineMessage({
+            chatId,
+            botToken,
+            text: responseText,
+            buttons: inlineButtons,
+          });
+        } else {
+          await sendTelegramTextMessage({
+            chatId,
+            botToken,
+            text: responseText,
+          });
+        }
       }
 
       return json(res, 200, { ok: true });
@@ -5496,6 +5022,47 @@ exports.telegramWebhook = onRequest({
       }
 
       return json(res, 200, { ok: false, error: err?.message || String(err) });
+    }
+  });
+});
+
+exports.kitchenDeviceFeed = onRequest({
+  region: DEFAULT_REGION,
+  memory: HEAVY_FUNCTION_MEMORY,
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method_not_allowed' });
+
+    const configuredToken = String(KITCHEN_DEVICE_TOKEN.value() || '').trim();
+    const authHeader = String(req.get('authorization') || '').trim();
+    const bearer = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+    const queryToken = String(req.query.token || '').trim();
+    const suppliedToken = bearer || queryToken;
+
+    if (!configuredToken) {
+      return json(res, 503, { ok: false, error: 'device_token_not_configured' });
+    }
+    if (!suppliedToken || suppliedToken !== configuredToken) {
+      return json(res, 401, { ok: false, error: 'unauthorized' });
+    }
+
+    try {
+      const station = String(req.query.station || 'all').trim() || 'all';
+      const limit = Math.max(1, Math.min(20, Number(req.query.limit || 8) || 8));
+      const items = await kitchenDeviceFeed.fetchKitchenReadyFeed({ db, station, limit });
+      return json(res, 200, {
+        ok: true,
+        source: 'firestore.orders',
+        station,
+        count: items.length,
+        generatedAt: Date.now(),
+        items,
+      });
+    } catch (err) {
+      logger.error('kitchenDeviceFeed error', { message: err?.message, stack: err?.stack });
+      return json(res, 500, { ok: false, error: 'feed_failed' });
     }
   });
 });
@@ -5557,7 +5124,6 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
 
       return json(res, 200, {
         ok: true,
-        actor,
         totalHistoryDocs: rawOrders.length,
         duplicateGroupCount: duplicatesToArchive.length,
         archivedDocCount: duplicatesToArchive.length,
@@ -5572,7 +5138,7 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, status, { ok: false, error: message || 'Request failed' });
+      return json(res, status, { ok: false, error: status === 403 ? 'forbidden' : (status === 401 ? 'unauthenticated' : 'admin_action_failed') });
     }
   });
 });
@@ -5580,11 +5146,16 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
 exports.apiVoice = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, VOICE_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+    if (!voiceRateLimiter.take(`uid:${authResult.actor.uid}`)) return rejectRateLimitedRequest(res);
 
     const text = String(req.body?.text || '').trim();
     if (!text) return json(res, 400, { error: 'No text provided' });
 
-    logger.info('Voice command received', { text });
+    logger.info('Voice command accepted', { uid: authResult.actor.uid, role: authResult.actor.role, textLength: text.length });
 
     try {
       const manager = await ensureNlp();
@@ -6254,44 +5825,11 @@ exports.telegramOnCompletedOrderCreated = onDocumentCreated(
 );
 
 async function verifyAdminRequest(req) {
-  const authHeader = String(req.headers?.authorization || '');
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) throw new Error('Missing bearer token');
-
-  const bearerToken = match[1];
-  let decoded = null;
-  let email = '';
-  let uid = '';
-  let role = '';
-
-  try {
-    decoded = await admin.auth().verifyIdToken(bearerToken);
-    email = String(decoded.email || '').trim().toLowerCase();
-    uid = String(decoded.uid || '').trim();
-    const userSnap = await db.collection('users').doc(uid).get().catch(() => null);
-    role = String(userSnap?.exists ? (userSnap.data()?.role || '') : '').trim().toLowerCase();
-  } catch (_) {
-    const profileRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${bearerToken}` },
-      timeout: 15000,
-    }).catch(() => null);
-    email = String(profileRes?.data?.email || '').trim().toLowerCase();
-    if (email) {
-      const userQuery = await db.collection('users').where('email', '==', email).limit(1).get().catch(() => null);
-      const userDoc = userQuery?.docs?.[0];
-      uid = String(userDoc?.id || '').trim();
-      role = String(userDoc?.data()?.role || '').trim().toLowerCase();
-    }
-    if (!role && email === OWNER_EMAIL) role = 'admin';
+  const authResult = await authorizePosHttpRequest(req, ADMIN_ALLOWED_ROLES);
+  if (!authResult.ok) {
+    throw new Error(authResult.status === 403 ? 'Permission denied' : 'Missing or invalid Firebase ID token');
   }
-
-  const isAdmin = ['admin', 'owner', 'superadmin', 'manager'].includes(role) || email === OWNER_EMAIL;
-  if (!isAdmin) throw new Error('Permission denied');
-  return {
-    uid,
-    email,
-    role: role || (email === OWNER_EMAIL ? 'admin' : ''),
-  };
+  return authResult.actor;
 }
 
 exports.adminProbeVertex = onRequest({
@@ -6311,7 +5849,7 @@ exports.adminProbeVertex = onRequest({
       const requestBody = req.method === 'POST' ? (req.body || {}) : {};
       const query = req.query || {};
       const requestedLocation = String(requestBody.location || query.location || vertexConfig.location || 'global').trim() || 'global';
-      const requestedModel = String(requestBody.model || query.model || vertexConfig.textModel || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash';
+      const requestedModel = String(requestBody.model || query.model || vertexConfig.textModel || 'gemini-3.5-flash').trim() || 'gemini-3.5-flash';
       const rawAuthStrategy = String(requestBody.authStrategy || query.authStrategy || 'adc_first').trim().toLowerCase();
       const authStrategy = ['adc_only', 'secret_only', 'secret_first', 'adc_first'].includes(rawAuthStrategy)
         ? rawAuthStrategy
@@ -6334,14 +5872,10 @@ exports.adminProbeVertex = onRequest({
 
       return json(res, 200, {
         ok: true,
-        actor,
-        projectId,
         location: requestedLocation,
         requestedModel,
         usedModel: modelName,
         authStrategy,
-        authSource,
-        availableAuthSources: authContexts.map(ctx => ctx.source),
         text: collectTextFromPayload(payload).trim(),
         modelVersion: String(payload?.modelVersion || ''),
         usageMetadata: payload?.usageMetadata || null,
@@ -6352,7 +5886,7 @@ exports.adminProbeVertex = onRequest({
       });
       return json(res, 500, {
         ok: false,
-        error: err?.message || 'Vertex probe failed',
+        error: 'vertex_probe_failed',
       });
     }
   });
@@ -6416,21 +5950,7 @@ async function loadStorePaymentSettings() {
 }
 
 function wrapSvgText(text, limit = 36) {
-  const normalized = String(text || '').trim();
-  if (!normalized) return [''];
-  const words = normalized.split(/\s+/);
-  const lines = [];
-  let current = '';
-  words.forEach(word => {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= limit) current = next;
-    else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  });
-  if (current) lines.push(current);
-  return lines.slice(0, 3);
+  return generalUtils.wrapSvgText(text, limit);
 }
 
 async function buildPaymentBillImageAsset(context) {
@@ -6663,6 +6183,7 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
 
     try {
       const actor = await verifyAdminRequest(req);
@@ -6679,7 +6200,17 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
 
       const contentType = String(match[1] || 'image/jpeg').trim();
       const base64Payload = String(match[2] || '').trim();
-      const buffer = Buffer.from(base64Payload, 'base64');
+      const imageCheck = validateBase64Media({
+        value: base64Payload,
+        mimeType: contentType,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
+
+      const buffer = imageCheck.buffer;
       const saved = await saveMenuImageBuffer({
         productId,
         fileName,
@@ -6696,118 +6227,30 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         contentType,
-        actor,
       });
     } catch (err) {
       logger.error('adminUploadMenuImage failed', {
         error: err?.message || String(err),
       });
-      return json(res, 500, { ok: false, error: err?.message || 'Upload failed' });
+      return json(res, 500, { ok: false, error: 'upload_failed' });
     }
   });
 });
 
 function stripDataUrlBase64(value = '') {
-  return String(value || '').replace(/^data:[^;]+;base64,/i, '').trim();
+  return generalUtils.stripDataUrlBase64(value);
 }
 
 function extractFirstJson(text = '') {
-  const source = String(text || '').trim();
-  if (!source) return null;
-
-  const firstBraceIndex = source.indexOf('{');
-  if (firstBraceIndex < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = firstBraceIndex; index < source.length; index += 1) {
-    const char = source[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === '{') {
-      depth += 1;
-      continue;
-    }
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        const candidate = source.slice(firstBraceIndex, index + 1);
-        try {
-          return JSON.parse(candidate);
-        } catch (_) {
-          return null;
-        }
-      }
-    }
-  }
-
-  return null;
+  return generalUtils.extractFirstJson(text);
 }
 
 function mapToolActionType(actionType = '') {
-  const raw = String(actionType || '').trim();
-  if (raw === 'goi_mon_ban') return 'goi_mon';
-  if (raw === 'nhap_hang_thu_cong') return 'nhap_hang';
-  return raw || 'unknown';
+  return generalUtils.mapToolActionType(actionType);
 }
 
 function buildAiRouterPendingResponse(toolResult = {}, originalText = '') {
-  const actionType = String(toolResult.actionType || toolResult.tool || '').trim();
-  const payload = { ...(toolResult.payload || {}) };
-  let preview = toolResult.preview || '';
-  if (actionType === 'goi_mon_ban') {
-    if (!String(payload.ban || '').trim()) {
-      const table = extractTable(originalText);
-      const fallbackTable = String(originalText || '').match(/\d+/)?.[0] || '';
-      if (table || fallbackTable) payload.ban = table || fallbackTable;
-    }
-    if (Array.isArray(payload.items) && payload.items.length > 1) {
-      const ghostNames = new Set((Array.isArray(toolResult.suggested_items) ? toolResult.suggested_items : [])
-        .filter(item => normalizeVi(item?.ten_mon_ai || '') === 'goi')
-        .map(item => normalizeVi(item?.ten_mon_chinh_ta || ''))
-        .filter(Boolean));
-      payload.items = payload.items.filter((item) => {
-        const name = normalizeVi(item?.ten_mon || item?.name || '');
-        if (name === 'goi') return false;
-        if (ghostNames.has(name)) return false;
-        return true;
-      });
-    }
-    const count = Array.isArray(payload.items) ? payload.items.length : 0;
-    preview = `Lên order ${payload.ban ? `bàn ${payload.ban}` : ''}: ${count} món`;
-  }
-  return {
-    ok: true,
-    status: 'pending_confirmation',
-    message: String(preview ? `Cần xác nhận trước khi thực hiện: ${preview}` : (toolResult.message || 'Cần xác nhận trước khi thực hiện thao tác này.')),
-    action_type: mapToolActionType(actionType),
-    tool: actionType,
-    payload,
-    preview,
-    validation_summary: toolResult.validation_summary || null,
-    suggested_items: toolResult.suggested_items || null,
-    rejected_items: toolResult.rejected_items || null,
-  };
+  return generalUtils.buildAiRouterPendingResponse(toolResult, originalText);
 }
 
 function pickProvider() {
@@ -6849,11 +6292,15 @@ async function askGeminiWithFirestoreTools(userText, options = {}) {
   const result = await runVertexToolLoop({
     userParts: [{ text: String(userText || '').trim() }],
     systemInstruction: [
-      'Ban la tro ly AI thong minh cua quan Xe Kho Chua Lanh.',
-      'Nhiem vu cua ban la tra loi cac cau hoi ve doanh thu, loi nhuan, ton kho, lich su nhap hang va van hanh POS.',
-      'Neu nguoi dung hoi mot mon cu the, vi du bia Heineken, hay co gang trich ten_mon va tra loi theo chinh mon do.',
-      'Neu nguoi dung noi moc gio nhu "tu 17h ngay 10/5 den bay gio", hay uu tien goi tool truy_van_bao_cao voi tu_thoi_diem va den_thoi_diem hoac den_bay_gio.',
-      'Tra loi ngan gon, ro rang, than thien. Su dung tools khi can thiet.',
+      'Bạn là trợ lý AI thông minh của quán Xe Khô Chữa Lành.',
+      'Nhiệm vụ của bạn là trả lời các câu hỏi về doanh thu, lợi nhuận, tồn kho, lịch sử nhập hàng và vận hành POS.',
+      'Hãy hiểu câu hỏi tự nhiên, không chỉ các command cố định. Nếu cần dữ liệu thật, phải gọi tool đọc dữ liệu trước khi trả lời; không bịa số.',
+      'Nếu người dùng hỏi một món cụ thể, ví dụ bia/bia Heineken/Tiger/nước suối, hãy trích ten_mon và trả lời theo chính món đó.',
+      'Nếu người dùng hỏi giá hoặc hình ảnh món, ví dụ "Món mực 1 nắng nướng muối ớt giá bao nhiêu?", hãy dùng dữ liệu menu/kho, không tự bịa giá; nếu có ảnh món trong dữ liệu thì trả lời kèm ảnh.',
+      'Nếu người dùng hỏi "hôm qua bán bao nhiêu bia" hoặc "bán mấy lon Tiger tuần này", hãy gọi tool truy_van_bao_cao với loai_bao_cao=tong_quan hoặc doanh_thu, khoang_thoi_gian phù hợp và ten_mon là mặt hàng.',
+      'Nếu người dùng nói mốc giờ như "từ 18h hôm qua đến bây giờ" hoặc "từ 17h ngày 10/5 đến bây giờ", hãy ưu tiên gọi tool truy_van_bao_cao với tu_thoi_diem và den_thoi_diem hoặc den_bay_gio.',
+      'Nếu người dùng hỏi khả năng của bạn, trả lời rõ bạn là trợ lý AI cho Xe Khô Chữa Lành, có thể đọc Firebase/POS khi cần, có đường BigQuery read-only cho báo cáo khi Firebase không đủ dữ liệu, và có thể tạo đề xuất thao tác cần owner xác nhận.',
+      'Trả lời ngắn gọn, rõ ràng, thân thiện. Luôn gọi đúng tên quán là Xe Khô Chữa Lành. Sử dụng tools khi cần thiết.',
     ].join(' '),
     source: options.source || 'telegram_text',
     chatId: options.chatId,
@@ -7011,21 +6458,38 @@ exports.purchaseOcr = onRequest({
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, OCR_REQUEST_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, OCR_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+
     try {
       const dataUrl = String(req.body?.dataUrl || '').trim();
-      if (!dataUrl.startsWith('data:')) return json(res, 400, { ok: false, error: 'Missing dataUrl image payload' });
+      const dataUrlMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+      if (!dataUrlMatch) return json(res, 400, { ok: false, error: 'Missing dataUrl image payload' });
+      const imageCheck = validateBase64Media({
+        value: dataUrlMatch[2],
+        mimeType: dataUrlMatch[1],
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
       const parsed = await runVertexPurchaseOcr({ dataUrl });
       return json(res, 200, { ok: true, ...parsed });
     } catch (error) {
       logger.error('purchaseOcr failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'OCR failed' });
+      return json(res, 500, { ok: false, error: 'ocr_failed' });
     }
   });
 });
 
 exports.aiStatus = onRequest({ region: 'asia-southeast1', serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
-  cors(req, res, () => {
+  cors(req, res, async () => {
     if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    const authResult = await authorizePosHttpRequest(req, AI_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
     try {
       const vertexConfig = getVertexRuntimeConfig();
       const vertexCreds = getVertexCredentials(vertexConfig.secretJson);
@@ -7033,16 +6497,12 @@ exports.aiStatus = onRequest({ region: 'asia-southeast1', serviceAccount: FUNCTI
         ok: true,
         provider: pickProvider(),
         vertexOk: !!vertexCreds,
-        projectId: vertexCreds?.project_id || vertexConfig.projectId,
-        region: 'asia-southeast1',
       });
-    } catch (error) {
+    } catch (_) {
       return json(res, 200, {
         ok: false,
         provider: 'vertex',
         vertexOk: false,
-        error: error?.message || String(error),
-        region: 'asia-southeast1',
       });
     }
   });
@@ -7055,15 +6515,43 @@ exports.aiRouter = onRequest({
 }, (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
+
+    const authResult = await authorizePosHttpRequest(req, AI_ALLOWED_ROLES);
+    if (!authResult.ok) return rejectHttpAuthorization(res, authResult);
+    if (!aiRateLimiter.take(`uid:${authResult.actor.uid}`)) return rejectRateLimitedRequest(res);
 
     const text = String(req.body?.text || '').trim();
     const imageBase64 = String(req.body?.imageBase64 || req.body?.image || '').trim();
     const audioBase64 = String(req.body?.audioBase64 || req.body?.audio || '').trim();
-    const mimeType = String(req.body?.mimeType || '').trim();
+    const mimeType = String(req.body?.mimeType || '').trim().toLowerCase();
     const previewOnly = req.body?.previewOnly !== false;
 
     if (!text && !imageBase64 && !audioBase64) {
       return json(res, 400, { ok: false, error: 'No input provided' });
+    }
+
+    if (imageBase64) {
+      const imageCheck = validateBase64Media({
+        value: imageBase64,
+        mimeType: mimeType || 'image/jpeg',
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
+    }
+    if (audioBase64) {
+      const audioCheck = validateBase64Media({
+        value: audioBase64,
+        mimeType,
+        allowedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/webm'],
+        maxBytes: AI_AUDIO_MAX_BYTES,
+      });
+      if (!audioCheck.ok) return audioCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_audio_payload' });
     }
 
     try {
@@ -7090,7 +6578,7 @@ exports.aiRouter = onRequest({
         ok: false,
         status: 'error',
         provider: 'vertex',
-        error: String(error?.message || error || 'AI router failed'),
+        error: 'ai_router_failed',
       });
     }
   });
@@ -7154,11 +6642,10 @@ exports.adminGenerateMenuImage = onRequest({ region: 'asia-southeast1' }, (req, 
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         promptUsed: prompt,
-        actor,
       });
     } catch (error) {
       logger.error('adminGenerateMenuImage (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI image generation failed' });
+      return json(res, 500, { ok: false, error: 'image_generation_failed' });
     }
   });
 });
@@ -7196,19 +6683,38 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       const parts = [{ text: prompt }];
       let usedImage = false;
       if (imageUrl) {
-        try {
-          const imageRes = await fetch(imageUrl);
-          const contentType = String(imageRes.headers.get('content-type') || 'image/jpeg');
-          if (imageRes.ok && /^image\//i.test(contentType)) {
-            const bytes = Buffer.from(await imageRes.arrayBuffer());
-            parts.push({ inlineData: { mimeType: contentType, data: bytes.toString('base64') } });
-            usedImage = true;
+        const urlCheck = validateTrustedHttpsUrl(imageUrl, {
+          allowedHosts: TRUSTED_STORAGE_HOSTS,
+          allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+        });
+        if (urlCheck.ok) {
+          try {
+            const imageResult = await fetchTrustedImage(imageUrl, {
+              allowedHosts: TRUSTED_STORAGE_HOSTS,
+              allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+              maxBytes: TRUSTED_IMAGE_FETCH_MAX_BYTES,
+              timeoutMs: 5000,
+              maxRedirects: 1,
+            });
+            if (imageResult.ok) {
+              parts.push({ inlineData: { mimeType: imageResult.mimeType, data: imageResult.buffer.toString('base64') } });
+              usedImage = true;
+            } else {
+              logger.warn('adminGenerateMenuDescription image fetch rejected', {
+                productId,
+                reason: imageResult.reason,
+              });
+            }
+          } catch (imageErr) {
+            logger.warn('adminGenerateMenuDescription image fetch failed', {
+              productId,
+              error: imageErr?.message || String(imageErr),
+            });
           }
-        } catch (imageErr) {
-          logger.warn('adminGenerateMenuDescription image fetch failed', {
+        } else {
+          logger.warn('adminGenerateMenuDescription image URL not trusted', {
             productId,
-            imageUrl,
-            error: imageErr?.message || String(imageErr),
+            reason: urlCheck.reason,
           });
         }
       }
@@ -7242,7 +6748,7 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       });
     } catch (error) {
       logger.error('adminGenerateMenuDescription (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI description generation failed' });
+      return json(res, 500, { ok: false, error: 'description_generation_failed' });
     }
   });
 });

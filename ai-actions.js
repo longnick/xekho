@@ -119,21 +119,21 @@ function validateAIActions(parsed, menuFull) {
   const safeActions = [];
   const rawActions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 20) : [];
   if ((parsed.actions || []).length > 20) {
-    warnings.push('ÄÃ£ bá» bá»t action vÆ°á»£t giá»i háº¡n an toÃ n.');
+    warnings.push('Đã bỏ bớt action vượt giới hạn an toàn.');
   }
 
   for (const a of rawActions) {
     if (!a || typeof a !== 'object' || !allowed.has(a.type)) continue;
 
     if ((a.type === 'restock' || a.type === 'report') && isStaff) {
-      warnings.push('TÃ i khoáº£n Staff khÃ´ng cÃ³ quyá»n cháº¡y lá»nh kho/bÃ¡o cÃ¡o qua AI.');
+      warnings.push('Tài khoản Staff không có quyền chạy lệnh kho/báo cáo qua AI.');
       continue;
     }
 
     if (['order', 'remove', 'pay', 'view', 'unknown'].includes(a.type)) {
       const tid = String(a.tableId || '');
       if (!validTableIds.has(tid)) {
-        warnings.push(`Bá» action ${a.type}: bÃ n ${tid || '?'} khÃ´ng há»£p lá».`);
+        warnings.push(`Bỏ action ${a.type}: bàn ${tid || '?'} không hợp lệ.`);
         continue;
       }
     }
@@ -144,7 +144,7 @@ function validateAIActions(parsed, menuFull) {
         qty: Math.max(1, Math.min(50, Number(it.qty) || 1))
       })).filter(it => menuIds.has(it.id));
       if (items.length === 0) {
-        warnings.push('Bá» action order: khÃ´ng cÃ³ mÃ³n há»£p lá».');
+        warnings.push('Bỏ action order: không có món hợp lệ.');
         continue;
       }
       safeActions.push({ type: 'order', tableId: String(a.tableId), items });
@@ -154,7 +154,7 @@ function validateAIActions(parsed, menuFull) {
     if (a.type === 'remove') {
       const itemId = String(a.itemId || '');
       if (!menuIds.has(itemId)) {
-        warnings.push('Bá» action remove: mÃ³n khÃ´ng há»£p lá».');
+        warnings.push('Bỏ action remove: món không hợp lệ.');
         continue;
       }
       safeActions.push({
@@ -173,7 +173,7 @@ function validateAIActions(parsed, menuFull) {
         qty: Math.max(1, Math.min(500, Number(it.qty) || 1))
       })).filter(it => it.id || it.name);
       if (items.length === 0) {
-        warnings.push('Bá» action restock: khÃ´ng cÃ³ nguyÃªn liá»u há»£p lá».');
+        warnings.push('Bỏ action restock: không có nguyên liệu hợp lệ.');
         continue;
       }
       safeActions.push({ type: 'restock', items });
@@ -211,36 +211,36 @@ function _needsAIActionConfirm(action) {
 }
 
 function _buildAIActionConfirmText(action, menuFull) {
-  if (!action || !action.type) return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»nh AI nÃ y?');
+  if (!action || !action.type) return _repairAIActionText('Xác nhận thực thi lệnh AI này?');
   if (action.type === 'pay') {
-    return _repairAIActionText(`AI yÃªu cáº§u tÃ­nh tiá»n bÃ n ${action.tableId}. XÃ¡c nháº­n thá»±c hiá»n?`);
+    return _repairAIActionText(`AI yêu cầu tính tiền bàn ${action.tableId}. Xác nhận thực hiện?`);
   }
   if (action.type === 'restock') {
     const preview = (action.items || [])
       .slice(0, 3)
       .map(it => `${it.qty} ${it.name || it.id}`)
       .join(', ');
-    return _repairAIActionText(`AI yÃªu cáº§u nháº­p kho (${(action.items || []).length} má»¥c). ${preview ? `VÃ­ dá»¥: ${preview}. ` : ''}XÃ¡c nháº­n?`);
+    return _repairAIActionText(`AI yêu cầu nhập kho (${(action.items || []).length} mục). ${preview ? `Ví dụ: ${preview}. ` : ''}Xác nhận?`);
   }
   if (action.type === 'order') {
     const totalQty = (action.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
-    return _repairAIActionText(`AI yÃªu cáº§u lÃªn tá»ng ${totalQty} mÃ³n cho bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
+    return _repairAIActionText(`AI yêu cầu lên tổng ${totalQty} món cho bàn ${action.tableId}. Xác nhận?`);
   }
   if (action.type === 'remove') {
     const item = (menuFull || []).find(m => String(m.id) === String(action.itemId));
-    return _repairAIActionText(`AI yÃªu cáº§u bá»t ${action.qty} ${item ? item.name : 'mÃ³n'} á» bÃ n ${action.tableId}. XÃ¡c nháº­n?`);
+    return _repairAIActionText(`AI yêu cầu bớt ${action.qty} ${item ? item.name : 'món'} ở bàn ${action.tableId}. Xác nhận?`);
   }
-  return _repairAIActionText('XÃ¡c nháº­n thá»±c thi lá»nh AI nÃ y?');
+  return _repairAIActionText('Xác nhận thực thi lệnh AI này?');
 }
 
 // --- Execute parsed actions (shared between Gemini and Local NLP) ---
 function executeAIActions(parsed, menuFull, userText = '', options = {}) {
-  if (!parsed) return _repairAIActionText('KhÃ´ng nháº­n ra lá»nh nÃ y áº¡.');
+  if (!parsed) return _repairAIActionText('Không nhận ra lệnh này ạ.');
   parsed = normalizeAIResponse(parsed, menuFull);
   const validated = validateAIActions(parsed, menuFull);
   parsed.actions = validated.actions;
   if (!parsed.actions.length && validated.warnings.length && !parsed.reply) {
-    return _repairAIActionText(`âš ï¸ ${validated.warnings[0]}`);
+    return _repairAIActionText(`⚠️ ${validated.warnings[0]}`);
   }
 
   if (parsed.actions?.length) {
@@ -248,7 +248,7 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
       if (_needsAIActionConfirm(a)) {
         const ok = options.skipAutoConfirm ? true : confirm(_buildAIActionConfirmText(a, menuFull));
         if (!ok) {
-          if (!parsed.reply || parsed.reply.length < 5) parsed.reply = _repairAIActionText('ÄÃ£ há»§y thao tÃ¡c theo yÃªu cáº§u.');
+          if (!parsed.reply || parsed.reply.length < 5) parsed.reply = _repairAIActionText('Đã hủy thao tác theo yêu cầu.');
           continue;
         }
       }
@@ -268,7 +268,7 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
         // Persist + update table status for correct coloring
         try { saveOrderForTable(tid); } catch(_) {}
 
-        // Tá»± Ä‘á»™ng má»Ÿ bÃ n Ä‘á»ƒ xÃ¡c nháº­n
+        // Tự động mở bàn để xác nhận
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
@@ -298,12 +298,12 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
 
       } else if (a.type === 'pay') {
         const tid = String(a.tableId);
-        // Má»Ÿ bÃ n trÆ°á»›c rá»“i má»Ÿ bill modal
+        // Mở bàn trước rồi mở bill modal
         setTimeout(() => {
           closeAIAssistant();
           if (tid === 'takeaway') openTakeaway();
           else openTable(Number(tid));
-          // Má»Ÿ bill sau khi bÃ n Ä‘Ã£ má»Ÿ
+          // Mở bill sau khi bàn đã mở
           setTimeout(() => {
             if ((orderItems[tid] || []).length > 0) {
               openBillModal();
@@ -321,7 +321,7 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
       } else if (a.type === 'report') {
         if (!parsed.reply || parsed.reply.length < 30) {
           let reqDate = a.date ? new Date(a.date) : new Date();
-          let dateObj = a.date ? { label:`NgÃ y ${reqDate.getDate()}/${reqDate.getMonth()+1}`, date:a.date } : null;
+          let dateObj = a.date ? { label:`Ngày ${reqDate.getDate()}/${reqDate.getMonth()+1}`, date:a.date } : null;
           const report = buildReportReply(dateObj);
           parsed.reply = report.reply;
         }
@@ -370,7 +370,7 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
           updateAlertBadge();
           if (currentPage === 'inventory') renderInventory();
           if (!parsed.reply || parsed.reply.length < 10) {
-            parsed.reply = _repairAIActionText(`Dáº¡ em ÄÃ£ nháº­p thÃªm ${addedNames.join(', ')} vÃ o kho rá»i áº¡!`);
+            parsed.reply = _repairAIActionText(`Dạ em đã nhập thêm ${addedNames.join(', ')} vào kho rồi ạ!`);
           }
           
           setTimeout(() => {
@@ -392,5 +392,5 @@ function executeAIActions(parsed, menuFull, userText = '', options = {}) {
     if (currentPage === 'tables') renderTables();
   }
 
-  return _repairAIActionText(parsed.reply || 'Xong rá»“i áº¡!');
+  return _repairAIActionText(parsed.reply || 'Xong rồi ạ!');
 }
