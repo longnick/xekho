@@ -38,6 +38,17 @@ function verifyHostingDist({ distDir = dist } = {}) {
     if (segments.some(segment => forbiddenSegments.has(segment))) failures.push(`forbidden build path: ${relativePath}`);
     if (forbiddenFilePattern.test(relativePath)) failures.push(`forbidden sensitive-looking artifact: ${relativePath}`);
   }
+
+  const sourceIndex = path.join(root, 'index.html');
+  const distIndex = path.join(distDir, 'index.html');
+  if (fs.existsSync(sourceIndex) && fs.existsSync(distIndex)) {
+    const sourceHtml = fs.readFileSync(sourceIndex, 'utf8');
+    const distHtml = fs.readFileSync(distIndex, 'utf8');
+    if (distHtml !== sourceHtml) failures.push('index.html must remain byte-identical to source static runtime');
+    if (!distHtml.includes('type="module" src="db.js')) failures.push('index.html must load db.js module directly');
+    if (!distHtml.includes('type="module" src="app/esm/main.js')) failures.push('index.html must load app/esm/main.js directly');
+    if (/\/assets\/main-[^"']+\.js/.test(distHtml)) failures.push('index.html must not use Vite-bundled main runtime');
+  }
   return failures;
 }
 
