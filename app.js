@@ -7324,11 +7324,17 @@ function renderPurchasePhotoManager() {
     return '<div class="card" style="padding:12px;margin-bottom:12px;"><div class="card-title" style="margin-bottom:6px">🖼️ Quản lý hình ảnh đã chụp</div><div class="card-sub" style="font-size:12px;color:var(--text3)">Chưa có ảnh chứng từ đã lưu</div></div>';
   }
 
-  const html = entries.slice(0, 10).map(e => `
+  const html = entries.slice(0, 10).map(e => {
+    const safeThumbnailUrl = _safeImageUrl(e.photos[0]?.dataUrl);
+    const safeBatchId = _escapeHtml(_escapeJsString(e.batchId));
+    const thumbImg = safeThumbnailUrl
+      ? `<img src="${_escapeHtml(safeThumbnailUrl)}" alt="Ảnh" style="width:100%;height:100%;object-fit:cover;cursor:pointer;"
+             onclick="openPurchasePhotoFullFromBatch(${safeBatchId}, 0)">`
+      : '';
+    return `
     <div class="list-item" style="flex-direction:row;align-items:flex-start;gap:10px;">
       <div class="list-item-icon" style="width:56px;height:56px;background:rgba(0,149,255,0.1);border-radius:14px;overflow:hidden;padding:0;">
-        <img src="${e.photos[0].dataUrl}" alt="Ảnh" style="width:100%;height:100%;object-fit:cover;cursor:pointer;"
-             onclick="openPurchasePhotoFullFromBatch('${e.batchId}', 0)">
+        ${thumbImg}
       </div>
       <div class="list-item-content">
         <div class="list-item-title">🖼️ Batch chứng từ</div>
@@ -7340,12 +7346,13 @@ function renderPurchasePhotoManager() {
       </div>
       <div class="list-item-right" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
         <div style="display:flex;gap:6px">
-          <button class="btn btn-xs btn-outline" onclick="viewPurchasePhotoBatch('${e.batchId}')">👁️ Xem</button>
-          <button class="btn btn-xs btn-danger" onclick="deletePurchasePhotoBatch('${e.batchId}')">🗑️</button>
+          <button class="btn btn-xs btn-outline" onclick="viewPurchasePhotoBatch(${safeBatchId})">👁️ Xem</button>
+          <button class="btn btn-xs btn-danger" onclick="deletePurchasePhotoBatch(${safeBatchId})">🗑️</button>
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   return `
     <div class="card" style="padding:12px;margin-bottom:12px;">

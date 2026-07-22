@@ -48,4 +48,21 @@ describe('render-safety DOM helpers', () => {
     expect(appSource).toContain('const safeDataUrl = _safeImageUrl(ph.dataUrl);');
     expect(appSource).toContain('if (!_setSafeImageSource(img, photo.dataUrl))');
   });
+
+  test('routes purchase-photo manager thumbnail through safe URL and handler boundaries', () => {
+    const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+    expect(appSource).not.toContain('<img src="${e.photos[0].dataUrl}"');
+    expect(appSource).not.toContain("openPurchasePhotoFullFromBatch('${e.batchId}', 0)");
+    expect(appSource).not.toContain("viewPurchasePhotoBatch('${e.batchId}')");
+    expect(appSource).not.toContain("deletePurchasePhotoBatch('${e.batchId}')");
+    expect(appSource).toContain('const safeThumbnailUrl = _safeImageUrl(e.photos[0]?.dataUrl);');
+    expect(appSource).toContain('const safeBatchId = _escapeHtml(_escapeJsString(e.batchId));');
+    expect(appSource).toContain('<img src="${_escapeHtml(safeThumbnailUrl)}"');
+    expect(appSource).toContain('onclick="openPurchasePhotoFullFromBatch(${safeBatchId}, 0)"');
+    expect(appSource).toContain('onclick="viewPurchasePhotoBatch(${safeBatchId})"');
+    expect(appSource).toContain('onclick="deletePurchasePhotoBatch(${safeBatchId})"');
+
+    const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    expect(indexSource).toContain('app.js?v=20260721-r5-render-containment');
+  });
 });
