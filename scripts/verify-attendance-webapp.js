@@ -1208,7 +1208,7 @@ assert(
   'status-bar button is re-enabled after checkout refresh'
 );
 assert(
-  indexHtml.includes('app.js?v=20260721-attendance-latency'),
+  indexHtml.includes('app.js?v=20260722-pin-fast-path'),
   'index.html cache key is bumped for the attendance latency UI'
 );
 

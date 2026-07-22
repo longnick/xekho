@@ -624,9 +624,12 @@ function bindPosActivityWatchers() {
   });
 }
 
-function unlockPosSession(pin) {
+async function unlockPosSession(pin) {
   if (!hasMasterAuthSession()) return false;
-  const profile = _findStaffByPin(pin);
+  let profile = _findStaffByPin(pin);
+  if (!profile && window.DB?.Staff?.findByPinFresh) {
+    profile = await window.DB.Staff.findByPinFresh(pin);
+  }
   if (!profile) return false;
   currentUser = _buildCurrentUserFromStaff(profile, pin);
   syncCurrentPosUserToAppState();
@@ -671,7 +674,16 @@ async function handlePinSubmit(e) {
     showToast('PIN phải gồm đúng 4 số.', 'warning');
     return;
   }
-  if (!unlockPosSession(pin)) {
+  let unlocked = false;
+  try {
+    unlocked = await unlockPosSession(pin);
+  } catch (err) {
+    console.warn('[Auth] PIN lookup unavailable', err);
+    showToast('Đang tải danh sách nhân viên. Vui lòng thử lại.', 'warning');
+    updateLockScreenUI('Đang tải dữ liệu nhân viên. Vui lòng thử lại.');
+    return;
+  }
+  if (!unlocked) {
     try {
       await window.DB?.logAction?.('pin_login_failed', {
         attemptedPinLength: pin.length,

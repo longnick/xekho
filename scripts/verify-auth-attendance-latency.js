@@ -10,6 +10,12 @@ const signedInAt = db.indexOf("_dispatchEvent('db:signedIn'");
 const presenceAt = db.indexOf('_setupPresence(user.uid');
 assert(signedInAt >= 0 && presenceAt >= 0 && signedInAt < presenceAt, 'signedIn UI event must precede presence setup');
 assert(app.includes('showLockScreen(true)'), 'missing PIN screen transition');
+const profileReadAt = db.indexOf("uSnap = await getDoc(_doc('users', user.uid))");
+const profileCheckAt = db.indexOf('if (!uSnap.exists())');
+assert(profileReadAt >= 0 && profileReadAt < profileCheckAt, 'Auth callback must load users/{uid} before profile check');
+assert(db.includes('async findByPinFresh('), 'missing direct Staff PIN lookup fallback');
+assert(app.includes('profile = await window.DB.Staff.findByPinFresh(pin)'), 'PIN unlock must not wait for full snapshot readiness');
+assert(app.includes('unlocked = await unlockPosSession(pin)'), 'PIN submit must await direct lookup fallback');
 
 // RED: attendance writes must use one atomic path, not two sequential writes.
 assert(db.includes('setDailyAndShift'), 'missing atomic attendance write API');

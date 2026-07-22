@@ -1250,6 +1250,15 @@ onAuthStateChanged(_auth, async user => {
 
   // User profiles and roles are provisioned server-side. A browser must never
   // create its own profile or infer an elevated role from an email address.
+  let uSnap;
+  try {
+    uSnap = await getDoc(_doc('users', user.uid));
+  } catch (error) {
+    console.error('[DB] Không đọc được hồ sơ quyền server-side; đăng xuất an toàn.', error);
+    _dispatchEvent('db:authProfileError', { uid: user.uid });
+    await signOut(_auth);
+    return;
+  }
   if (!uSnap.exists()) {
     console.warn('[DB] Thiếu hồ sơ quyền server-side; đăng xuất an toàn.', user.uid);
     _dispatchEvent('db:authProfileMissing', { uid: user.uid });
@@ -2145,6 +2154,16 @@ const Staff = {
       if (includeInactive) return true;
       return String(item.status || 'active').toLowerCase() === 'active';
     }) || null;
+  },
+
+  async findByPinFresh(pin, options = {}) {
+    const code = String(pin || '').trim();
+    if (!/^\d{4}$/.test(code)) return null;
+    const includeInactive = options.includeInactive === true;
+    const snap = await getDocs(query(_col('Staff'), where('pin_code', '==', code), limit(1)));
+    const item = snap.docs.map(_fromDoc).filter(Boolean)[0] || null;
+    if (!item || includeInactive) return item;
+    return String(item.status || 'active').toLowerCase() === 'active' ? item : null;
   },
 
   async isPinDuplicate(pin, excludeStaffId = null) {
