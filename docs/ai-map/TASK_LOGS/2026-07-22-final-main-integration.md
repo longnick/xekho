@@ -7,6 +7,7 @@
 - Integration merge: `70812e5333d71db4007a5640ac5b9b01da5c6b71`.
 - Packaging runtime won conflicted application/dependency paths because `main` runtime fixes for mojibake, service-account binding, and secret scanning were patch-equivalent in packaging.
 - Preserved unique `main` Hosting redirects for `/dat-hang`, `/dat-mon`, and `/order`.
+- Independent review found duplicate `hosting.redirects` keys created by merge resolution; removed the byte-identical duplicate and validated the final config with a duplicate-key-rejecting JSON parser.
 - Restored reviewed `google/gemini-3.5-flash` routing after merge exposed `main`'s stale `2.5` config.
 - Excluded generated `.firebase/hosting..cache` and `functions-list.json`.
 
