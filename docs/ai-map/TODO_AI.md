@@ -1,3 +1,7 @@
+# 2026-07-22 - DONE: Repair pull-request secret scan permissions
+- DONE: Added read-only `pull-requests: read` permission so Gitleaks can enumerate PR commits without a GitHub API `403`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-22-gitleaks-pr-permission.md`.
+
 # 2026-06-26 05:00 +07 - DONE: Capacitor Android OTA and brand icon
 - DONE: Configured Capgo live update foundation with `autoUpdate: false` inside `capacitor.config.ts`.
 - DONE: Adjusted Android Gradle `compileSdkVersion` to 35 and `minSdkVersion` to 23 for compatibility.
