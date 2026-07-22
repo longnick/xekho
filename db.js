@@ -1250,6 +1250,15 @@ onAuthStateChanged(_auth, async user => {
 
   // User profiles and roles are provisioned server-side. A browser must never
   // create its own profile or infer an elevated role from an email address.
+  let uSnap;
+  try {
+    uSnap = await getDoc(_doc('users', user.uid));
+  } catch (error) {
+    console.error('[DB] Không đọc được hồ sơ quyền server-side; đăng xuất an toàn.', error);
+    _dispatchEvent('db:authProfileError', { uid: user.uid });
+    await signOut(_auth);
+    return;
+  }
   if (!uSnap.exists()) {
     console.warn('[DB] Thiếu hồ sơ quyền server-side; đăng xuất an toàn.', user.uid);
     _dispatchEvent('db:authProfileMissing', { uid: user.uid });
