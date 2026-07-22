@@ -19,7 +19,7 @@
 - Functions security: 12 suites / 144 tests PASS.
 - `npm run check` and `npm run check:functions`: PASS.
 - `npx tsc --noEmit -p jsconfig.json`: PASS, no errors.
-- Canonical `npm run lint`: baseline remains `250 errors / 16 warnings` in 10 pre-existing source/test files (`no-undef` is 250 errors); integration-only paths are docs plus `firebase.json`, so this is recorded as inherited non-blocking debt, not claimed PASS.
+- Exact package lint payload (`./node_modules/.bin/eslint app.js app/utils/ app/ui/ app/auth/ app/order/ app/report/`): PASS with `0 errors / 6 warnings`. Hermes' `rtk lint` wrapper broadens discovery into Functions tests and reports an inherited diagnostic baseline of `250 errors / 16 warnings`; that wrapper output is not the package script or GitHub Actions lint command.
 - Production dependency policy: root and Functions critical/high `0/0`.
 - Firestore Rules: 4 suites / 37 tests PASS.
 - Rules deny regression: 4/4 PASS.
