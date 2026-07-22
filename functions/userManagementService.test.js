@@ -31,13 +31,14 @@ describe('managed user server service', () => {
     expect(deps.set).not.toHaveBeenCalled();
   });
 
-  test('rejects a manager elevating an account before Auth or Firestore calls', async () => {
+  test('uses resolved actor, not request token role, before Auth or Firestore calls', async () => {
     const deps = makeDeps();
 
     await expect(createManagedUser({
-      auth: { uid: 'manager.test', token: { role: 'manager' } },
+      auth: { uid: 'manager.test', token: { role: 'admin' } },
       data: { ...staffInput, role: 'admin' },
-    }, deps)).rejects.toMatchObject({ code: 'permission-denied' });
+    }, { ...deps, actor: { uid: 'manager.test', role: 'manager' } }))
+      .rejects.toMatchObject({ code: 'permission-denied' });
     expect(deps.auth.createUser).not.toHaveBeenCalled();
     expect(deps.set).not.toHaveBeenCalled();
   });
@@ -46,9 +47,10 @@ describe('managed user server service', () => {
     const deps = makeDeps();
 
     await expect(createManagedUser({
-      auth: { uid: 'manager.test', token: { role: 'manager' } },
+      auth: { uid: 'manager.test', token: { role: 'admin' } },
       data: staffInput,
-    }, deps)).resolves.toEqual({ uid: 'managed-user.test', role: 'staff' });
+    }, { ...deps, actor: { uid: 'manager.test', role: 'manager' } }))
+      .resolves.toEqual({ uid: 'managed-user.test', role: 'staff' });
 
     expect(deps.auth.createUser).toHaveBeenCalledWith({
       email: 'staff@example.test',
@@ -77,7 +79,16 @@ describe('managed user server service', () => {
     await expect(createManagedUser({
       auth: { uid: 'admin.test', token: { role: 'admin' } },
       data: staffInput,
-    }, deps)).rejects.toThrow('Firestore unavailable');
+    }, { ...deps, actor: { uid: 'admin.test', role: 'admin' } })).rejects.toThrow('Firestore unavailable');
     expect(deps.auth.deleteUser).toHaveBeenCalledWith('managed-user.test');
+  });
+
+  test('rejects a missing resolved actor before Auth or Firestore calls', async () => {
+    const deps = makeDeps();
+
+    await expect(createManagedUser({ auth: { uid: 'admin.test' }, data: staffInput }, deps))
+      .rejects.toMatchObject({ code: 'unauthenticated' });
+    expect(deps.auth.createUser).not.toHaveBeenCalled();
+    expect(deps.set).not.toHaveBeenCalled();
   });
 });

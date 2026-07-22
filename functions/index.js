@@ -36,7 +36,29 @@ const {
   isContentLengthAllowed,
   validateBase64Media,
   createRateLimiter,
+  validateTrustedHttpsUrl,
+  isPrivateIpAddress,
+  readBodyWithLimit,
+  fetchTrustedImage,
 } = require('./utils/httpSecurity');
+const {
+  authorizeCallable,
+  CALLABLE_ALLOWED_ROLES,
+} = require('./utils/callableAuthorization');
+const {
+  makeCallableHandlers,
+  toSafeCallableError,
+  toSafeManagedUserError,
+} = require('./callableHandlers');
+const {
+  isAuthenticTelegramWebhook,
+  extractTelegramWebhookSecret,
+  isTelegramWebhookBodySizeAllowed,
+  isTelegramWriteCallbackData,
+  isAuthorizedTelegramWriteActor,
+  createRateLimiter: createTelegramRateLimiter,
+  DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES,
+} = require('./telegram/webhookSecurity');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -54,7 +76,7 @@ let cachedAiDeps = null;
 function getAiDeps() {
   if (cachedAiDeps) return cachedAiDeps;
   cachedAiDeps = {
-    NlpManager: require('node-nlp').NlpManager,
+    Nlp: require('@nlpjs/nlp').Nlp,
     training: require('./POS_NLU_Training.json'),
     geminiTools: require('./geminiTools').geminiTools,
     ...require('./firestoreMegaTools'),
@@ -127,6 +149,8 @@ const VERTEX_IMAGE_MODEL = defineString('VERTEX_IMAGE_MODEL', { default: 'imagen
 const ZALO_OA_ACCESS_TOKEN = defineString('ZALO_OA_ACCESS_TOKEN', { default: '' });
 const ZALO_GROUP_ID = defineString('ZALO_GROUP_ID', { default: '' });
 const TELEGRAM_BOT_TOKEN = defineString('TELEGRAM_BOT_TOKEN', { default: '' });
+const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
+const telegramWebhookRateLimiter = createTelegramRateLimiter({ limit: 120, windowMs: 60000 });
 const TELEGRAM_GROUP_CHAT_ID = defineString('TELEGRAM_GROUP_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_CHAT_ID = defineString('TELEGRAM_REPORT_CHAT_ID', { default: '' });
 const TELEGRAM_REPORT_BOT_TOKEN = defineString('TELEGRAM_REPORT_BOT_TOKEN', { default: '' });
@@ -1370,9 +1394,10 @@ function getTelegramAssistantBotName() {
 }
 
 function getTelegramOwnerChatIds() {
+  // Write callbacks use only explicit owner configuration and fail closed when empty.
+  // Hardcoded fallback removed to enforce explicit config for mutation allowlist.
   return uniqueTokens([
     TELEGRAM_OWNER_CHAT_ID.value(),
-    DEFAULT_TELEGRAM_OWNER_CHAT_ID,
   ]);
 }
 
@@ -2764,12 +2789,11 @@ let nlp = { ready: false, manager: null, trainedAt: 0 };
 async function ensureNlp() {
   const now = Date.now();
   if (nlp.ready && now - nlp.trainedAt < 10 * 60 * 1000) return nlp.manager;
-  const { NlpManager, training } = getAiDeps();
+  const { Nlp, training } = getAiDeps();
 
   const catalog = await getProductCatalog();
   const itemSamples = catalog.slice(0, 25).map(x => x.name);
-  const manager = new NlpManager({ languages: ['vi'], autoSave: false, forceNER: false });
-  manager.settings.autoSave = false;
+  const manager = new Nlp({ languages: ['vi'], autoSave: false });
 
   const intents = training?.intents || {};
   Object.entries(intents).forEach(([intent, meta]) => {
@@ -2782,7 +2806,7 @@ async function ensureNlp() {
     });
   });
 
-  await manager.train();
+  await manager.nluManager.train({ log: false });
   nlp = { ready: true, manager, trainedAt: now };
   return manager;
 }
@@ -3493,28 +3517,37 @@ async function cancelCustomerPaymentTelegram(requestId) {
   return { ok: true, request: current, nextStatus: 'cancelled' };
 }
 
+const r2CallableHandlers = makeCallableHandlers({
+  authorize: (request, capability) => authorizeCallable(request, {
+    db,
+    auth: admin.auth(),
+    allowedRoles: CALLABLE_ALLOWED_ROLES[capability],
+  }),
+  createManagedUser,
+  userManagementDeps: {
+    auth: admin.auth(),
+    db,
+    now: () => FieldValue.serverTimestamp(),
+  },
+  runAskPosChatbot,
+  approveOnlineOrder: approveOnlineOrderInternal,
+  rejectOnlineOrder: rejectOnlineOrderInternal,
+  HttpsError,
+});
+
 exports.manageUserAccount = onCall({
   region: 'asia-southeast1',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    return await createManagedUser(request, {
-      auth: admin.auth(),
-      db,
-      now: () => FieldValue.serverTimestamp(),
-    });
+    return await r2CallableHandlers.manageUserAccount(request);
   } catch (error) {
-    const allowedCodes = new Set(['unauthenticated', 'permission-denied', 'invalid-argument', 'already-exists']);
-    const code = allowedCodes.has(error?.code) ? error.code : 'internal';
-    if (code === 'internal') {
-      logger.error('manageUserAccount failed', {
-        code: error?.code || 'unknown',
-        message: error?.message || String(error),
-        uid: request.auth?.uid || '',
-      });
-      throw new HttpsError(code, 'Không thể quản lý tài khoản nhân viên.');
-    }
-    throw new HttpsError(code, error.message);
+    logger.error('manageUserAccount failed', {
+      code: error?.code || 'unknown',
+      message: error?.message || String(error),
+      uid: request.auth?.uid || '',
+    });
+    throw toSafeManagedUserError(error, HttpsError);
   }
 });
 
@@ -3522,23 +3555,15 @@ exports.askPosChatbot = onCall({
   region: 'asia-southeast1',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Bạn cần đăng nhập để dùng trợ lý báo cáo POS.');
-  }
-  const userMessage = String(request.data?.userMessage || '').trim();
-  if (!userMessage) {
-    throw new HttpsError('invalid-argument', 'Thiếu userMessage.');
-  }
   try {
-    return await runAskPosChatbot(userMessage);
+    return await r2CallableHandlers.askPosChatbot(request);
   } catch (error) {
     logger.error('askPosChatbot failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
       uid: request.auth?.uid || '',
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể hỏi trợ lý POS.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể hỏi trợ lý POS.');
   }
 });
 
@@ -3547,22 +3572,13 @@ exports.approveOnlineOrder = onCall({
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await approveOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.approveOnlineOrder(request);
   } catch (error) {
     logger.error('approveOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể xác nhận đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể xác nhận đơn online.');
   }
 });
 
@@ -3571,22 +3587,13 @@ exports.rejectOnlineOrder = onCall({
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
 }, async (request) => {
   try {
-    const orderId = String(request.data?.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'Thiếu mã đơn online.');
-    }
-    return await rejectOnlineOrderInternal(orderId, {
-      source: 'pos',
-      userId: request.auth?.uid || '',
-      username: request.auth?.token?.email || request.auth?.token?.name || 'pos_user',
-    });
+    return await r2CallableHandlers.rejectOnlineOrder(request);
   } catch (error) {
     logger.error('rejectOnlineOrder failed', {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError('internal', error?.message || 'Không thể hủy đơn online.');
+    throw toSafeCallableError(error, HttpsError, 'Không thể hủy đơn online.');
   }
 });
 
@@ -4150,6 +4157,11 @@ const HTTP_JSON_MAX_BYTES = 64 * 1024;
 const OCR_REQUEST_MAX_BYTES = 8 * 1024 * 1024;
 const AI_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const AI_AUDIO_MAX_BYTES = 8 * 1024 * 1024;
+// R3 SSRF allowlist for outbound image fetches (adminGenerateMenuDescription).
+// Exact trusted Firebase Storage host + configured project bucket only.
+const TRUSTED_STORAGE_HOSTS = ['firebasestorage.googleapis.com'];
+const TRUSTED_STORAGE_BUCKETS = [String(process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '').trim() || 'xekho-release-canonical.appspot.com'];
+const TRUSTED_IMAGE_FETCH_MAX_BYTES = 5 * 1024 * 1024;
 const VOICE_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
 const AI_ALLOWED_ROLES = ['staff', 'manager', 'admin', 'owner', 'superadmin'];
 const OCR_ALLOWED_ROLES = ['manager', 'admin', 'owner', 'superadmin'];
@@ -4202,7 +4214,6 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
       await sendTelegramHtmlMessage({ chatId: targetChatId, botToken, text });
       return json(res, 200, {
         ok: true,
-        actor,
         chatId: targetChatId,
         rangeLabel: report.rangeLabel,
         revenue: report.revenue,
@@ -4215,7 +4226,7 @@ exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAV
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4232,11 +4243,11 @@ exports.adsRevenueReportApi = onRequest({ region: DEFAULT_REGION, memory: HEAVY_
       const range = buildAdsDateRangeFromText(customText, debugNow, { defaultYesterday: false });
       const report = await buildAdsRevenueTelegramData(range);
       const message = buildAdsRevenueTelegramMessage(report);
-      return json(res, 200, { ok: true, actor, report, message, rangeLabel: report.rangeLabel });
+      return json(res, 200, { ok: true, report, message, rangeLabel: report.rangeLabel });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('adsRevenueReportApi failed', { error: message, responseData: err?.response?.data || null });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4263,14 +4274,14 @@ exports.testPaymentBillTelegram = onRequest({ region: DEFAULT_REGION, memory: HE
       } else {
         result = await confirmCustomerPaymentBillTelegram(requestId);
       }
-      return json(res, 200, { ok: true, actor, result });
+      return json(res, 200, { ok: true, result });
     } catch (err) {
       const message = String(err?.message || err || '');
       logger.error('testPaymentBillTelegram failed', {
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4303,7 +4314,6 @@ exports.testCompletedOrderTelegram = onRequest({
       await sendCompletedOrderTelegram(historyId, order);
       return json(res, 200, {
         ok: true,
-        actor,
         historyId,
         targetChatIds: getCompletedOrderTelegramTargetChatIds(),
       });
@@ -4313,7 +4323,7 @@ exports.testCompletedOrderTelegram = onRequest({
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: message || 'Request failed' });
+      return json(res, /permission/i.test(message) ? 403 : 500, { ok: false, error: /permission/i.test(message) ? 'forbidden' : 'admin_action_failed' });
     }
   });
 });
@@ -4322,11 +4332,30 @@ exports.telegramWebhook = onRequest({
   region: 'asia-southeast1',
   memory: '512MiB',
   serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
-  secrets: [VERTEX_SERVICE_ACCOUNT_JSON],
+  secrets: [VERTEX_SERVICE_ACCOUNT_JSON, TELEGRAM_WEBHOOK_SECRET],
 }, (req, res) => {
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+
+    // Sprint 1 security: reject forged/oversized webhook calls before any logging or DB work.
+    const configuredWebhookSecret = String(TELEGRAM_WEBHOOK_SECRET.value() || '').trim();
+    const providedWebhookSecret = extractTelegramWebhookSecret(req);
+    if (!isAuthenticTelegramWebhook({
+      configuredSecret: configuredWebhookSecret,
+      providedSecret: providedWebhookSecret,
+    })) {
+      return json(res, 401, { ok: false, error: 'Unauthorized' });
+    }
+    if (!isTelegramWebhookBodySizeAllowed(req, DEFAULT_TELEGRAM_WEBHOOK_MAX_BYTES)) {
+      return json(res, 413, { ok: false, error: 'Payload too large' });
+    }
+    // Rate-limit key: use req.ip (platform-derived, trusted proxy context).
+    // Do not split x-forwarded-for and trust first hop (client-controlled).
+    const rateLimitKey = String(req.ip || req.socket?.remoteAddress || 'unknown').trim();
+    if (!telegramWebhookRateLimiter.take(`ip:${rateLimitKey}`)) {
+      return json(res, 429, { ok: false, error: 'Too many requests' });
+    }
 
     const botToken = getTelegramAssistantBotToken();
     const callbackQuery = req.body?.callback_query || null;
@@ -4383,6 +4412,21 @@ exports.telegramWebhook = onRequest({
         const chartIdFromCallback = parseTelegramChartCallbackData(callbackData);
         const confirmMatch = callbackData.match(/^confirm_(.+)$/);
         const cancelMatch = callbackData.match(/^cancel_(.+)$/);
+
+        // Sprint 1 security: mutating callbacks require an authorized owner context
+        // (allowlist = owner chat/user IDs; fail-closed when allowlist empty).
+        if (isTelegramWriteCallbackData(callbackData) && !isAuthorizedTelegramWriteActor({
+          allowlist: getTelegramOwnerChatIds(),
+          chatId: userContext.chatId,
+          userId: userContext.userId,
+        })) {
+          await answerTelegramCallback({
+            callbackQueryId: callbackQuery.id,
+            text: 'Không có quyền thực hiện thao tác này.',
+            botToken,
+          }).catch(() => {});
+          return json(res, 200, { ok: false, skipped: 'unauthorized-write-callback' });
+        }
 
         if (chartIdFromCallback) {
           const chartId = chartIdFromCallback;
@@ -5080,7 +5124,6 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
 
       return json(res, 200, {
         ok: true,
-        actor,
         totalHistoryDocs: rawOrders.length,
         duplicateGroupCount: duplicatesToArchive.length,
         archivedDocCount: duplicatesToArchive.length,
@@ -5095,7 +5138,7 @@ exports.cleanupDuplicateHistory = onRequest({ region: 'asia-southeast1', timeout
         error: message,
         responseData: err?.response?.data || null,
       });
-      return json(res, status, { ok: false, error: message || 'Request failed' });
+      return json(res, status, { ok: false, error: status === 403 ? 'forbidden' : (status === 401 ? 'unauthenticated' : 'admin_action_failed') });
     }
   });
 });
@@ -5829,14 +5872,10 @@ exports.adminProbeVertex = onRequest({
 
       return json(res, 200, {
         ok: true,
-        actor,
-        projectId,
         location: requestedLocation,
         requestedModel,
         usedModel: modelName,
         authStrategy,
-        authSource,
-        availableAuthSources: authContexts.map(ctx => ctx.source),
         text: collectTextFromPayload(payload).trim(),
         modelVersion: String(payload?.modelVersion || ''),
         usageMetadata: payload?.usageMetadata || null,
@@ -5847,7 +5886,7 @@ exports.adminProbeVertex = onRequest({
       });
       return json(res, 500, {
         ok: false,
-        error: err?.message || 'Vertex probe failed',
+        error: 'vertex_probe_failed',
       });
     }
   });
@@ -6144,6 +6183,7 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
   cors(req, res, async () => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method not allowed' });
+    if (!isContentLengthAllowed(req, HTTP_JSON_MAX_BYTES)) return rejectOversizedRequest(res);
 
     try {
       const actor = await verifyAdminRequest(req);
@@ -6160,7 +6200,17 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
 
       const contentType = String(match[1] || 'image/jpeg').trim();
       const base64Payload = String(match[2] || '').trim();
-      const buffer = Buffer.from(base64Payload, 'base64');
+      const imageCheck = validateBase64Media({
+        value: base64Payload,
+        mimeType: contentType,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxBytes: AI_IMAGE_MAX_BYTES,
+      });
+      if (!imageCheck.ok) return imageCheck.reason === 'too_large'
+        ? rejectOversizedRequest(res)
+        : json(res, 400, { ok: false, error: 'invalid_image_payload' });
+
+      const buffer = imageCheck.buffer;
       const saved = await saveMenuImageBuffer({
         productId,
         fileName,
@@ -6177,13 +6227,12 @@ exports.adminUploadMenuImage = onRequest({ region: DEFAULT_REGION, memory: HEAVY
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         contentType,
-        actor,
       });
     } catch (err) {
       logger.error('adminUploadMenuImage failed', {
         error: err?.message || String(err),
       });
-      return json(res, 500, { ok: false, error: err?.message || 'Upload failed' });
+      return json(res, 500, { ok: false, error: 'upload_failed' });
     }
   });
 });
@@ -6431,7 +6480,7 @@ exports.purchaseOcr = onRequest({
       return json(res, 200, { ok: true, ...parsed });
     } catch (error) {
       logger.error('purchaseOcr failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'OCR failed' });
+      return json(res, 500, { ok: false, error: 'ocr_failed' });
     }
   });
 });
@@ -6529,7 +6578,7 @@ exports.aiRouter = onRequest({
         ok: false,
         status: 'error',
         provider: 'vertex',
-        error: String(error?.message || error || 'AI router failed'),
+        error: 'ai_router_failed',
       });
     }
   });
@@ -6593,11 +6642,10 @@ exports.adminGenerateMenuImage = onRequest({ region: 'asia-southeast1' }, (req, 
         imageUrl: saved.imageUrl,
         objectPath: saved.objectPath,
         promptUsed: prompt,
-        actor,
       });
     } catch (error) {
       logger.error('adminGenerateMenuImage (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI image generation failed' });
+      return json(res, 500, { ok: false, error: 'image_generation_failed' });
     }
   });
 });
@@ -6635,19 +6683,38 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       const parts = [{ text: prompt }];
       let usedImage = false;
       if (imageUrl) {
-        try {
-          const imageRes = await fetch(imageUrl);
-          const contentType = String(imageRes.headers.get('content-type') || 'image/jpeg');
-          if (imageRes.ok && /^image\//i.test(contentType)) {
-            const bytes = Buffer.from(await imageRes.arrayBuffer());
-            parts.push({ inlineData: { mimeType: contentType, data: bytes.toString('base64') } });
-            usedImage = true;
+        const urlCheck = validateTrustedHttpsUrl(imageUrl, {
+          allowedHosts: TRUSTED_STORAGE_HOSTS,
+          allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+        });
+        if (urlCheck.ok) {
+          try {
+            const imageResult = await fetchTrustedImage(imageUrl, {
+              allowedHosts: TRUSTED_STORAGE_HOSTS,
+              allowedBuckets: TRUSTED_STORAGE_BUCKETS,
+              maxBytes: TRUSTED_IMAGE_FETCH_MAX_BYTES,
+              timeoutMs: 5000,
+              maxRedirects: 1,
+            });
+            if (imageResult.ok) {
+              parts.push({ inlineData: { mimeType: imageResult.mimeType, data: imageResult.buffer.toString('base64') } });
+              usedImage = true;
+            } else {
+              logger.warn('adminGenerateMenuDescription image fetch rejected', {
+                productId,
+                reason: imageResult.reason,
+              });
+            }
+          } catch (imageErr) {
+            logger.warn('adminGenerateMenuDescription image fetch failed', {
+              productId,
+              error: imageErr?.message || String(imageErr),
+            });
           }
-        } catch (imageErr) {
-          logger.warn('adminGenerateMenuDescription image fetch failed', {
+        } else {
+          logger.warn('adminGenerateMenuDescription image URL not trusted', {
             productId,
-            imageUrl,
-            error: imageErr?.message || String(imageErr),
+            reason: urlCheck.reason,
           });
         }
       }
@@ -6681,7 +6748,7 @@ exports.adminGenerateMenuDescription = onRequest({ region: 'asia-southeast1' }, 
       });
     } catch (error) {
       logger.error('adminGenerateMenuDescription (vertex) failed', { error: error?.message || String(error) });
-      return json(res, 500, { ok: false, error: error?.message || 'AI description generation failed' });
+      return json(res, 500, { ok: false, error: 'description_generation_failed' });
     }
   });
 });
