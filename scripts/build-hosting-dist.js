@@ -55,7 +55,6 @@ function walk(dir, files = []) {
     if (!entry.isFile()) continue;
     const ext = path.extname(entry.name).toLowerCase();
     if (!STATIC_EXTENSIONS.has(ext) && !(ext === '.json' && JSON_ALLOWLIST.has(entry.name))) continue;
-    if (rel === 'index.html') continue; // keep the Vite-transformed index.html in dist.
     files.push({ full, rel });
   }
   return files;
