@@ -1,3 +1,9 @@
+# 2026-07-22 - DONE: Build final main integration candidate
+- DONE: Integrated reviewed packaging and rewritten `main` without production deploy or force-push.
+- DONE: Full local release gates and authenticated synthetic Emulator E2E passed.
+- PENDING OWNER GATE: merge final PR, real-device QA, and production deployment remain separate approvals.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-22-final-main-integration.md`.
+
 # 2026-07-22 - DONE: Repair pull-request secret scan permissions
 - DONE: Added read-only `pull-requests: read` permission so Gitleaks can enumerate PR commits without a GitHub API `403`.
 - Task log: `docs/ai-map/TASK_LOGS/2026-07-22-gitleaks-pr-permission.md`.
