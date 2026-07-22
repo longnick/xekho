@@ -1,21 +1,11 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
-const path = require('path');
+const { loadServiceAccount } = require('./loadServiceAccount');
 
-function loadServiceAccount() {
-  const directPath = path.join(__dirname, 'serviceAccountKey.json');
-  if (fs.existsSync(directPath)) return require(directPath);
-
-  const fallback = fs.readdirSync(__dirname).find(name =>
-    /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
-  );
-  if (!fallback) {
-    throw new Error('Không tìm thấy file service account trong thư mục project.');
-  }
-  return require(path.join(__dirname, fallback));
+const serviceAccount = loadServiceAccount(__dirname);
+if (!serviceAccount) {
+  throw new Error('Kh??ng t??m th???y file service account trong th?? m???c project.');
 }
-
-const serviceAccount = loadServiceAccount();
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -36,7 +26,7 @@ function normalizeViKey(text) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
+    .replace(/Ä‘/g, 'd')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
@@ -50,21 +40,21 @@ function mapInventoryUnit(baseUnit) {
     lon: 'Lon',
     chai: 'Chai',
     bottle: 'Chai',
-    portion: 'phần',
-    phan: 'phần',
-    plate: 'phần',
-    piece: 'Miếng',
-    mieng: 'Miếng',
-    unit: 'phần',
+    portion: 'pháº§n',
+    phan: 'pháº§n',
+    plate: 'pháº§n',
+    piece: 'Miáº¿ng',
+    mieng: 'Miáº¿ng',
+    unit: 'pháº§n',
   };
-  return unitMap[key] || baseUnit || 'phần';
+  return unitMap[key] || baseUnit || 'pháº§n';
 }
 
 function mapMenuUnit(product, linkedInventory) {
   if (product.item_type === 'Retail') {
-    return linkedInventory?.unit || 'phần';
+    return linkedInventory?.unit || 'pháº§n';
   }
-  return 'phần';
+  return 'pháº§n';
 }
 
 function mapInventoryType(invType) {
@@ -188,7 +178,7 @@ async function syncMasterToApp() {
         return {
           name: inventoryItem.name,
           qty: Number(line.quantity_needed || 0),
-          unit: inventoryItem.unit || 'phần',
+          unit: inventoryItem.unit || 'pháº§n',
         };
       })
       .filter(Boolean);
@@ -198,7 +188,7 @@ async function syncMasterToApp() {
     const payload = {
       id: nextId,
       name: productName,
-      category: product.category || existing?.category || 'Khác',
+      category: product.category || existing?.category || 'KhÃ¡c',
       price: Number(product.sell_price || 0),
       unit: mapMenuUnit(product, linkedInventory),
       cost: Number(existing?.cost || 0),

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
+const { loadServiceAccount } = require('./loadServiceAccount');
 
 const PROJECT_ROOT = __dirname;
 const MASTER_DATA_PATH = path.join(PROJECT_ROOT, 'GanhKho_MasterData.json');
@@ -9,31 +10,18 @@ const SHOULD_APPLY = process.argv.includes('--apply');
 const SHOULD_PURGE_STORAGE = process.argv.includes('--purge-storage');
 const SHOULD_PURGE_LEGACY = process.argv.includes('--purge-legacy');
 
-function loadServiceAccount() {
-  const directPath = path.join(PROJECT_ROOT, 'serviceAccountKey.json');
-  if (fs.existsSync(directPath)) return require(directPath);
-
-  const fallback = fs.readdirSync(PROJECT_ROOT).find(name =>
-    /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
-  );
-  if (!fallback) {
-    throw new Error('Khong tim thay file service account trong thu muc project.');
-  }
-  return require(path.join(PROJECT_ROOT, fallback));
-}
-
 function normalizeKey(text) {
   return String(text || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
+    .replace(/Ä‘/g, 'd')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
 
 function isWeirdText(text) {
-  return /[├╞ß╗┤æ]/.test(String(text || ''));
+  return /[â”œâ•žÃŸâ•—â”¤Ã¦]/.test(String(text || ''));
 }
 
 function unique(arr) {
