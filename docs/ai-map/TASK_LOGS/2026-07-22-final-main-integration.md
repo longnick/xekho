@@ -17,6 +17,8 @@
 - Full Jest: 18 suites / 207 tests PASS.
 - Functions security: 12 suites / 144 tests PASS.
 - `npm run check` and `npm run check:functions`: PASS.
+- `npx tsc --noEmit -p jsconfig.json`: PASS, no errors.
+- Canonical `npm run lint`: baseline remains `250 errors / 16 warnings` in 10 pre-existing source/test files (`no-undef` is 250 errors); integration-only paths are docs plus `firebase.json`, so this is recorded as inherited non-blocking debt, not claimed PASS.
 - Production dependency policy: root and Functions critical/high `0/0`.
 - Firestore Rules: 4 suites / 37 tests PASS.
 - Rules deny regression: 4/4 PASS.
