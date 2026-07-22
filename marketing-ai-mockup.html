@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Marketing AI - Mobile-First Mockup</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -16,6 +17,37 @@
     .hide-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
+    }
+
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    button {
+      min-height: 44px;
+    }
+
+    @media (max-width: 900px) {
+      .mobile-action-grid {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        overflow-x: visible !important;
+        padding-bottom: 0 !important;
+      }
+
+      .mobile-tab-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        overflow-x: visible !important;
+      }
+
+      .mobile-tab-grid button {
+        justify-content: center !important;
+        min-width: 0 !important;
+        white-space: normal !important;
+      }
     }
     
     /* Smooth transitions */
@@ -70,7 +102,7 @@
       </div>
       
       <!-- Quick actions -->
-      <div class="mt-4 flex gap-2 overflow-x-auto pb-2 hide-scrollbar lg:grid lg:grid-cols-3 lg:gap-3 lg:overflow-visible lg:pb-0">
+      <div class="mt-4 mobile-action-grid flex gap-2 overflow-x-auto pb-2 hide-scrollbar lg:grid lg:grid-cols-3 lg:gap-3 lg:overflow-visible lg:pb-0">
         <button class="flex-shrink-0 flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-purple-600 hover:bg-white/90 active:scale-95 transition whitespace-nowrap">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
@@ -96,7 +128,7 @@
     
     <!-- 2. Sub-tabs Navigation -->
     <div class="sticky top-0 z-10 -mx-4 bg-white/95 backdrop-blur lg:static lg:mx-0 lg:rounded-xl lg:border lg:border-slate-200 lg:bg-white">
-      <div class="flex gap-1 overflow-x-auto px-4 py-2 hide-scrollbar lg:grid lg:grid-cols-7 lg:gap-2 lg:overflow-visible lg:p-2">
+      <div class="mobile-tab-grid flex gap-1 overflow-x-auto px-4 py-2 hide-scrollbar lg:grid lg:grid-cols-7 lg:gap-2 lg:overflow-visible lg:p-2">
         <button onclick="switchTab('overview')" id="tab-overview" class="tab-btn flex-shrink-0 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition whitespace-nowrap lg:justify-center bg-blue-600 text-white">
           <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"/>

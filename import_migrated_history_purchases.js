@@ -1,21 +1,11 @@
 const fs = require('fs');
-const path = require('path');
 const admin = require('firebase-admin');
+const { loadServiceAccount } = require('./loadServiceAccount');
 
-function loadServiceAccount() {
-  const directPath = path.join(__dirname, 'serviceAccountKey.json');
-  if (fs.existsSync(directPath)) return require(directPath);
-
-  const fallback = fs.readdirSync(__dirname).find(name =>
-    /^.+-firebase-adminsdk-[^.]+\.json$/i.test(name)
-  );
-  if (!fallback) {
-    throw new Error('Không tìm thấy file service account trong thư mục project.');
-  }
-  return require(path.join(__dirname, fallback));
+const serviceAccount = loadServiceAccount(__dirname);
+if (!serviceAccount) {
+  throw new Error('Kh??ng t??m th???y file service account trong th?? m???c project.');
 }
-
-const serviceAccount = loadServiceAccount();
 
 if (!admin.apps.length) {
   admin.initializeApp({

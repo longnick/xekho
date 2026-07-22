@@ -5,7 +5,7 @@ const { v1, helpers } = require('@google-cloud/aiplatform');
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TEXT_MODELS = [
-  'gemini-2.5-flash',
+  'gemini-3.5-flash',
   'gemini-2.0-flash-001',
   'gemini-2.0-flash',
 ];
@@ -224,11 +224,12 @@ function collectTextFromPayload(payload = {}) {
 function collectFunctionCalls(payload = {}) {
   const parts = payload?.candidates?.[0]?.content?.parts || [];
   return parts
-    .map((part) => part?.functionCall || null)
-    .filter(Boolean)
-    .map((call) => ({
+    .map((part) => ({ part, call: part?.functionCall || null }))
+    .filter((item) => item.call)
+    .map(({ part, call }) => ({
       name: String(call.name || '').trim(),
       args: call.args || {},
+      part,
     }))
     .filter((call) => call.name);
 }

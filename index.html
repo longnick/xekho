@@ -16,8 +16,22 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍢</text></svg>">
-  <link rel="stylesheet" href="style.css?v=20260418-font">
+  <link rel="stylesheet" href="style.css?v=20260626-order-actionbar">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @keyframes target-bounce {
+      from { transform: translateY(0); }
+      to { transform: translateY(-12px); }
+    }
+    .target-progress-card {
+      background: var(--bg2, #fff);
+      border-radius: var(--radius-lg, 12px);
+      border: 1px solid var(--border, #e2e8f0);
+    }
+    .target-progress-bar-container {
+      background: var(--bg3, rgba(0,0,0,0.06));
+    }
+  </style>
 </head>
 
 <body>
@@ -33,10 +47,9 @@
         </div>
       </div>
       <div class="header-actions">
-        <div id="current-user-display"
-          style="font-size: 13px; font-weight: 600; color: var(--primary); background: rgba(124, 58, 237, 0.1); padding: 4px 10px; border-radius: 12px; margin-right: 5px; display: flex; align-items: center;">
+        <div id="current-user-display" class="header-user-chip" title="Người dùng hiện tại">
         </div>
-        <button class="header-btn" id="ai-mic-btn" onclick="openAIAssistant()" title="Trợ lý AI"
+        <button class="header-btn" id="ai-mic-btn" data-esm-header-action="ai" title="Trợ lý AI"
           style="position:relative; display:none;">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -48,7 +61,7 @@
           <span id="ai-active-dot"
             style="position:absolute;top:4px;right:4px;width:7px;height:7px;background:var(--success);border-radius:50%;display:none"></span>
         </button>
-        <button class="header-btn alert-dot" id="header-alert-btn" onclick="openStockAlertPopup()"
+        <button class="header-btn alert-dot" id="header-alert-btn" data-esm-header-action="stock-alert"
           title="Cảnh báo tồn kho">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -58,9 +71,9 @@
           <span id="alert-badge-header"
             style="position:absolute;top:4px;right:4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;display:none"></span>
         </button>
-        <button class="header-btn header-btn-reload" id="header-reload-btn" onclick="hardReloadApp()" title="Tải bản mới"
+        <button class="header-btn header-btn-reload" id="header-reload-btn" data-esm-header-action="hard-reload" title="Tải bản mới"
           aria-label="Tải lại bản mới" style="display:none;">🔄</button>
-        <button class="header-btn" id="header-logout-btn" onclick="handleLogout()" title="Đăng xuất">
+        <button class="header-btn" id="header-logout-btn" data-esm-header-action="logout" title="Đăng xuất">
           <svg class="minimal-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -80,6 +93,38 @@
 
       <!-- ========== PAGE: TABLES ========== -->
       <div id="page-tables" class="page">
+        <!-- Daily Revenue Target Progress Bar -->
+        <div class="card target-progress-card" style="margin-bottom: 12px; padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+              <span>🎯 Chỉ tiêu doanh thu ngày:</span>
+              <span id="target-progress-percentage" style="color: var(--primary); font-weight: 800;">0%</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text2);" id="target-progress-ratio">
+              0đ / 5.000.000đ
+            </div>
+          </div>
+          <div class="target-progress-bar-container" style="height: 12px; background: rgba(0,0,0,0.06); border-radius: 6px; overflow: hidden; display: flex; position: relative;">
+            <div id="target-progress-paid" style="height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-dark)); width: 0%; transition: width 0.4s ease; border-radius: 6px 0 0 6px;"></div>
+            <div id="target-progress-unpaid" style="height: 100%; background: var(--primary-light); opacity: 0.6; width: 0%; transition: width 0.4s ease; border-radius: 0 6px 6px 0;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px; color: var(--text3);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></span>
+                Đã thu: <span id="target-progress-paid-text" style="font-weight:600; color:var(--text1)">0đ</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-light); opacity: 0.7;"></span>
+                Chưa thu: <span id="target-progress-unpaid-text" style="font-weight:600; color:var(--text1)">0đ</span>
+              </div>
+            </div>
+            <div style="cursor: pointer; display: flex; align-items: center; gap: 2px;" onclick="triggerConfettiTest()" title="Bắn pháo hoa thử">
+              🎉 <span style="text-decoration: underline;">Test pháo hoa</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Quick Stats -->
         <div class="stats-grid">
           <div class="stat-card" style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between; padding: 12px; cursor: pointer;" onclick="manageShift()" id="btn-ket-ca-card">
@@ -105,7 +150,7 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">🪑 Sơ đồ bàn</div>
-            <button class="btn btn-sm btn-secondary" onclick="renderTables()">🔄 Làm mới</button>
+            <button class="btn btn-sm btn-secondary" data-esm-admin-render="renderTables">🔄 Làm mới</button>
           </div>
           <div class="table-grid" id="table-grid"></div>
         </div>
@@ -123,6 +168,7 @@
             </div>
           </div>
         </div>
+
       </div>
 
       <!-- ========== PAGE: ORDERS ========== -->
@@ -130,15 +176,22 @@
         <div class="order-header">
           <button class="back-btn" onclick="navigate('tables')">←</button>
           <div class="order-table-name" id="order-table-title">Bàn –</div>
-          <div class="order-cart-pill" id="order-cart-pill" style="padding:0; gap:0; overflow:hidden;">
-            <button onclick="openCartSheet()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+          <div class="order-table-note-field">
+            <label for="order-table-note" class="order-table-note-label">Ghi chú</label>
+            <input type="text" class="order-table-name-input" id="order-table-note"
+              placeholder="Tên bàn / ghi chú..." autocomplete="off"
+              oninput="handleOrderTableNoteInput(this.value)">
+          </div>
+          <div class="order-cart-pill" id="order-cart-pill" aria-label="Giỏ hàng và xuất bill nhanh">
+            <button class="order-cart-pill-btn order-cart-pill-btn-cart" type="button" onclick="openCartSheet()" aria-label="Mở giỏ hàng">
               <span class="order-cart-pill-icon">🛒</span>
+              <span class="order-cart-pill-label">Giỏ</span>
               <span class="order-cart-pill-count" id="order-cart-pill-count">0</span>
             </button>
-            <div style="width:1.5px; height:20px; background:var(--border); opacity:0.8;"></div>
-            <button onclick="openBillModal()" style="background:transparent; border:none; color:inherit; font-weight:inherit; display:flex; align-items:center; justify-content:center; gap:6px; padding: 0 16px; height:100%; cursor:pointer; flex:1;">
+            <div class="order-cart-pill-divider" aria-hidden="true"></div>
+            <button class="order-cart-pill-btn order-cart-pill-btn-bill" type="button" onclick="openBillModal()" aria-label="Xuất bill thanh toán">
+              <span class="order-cart-pill-label">Xuất bill</span>
               <span class="order-cart-pill-total" id="order-cart-pill-total">0đ</span>
-              <span style="font-size:16px;">🧾</span>
             </button>
           </div>
           <button id="btn-clear-table" class="btn btn-sm btn-secondary" onclick="clearTable()"
@@ -151,7 +204,7 @@
             <div class="search-wrap" style="margin-bottom:10px">
               <span class="search-icon">🔍</span>
               <input class="input" id="order-search" placeholder="Tìm món..."
-                oninput="menuSearch=this.value;renderMenuItems()">
+                data-esm-menu-items-search>
             </div>
             <div class="cat-tabs" id="cat-tabs"></div>
             <div class="menu-grid" id="menu-grid"></div>
@@ -233,11 +286,11 @@
       <div id="page-inventory" class="page">
         <!-- Tabs -->
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchInvTab('stock',this)">📦 TỒN KHO</button>
-          <button class="tab-btn" onclick="switchInvTab('menu',this)">🍔 Quản lý món</button>
-          <button class="tab-btn" onclick="switchInvTab('purchase',this)">🚚 Nhập</button>
-          <button class="tab-btn" onclick="switchInvTab('ledger',this)">📓 Thẻ kho</button>
-          <button class="tab-btn" onclick="switchInvTab('stocktake',this)">📋 Kiểm kê</button>
+          <button class="tab-btn active" data-esm-inventory-tab="stock">📦 TỒN KHO</button>
+          <button class="tab-btn" data-esm-inventory-tab="menu">🍔 Quản lý món</button>
+          <button class="tab-btn" data-esm-inventory-tab="purchase">🚚 Nhập</button>
+          <button class="tab-btn" data-esm-inventory-tab="ledger">📓 Thẻ kho</button>
+          <button class="tab-btn" data-esm-inventory-tab="stocktake">📋 Kiểm kê</button>
           <button class="tab-btn" id="inv-tab-more" onclick="openInvMoreModal()">⚙️ Thêm <span style="font-size:10px">▼</span></button>
         </div>
 
@@ -251,9 +304,9 @@
           <div class="search-wrap" style="display:flex;gap:8px">
             <div style="flex:1;position:relative">
               <span class="search-icon">🔍</span>
-              <input class="input" id="inv-search" placeholder="Tìm nguyên liệu..." oninput="renderStockList()">
+              <input class="input" id="inv-search" placeholder="Tìm nguyên liệu..." data-esm-admin-render="renderStockList">
             </div>
-            <select class="select" id="inv-type-filter" style="flex:0 0 180px;max-width:180px" onchange="renderStockList()">
+            <select class="select" id="inv-type-filter" style="flex:0 0 180px;max-width:180px" data-esm-admin-render="renderStockList">
               <option value="all">Tất cả</option>
               <option value="raw_material">Nguyên liệu</option>
               <option value="retail_item">Hàng bán thẳng</option>
@@ -261,6 +314,16 @@
           </div>
           <div class="card" style="padding:0 16px">
             <div id="stock-list"></div>
+          </div>
+          <div class="card auto-stock-norm-card" data-xk-auto-stock-norm="v1" onclick="toggleAutoStockNormOverview(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAutoStockNormOverview(event)}" style="padding:12px 16px; margin-top:12px">
+            <div class="card-header" style="margin-bottom:8px;align-items:flex-start;gap:10px;flex-wrap:wrap">
+              <div>
+                <div class="card-title">📊 Định mức tồn kho tự động</div>
+                <div class="card-sub" id="auto-stock-norm-subtitle">Bấm để xem tổng quan nhập hàng hôm nay.</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="event.stopPropagation();renderAutoStockNormBoard()">🔄 Tính lại</button>
+            </div>
+            <div id="auto-stock-norm-board"></div>
           </div>
           <div class="card" style="padding:12px 16px; margin-top:12px">
             <div class="card-header" style="margin-bottom:8px">
@@ -293,10 +356,10 @@
             <button class="btn btn-sm btn-primary" onclick="openStocktakeModal()">+ Tạo phiếu kiểm kê</button>
           </div>
           <div class="card" style="padding:12px;margin-bottom:12px">
-            <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;align-items:end">
+            <div class="stocktake-history-filter-row">
               <div class="input-group" style="margin:0">
                 <label class="input-label">Thời gian</label>
-                <select class="select" id="stocktake-history-period" onchange="applyStocktakeHistoryFilter()">
+                <select class="select" id="stocktake-history-period" data-esm-render-refresh="applyStocktakeHistoryFilter">
                   <option value="today">Hôm nay</option>
                   <option value="week">7 ngày gần nhất</option>
                   <option value="month" selected>Tháng này</option>
@@ -306,11 +369,11 @@
               </div>
               <div class="input-group" style="margin:0">
                 <label class="input-label">Từ ngày</label>
-                <input class="input" id="stocktake-history-from" type="date" onchange="applyStocktakeHistoryFilter()">
+                <input class="input" id="stocktake-history-from" type="date" data-esm-render-refresh="applyStocktakeHistoryFilter">
               </div>
               <div class="input-group" style="margin:0">
                 <label class="input-label">Đến ngày</label>
-                <input class="input" id="stocktake-history-to" type="date" onchange="applyStocktakeHistoryFilter()">
+                <input class="input" id="stocktake-history-to" type="date" data-esm-render-refresh="applyStocktakeHistoryFilter">
               </div>
             </div>
             <div class="stat-card" style="padding:12px;margin-top:10px">
@@ -323,6 +386,12 @@
 
         <!-- PURCHASE TAB -->
         <div id="inv-tab-purchase" style="display:none">
+          <div class="search-wrap" style="display:flex;gap:8px;margin-bottom:12px">
+            <div style="flex:1;position:relative">
+              <span class="search-icon">🔍</span>
+              <input class="input" id="purchase-search" placeholder="Tìm theo tên món / nguyên liệu..." data-esm-admin-render="renderPurchaseList">
+            </div>
+          </div>
           <div id="purchase-list"></div>
         </div>
 
@@ -443,10 +512,10 @@
             <div style="font-weight:700;font-size:15px">📓 Danh mục & Thẻ Kho</div>
             <button class="btn btn-sm btn-primary" onclick="openAddInvItemModal()">+ Tạo nguyên liệu</button>
           </div>
-          <div class="date-filter mb-2" style="margin-bottom:12px; display:flex; gap:8px;">
-            <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1" onchange="renderLedger()">
-            <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1" onchange="renderLedger()">
-            <select id="ledger-item-select" class="select select-sm" style="flex:2" onchange="renderLedger()">
+          <div class="date-filter mb-2 ledger-filter-row" style="margin-bottom:12px;">
+            <input type="date" id="ledger-from-date" class="input input-sm" style="flex:1" data-esm-render-refresh="renderLedger">
+            <input type="date" id="ledger-to-date" class="input input-sm" style="flex:1" data-esm-render-refresh="renderLedger">
+            <select id="ledger-item-select" class="select select-sm" style="flex:2" data-esm-render-refresh="renderLedger">
               <option value="">-- Chọn Nguyên Liệu --</option>
             </select>
           </div>
@@ -469,7 +538,7 @@
             <button class="btn btn-sm btn-primary" onclick="openAddMenuModal()">+ Thêm món</button>
           </div>
           <div class="search-wrap" style="margin-bottom:12px">
-            <input class="input" id="menu-search" placeholder="Tìm tên món..." oninput="renderMenuAdmin()">
+            <input class="input" id="menu-search" placeholder="Tìm tên món..." data-esm-admin-render="renderMenuAdmin">
           </div>
           <div id="menu-admin-list"></div>
         </div>
@@ -479,14 +548,14 @@
       <div id="page-finance" class="page">
         <!-- Period Filter -->
         <div class="date-filter">
-          <button class="date-btn finance-period-btn" data-period="today" onclick="setFinancePeriod('today')">Hôm
+          <button class="date-btn finance-period-btn" data-period="today" data-esm-finance-period="today">Hôm
             nay</button>
-          <button class="date-btn finance-period-btn" data-period="day" onclick="setFinancePeriod('day')">Ngày</button>
+          <button class="date-btn finance-period-btn" data-period="day" data-esm-finance-period="day">Ngày</button>
           <button class="date-btn finance-period-btn" data-period="week"
-            onclick="setFinancePeriod('week')">Tuần</button>
+            data-esm-finance-period="week">Tuần</button>
           <button class="date-btn finance-period-btn active" data-period="month"
-            onclick="setFinancePeriod('month')">Tháng</button>
-          <button class="date-btn finance-period-btn" data-period="all" onclick="setFinancePeriod('all')">Tất
+            data-esm-finance-period="month">Tháng</button>
+          <button class="date-btn finance-period-btn" data-period="all" data-esm-finance-period="all">Tất
             cả</button>
         </div>
         <!-- Date Picker Row -->
@@ -622,18 +691,18 @@
       <!-- ========== PAGE: REPORTS ========== -->
       <div id="page-reports" class="page">
         <div class="date-filter" style="flex-wrap:wrap; gap:6px;">
-          <button class="date-btn report-period-btn" data-period="today" onclick="setReportPeriod('today')">Hôm
+          <button class="date-btn report-period-btn" data-period="today" data-esm-report-period="today">Hôm
             nay</button>
-          <button class="date-btn report-period-btn" data-period="day" onclick="setReportPeriod('day')">Ngày</button>
-          <button class="date-btn report-period-btn" data-period="week" onclick="setReportPeriod('week')">Tuần</button>
+          <button class="date-btn report-period-btn" data-period="day" data-esm-report-period="day">Ngày</button>
+          <button class="date-btn report-period-btn" data-period="week" data-esm-report-period="week">Tuần</button>
           <button class="date-btn report-period-btn active" data-period="month"
-            onclick="setReportPeriod('month')">Tháng</button>
-          <button class="date-btn report-period-btn" data-period="all" onclick="setReportPeriod('all')">Tất cả</button>
+            data-esm-report-period="month">Tháng</button>
+          <button class="date-btn report-period-btn" data-period="all" data-esm-report-period="all">Tất cả</button>
         </div>
         <!-- Date Picker Row -->
         <div class="date-picker-row" id="report-date-picker" style="display:none">
           <div class="date-picker-mode">
-            <button class="date-mode-btn active" data-mode="single" onclick="setDateMode('report','single',this)">
+            <button class="date-mode-btn active" data-mode="single" data-esm-report-date-mode="single">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -643,7 +712,7 @@
               </svg>
               Chọn ngày
             </button>
-            <button class="date-mode-btn" data-mode="range" onclick="setDateMode('report','range',this)">
+            <button class="date-mode-btn" data-mode="range" data-esm-report-date-mode="range">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -666,32 +735,32 @@
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
             <div class="input-group" style="margin:0">
               <label class="input-label">Món ăn</label>
-              <select id="report-menu-filter" class="select" onchange="setReportMenuFilter(this.value)">
+              <select class="select" data-esm-report-menu-filter>
                 <option value="">Tất cả món ăn</option>
               </select>
             </div>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Đơn bán</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="sales"><span class="toggle-slider"></span></label>
             </label>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Nhập hàng</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="purchases"><span class="toggle-slider"></span></label>
             </label>
             <label class="toggle-wrap" style="margin:0">
               <div class="toggle-label">Chi phí khác</div>
-              <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)"><span class="toggle-slider"></span></label>
+              <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="expenses"><span class="toggle-slider"></span></label>
             </label>
           </div>
-          <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
-          <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="resetReportFilters()">Đặt lại bộ lọc</button>
+          <div data-esm-report-filter-summary style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
+          <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" data-esm-report-filter-reset>Đặt lại bộ lọc</button>
         </div>
 
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchReportTab('revenue', this)">💰 Doanh Thu</button>
-          <button class="tab-btn" onclick="switchReportTab('ads', this)">📊 Ads + Doanh thu</button>
-          <button class="tab-btn" onclick="switchReportTab('purchase', this)">💸 Chi Phí</button>
-          <button class="tab-btn" onclick="switchReportTab('history', this)">🧾 Đơn hàng</button>
+          <button class="tab-btn active" data-esm-report-tab="revenue">💰 Doanh Thu</button>
+          <button class="tab-btn" data-esm-report-tab="ads">📊 Ads + Doanh thu</button>
+          <button class="tab-btn" data-esm-report-tab="purchase">💸 Chi Phí</button>
+          <button class="tab-btn" data-esm-report-tab="history">🧾 Đơn hàng</button>
         </div>
 
         <!-- TAB: REVENUE -->
@@ -701,25 +770,25 @@
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
               <div class="input-group" style="margin:0">
                 <label class="input-label">Món ăn</label>
-                <select id="report-menu-filter" class="select" onchange="setReportMenuFilter(this.value)">
+                <select class="select" data-esm-report-menu-filter>
                   <option value="">Tất cả món ăn</option>
                 </select>
               </div>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Đơn bán</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-sales" checked onchange="setReportTransactionFilter('sales', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="sales"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Nhập hàng</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-purchases" checked onchange="setReportTransactionFilter('purchases', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="purchases"><span class="toggle-slider"></span></label>
               </label>
               <label class="toggle-wrap" style="margin:0">
                 <div class="toggle-label">Chi phí khác</div>
-                <label class="toggle"><input type="checkbox" id="report-filter-expenses" checked onchange="setReportTransactionFilter('expenses', this.checked)"><span class="toggle-slider"></span></label>
+                <label class="toggle"><input type="checkbox" checked data-esm-report-transaction-filter="expenses"><span class="toggle-slider"></span></label>
               </label>
             </div>
-            <div id="report-filter-summary" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
-            <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="resetReportFilters()">Đặt lại bộ lọc</button>
+            <div data-esm-report-filter-summary style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
+            <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" data-esm-report-filter-reset>Đặt lại bộ lọc</button>
           </div>
 
           <!-- Charts -->
@@ -861,112 +930,16 @@
         </div>
       </div>
 
-      <!-- ========== PAGE: INSIGHTS ========== -->
-      <div id="page-insights" class="page">
-        <div class="section-header">
-          <div>
-            <div class="section-title">🧠 AI Điều Hành</div>
-            <div class="section-sub">Phân tích doanh thu, món bán, hàng bán thẳng, nguyên liệu và Ads</div>
-          </div>
-          <button class="btn btn-sm btn-outline" onclick="renderInsights()">🔄 Làm mới</button>
-        </div>
-
-        <div id="ai-ops-kpis" class="ai-ops-kpi-grid"></div>
-
-        <div id="revenue-warning"></div>
-
-        <div class="ai-ops-grid">
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🥤 Hàng bán thẳng</div>
-                <div class="ai-ops-section-sub">Độ tin cậy cao vì có kiểm kê tồn kho thực tế.</div>
-              </div>
-              <span class="ai-ops-pill ai-ops-pill-high">Tin cậy cao</span>
-            </div>
-            <div id="ai-ops-retail-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🧄 Nguyên liệu chế biến</div>
-                <div class="ai-ops-section-sub">Chỉ cảnh báo mềm theo nhập hàng, tồn thấp và chi phí. Không kết luận hao hụt.</div>
-              </div>
-              <span class="ai-ops-pill ai-ops-pill-soft">Tham khảo</span>
-            </div>
-            <div id="ai-ops-raw-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">🍽️ Món ăn & combo</div>
-                <div class="ai-ops-section-sub">Dựa trên bill đã chốt, không dựa vào xuất kho nguyên liệu.</div>
-              </div>
-              <span class="ai-ops-pill">Theo doanh số</span>
-            </div>
-            <div id="ai-ops-menu-list"></div>
-          </div>
-
-          <div class="ai-ops-section">
-            <div class="ai-ops-section-head">
-              <div>
-                <div class="ai-ops-section-title">📣 Ads + Doanh thu</div>
-                <div class="ai-ops-section-sub">Mở báo cáo ROAS, chi phí Ads và doanh thu theo ngày/khoảng ngày.</div>
-              </div>
-              <span class="ai-ops-pill">Marketing</span>
-            </div>
-            <div id="ai-ops-ads-list"></div>
-          </div>
-        </div>
-
-        <div class="ai-ops-section">
-          <div class="ai-ops-section-head">
-            <div>
-              <div class="ai-ops-section-title">✅ Việc nên làm hôm nay</div>
-              <div class="ai-ops-section-sub">Các hành động ưu tiên do AI tổng hợp từ dữ liệu POS.</div>
-            </div>
-          </div>
-          <div id="insights-list"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title" style="margin-bottom:10px">⚡ Thao tác nhanh</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <button class="btn btn-secondary btn-block" onclick="navigate('inventory')">📦 Mở kho</button>
-            <button class="btn btn-secondary btn-block" onclick="navigate('finance')">💰 Xem tài chính</button>
-            <button class="btn btn-secondary btn-block" onclick="navigate('reports')">📊 Báo cáo</button>
-            <button class="btn btn-secondary btn-block" onclick="openPurchaseModal()">🚚 Nhập hàng</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ========== PAGE: MENU ADMIN ========== -->
-      <div id="page-menu" class="page">
-        <div class="section-header">
-          <div>
-            <div class="section-title">📝 Quản lý Menu</div>
-            <div class="section-sub">Thêm, sửa, xoá món ăn</div>
-          </div>
-          <button class="btn btn-sm btn-primary" onclick="openAddMenuModal()">+ Thêm</button>
-        </div>
-        <div class="search-wrap">
-          <span class="search-icon">🔍</span>
-          <input class="input" id="menu-admin-search" placeholder="Tìm món..." oninput="renderMenuAdmin()">
-        </div>
-        <div id="menu-admin-list"></div>
-      </div>
-
       <!-- ========== PAGE: SETTINGS ========== -->
       <div id="page-settings" class="page">
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="switchSettingsTab('store',this)">🏪 Cửa hàng</button>
-          <button class="tab-btn" onclick="switchSettingsTab('theme',this)">🎨 Giao diện</button>
-          <button class="tab-btn" onclick="switchSettingsTab('users',this)">👥 Nhân sự</button>
-          <button class="tab-btn" onclick="switchSettingsTab('payment',this)">💳 Thanh toán</button>
-          <button class="tab-btn" onclick="switchSettingsTab('ai',this)">🤖 Hệ thống AI</button>
-          <button class="tab-btn" onclick="switchSettingsTab('data',this)">💾 Dữ liệu</button>
+          <button class="tab-btn active" data-esm-settings-tab="store">🏪 Cửa hàng</button>
+          <button class="tab-btn" data-esm-settings-tab="theme">🎨 Giao diện</button>
+          <button class="tab-btn" data-esm-settings-tab="users">👥 Nhân sự</button>
+          <button class="tab-btn" data-esm-settings-tab="attendance">⏱️ Chấm công</button>
+          <button class="tab-btn" data-esm-settings-tab="payment">💳 Thanh toán</button>
+          <button class="tab-btn" data-esm-settings-tab="ai">🤖 Hệ thống AI</button>
+          <button class="tab-btn" data-esm-settings-tab="data">💾 Dữ liệu</button>
         </div>
 
         <div id="set-tab-theme" class="settings-tab-content" style="display:none;">
@@ -1036,6 +1009,83 @@
               <button type="button" class="btn btn-sm btn-primary" onclick="openAddUserModal()">+ Thêm</button>
             </div>
             <div id="user-management-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+          </div>
+        </div>
+
+        <div id="set-tab-attendance" class="settings-tab-content" style="display:none;">
+          <div id="settings-payroll-profile" class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">💵 Cấu hình lương & chi phí cố định</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Lương quản lý tính theo tháng; lương nhân viên lấy từ chấm công</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" onclick="savePayrollProfile()">Lưu</button>
+            </div>
+            <div class="form-row">
+              <div class="input-group">
+                <label class="input-label">Lương quản lý / tháng</label>
+                <input class="input" id="payroll-management-salary" type="number" min="0" step="1000" placeholder="Ví dụ: 12000000">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Tiền thuê / tháng</label>
+                <input class="input" id="payroll-fixed-rent" type="number" min="0" step="1000">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="input-group">
+                <label class="input-label">Điện nước / tháng</label>
+                <input class="input" id="payroll-fixed-utilities" type="number" min="0" step="1000">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Chi phí cố định khác / tháng</label>
+                <input class="input" id="payroll-fixed-other" type="number" min="0" step="1000">
+              </div>
+            </div>
+            <div id="payroll-profile-summary" style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:8px"></div>
+          </div>
+
+          <div id="settings-attendance-management" class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">⏱️ Bảng chấm công</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Check in/out qua Telegram, tự ghi lương vào chi phí</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" data-esm-render-refresh="renderAttendanceManagement">Làm mới</button>
+            </div>
+            <div class="form-row" style="margin-bottom:8px">
+              <div class="input-group">
+                <label class="input-label">Từ ngày</label>
+                <input class="input" id="attendance-from-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
+              </div>
+              <div class="input-group">
+                <label class="input-label">Đến ngày</label>
+                <input class="input" id="attendance-to-date" type="date" data-esm-render-refresh="renderAttendanceManagement">
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom:12px">
+              <div class="input-group">
+                <label class="input-label">Nhân viên</label>
+                <select class="input" id="attendance-staff-filter" data-esm-render-refresh="renderAttendanceManagement">
+                  <option value="">Tất cả nhân viên</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Trạng thái</label>
+                <select class="input" id="attendance-status-filter" data-esm-render-refresh="renderAttendanceManagement">
+                  <option value="">Tất cả</option>
+                  <option value="open">Đang làm</option>
+                  <option value="closed">Đã chốt</option>
+                  <option value="adjusted">Đã điều chỉnh</option>
+                </select>
+              </div>
+            </div>
+            <!-- PHASE_F_ATTENDANCE_VIEW_ACTIONS: action row for mobile visibility -->
+            <div id="attendance-view-actions" class="attendance-view-actions">
+              <button type="button" class="btn btn-primary attendance-view-btn" onclick="showAttendanceResults()">📋 Xem bảng chấm công</button>
+              <button type="button" class="btn btn-secondary attendance-reset-btn" onclick="resetAttendanceFilters()">🔄 Bỏ lọc</button>
+            </div>
+            <div id="attendance-summary" class="stats-grid" style="margin-bottom:12px"></div>
+            <div id="attendance-management-list"></div>
           </div>
         </div>
 
@@ -1256,16 +1306,17 @@
               </div>
             </div>
 
+            <!-- Legacy hidden AI credentials card: giữ lại để tránh lệch JS, không phải luồng production active -->
             <div class="card" style="display:none">
               <div class="card-header">
-                <div class="card-title">🤖 Thông minh (Gemini API)</div>
+                <div class="card-title">🤖 Thông minh (Vertex AI cũ / ẩn)</div>
               </div>
               <div class="input-group">
-                <label class="input-label">Gemini API Key</label>
-                <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán API Key vào đây...">
+                <label class="input-label">Vertex AI / Google AI Key (legacy hidden)</label>
+                <input type="password" id="set-geminiApiKey" class="input" placeholder="Dán key cũ vào đây nếu cần kiểm tra legacy UI...">
                 <div style="font-size:11px;color:var(--text3);margin-top:6px">Lấy Key tại <a
                     href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--primary)">Google AI
-                    Studio</a> (miễn phí).</div>
+                    Studio</a> hoặc cấu hình Vertex AI ở backend.</div>
                 <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 Sau khi dán key, bấm nút 🎤 trên thanh
                   tiêu đề để mở trợ lý AI.</div>
               </div>
@@ -1310,10 +1361,10 @@
                 <select id="set-ocrMode" class="select">
                   <option value="auto">Tự động (ưu tiên Offline, fallback Online)</option>
                   <option value="offline">Chỉ Offline (on-device)</option>
-                  <option value="online">Chỉ Online (Gemini API)</option>
+                  <option value="online">Chỉ Online (Vertex AI)</option>
                 </select>
                 <div style="font-size:11px;color:var(--text2);margin-top:4px">
-                  Offline dùng OCR chạy ngay trên thiết bị, Online dùng Gemini API (nếu có mạng và có key).
+                  Offline dùng OCR chạy ngay trên thiết bị, Online dùng Vertex AI qua backend (nếu có mạng và cấu hình hợp lệ).
                 </div>
               </div>
               <div class="input-group">
@@ -1381,12 +1432,11 @@
                 <div class="toggle-label">Tồn kho mặt hàng bán thẳng</div>
                 <label class="toggle"><input type="checkbox" id="set-telegramReportIncludeRetailStock"><span class="toggle-slider"></span></label>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+              <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
                 <button type="submit" class="btn btn-primary btn-block">✅ Lưu cài đặt</button>
-                <button type="button" class="btn btn-secondary btn-block" id="telegram-report-test-btn" onclick="testTelegramReportSettings()">🧪 Test báo cáo Telegram</button>
               </div>
               <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.6">
-                Nút test sẽ dùng chính cấu hình hiện tại trong form này và gửi thử ngay vào nhóm báo cáo quản lý.
+                Báo cáo Telegram được gửi tự động theo lịch đã lưu; endpoint test thủ công cũ đã được gỡ để tránh lỗi deploy.
               </div>
             </div>
 
@@ -1491,6 +1541,21 @@
      MODALS
 ============================================================ -->
 
+  <!-- Target Achievement Congratulations Modal -->
+  <div class="modal-overlay" id="target-congrats-modal" style="align-items:center;padding:20px;z-index:999999;">
+    <div class="modal-sheet-center" style="max-width:400px;text-align:center;padding:24px;border-radius:16px;background:var(--bg2, #fff);box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+      <div style="font-size:60px;margin-bottom:16px;animation: target-bounce 1s infinite alternate;display:inline-block;">🏆</div>
+      <h2 style="font-size:22px;margin-bottom:12px;color:var(--primary);font-weight:800;">Chúc Mừng Đạt Chỉ Tiêu!</h2>
+      <p style="font-size:14px;color:var(--text1);line-height:1.6;margin-bottom:20px;">
+        Hệ thống ghi nhận doanh thu đã thu tiền hôm nay đã đạt và vượt chỉ tiêu ngày <strong style="color:var(--primary);font-size:16px;">5.000.000đ</strong>! 🎉
+      </p>
+      <div style="font-size:24px;font-weight:800;color:var(--primary);margin-bottom:24px;" id="target-congrats-amount">
+        5.000.000đ
+      </div>
+      <button class="btn btn-primary btn-block" onclick="closeTargetCongratsModal()" style="font-weight:700;padding:12px;border:none;border-radius:8px;"> Tuyệt vời! </button>
+    </div>
+  </div>
+
   <!-- Bill Modal -->
   <div class="modal-overlay" id="bill-modal" onclick="if(event.target===this)closeBillModal()">
     <div class="modal-sheet">
@@ -1505,7 +1570,7 @@
 
   <!-- Reset Confirmation Modal -->
   <div class="modal-overlay" id="reset-modal" style="align-items:center;padding:20px"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet-center"
       style="padding:24px;display:flex;flex-direction:column;gap:12px;align-items:stretch;">
       <div style="text-align:center;font-size:36px">⚠️</div>
@@ -1535,20 +1600,20 @@
         <button class="btn btn-secondary" style="flex:1"
           onclick="exportBackup();showToast('📥 Đã backup trước khi reset','success')">💾 Backup trước</button>
         <button class="btn btn-secondary" style="flex:1"
-          onclick="document.getElementById('reset-modal').classList.remove('active')">❌ Huỷ</button>
+          data-esm-modal-close="reset-modal">❌ Huỷ</button>
       </div>
     </div>
   </div>
 
 
   <!-- Purchase Modal -->
-  <div class="modal-overlay" id="purchase-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="purchase-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="purchase-modal-title">🚚 Nhập hàng mới</div>
         <button class="modal-close"
-          onclick="document.getElementById('purchase-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="purchase-modal">✕</button>
       </div>
       <div class="modal-body purchase-modal-body">
         <div class="purchase-split">
@@ -1591,10 +1656,18 @@
           <div class="purchase-pane purchase-pane-form">
             <form id="purchase-form" onsubmit="submitPurchase(event)">
               <div class="input-group">
+                <label class="input-label">Tìm món / nguyên liệu</label>
+                <div class="inventory-modal-search">
+                  <span class="search-icon">🔍</span>
+                  <input class="input" id="pur-item-search" type="search" inputmode="search" autocomplete="off" placeholder="Gõ tên món, nguyên liệu..." oninput="filterPurchaseItemOptions()">
+                </div>
+              </div>
+              <div class="input-group">
                 <label class="input-label">Tên nguyên liệu *</label>
                 <select class="select" id="pur-name" required onchange="onPurchaseItemSelect()">
                   <option value="">-- Chọn nguyên liệu --</option>
                 </select>
+                <div id="pur-item-search-hint" class="inventory-search-hint"></div>
                 <div id="pur-last-price-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
                 <div id="pur-price-compare-hint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
               </div>
@@ -1662,13 +1735,13 @@
 
   <!-- Purchase Photo Batch Modal -->
   <div class="modal-overlay" id="purchase-photo-batch-modal"
-    onclick="if(event.target===this)document.getElementById('purchase-photo-batch-modal').classList.remove('active')">
+    data-esm-modal-close-self="purchase-photo-batch-modal">
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📷 Ảnh chứng từ (Batch)</div>
         <button class="modal-close"
-          onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="purchase-photo-batch-modal">✕</button>
       </div>
       <div class="modal-body">
         <div id="purchase-photo-batch-meta" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
@@ -1678,7 +1751,7 @@
           <button class="btn btn-danger" style="flex:1"
             onclick="deletePurchasePhotoBatch(window._activePurchasePhotoBatchId || '')">🗑️ Xóa batch</button>
           <button class="btn btn-secondary" style="flex:1"
-            onclick="document.getElementById('purchase-photo-batch-modal').classList.remove('active')">Đóng</button>
+            data-esm-modal-close="purchase-photo-batch-modal">Đóng</button>
         </div>
       </div>
     </div>
@@ -1686,16 +1759,16 @@
 
   <!-- Purchase Photo Full Modal -->
   <div class="modal-overlay" id="purchase-photo-full-modal"
-    onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+    data-esm-image-zoom-self-dismiss>
     <div class="modal-sheet zoom-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0;">
         <div class="modal-title">📷 Ảnh chứng từ</div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺
+          <button class="btn btn-xs btn-outline" data-esm-image-zoom-reset title="Khôi phục kích thước gốc">↺
             Reset</button>
           <button class="modal-close"
-            onclick="document.getElementById('purchase-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+            data-esm-image-zoom-close="purchase-photo-full-modal">✕</button>
         </div>
       </div>
       <div id="purchase-photo-full-wrap" class="photo-zoom-wrap">
@@ -1709,13 +1782,13 @@
   </div>
 
   <!-- Expense Modal -->
-  <div class="modal-overlay" id="expense-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="expense-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">💸 Thêm chi phí</div>
         <button class="modal-close"
-          onclick="document.getElementById('expense-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="expense-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="expense-form" onsubmit="submitExpense(event)">
@@ -1747,13 +1820,13 @@
   </div>
 
   <!-- Inventory Edit Modal -->
-  <div class="modal-overlay" id="inv-edit-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="inv-edit-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="inv-edit-modal-title">Cập nhật Nguyên liệu</div>
         <button class="modal-close"
-          onclick="document.getElementById('inv-edit-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="inv-edit-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="inv-edit-form" onsubmit="submitInvEdit(event)">
@@ -1820,13 +1893,13 @@
   </div>
 
   <!-- Menu Item Modal -->
-  <div class="modal-overlay" id="menu-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="menu-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="menu-modal-title">Thêm món mới</div>
         <button class="modal-close"
-          onclick="document.getElementById('menu-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="menu-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="menu-form" onsubmit="submitMenuItem(event)">
@@ -1844,7 +1917,7 @@
           <div class="form-row">
             <div class="input-group">
               <label class="input-label">Giá bán (đ) *</label>
-              <input class="input" id="menu-item-price" type="number" min="0" placeholder="35000" required>
+              <input class="input" id="menu-item-price" type="text" inputmode="numeric" autocomplete="off" placeholder="17.500" required>
             </div>
             <div class="input-group">
               <label class="input-label">Giá vốn tự tính (đ)</label>
@@ -2048,12 +2121,12 @@
 
   <!-- Payment Method Modal -->
   <div class="modal-overlay" id="pay-method-modal" style="align-items:center;padding:20px"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet-center" style="padding:0;overflow:hidden">
       <div class="modal-header" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
         <div class="modal-title">💳 Chọn phương thức thanh toán</div>
         <button class="modal-close"
-          onclick="document.getElementById('pay-method-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="pay-method-modal">✕</button>
       </div>
       <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
         <button class="btn btn-block"
@@ -2067,33 +2140,33 @@
           💵 Thanh toán tiền mặt
         </button>
         <button class="btn btn-secondary btn-block"
-          onclick="document.getElementById('pay-method-modal').classList.remove('active')">❌ Huỷ</button>
+          data-esm-modal-close="pay-method-modal">❌ Huỷ</button>
       </div>
     </div>
   </div>
 
   <!-- Discount Detail Modal -->
   <div class="modal-overlay" id="discount-detail-modal"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📉 Chi tiết đơn có giảm giá</div>
         <button class="modal-close"
-          onclick="document.getElementById('discount-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="discount-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="discount-detail-content"></div>
     </div>
   </div>
 
   <!-- Order Detail Modal -->
-  <div class="modal-overlay" id="order-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="order-detail-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🧾 Chi tiết đơn hàng</div>
         <button class="modal-close"
-          onclick="document.getElementById('order-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="order-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="order-detail-content"></div>
     </div>
@@ -2101,16 +2174,16 @@
 
   <!-- Order Detail Photo Full Modal -->
   <div class="modal-overlay" id="order-detail-photo-full-modal"
-    onclick="if(event.target===this){this.classList.remove('active');ImgZoom.detach();}">
+    data-esm-image-zoom-self-dismiss>
     <div class="modal-sheet zoom-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0;">
         <div class="modal-title">📷 Ảnh ghi nhận</div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-xs btn-outline" onclick="ImgZoom.reset()" title="Khôi phục kích thước gốc">↺
+          <button class="btn btn-xs btn-outline" data-esm-image-zoom-reset title="Khôi phục kích thước gốc">↺
             Reset</button>
           <button class="modal-close"
-            onclick="document.getElementById('order-detail-photo-full-modal').classList.remove('active');ImgZoom.detach();">✕</button>
+            data-esm-image-zoom-close="order-detail-photo-full-modal">✕</button>
         </div>
       </div>
       <div id="order-detail-photo-full-wrap" class="photo-zoom-wrap">
@@ -2124,7 +2197,7 @@
   </div>
 
   <!-- Stock Alert Modal -->
-  <div class="modal-overlay" id="stock-alert-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="stock-alert-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
@@ -2133,7 +2206,7 @@
           <div id="stock-alert-count" style="font-size:12px;color:var(--danger);margin-top:2px"></div>
         </div>
         <button class="modal-close"
-          onclick="document.getElementById('stock-alert-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="stock-alert-modal">✕</button>
       </div>
       <div class="modal-body" id="stock-alert-body">
       </div>
@@ -2141,33 +2214,42 @@
   </div>
 
   <!-- Stocktake (Kiểm kê) Modal -->
-  <div class="modal-overlay" id="stocktake-modal" onclick="if(event.target===this)this.classList.remove('active')">
-    <div class="modal-sheet" style="max-height:90vh;display:flex;flex-direction:column;">
+  <div class="modal-overlay" id="stocktake-modal" data-esm-modal-self-dismiss>
+    <div class="modal-sheet stocktake-modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">📋 Kiểm kê kho</div>
-        <button class="modal-close" onclick="document.getElementById('stocktake-modal').classList.remove('active')">✕</button>
+        <button class="modal-close" data-esm-modal-close="stocktake-modal">✕</button>
       </div>
-      <div class="modal-body" style="flex:1;overflow-y:auto;padding-bottom:80px;">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+      <div class="modal-body stocktake-modal-body">
+        <div class="stocktake-modal-intro">
           Nhập số lượng thực tế trong kho. Bỏ trống nếu không thay đổi.
         </div>
-        <div id="stocktake-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="stocktake-search-panel">
+          <div class="inventory-modal-search stocktake-modal-search">
+            <span class="search-icon">🔍</span>
+            <input class="input" id="stocktake-item-search" type="search" inputmode="search" autocomplete="off" placeholder="Tìm món / nguyên liệu kiểm kê..." oninput="filterStocktakeItems()">
+          </div>
+          <div id="stocktake-search-hint" class="inventory-search-hint"></div>
+        </div>
+        <div class="stocktake-results-scroll">
+          <div id="stocktake-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
       </div>
-      <div style="position:absolute;bottom:0;left:0;right:0;padding:16px;background:var(--bg);border-top:1px solid var(--border);box-shadow:0 -4px 12px rgba(0,0,0,0.1)">
+      <div class="stocktake-modal-actions">
         <button class="btn btn-primary btn-block" onclick="submitStocktake()">Lưu kiểm kê</button>
       </div>
     </div>
   </div>
 
   <!-- AI Full History Modal -->
-  <div class="modal-overlay" id="ai-history-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ai-history-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🕰️ Lịch sử yêu cầu AI</div>
         <button class="modal-close"
-          onclick="document.getElementById('ai-history-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="ai-history-modal">✕</button>
       </div>
       <div class="modal-body">
         <div id="ai-history-list" style="display:flex;flex-direction:column;gap:12px"></div>
@@ -2224,10 +2306,27 @@
         <form id="pin-form" onsubmit="handlePinSubmit(event)">
           <div class="input-group">
             <label class="input-label">Mã PIN</label>
-            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="1234" autocomplete="one-time-code" required>
+            <input id="pin-code-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input" placeholder="1234" autocomplete="one-time-code" required oninput="renderWebAttendancePanel()">
           </div>
           <button type="submit" class="btn btn-primary btn-block">Mở khóa</button>
         </form>
+
+        <!-- Phase D: Web Attendance Quick Panel on PIN screen -->
+        <div class="card" id="web-attendance-card" style="margin-top:12px;">
+          <div class="card-header">
+            <div class="card-title">🕐 Chấm công web</div>
+            <span id="web-attendance-status" class="badge badge-secondary">Nhập PIN</span>
+          </div>
+          <div style="padding:12px 16px;">
+            <div id="web-attendance-info" style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.45">
+              Nhập mã PIN 4 số rồi bấm Vào ca/Ra ca. Hệ thống chỉ chấm công khi định vị cách quán dưới 15m.
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="web-attendance-checkin-btn" class="btn btn-sm btn-primary" onclick="webAttendanceCheckInFromPin()" disabled>✅ Vào ca</button>
+              <button id="web-attendance-checkout-btn" class="btn btn-sm btn-secondary" onclick="webAttendanceCheckOutFromPin()" disabled>🏁 Ra ca</button>
+            </div>
+          </div>
+        </div>
 
         <button id="lock-screen-logout-btn" type="button" class="btn btn-secondary btn-block" style="margin-top:10px;display:none" onclick="handleLogout()">Đổi tài khoản Firebase</button>
       </div>
@@ -2239,15 +2338,45 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <!-- data.js đã bị loại bỏ – app đọc 100% từ Firestore qua window.appState -->
   <script src="data.js?v=20260501-2"></script>
+  <script src="app/utils/format.js?v=20260604-exact-price-ui"></script>
   <script src="store.js?v=20260501-2"></script>
   <!-- ✅ Bước 1: db.js (Firebase Data Layer) phải load TRƯỚC app.js -->
-  <script type="module" src="db.js?v=20260509-online-complete"></script>
+  <script type="module" src="db.js?v=20260721-attendance-latency"></script>
+  <script src="app/utils/dom.js?v=20260710-render-safety"></script>
+  <script src="app/ui/toast.js?v=20260602-refactor-toast-ui"></script>
+  <script src="app/ui/theme.js?v=20260602-refactor-theme-ui"></script>
+  <script src="app/ui/modal.js?v=20260602-refactor-modal-ui"></script>
+  <script src="app/auth/staff.js?v=20260602-refactor-auth-staff"></script>
+  <script src="app/order/helpers.js?v=20260602-refactor-order-helpers"></script>
+  <script src="app/utils/excel.js?v=20260602-refactor-excel-utils"></script>
+  <script src="app/utils/date.js?v=20260602-refactor-date-utils"></script>
+  <script src="app/utils/print.js?v=20260602-refactor-print-utils"></script>
+  <script src="app/utils/storage.js?v=20260602-refactor-storage-utils"></script>
+  <script src="app/utils/parser.js?v=20260602-refactor-parser-utils"></script>
+  <script src="app/utils/categorize.js?v=20260602-refactor-categorize-utils"></script>
+  <script src="app/report/helpers.js?v=20260602-refactor-report-helpers"></script>
+  <script src="app/report/ads.js?v=20260602-refactor-report-ads"></script>
+  <script src="app/report/expense.js?v=20260602-phase8-expense"></script>
+  <script src="app/report/excel.js?v=20260602-phase8-excel"></script>
+  <script src="app/utils/fixedcost.js?v=20260602-refactor-fixedcost"></script>
   <!-- ✅ Bước 2: Load AI modules -->
   <script src="ai-core.js?v=20260509-utf8fix"></script>
   <script src="ai-actions.js?v=20260509-utf8fix"></script>
   <script src="ai-ui.js?v=20260509-utf8fix"></script>
   <!-- ✅ Bước 3: app.js phải chạy TRƯỚC inline script ở cuối body -->
-  <script src="app.js?v=20260509-online-complete"></script>
+  <script src="app.js?v=20260721-r5-render-containment"></script>
+  <!-- POS Offline Backup: Sprint 19 production with auto sync -->
+  <script src="offlineBackup.js?v=20260601-sprint19"></script>
+  <script src="offlineSync.js?v=20260601-sprint19"></script>
+  <script src="offlineFirestoreAdapter.js?v=20260601-sprint19"></script>
+  <script src="offlineRuntime.js?v=20260601-sprint19"></script>
+  <script src="offlineStatusUI.js?v=20260601-sprint19"></script>
+  <script src="offlineOrderFallback.js?v=20260601-sprint19"></script>
+  <script src="offlineOrderFallbackDevTools.js?v=20260601-sprint19"></script>
+  <!-- ESM compatibility harness: load after existing classic runtime, before inline helpers. -->
+  <script type="module" src="app/esm/main.js?v=20260602-e5-admin-render-controls"></script>
+  <!-- Capacitor OTA updater: no-op in browser, safe self-hosted live update -->
+  <script src="cap-ota-updater.js?v=20260626-ota-firebase"></script>
   <script>
     // Extra helpers that reference DOM
 
@@ -2349,7 +2478,6 @@
         else openPurchaseModal();
       }
       else if (currentPage === 'finance') openExpenseModal();
-      else if (currentPage === 'menu') openAddMenuModal();
       else navigate('tables');
     }
 
@@ -2378,12 +2506,12 @@
   </script>
 
   <!-- NCC Add/Edit Modal -->
-  <div class="modal-overlay" id="ncc-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ncc-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="ncc-modal-title">🏭 Thêm Nhà Cung Cấp</div>
-        <button class="modal-close" onclick="document.getElementById('ncc-modal').classList.remove('active')">✕</button>
+        <button class="modal-close" data-esm-modal-close="ncc-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="ncc-form" onsubmit="submitNCC(event)">
@@ -2425,13 +2553,13 @@
   </div>
 
   <!-- NCC Detail Modal -->
-  <div class="modal-overlay" id="ncc-detail-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="ncc-detail-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title">🏭 Chi tiết Nhà Cung Cấp</div>
         <button class="modal-close"
-          onclick="document.getElementById('ncc-detail-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="ncc-detail-modal">✕</button>
       </div>
       <div class="modal-body" id="ncc-detail-content"></div>
     </div>
@@ -2439,13 +2567,13 @@
 
   <!-- Hướng dẫn Google Drive — báo cáo Excel -->
   <div class="modal-overlay" id="gdrive-report-guide-modal"
-    onclick="if(event.target===this)this.classList.remove('active')">
+    data-esm-modal-self-dismiss>
     <div class="modal-sheet" style="max-height:92vh;display:flex;flex-direction:column">
       <div class="modal-handle"></div>
       <div class="modal-header" style="flex-shrink:0">
         <div class="modal-title">📖 Hướng dẫn đẩy báo cáo lên Google Drive</div>
         <button type="button" class="modal-close"
-          onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')"
+          data-esm-modal-close="gdrive-report-guide-modal"
           aria-label="Đóng">✕</button>
       </div>
       <div class="modal-body"
@@ -2544,20 +2672,20 @@
           sẻ công khai. Ai biết URL có thể gửi POST (có thể thêm kiểm tra mật khẩu trong script nếu cần).
         </p>
         <button type="button" class="btn btn-primary btn-block" style="margin-top:18px"
-          onclick="document.getElementById('gdrive-report-guide-modal').classList.remove('active')">Đã hiểu,
+          data-esm-modal-close="gdrive-report-guide-modal">Đã hiểu,
           đóng</button>
       </div>
     </div>
   </div>
 
   <!-- User Add/Edit Modal -->
-  <div class="modal-overlay" id="user-modal" onclick="if(event.target===this)this.classList.remove('active')">
+  <div class="modal-overlay" id="user-modal" data-esm-modal-self-dismiss>
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="user-modal-title">Thêm Nhân Viên</div>
         <button type="button" class="modal-close"
-          onclick="document.getElementById('user-modal').classList.remove('active')">✕</button>
+          data-esm-modal-close="user-modal">✕</button>
       </div>
       <div class="modal-body">
         <form id="user-form" onsubmit="submitUser(event)">
@@ -2571,6 +2699,21 @@
             <input class="input" id="user-edit-pin" placeholder="1234" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
               autocomplete="off">
           </div>
+          <div class="input-group">
+            <label class="input-label">Lương theo giờ</label>
+            <input class="input" id="user-edit-hourly-rate" placeholder="25000" inputmode="numeric" type="number" min="0" step="1000">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Telegram User ID</label>
+            <input class="input" id="user-edit-telegram-id" placeholder="Tự điền sau khi /link 1234" autocomplete="off">
+          </div>
+          <label class="card card-sm" style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <input type="checkbox" id="user-edit-require-location" style="width:18px;height:18px">
+            <div>
+              <div style="font-weight:700">Bắt buộc gửi vị trí khi check in/out</div>
+              <div style="font-size:11px;color:var(--text2)">Nếu chưa cấu hình tọa độ quán, hệ thống chỉ lưu vị trí gửi lên.</div>
+            </div>
+          </label>
           <div class="input-group">
             <label class="input-label">Quyền hạn</label>
             <select class="select" id="user-edit-role">
@@ -2635,12 +2778,6 @@
       </div>
       <div class="modal-body">
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-top: 8px;">
-          <div onclick="navigateMore('menu')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
-            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            </div>
-            <div style="font-size:12px; font-weight:500; color:var(--text2)">Menu</div>
-          </div>
           
           <div onclick="navigateMore('users')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
             <div style="width:50px; height:50px; background:rgba(0,149,255,0.1); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--primary)">
@@ -2654,13 +2791,6 @@
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </div>
             <div style="font-size:12px; font-weight:500; color:var(--text2)">Cài đặt</div>
-          </div>
-          
-          <div onclick="navigateMore('insights')" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px">
-            <div style="width:50px; height:50px; background:var(--bg3); border-radius:14px; display:flex; align-items:center; justify-content:center; color:var(--text)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="20" y1="9" x2="23" y2="9"></line></svg>
-            </div>
-            <div style="font-size:12px; font-weight:500; color:var(--text2)">AI Insights</div>
           </div>
         </div>
       </div>
