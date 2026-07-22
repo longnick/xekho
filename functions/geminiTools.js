@@ -69,6 +69,38 @@ const geminiTools = [
         },
       },
       {
+        name: 'truy_van_bigquery_pos',
+        description: [
+          'Truy vấn báo cáo POS read-only từ BigQuery khi người dùng hỏi dữ liệu kinh doanh và Firebase không đủ dữ liệu.',
+          'Chỉ đọc dữ liệu, không ghi hay sửa BigQuery. Dùng cho doanh thu, số hóa đơn, lợi nhuận tổng quan theo khoảng thời gian.',
+        ].join(' '),
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            loai_bao_cao: {
+              type: 'STRING',
+              enum: ['tong_quan', 'doanh_thu', 'loi_nhuan'],
+              description: 'Loại báo cáo cần xem. Nếu hỏi chung doanh thu thì dùng doanh_thu hoặc tong_quan.',
+            },
+            khoang_thoi_gian: {
+              type: 'STRING',
+              enum: ['hom_nay', 'hom_qua', 'tuan_nay', 'thang_nay', 'nam_nay', 'den_bay_gio'],
+              description: 'Khoảng thời gian tương đối như tháng này, hôm nay, tuần này.',
+            },
+            tu_thoi_diem: { type: 'STRING', description: 'Thời điểm bắt đầu ISO hoặc ngày giờ Việt Nam.' },
+            den_thoi_diem: { type: 'STRING', description: 'Thời điểm kết thúc ISO hoặc ngày giờ Việt Nam.' },
+            tu_ngay: { type: 'STRING', description: 'Ngày bắt đầu.' },
+            den_ngay: { type: 'STRING', description: 'Ngày kết thúc.' },
+            phuong_thuc_thanh_toan: {
+              type: 'STRING',
+              enum: ['cash', 'bank', 'all'],
+              description: 'Lọc cash/bank nếu cần.',
+            },
+          },
+          required: ['loai_bao_cao'],
+        },
+      },
+      {
         name: 'tra_cuu_lich_su_nhap_kho',
         description: [
           'Tra cuu lich su nhap kho tu Firestore collection purchases.',

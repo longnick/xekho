@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'test/**']
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend checks (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Functions dependencies for root Jest discovery
+        working-directory: functions
+        run: npm ci --ignore-scripts
+      - name: Syntax and unit tests
+        run: |
+          npm run check
+          npm test -- --runInBand
+      - name: TypeScript frontend check
+        run: npx tsc --noEmit -p jsconfig.json
+      - name: ESLint
+        run: npm run lint
+
+  rules:
+    name: Firestore Rules emulator regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install root test dependencies
+        run: npm ci --ignore-scripts
+      - name: Persona matrix
+        run: npm run test:rules
+      - name: Deny regression evidence
+        run: npm run test:rules:red-evidence
+
+  functions-security:
+    name: Functions security gates (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - name: Install root test dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Functions production graph
+        working-directory: functions
+        run: npm ci --ignore-scripts
+      - name: Auth, size, rate, and handler regressions
+        run: |
+          npm run test:functions-security
+          npm run check:functions
+
+  artifact-browser:
+    name: Hosting artifact and browser smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install browser smoke dependencies
+        run: npm ci
+      - name: Build Hosting artifact
+        run: npm run build:hosting
+      - name: Verify artifact boundary
+        run: npm run verify:hosting-dist
+      - name: Signed-out mobile browser smoke
+        run: npm run test:browser-smoke
+
+  dependency-audit:
+    name: Dual-lockfile dependency audit policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - name: Install root dependency graph
+        run: npm ci --ignore-scripts
+      - name: Install Functions dependency graph
+        working-directory: functions
+        run: npm ci --ignore-scripts
+      - name: Fail unallowlisted critical findings
+        run: npm run check:dependency-audit

@@ -1,23 +1,14 @@
 {
   "hosting": {
     "site": "xe-kho",
-    "public": ".",
+    "public": "dist",
+    "predeploy": [
+      "npm run cap:ota:bundle"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
-      ".git/**",
-      "**/.git/**",
-      ".vscode/**",
-      "**/.vscode/**",
-      "**/node_modules/**",
-      "functions/**",
-      "*.md",
-      "*.ps1",
-      "*.json",
-      "!package.json",
-      "!manifest.json",
-      "serviceAccountKey.json",
-      "pos-v2-909ff-firebase-adminsdk-fbsvc-abdca8f1c5.json"
+      "**/node_modules/**"
     ],
     "redirects": [
       {
@@ -45,6 +36,12 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8088
+    }
   },
   "functions": [
     {
