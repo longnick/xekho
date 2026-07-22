@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XE KHÔ Finance Widget Mockup - Owner Glance</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:#2A1608;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;color:#2A1608;padding:28px} .stage{width:min(1120px,100%);display:grid;gap:22px}.note{color:#F9EAD1cc;font-size:14px;line-height:1.5}.phone-row{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:22px;align-items:start}.label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#F9EAD1aa;margin:0 0 8px}.widget{background:linear-gradient(155deg,#FFF6DF 0%,#F9EAD1 54%,#F5D9B8 100%);border-radius:28px;box-shadow:0 28px 80px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.6);overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.35)}.widget:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 86% 8%,rgba(252,225,0,.55),transparent 22%),radial-gradient(circle at 5% 100%,rgba(225,6,0,.12),transparent 32%);pointer-events:none}.small{width:198px;height:198px;padding:14px}.medium{width:410px;height:198px;padding:16px}.large{width:410px;height:430px;padding:18px}.top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px}.brand{font-weight:900;letter-spacing:-.04em;font-size:17px}.sub{font-size:11px;color:#7A5B3B;margin-top:2px}.pill{font-size:11px;font-weight:800;background:#2A1608;color:#FCE100;border-radius:999px;padding:5px 9px;white-space:nowrap}.metric{position:relative;margin-top:14px}.metric .k{font-size:11px;color:#7A5B3B;font-weight:700}.metric .v{font-size:30px;line-height:1;font-weight:950;letter-spacing:-.06em}.metric .v.good{color:#12805C}.metric .v.warn{color:#E10600}.split{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.tile{background:rgba(255,255,255,.42);border:1px solid rgba(42,22,8,.08);border-radius:16px;padding:8px}.tile b{display:block;font-size:17px;letter-spacing:-.04em}.tile span{font-size:10px;color:#7A5B3B;font-weight:700}.bars{position:relative;display:flex;align-items:end;gap:6px;height:58px;margin-top:10px;padding:0 2px}.bar{flex:1;border-radius:7px 7px 3px 3px;background:#E10600;min-height:12px;position:relative}.bar:after{content:"";position:absolute;left:0;right:0;bottom:0;border-radius:inherit;background:#2A1608;height:var(--expense)}.bar.good{background:#12805C}.axis{position:relative;display:flex;justify-content:space-between;font-size:10px;color:#7A5B3B;font-weight:700;margin-top:6px}.legend{position:relative;display:flex;gap:10px;font-size:10px;color:#7A5B3B;font-weight:800;margin-top:8px}.dot{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:4px}.grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.hero-number{position:relative;margin-top:12px;background:#2A1608;color:#F9EAD1;border-radius:22px;padding:13px}.hero-number .v{font-size:36px;font-weight:950;letter-spacing:-.07em;line-height:.95;color:#FCE100}.hero-number .k{font-size:12px;color:#F9EAD1aa;font-weight:800}.row{position:relative;display:flex;justify-content:space-between;gap:10px;border-top:1px solid rgba(42,22,8,.10);padding:10px 0;font-size:13px}.row strong{font-weight:900}.progress{height:7px;background:rgba(42,22,8,.12);border-radius:999px;overflow:hidden;margin-top:6px}.progress i{display:block;height:100%;background:#E10600;border-radius:999px}.insight{position:relative;margin-top:12px;padding:12px;border-radius:18px;background:rgba(18,128,92,.11);border:1px solid rgba(18,128,92,.20);font-size:12px;line-height:1.35}.negative{color:#E10600}.positive{color:#12805C}@media(max-width:880px){.phone-row{grid-template-columns:1fr}.small,.medium,.large{width:100%}}
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div>
+      <p class="label">Mockup A - Owner glance</p>
+      <div class="note">Widget ưu tiên nhìn nhanh: doanh thu, chi phí, lợi nhuận, margin và xu hướng 7 ngày. Số liệu dưới đây là mock data theo công thức trong repo, không phải dữ liệu live.</div>
+    </div>
+    <section class="phone-row">
+      <div>
+        <p class="label">Small</p>
+        <article class="widget small">
+          <div class="top"><div><div class="brand">XE KHÔ</div><div class="sub">Hôm nay</div></div><div class="pill">LIVE</div></div>
+          <div class="metric"><div class="k">Lợi nhuận</div><div class="v good">1.42tr</div></div>
+          <div class="split">
+            <div class="tile"><span>Doanh thu</span><b>4.8tr</b></div>
+            <div class="tile"><span>Chi phí</span><b>3.1tr</b></div>
+          </div>
+        </article>
+      </div>
+      <div>
+        <p class="label">Medium</p>
+        <article class="widget medium">
+          <div class="top"><div><div class="brand">Xe Khô Chữa Lành</div><div class="sub">09/07 - cập nhật 08:55</div></div><div class="pill">+12% vs hôm qua</div></div>
+          <div class="split">
+            <div class="tile"><span>Doanh thu thuần</span><b>4.82tr</b></div>
+            <div class="tile"><span>Lợi nhuận ròng</span><b class="positive">1.42tr</b></div>
+          </div>
+          <div class="bars">
+            <i class="bar" style="height:38px;--expense:18px"></i><i class="bar" style="height:54px;--expense:24px"></i><i class="bar" style="height:45px;--expense:20px"></i><i class="bar good" style="height:70px;--expense:28px"></i><i class="bar" style="height:48px;--expense:31px"></i><i class="bar good" style="height:76px;--expense:30px"></i><i class="bar good" style="height:64px;--expense:27px"></i>
+          </div>
+          <div class="axis" style="display:none"><span>T5</span><span>T6</span><span>T7</span><span>CN</span><span>T2</span><span>T3</span><span>Nay</span></div>
+        </article>
+      </div>
+      <div>
+        <p class="label">Large</p>
+        <article class="widget large">
+          <div class="top"><div><div class="brand">Dashboard tài chính</div><div class="sub">Tháng này - 09/07 08:55</div></div><div class="pill">iOS Widget</div></div>
+          <div class="hero-number"><div class="k">Lợi nhuận sau chi phí cố định</div><div class="v">18.6tr</div></div>
+          <div class="grid">
+            <div class="tile"><span>Doanh thu</span><b>62.4tr</b><div class="progress"><i style="width:74%"></i></div></div>
+            <div class="tile"><span>Chi phí</span><b>38.1tr</b><div class="progress"><i style="width:48%;background:#2A1608"></i></div></div>
+            <div class="tile"><span>Giá vốn</span><b>15.7tr</b></div>
+            <div class="tile"><span>Đơn hàng</span><b>287</b></div>
+          </div>
+          <div class="bars" style="height:72px">
+            <i class="bar" style="height:44px;--expense:22px"></i><i class="bar" style="height:58px;--expense:26px"></i><i class="bar" style="height:49px;--expense:19px"></i><i class="bar good" style="height:86px;--expense:35px"></i><i class="bar" style="height:52px;--expense:37px"></i><i class="bar good" style="height:94px;--expense:36px"></i><i class="bar good" style="height:77px;--expense:31px"></i>
+          </div>
+          <div class="legend"><span><i class="dot" style="background:#E10600"></i>Doanh thu</span><span><i class="dot" style="background:#2A1608"></i>Chi phí</span><span><i class="dot" style="background:#12805C"></i>Lãi tốt</span></div>
+          <div class="row"><span>Tiền mặt / CK</span><strong>21.2tr / 41.2tr</strong></div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XE KHÔ Finance Widget Mockup - Operator Ledger</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:#F9EAD1;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;color:#F9EAD1;padding:28px}.stage{width:min(1080px,100%)}.label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#2A1608aa;margin:0 0 8px}.note{color:#2A1608cc;font-size:14px;line-height:1.5;margin-bottom:20px}.row{display:grid;grid-template-columns:1fr 1.45fr;gap:24px;align-items:start}.widget{background:#2A1608;border-radius:28px;box-shadow:0 28px 70px rgba(42,22,8,.28);overflow:hidden;border:1px solid rgba(249,234,209,.18);position:relative}.widget:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(225,6,0,.30),transparent 36%),radial-gradient(circle at 100% 0,rgba(252,225,0,.22),transparent 30%);pointer-events:none}.medium{width:410px;height:198px;padding:16px}.large{width:410px;height:430px;padding:18px}.top{position:relative;display:flex;justify-content:space-between;align-items:flex-start}.brand{font-weight:900;font-size:16px;letter-spacing:-.03em}.date{font-size:11px;color:#F9EAD1aa;margin-top:2px}.status{font-size:11px;font-weight:900;color:#2A1608;background:#FCE100;border-radius:999px;padding:6px 10px}.ledger{position:relative;margin-top:16px;display:grid;gap:8px}.line{display:grid;grid-template-columns:88px 1fr 78px;gap:8px;align-items:center}.line .name{font-size:11px;color:#F9EAD1aa;font-weight:800}.track{height:12px;background:rgba(249,234,209,.10);border-radius:99px;overflow:hidden}.fill{display:block;height:100%;border-radius:inherit;background:#E10600}.fill.cost{background:#E78170}.fill.exp{background:#FCE100}.line .amount{text-align:right;font-size:13px;font-weight:900}.net-card{position:relative;margin-top:14px;background:#F9EAD1;color:#2A1608;border-radius:20px;padding:14px;display:flex;justify-content:space-between;align-items:end}.net-card span{font-size:11px;color:#7A5B3B;font-weight:800}.net-card b{font-size:28px;letter-spacing:-.06em}.matrix{position:relative;margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{background:rgba(249,234,209,.08);border:1px solid rgba(249,234,209,.10);border-radius:16px;padding:9px}.cell span{display:block;font-size:11px;color:#F9EAD1aa;font-weight:800}.cell b{font-size:20px;letter-spacing:-.05em}.spark{position:relative;display:flex;align-items:end;height:52px;gap:5px;margin-top:16px;border-bottom:1px solid rgba(249,234,209,.16);padding:0 2px 8px}.spark i{flex:1;background:#FCE100;border-radius:6px 6px 2px 2px;min-height:8px}.spark i.loss{background:#E78170}.section-title{position:relative;color:#FCE100;font-weight:900;font-size:12px;margin-top:12px}.list{position:relative;margin-top:8px}.item{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid rgba(249,234,209,.10);font-size:12px}.item span{color:#F9EAD1aa}.item b{font-weight:900}.warn{color:#E78170}.good{color:#69D391}@media(max-width:840px){.row{grid-template-columns:1fr}.medium,.large{width:100%}}
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <p class="label">Mockup B - Operator ledger</p>
+    <div class="note">Biến thể này giống bảng sổ cái mini: đọc rõ dòng tiền vào, giá vốn, chi phí vận hành và lợi nhuận. Phù hợp nếu anh muốn widget ít trang trí, nhiều kiểm soát.</div>
+    <section class="row">
+      <div>
+        <p class="label">Medium</p>
+        <article class="widget medium">
+          <div class="top"><div><div class="brand">XE KHÔ Finance</div><div class="date">Hôm nay, 08:55</div></div><div class="status">MARGIN 29.6%</div></div>
+          <div class="ledger">
+            <div class="line"><span class="name">Doanh thu</span><div class="track"><i class="fill" style="width:86%"></i></div><span class="amount">4.82tr</span></div>
+            <div class="line"><span class="name">Giá vốn</span><div class="track"><i class="fill cost" style="width:38%"></i></div><span class="amount">1.53tr</span></div>
+            <div class="line"><span class="name">Chi phí</span><div class="track"><i class="fill exp" style="width:31%"></i></div><span class="amount">1.86tr</span></div>
+          </div>
+          <div class="net-card"><span>Lợi nhuận ròng dự tính</span><b>1.42tr</b></div>
+        </article>
+      </div>
+      <div>
+        <p class="label">Large</p>
+        <article class="widget large">
+          <div class="top"><div><div class="brand">Sổ tài chính XE KHÔ</div><div class="date">Tháng này - 09/07 08:55</div></div><div class="status">ĐỌC NHANH</div></div>
+          <div class="matrix">
+            <div class="cell"><span>Doanh thu thuần</span><b>62.4tr</b></div>
+            <div class="cell"><span>Lợi nhuận</span><b class="good">18.6tr</b></div>
+            <div class="cell"><span>Đã chi</span><b class="warn">38.1tr</b></div>
+            <div class="cell"><span>Đơn hàng</span><b>287</b></div>
+          </div>
+          <div class="section-title">Xu hướng lợi nhuận 7 ngày</div>
+          <div class="spark"><i style="height:28px"></i><i style="height:42px"></i><i class="loss" style="height:22px"></i><i style="height:68px"></i><i class="loss" style="height:18px"></i><i style="height:74px"></i><i style="height:56px"></i></div>
+          <div class="section-title">Cơ cấu chi phí</div>
+          <div class="list">
+            <div class="item"><span>Nhập hàng / nguyên liệu</span><b>15.7tr</b></div>
+            <div class="item"><span>Chi phí vận hành</span><b>8.4tr</b></div>
+            <div class="item"><span>Chi phí cố định</span><b>9.1tr</b></div>
+            <div class="item"><span>Lương quản lý / nhân viên</span><b>4.9tr</b></div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
