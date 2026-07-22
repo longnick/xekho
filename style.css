@@ -2317,3 +2317,51 @@ body.auth-locked #app {
   .auto-stock-order-item summary { align-items: flex-start; }
   .auto-stock-order-detail div { align-items: flex-start; }
 }
+
+/* ── Attendance payroll table (Phase E) ── */
+.attendance-payroll-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.attendance-payroll-table tbody tr:hover > td {
+  background: var(--bg2);
+}
+@media (max-width: 640px) {
+  .attendance-payroll-table { font-size: 12px; }
+  .attendance-payroll-table td,
+  .attendance-payroll-table th { padding: 5px 5px; }
+}
+
+/* ── Attendance view actions (Phase F) ── */
+.attendance-view-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-top: 4px;
+}
+.attendance-view-btn {
+  flex: 1;
+  min-width: 160px;
+}
+.attendance-reset-btn {
+  flex: 0 0 auto;
+}
+
+/* ── Attendance list separator (mobile) ── */
+#attendance-management-list {
+  border-top: 2px solid var(--border);
+  padding-top: 12px;
+  min-height: 48px;
+}
+
+/* Mobile: reduce empty-state padding so content feels closer to filters */
+@media (max-width: 640px) {
+  .attendance-filter-empty-state {
+    padding: 20px 12px;
+  }
+  #attendance-management-list {
+    padding-top: 8px;
+  }
+}

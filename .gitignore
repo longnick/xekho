@@ -35,3 +35,6 @@ firebase-debug.log
 functions-list.json
 dist
 node_modules/.vite
+GanhKho_Migrated_Backup.json
+pos_backup_*.json
+functions/.env*

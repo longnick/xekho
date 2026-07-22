@@ -1,3 +1,7 @@
+# 2026-07-22 - Repair pull-request secret scan permissions
+- Granted the secret-scan workflow read-only pull-request metadata access required by `gitleaks/gitleaks-action@v2`.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-22-gitleaks-pr-permission.md`
+
 # 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon
 - Added `@capgo/capacitor-updater@6.45.10` live update foundation for Capacitor 6 and configured `autoUpdate: false` in `capacitor.config.ts`.
 - Changed `compileSdkVersion` to `35` and `minSdkVersion` to `23` in `android/variables.gradle` to resolve dependency requirements.

@@ -5,12 +5,13 @@ const {
 } = require('./userManagement');
 
 describe('user management authorization contract', () => {
-  test('only an admin or owner custom claim can assign manager/admin roles', () => {
+  test('only admin, owner, or superadmin can assign manager/admin roles', () => {
     expect(() => assertCanManageRole({ uid: 'manager.test', role: 'manager' }, 'manager')).toThrow('permission-denied');
     expect(() => assertCanManageRole({ uid: 'staff.test', role: 'staff' }, 'staff')).toThrow('permission-denied');
     expect(() => assertCanManageRole({}, 'staff')).toThrow('unauthenticated');
     expect(() => assertCanManageRole({ uid: 'admin.test', role: 'admin' }, 'manager')).not.toThrow();
     expect(() => assertCanManageRole({ uid: 'owner.test', role: 'owner' }, 'admin')).not.toThrow();
+    expect(() => assertCanManageRole({ uid: 'superadmin.test', role: 'superadmin' }, 'admin')).not.toThrow();
   });
 
   test('manager custom claim can provision only staff or kitchen accounts', () => {
