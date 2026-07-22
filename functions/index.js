@@ -30,6 +30,7 @@ const telegramOrders = require('./telegram/orders');
 const telegramOnlineOrders = require('./telegram/online-orders');
 const generalUtils = require('./utils/general');
 const kitchenDeviceFeed = require('./kitchenDeviceFeed');
+const scriptableFinanceWidget = require('./scriptableFinanceWidget');
 const { createManagedUser } = require('./userManagementService');
 const {
   authorizeRequest,
@@ -163,6 +164,7 @@ const META_AD_ACCOUNT_ID = defineString('META_AD_ACCOUNT_ID', { default: '' });
 const META_ACCESS_TOKEN = defineString('META_ACCESS_TOKEN', { default: '' });
 const KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID = defineString('KITCHEN_NEW_ORDER_TELEGRAM_CHAT_ID', { default: '' });
 const KITCHEN_DEVICE_TOKEN = defineString('KITCHEN_DEVICE_TOKEN', { default: '' });
+const SCRIPTABLE_FINANCE_WIDGET_TOKEN = defineString('SCRIPTABLE_FINANCE_WIDGET_TOKEN', { default: '' });
 const OWNER_EMAIL = 'owner@ganhkho.vn';
 const DEFAULT_TELEGRAM_OWNER_CHAT_ID = '6496387732';
 const DEFAULT_REGION = 'asia-southeast1';
@@ -4195,6 +4197,17 @@ function rejectOversizedRequest(res) {
 function rejectRateLimitedRequest(res) {
   return json(res, 429, { ok: false, error: 'rate_limited' });
 }
+
+exports.scriptableFinanceWidgetData = onRequest(
+  { region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT },
+  scriptableFinanceWidget.createFinanceWidgetHandler({
+    db,
+    cors,
+    json,
+    logger,
+    tokenParam: SCRIPTABLE_FINANCE_WIDGET_TOKEN,
+  })
+);
 
 exports.testAdsReportTelegram = onRequest({ region: DEFAULT_REGION, memory: HEAVY_FUNCTION_MEMORY, serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT }, (req, res) => {
   cors(req, res, async () => {
