@@ -1,3 +1,8 @@
+# 2026-07-22 - Final main integration candidate
+- Merged reviewed security packaging history with rewritten `main`, preserving packaging runtime and adding only `main` Hosting redirects.
+- Re-ran clean installs, 207 Jest tests, 144 Functions security tests, 37 Rules tests, 4 deny regressions, dependency policy, Hosting/browser gates, and authenticated synthetic Functions Emulator E2E.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-22-final-main-integration.md`
+
 # 2026-07-22 - Repair pull-request secret scan permissions
 - Granted the secret-scan workflow read-only pull-request metadata access required by `gitleaks/gitleaks-action@v2`.
 - Task log: `docs/ai-map/TASK_LOGS/2026-07-22-gitleaks-pr-permission.md`
