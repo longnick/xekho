@@ -2156,6 +2156,16 @@ const Staff = {
     }) || null;
   },
 
+  async findByPinFresh(pin, options = {}) {
+    const code = String(pin || '').trim();
+    if (!/^\d{4}$/.test(code)) return null;
+    const includeInactive = options.includeInactive === true;
+    const snap = await getDocs(query(_col('Staff'), where('pin_code', '==', code), limit(1)));
+    const item = snap.docs.map(_fromDoc).filter(Boolean)[0] || null;
+    if (!item || includeInactive) return item;
+    return String(item.status || 'active').toLowerCase() === 'active' ? item : null;
+  },
+
   async isPinDuplicate(pin, excludeStaffId = null) {
     const code = String(pin || '').trim();
     if (!/^\d{4}$/.test(code)) return false;
