@@ -98,6 +98,18 @@ describe('Functions runtime dependency compatibility', () => {
     expect(telegramSendSource).toContain("require('axios')");
   });
 
+  test('uses stable sharp >=0.35.0 and preserves PNG/SVG runtime conversion', async () => {
+    const sharpVersion = installedPackageVersion('sharp');
+    expect(isStableRelease(sharpVersion)).toBe(true);
+    expect(atLeast(sharpVersion, '0.35.0')).toBe(true);
+
+    const sharp = require('sharp');
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"><rect width="2" height="3" fill="#ff0000"/></svg>');
+    const png = await sharp(svg).png().toBuffer();
+    const metadata = await sharp(png).metadata();
+    expect(metadata).toMatchObject({ format: 'png', width: 2, height: 3 });
+  });
+
   test('uses the Sprint 6A Firebase dependency pair that removes the Functions critical audit path', () => {
     const adminVersion = installedPackageVersion('firebase-admin');
     const functionsVersion = installedPackageVersion('firebase-functions');
