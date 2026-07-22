@@ -63,6 +63,6 @@ describe('render-safety DOM helpers', () => {
     expect(appSource).toContain('onclick="deletePurchasePhotoBatch(${safeBatchId})"');
 
     const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-    expect(indexSource).toContain('app.js?v=20260721-r5-render-containment');
+    expect(indexSource).toContain('app.js?v=20260722-pin-fast-path');
   });
 });
