@@ -1203,7 +1203,14 @@
     }
 
     function normalizeTableName(tableId, tableData) {
-      return tableData?.name || tableData?.tableName || `Bàn ${tableId}`;
+      const fallback = `Bàn ${tableId}`;
+      // ponytail: Legacy rows may contain object/blank labels; use next scalar label before fallback.
+      for (const raw of [tableData?.name, tableData?.tableName]) {
+        if (typeof raw !== 'string' && typeof raw !== 'number') continue;
+        const label = String(raw).trim();
+        if (label) return label;
+      }
+      return fallback;
     }
 
     function normalizeSpeechText(value) {
