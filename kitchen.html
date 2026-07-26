@@ -1599,7 +1599,8 @@
       `;
     }
 
-    function maybePlayNewPendingSound(cards) {
+    function maybePlayNewPendingSound(cards, options = {}) {
+      const seedOnly = options.seedOnly === true;
       const newPendingKeys = [];
       const groupedAnnouncements = new Map();
       cards.forEach(card => {
@@ -1618,7 +1619,7 @@
         });
       });
 
-      if (newPendingKeys.length) {
+      if (newPendingKeys.length && !seedOnly) {
         const newestCard = cards.find(card => card.items.some(item => String(item.kitchenStatus || '').toLowerCase() === 'pending'));
         showNewOrderAlert(newestCard, newPendingKeys.length);
         groupedAnnouncements.forEach(({ card, items }) => {
@@ -1630,7 +1631,8 @@
         });
       }
 
-      maybeQueueLateReminders(cards);
+      maybeQueueLateReminders(cards, false, { seedOnly });
+      return seedOnly ? 0 : newPendingKeys.length;
     }
 
     function ensureAudioUnlocked() {
@@ -1870,7 +1872,8 @@
       return 1 + Math.floor((elapsedMinutes - baseMinutes) / 5);
     }
 
-    function maybeQueueLateReminders(cards, force = false) {
+    function maybeQueueLateReminders(cards, force = false, options = {}) {
+      const seedOnly = options.seedOnly === true;
       const now = Date.now();
       if (!force && now - state.lastReminderSweepAt < 15000) return;
       state.lastReminderSweepAt = now;
@@ -1910,14 +1913,16 @@
         if (!activeKeys.has(key)) state.reminderState.delete(key);
       });
 
-      grouped.forEach(({ card, items, level }) => {
-        const reminderMinutes = Math.max(1, Number(state.settings.kitchenLateReminderMinutes || 10)) + ((level - 1) * 5);
-        enqueueSpeechJob({
-          key: `late:${card.orderId}:${level}:${items.map(item => item._lineKey).join('|')}`,
-          type: 'late-reminder',
-          lines: buildReminderSpeechLines(card, items, reminderMinutes),
+      if (!seedOnly) {
+        grouped.forEach(({ card, items, level }) => {
+          const reminderMinutes = Math.max(1, Number(state.settings.kitchenLateReminderMinutes || 10)) + ((level - 1) * 5);
+          enqueueSpeechJob({
+            key: `late:${card.orderId}:${level}:${items.map(item => item._lineKey).join('|')}`,
+            type: 'late-reminder',
+            lines: buildReminderSpeechLines(card, items, reminderMinutes),
+          });
         });
-      });
+      }
     }
 
     async function updateOrderItems(orderId, updater) {
@@ -2125,20 +2130,25 @@
           nextMap.set(String(docSnap.id), { id: docSnap.id, ...docSnap.data() });
         });
         state.tables = nextMap;
-        const cards = buildCards();
-        maybePlayNewPendingSound(buildCards({ ignoreFilter: true }));
-        renderLayout(cards);
+        renderLayout(buildCards());
       });
 
+      let isInitial = true;
       state.orderUnsub = onSnapshot(query(collection(db, 'orders'), where('status', '==', 'open')), snap => {
         const nextMap = new Map();
         snap.docs.forEach(docSnap => {
           nextMap.set(String(docSnap.id), { id: docSnap.id, ...docSnap.data() });
         });
         state.orders = nextMap;
-        const cards = buildCards();
-        maybePlayNewPendingSound(buildCards({ ignoreFilter: true }));
-        renderLayout(cards);
+        const audioCards = buildCards({ ignoreFilter: true });
+        let newCount;
+        if (isInitial) {
+          isInitial = false;
+          newCount = maybePlayNewPendingSound(audioCards, { seedOnly: true });
+        } else {
+          newCount = maybePlayNewPendingSound(audioCards);
+        }
+        renderLayout(newCount > 0 ? audioCards : buildCards());
       });
     }
 
