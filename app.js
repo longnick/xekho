@@ -3560,6 +3560,7 @@ function normalizeKitchenOrderItem(item = {}, menuMap = null) {
 
   if (_isKitchenSkippedItem(normalized) || String(normalized.kitchenRouting || '').trim().toLowerCase() === 'skip') {
     normalized.kitchenStatus = 'skip';
+    normalized.kitchenRouting = 'skip';
     if (normalized.kitchenSentAt == null) normalized.kitchenSentAt = null;
     if (normalized.kitchenUpdatedAt == null) normalized.kitchenUpdatedAt = null;
     if (normalized.servedAt == null) normalized.servedAt = null;
@@ -5685,6 +5686,7 @@ function addToOrder(itemId) {
       cost: unitCost,
       qty: 1,
       itemType: dish.itemType || inferMenuItemType(dish),
+      kitchenRouting: dish.kitchenRouting || undefined,
       linkedInventoryId: dish.linkedInventoryId || null,
     });
     orderItems[currentTable].push(nextItem);

@@ -5,7 +5,15 @@
   var XekhoApp = global.XekhoApp = global.XekhoApp || {};
   XekhoApp.order = XekhoApp.order || {};
 
-  var ITEM_TYPES = (global.ITEM_TYPES || {});
+  // Self-contained fallback: store.js defines ITEM_TYPES as a `const` (not
+  // window-scoped), so global.ITEM_TYPES is undefined in the browser.  Always
+  // define the canonical values here so this module never depends on load order.
+  var _ITEM_TYPES_FALLBACK = {
+    RETAIL:   'retail_item',
+    RAW:      'raw_material',
+    FINISHED: 'finished_good',
+  };
+  var ITEM_TYPES = (global.ITEM_TYPES && global.ITEM_TYPES.RETAIL) ? global.ITEM_TYPES : _ITEM_TYPES_FALLBACK;
 
   /** @returns {string} */
   function uid() {
@@ -178,6 +186,7 @@
 
     if (_isKitchenSkippedItem(normalized) || String(normalized.kitchenRouting || '').trim().toLowerCase() === 'skip') {
       normalized.kitchenStatus = 'skip';
+      normalized.kitchenRouting = 'skip';
       if (normalized.kitchenSentAt == null) normalized.kitchenSentAt = null;
       if (normalized.kitchenUpdatedAt == null) normalized.kitchenUpdatedAt = null;
       if (normalized.servedAt == null) normalized.servedAt = null;
