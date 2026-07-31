@@ -1389,9 +1389,10 @@ function getTelegramReportBotToken() {
 }
 
 function getTelegramAssistantBotToken() {
+  // Online-order buttons must use same bot configured as Telegram webhook.
   return String(
-    TELEGRAM_REPORT_BOT_TOKEN.value()
-    || TELEGRAM_BOT_TOKEN.value()
+    TELEGRAM_BOT_TOKEN.value()
+    || TELEGRAM_REPORT_BOT_TOKEN.value()
     || ''
   ).trim();
 }

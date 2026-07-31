@@ -57,6 +57,12 @@ describe('online order completion money and Telegram reliability', () => {
     expect(onlineCallback).toContain("logger.error('Telegram online-order message edit failed'");
   });
 
+  test('online callback resolver prioritizes primary bot token over stale report token', () => {
+    const source = read('functions/index.js');
+    const resolver = between(source, 'function getTelegramAssistantBotToken', 'function getTelegramAssistantBotName');
+    expect(resolver.indexOf('TELEGRAM_BOT_TOKEN.value()')).toBeLessThan(resolver.indexOf('TELEGRAM_REPORT_BOT_TOKEN.value()'));
+  });
+
   test('index wrapper forwards canonical order instead of overwriting it', () => {
     const source = read('functions/index.js');
     const wrapper = between(source, 'function calculateOnlineOrderCompletionTotals', 'async function buildOnlineOrderInventoryDeductionMap');
