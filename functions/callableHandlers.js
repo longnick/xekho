@@ -4,6 +4,7 @@ function makeCallableHandlers({
   runAskPosChatbot,
   approveOnlineOrder,
   rejectOnlineOrder,
+  completeOnlineOrder,
   HttpsError,
   userManagementDeps = {},
 }) {
@@ -43,6 +44,10 @@ function makeCallableHandlers({
     async rejectOnlineOrder(request) {
       await authorize(request, 'ORDER_REJECT');
       return rejectOnlineOrder(orderId(request), actor(request));
+    },
+    async completeOnlineOrder(request) {
+      await authorize(request, 'ORDER_COMPLETE');
+      return completeOnlineOrder(orderId(request), actor(request));
     },
   };
 }

@@ -1,3 +1,10 @@
+# 2026-07-31 - Online order completion money + Telegram callback relations
+- `app.js#completeOnlineOrder()` calls `DB.OnlineOrders.complete()`, which invokes protected `completeOnlineOrder` callable; browser no longer closes POS order or patches terminal online state.
+- `functions/index.js#completeOnlineOrderInternal()` authoritatively reads `online_orders/{id}` plus `orders/{posOrderId}` in one transaction, validates canonical items/total, writes `history`, terminal `online_orders`, deletes POS order, resets non-online table. It deliberately does not deduct inventory until one canonical server inventory transaction exists.
+- `functions/index.js#onHistoryFinalizeCustomerOrderRequests` remains completion fallback for legacy non-callable closes; created history can complete linked `online_orders` after `orders` deletion.
+- `functions/index.js#approveOnlineOrderInternal()` builds POS lines through `functions/telegram/online-orders.js#buildPosItemFromOnlineOrder()` then validates positive unit prices with `assertOnlineOrderPosItems()` before Firestore transaction writes.
+- `functions/index.js#telegramWebhook` online-order callback ACKs before mutation and logs failed Telegram message edits; `functions/onlineOrderCompletionWiring.test.js` guards these wiring contracts.
+
 # 2026-06-26 05:00 +07 - Capacitor Android OTA and brand icon relations
 - `package.json` installs `@capgo/capacitor-updater@6.45.10` for Capacitor 6 live-update foundation.
 - `capacitor.config.ts` sets `autoUpdate: false` inside `plugins.CapacitorUpdater` as a safe default to prevent untrusted background updates.
@@ -581,6 +588,12 @@ Related files:
 - `functions/index.js#parseTelegramChartCallbackData()` normalizes chart callback payloads from current and legacy inline buttons.
 - `functions/index.js#telegramWebhook` routes parsed chart callbacks to `handleTelegramChartCallback()` before generic unknown callback handling.
 - `scripts/verify-telegram-chart-menu-features.js` asserts chart callback parser coverage.
+
+## Online order server completion — 2026-07-31
+
+- `functions/index.js#completeOnlineOrderInternal` reads canonical `orders/{posOrderId}`, calculates history total through `functions/telegram/online-orders.js#calculateOnlineOrderCompletionTotals`, writes `history` plus terminal `online_orders`, deducts inventory, then deletes order/resets table in one Firestore transaction.
+- Retail items use `linkedInventoryId`; finished dishes require `Recipes_BOM.parent_item_id` / `ingredient_inv_id`. Missing mapping, inventory document, or stock aborts transaction before terminal writes.
+- `functions/onlineOrderCompletionWiring.test.js` guards totals, history wiring, inventory fail-closed path, terminal guards, and Telegram early ACK isolation.
 ## EchoEar kitchen-ready notifier
 
 - `functions/index.js` exports the `kitchenDeviceFeed` HTTP endpoint for device polling.

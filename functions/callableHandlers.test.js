@@ -15,15 +15,17 @@ function makeDeps() {
   const runAskPosChatbot = jest.fn().mockResolvedValue({ answer: 'ok' });
   const approveOnlineOrder = jest.fn().mockResolvedValue({ ok: true });
   const rejectOnlineOrder = jest.fn().mockResolvedValue({ ok: true });
+  const completeOnlineOrder = jest.fn().mockResolvedValue({ ok: true });
   const handlers = makeCallableHandlers({
     authorize,
     createManagedUser,
     runAskPosChatbot,
     approveOnlineOrder,
     rejectOnlineOrder,
+    completeOnlineOrder,
     HttpsError,
   });
-  return { handlers, authorize, createManagedUser, runAskPosChatbot, approveOnlineOrder, rejectOnlineOrder };
+  return { handlers, authorize, createManagedUser, runAskPosChatbot, approveOnlineOrder, rejectOnlineOrder, completeOnlineOrder };
 }
 
 function blockedAuthorize(code) {
@@ -62,6 +64,7 @@ describe('R2 executable callable handlers', () => {
     ['askPosChatbot', 'runAskPosChatbot'],
     ['approveOnlineOrder', 'approveOnlineOrder'],
     ['rejectOnlineOrder', 'rejectOnlineOrder'],
+    ['completeOnlineOrder', 'completeOnlineOrder'],
   ])('%s blocks unauthenticated request before payload or business access', async (name, business) => {
     const deps = makeDeps();
     deps.authorize = blockedAuthorize('unauthenticated');
@@ -76,6 +79,7 @@ describe('R2 executable callable handlers', () => {
     ['askPosChatbot', 'runAskPosChatbot'],
     ['approveOnlineOrder', 'approveOnlineOrder'],
     ['rejectOnlineOrder', 'rejectOnlineOrder'],
+    ['completeOnlineOrder', 'completeOnlineOrder'],
   ])('%s blocks unauthorized request before payload or business access', async (name, business) => {
     const deps = makeDeps();
     deps.authorize = blockedAuthorize('permission-denied');
@@ -107,6 +111,7 @@ describe('R2 executable callable handlers', () => {
   test.each([
     ['approveOnlineOrder', 'approveOnlineOrder'],
     ['rejectOnlineOrder', 'rejectOnlineOrder'],
+    ['completeOnlineOrder', 'completeOnlineOrder'],
   ])('%s rejects invalid order ID after authorization', async (name, business) => {
     const invalidIds = [undefined, {}, 'a/b', '.', '..', 'a\u0000b', 'x'.repeat(257)];
     for (const orderId of invalidIds) {
@@ -133,6 +138,16 @@ describe('R2 executable callable handlers', () => {
       .resolves.toEqual({ ok: true });
     expect(deps.rejectOnlineOrder).toHaveBeenCalledWith('o-2', {
       source: 'pos', userId: 'caller', username: 'User',
+    });
+  });
+
+  test('completeOnlineOrder executes authorized ID with caller audit identity', async () => {
+    const deps = makeDeps();
+    await expect(deps.handlers.completeOnlineOrder({ auth: { uid: 'caller', token: { email: 'x@example.test' } }, data: { orderId: ' o-3 ' } }))
+      .resolves.toEqual({ ok: true });
+    expect(deps.authorize).toHaveBeenCalledWith(expect.anything(), 'ORDER_COMPLETE');
+    expect(deps.completeOnlineOrder).toHaveBeenCalledWith('o-3', {
+      source: 'pos', userId: 'caller', username: 'x@example.test',
     });
   });
 });

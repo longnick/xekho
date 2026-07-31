@@ -86,6 +86,7 @@ describe('callable authorization', () => {
     expect(CALLABLE_ALLOWED_ROLES).toEqual({
       ORDER_APPROVE: ['manager', 'admin', 'owner', 'superadmin'],
       ORDER_REJECT: ['manager', 'admin', 'owner', 'superadmin'],
+      ORDER_COMPLETE: ['manager', 'admin', 'owner', 'superadmin'],
       USER_MANAGE: ['manager', 'admin', 'owner', 'superadmin'],
       POS_CHATBOT: ['staff', 'manager', 'admin', 'owner', 'superadmin'],
     });

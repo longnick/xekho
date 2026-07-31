@@ -3539,6 +3539,7 @@ const r2CallableHandlers = makeCallableHandlers({
   runAskPosChatbot,
   approveOnlineOrder: approveOnlineOrderInternal,
   rejectOnlineOrder: rejectOnlineOrderInternal,
+  completeOnlineOrder: completeOnlineOrderInternal,
   HttpsError,
 });
 
@@ -3601,6 +3602,21 @@ exports.rejectOnlineOrder = onCall({
       stack: error?.stack || null,
     });
     throw toSafeCallableError(error, HttpsError, 'Không thể hủy đơn online.');
+  }
+});
+
+exports.completeOnlineOrder = onCall({
+  region: 'asia-southeast1',
+  serviceAccount: FUNCTIONS_RUNTIME_SERVICE_ACCOUNT,
+}, async (request) => {
+  try {
+    return await r2CallableHandlers.completeOnlineOrder(request);
+  } catch (error) {
+    logger.error('completeOnlineOrder failed', {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    throw toSafeCallableError(error, HttpsError, 'Không thể hoàn tất đơn online.');
   }
 });
 
@@ -3793,6 +3809,47 @@ function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {
   return telegramOnlineOrders.buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {});
 }
 
+function assertOnlineOrderPosItems(items = []) {
+  return telegramOnlineOrders.assertOnlineOrderPosItems(items = []);
+}
+
+function calculateOnlineOrderCompletionTotals(order = {}) {
+  return telegramOnlineOrders.calculateOnlineOrderCompletionTotals(order = {});
+}
+
+async function buildOnlineOrderInventoryDeductionMap(items, tx) {
+  const deductions = {};
+  for (const item of items) {
+    const productSnap = await tx.get(db.collection('Product_Catalog').doc(item.id));
+    const product = productSnap.exists ? (productSnap.data() || {}) : {};
+    const itemType = String(item.itemType || product.item_type || '').trim().toLowerCase();
+    const linkedInventoryId = String(item.linkedInventoryId || product.linkedInventoryId || '').trim();
+    if (itemType === 'retail_item' || itemType === 'retail') {
+      if (!linkedInventoryId) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: thiếu linkedInventoryId cho ${item.name}.`);
+      const inventorySnap = await tx.get(db.collection('Inventory_Items').doc(linkedInventoryId));
+      if (!inventorySnap.exists) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: thiếu nguyên liệu ${linkedInventoryId}.`);
+      item.cost = Number(inventorySnap.data()?.costPerUnit) || Number(product.cost) || 0;
+      deductions[linkedInventoryId] = (deductions[linkedInventoryId] || 0) + item.qty;
+      continue;
+    }
+    const recipeSnap = await tx.get(db.collection('Recipes_BOM').where('parent_item_id', '==', item.id));
+    if (recipeSnap.empty) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: thiếu công thức cho ${item.name}.`);
+    let itemCost = 0;
+    for (const doc of recipeSnap.docs) {
+      const line = doc.data() || {};
+      const inventoryId = String(line.ingredient_inv_id || '').trim();
+      const needed = Number(line.quantity_needed ?? line.qty ?? 0);
+      if (!inventoryId || !(needed > 0)) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: công thức ${item.name} không hợp lệ.`);
+      const inventorySnap = await tx.get(db.collection('Inventory_Items').doc(inventoryId));
+      if (!inventorySnap.exists) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: thiếu nguyên liệu ${inventoryId}.`);
+      itemCost += needed * (Number(inventorySnap.data()?.costPerUnit) || Number(product.cost) || 0);
+      deductions[inventoryId] = (deductions[inventoryId] || 0) + needed * item.qty;
+    }
+    item.cost = itemCost;
+  }
+  return deductions;
+}
+
 function buildOnlineOrderTelegramStatusLabel(status) {
   return telegramOnlineOrders.buildOnlineOrderTelegramStatusLabel(status);
 }
@@ -3844,6 +3901,105 @@ async function syncOnlineOrderTelegramMessage(orderId, orderData = {}, fallback 
   return true;
 }
 
+function assertCanonicalOnlineCompletionItems(items) {
+  const canonicalItems = Array.isArray(items) ? items.map(item => ({
+    ...item,
+    id: String(item?.id || '').trim(),
+    name: String(item?.name || '').trim(),
+    qty: Number(item?.qty),
+    price: Number(item?.price),
+  })) : [];
+  if (!canonicalItems.length || canonicalItems.some(item => !item.id || !item.name || !(item.qty > 0) || !(item.price > 0))) {
+    throw new HttpsError('failed-precondition', 'Đơn POS có món hoặc giá không hợp lệ.');
+  }
+  return canonicalItems;
+}
+
+async function completeOnlineOrderInternal(orderId, actor = {}) {
+  const cleanOrderId = String(orderId || '').trim();
+  const onlineOrderRef = db.collection('online_orders').doc(cleanOrderId);
+  const historyRef = db.collection('history').doc();
+  const paidAt = admin.firestore.FieldValue.serverTimestamp();
+  let result = null;
+
+  await db.runTransaction(async tx => {
+    const onlineOrderSnap = await tx.get(onlineOrderRef);
+    if (!onlineOrderSnap.exists) throw new HttpsError('not-found', 'Đơn online không tồn tại.');
+    const onlineOrder = onlineOrderSnap.data() || {};
+    const currentStatus = String(onlineOrder.status || '').trim().toLowerCase();
+    if (currentStatus === 'completed') {
+      result = { ok: true, alreadyCompleted: true, historyId: String(onlineOrder.historyId || ''), finalTotal: Number(onlineOrder.finalTotal || 0) };
+      return;
+    }
+    const posOrderId = String(onlineOrder.posOrderId || '').trim();
+    if (!posOrderId) throw new HttpsError('failed-precondition', 'Đơn online chưa có đơn POS.');
+    const posOrderRef = db.collection('orders').doc(posOrderId);
+    const posOrderSnap = await tx.get(posOrderRef);
+    if (!posOrderSnap.exists) throw new HttpsError('failed-precondition', 'Không tìm thấy đơn POS đang mở.');
+    const canonicalOrder = posOrderSnap.data() || {};
+    if (String(canonicalOrder.status || 'open').trim().toLowerCase() !== 'open') {
+      throw new HttpsError('failed-precondition', 'Đơn POS không còn ở trạng thái mở.');
+    }
+    const canonicalItems = assertCanonicalOnlineCompletionItems(canonicalOrder.items);
+    const totals = calculateOnlineOrderCompletionTotals(canonicalOrder);
+    const calculatedTotal = totals.finalTotal;
+    const inventoryDeductions = await buildOnlineOrderInventoryDeductionMap(canonicalItems, tx);
+    const inventoryIds = Object.keys(inventoryDeductions);
+    const inventorySnaps = await Promise.all(inventoryIds.map(id => tx.get(db.collection('Inventory_Items').doc(id))));
+    inventorySnaps.forEach(snap => {
+      if (!snap.exists) throw new HttpsError('failed-precondition', `Không thể trừ tồn kho cho đơn online: thiếu nguyên liệu ${snap.id}.`);
+    });
+    const allowZeroTotal = canonicalOrder.allowZeroTotal === true || onlineOrder.allowZeroTotal === true;
+    if (!(calculatedTotal > 0) && !allowZeroTotal) {
+      throw new HttpsError('failed-precondition', 'Tổng đơn POS phải lớn hơn 0.');
+    }
+    const finalTotal = Math.max(0, calculatedTotal);
+    const payMethod = String(onlineOrder.paymentMethod || canonicalOrder.payMethod || 'cash').trim().toLowerCase() || 'cash';
+    const tableId = String(canonicalOrder.tableId || '').trim();
+
+    tx.set(historyRef, {
+      ...canonicalOrder,
+      id: posOrderId,
+      billNo: `ONL-${String(onlineOrder.orderCode || '').trim() || cleanOrderId}`,
+      historyId: historyRef.id,
+      items: canonicalItems,
+      cost: canonicalItems.reduce((sum, item) => sum + (Number(item.cost) || 0) * item.qty, 0),
+      taxRate: Number(canonicalOrder.taxRate || 0) || 0,
+      discount: Number(canonicalOrder.discount || 0) || 0,
+      discountType: String(canonicalOrder.discountType || 'vnd').trim() || 'vnd',
+      discountNote: String(canonicalOrder.discountNote || '').trim(),
+      discountAmount: totals.discountAmount,
+      shipping: Number(canonicalOrder.shipping || 0) || 0,
+      vatAmount: Number(canonicalOrder.vatAmount || 0) || 0,
+      total: finalTotal,
+      payMethod,
+      paidAt,
+      timestamp: paidAt,
+      status: 'completed',
+      paidBy: { name: String(actor.username || actor.userId || 'pos_user'), source: 'pos', role: 'manager' },
+    });
+    tx.set(onlineOrderRef, {
+      status: 'completed',
+      historyId: historyRef.id,
+      finalTotal,
+      completedAt: paidAt,
+      completedBy: String(actor.username || actor.userId || 'pos_user'),
+      updatedAt: paidAt,
+    }, { merge: true });
+    inventorySnaps.forEach(snap => {
+      const deductAmt = inventoryDeductions[snap.id];
+      const currentQty = Number(snap.data().current_stock ?? snap.data().qty ?? 0);
+      tx.update(snap.ref, { current_stock: Math.max(0, currentQty - deductAmt) });
+    });
+    tx.delete(posOrderRef);
+    if (tableId && tableId !== 'online') {
+      tx.set(db.collection('tables').doc(tableId), { status: 'empty', orderId: null, openTime: null }, { merge: true });
+    }
+    result = { ok: true, historyId: historyRef.id, finalTotal, posOrderId };
+  });
+  return result;
+}
+
 async function approveOnlineOrderInternal(orderId, actor = {}) {
   const cleanOrderId = String(orderId || '').trim();
   if (!cleanOrderId) return { ok: false, error: 'Thiếu mã đơn online.' };
@@ -3877,9 +4033,9 @@ async function approveOnlineOrderInternal(orderId, actor = {}) {
 
   const items = Array.isArray(onlineOrder.items) ? onlineOrder.items : [];
   const productMap = await loadProductsByIds(items.map(item => item.productId || item.menuItemId || item.id));
-  const posItems = items.map((item, index) =>
+  const posItems = assertOnlineOrderPosItems(items.map((item, index) =>
     buildPosItemFromOnlineOrder(cleanOrderId, index, item, productMap.get(String(item.productId || item.menuItemId || item.id || '').trim()) || {})
-  );
+  ));
   const posOrderId = `ONLINE-${cleanOrderId}`;
   const posOrderRef = db.collection('orders').doc(posOrderId);
   const actorName = String(actor.username || actor.name || actor.email || actor.userId || 'staff').trim() || 'staff';
@@ -4484,6 +4640,14 @@ exports.telegramWebhook = onRequest({
         }
 
         if (onlineOrderApproveMatch || onlineOrderRejectMatch) {
+          await answerTelegramCallback({
+            callbackQueryId: callbackQuery.id,
+            text: 'Đang xử lý đơn.',
+            botToken,
+          }).catch(err => logger.warn('Telegram online-order callback ACK failed', {
+            error: err?.message || String(err),
+            responseData: err?.response?.data || null,
+          }));
           const targetId = String(
             onlineOrderApproveMatch?.[1]
             || onlineOrderRejectMatch?.[1]
@@ -4497,12 +4661,6 @@ exports.telegramWebhook = onRequest({
           const result = onlineOrderApproveMatch
             ? await approveOnlineOrderInternal(targetId, actor)
             : await rejectOnlineOrderInternal(targetId, actor);
-          await answerTelegramCallback({
-            callbackQueryId: callbackQuery.id,
-            text: result?.ok ? 'Đã cập nhật.' : 'Không cập nhật được.',
-            botToken,
-          });
-
           let editText = '';
           if (result?.ok) {
             const latestSnap = await db.collection('online_orders').doc(targetId).get().catch(() => null);
@@ -4522,7 +4680,11 @@ exports.telegramWebhook = onRequest({
             messageId: callbackMessageId,
             botToken,
             text: editText,
-          });
+          }).catch(err => logger.error('Telegram online-order message edit failed', {
+            orderId: targetId,
+            error: err?.message || String(err),
+            responseData: err?.response?.data || null,
+          }));
           return json(res, 200, { ok: true, callback: 'online-order', result });
         }
 
@@ -5412,8 +5574,13 @@ exports.syncOnlineOrderStatusFromPosOrder = onDocumentUpdated(
     });
     const onlineOrderId = String(matchedOnlineOrder?.id || '').trim();
     if (!onlineOrderId) return;
+    const currentOnlineStatus = String(matchedOnlineOrder.data?.status || '').trim().toLowerCase();
+    if (['completed', 'cancelled', 'rejected'].includes(currentOnlineStatus)) return;
 
-    const nextStatus = mapOnlineOrderStatusFromPosItems(after, after.items || []);
+    const posStatus = String(after.status || '').trim().toLowerCase();
+    const nextStatus = posStatus === 'cancelled'
+      ? 'cancelled'
+      : mapOnlineOrderStatusFromPosItems(after, after.items || []);
     const nextPayload = {
       status: nextStatus,
       posOrderId: orderId,

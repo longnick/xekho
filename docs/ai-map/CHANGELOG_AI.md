@@ -1,3 +1,9 @@
+# 2026-07-31 - Online order completion money + Telegram callback reliability
+- `DB.Orders.close` now rereads live `orders/{id}` inside completion transaction before creating `history`, preserving live items and unit prices.
+- Online approval rejects zero-price POS lines before transaction writes; history-created trigger remains canonical completed sync after order deletion.
+- Online Telegram callback ACKs before approval/reject work; message-edit failures log with order context; delivering label is clean UTF-8.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-31-online-order-completion-fix.md`
+
 # 2026-07-22 - Final main integration candidate
 - Merged reviewed security packaging history with rewritten `main`, preserving packaging runtime and adding only `main` Hosting redirects.
 - Re-ran clean installs, 207 Jest tests, 144 Functions security tests, 37 Rules tests, 4 deny regressions, dependency policy, Hosting/browser gates, and authenticated synthetic Functions Emulator E2E.
@@ -1939,3 +1945,24 @@ Branch: `task/kilo-fix-20260623-050807`
 - Added `72 px` bottom reserve to the mobile menu pane/grid so dish cards do not sit underneath the action bar.
 - Added `scripts/verify-order-actionbar-ui.js` and verified with Puppeteer iPhone measurement plus repo checks.
 - Task log: `docs/ai-map/TASK_LOGS/2026-06-26-1135-order-actionbar-mobile.md`
+## 2026-07-31 - Server callable online order completion
+
+Repo: /tmp/xekho-online-order-fix
+Branch: ok
+Agent: Hermes subagent
+Summary: Added manager/admin/owner callable completion using canonical POS order transaction; client no longer closes directly.
+Files changed: `functions/index.js`, `functions/callableHandlers.js`, `functions/utils/callableAuthorization.js`, `db.js`, `app.js`, focused tests.
+Verification: focused Jest 34 passed; syntax and diff checks passed.
+Next: owner review; emulator/live gates remain separate.
+Task log: `docs/ai-map/TASK_LOGS/2026-07-31-online-order-completion-fix.md`
+
+## 2026-07-31 - Online completion P1 review fixes
+
+Repo: /tmp/xekho-online-order-fix
+Branch: ok
+Agent: Hermes subagent
+Summary: Fixed percent/VND discount math, explicit history money fields/bill number, atomic canonical inventory deduction with fail-closed validation, Telegram early-ACK error isolation.
+Files changed: `functions/index.js`, `functions/telegram/online-orders.js`, `functions/onlineOrderCompletionWiring.test.js`, AI map/task log.
+Verification: RED evidence recorded; focused 45 tests, full 267 tests, syntax checks, diff check passed.
+Next: no deploy; owner review/emulator smoke separate.
+Task log: `docs/ai-map/TASK_LOGS/2026-07-31-online-order-completion-fix.md`

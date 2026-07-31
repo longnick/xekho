@@ -4890,87 +4890,13 @@ async function completeOnlineOrder(orderId) {
   try {
     const cleanId = String(orderId || '').trim();
     if (!cleanId) throw new Error('Thiếu mã đơn online');
-
-    const onlineOrder = (window.appState?.onlineOrders || []).find(order =>
-      String(order?._docId || order?.id || '') === cleanId
-    );
-    if (!onlineOrder) throw new Error('Không tìm thấy đơn online');
-    const onlineOrderDocId = _resolveOnlineOrderDocId(onlineOrder, cleanId);
-
-    const confirmOk = window.confirm(`Hoàn tất đơn online ${onlineOrder.orderCode || cleanId} và ghi nhận doanh số vào POS?`);
+    const onlineOrder = (window.appState?.onlineOrders || []).find(order => String(order?._docId || order?.id || '') === cleanId);
+    const confirmOk = window.confirm(`Hoàn tất đơn online ${onlineOrder?.orderCode || cleanId} và ghi nhận doanh số vào POS?`);
     if (!confirmOk) return;
-
     showToast('⏳ Đang hoàn tất đơn online...', 'info');
-
-    const { posOrderId, liveOrder, historyOrder } = await _resolveOnlinePosContext(onlineOrder);
-    if (posOrderId && posOrderId !== String(onlineOrder.posOrderId || '').trim()) {
-      _patchLocalOnlineOrderMeta(onlineOrderDocId, { posOrderId });
-    }
-    if (!liveOrder) {
-      if (historyOrder) {
-        await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
-          status: 'completed',
-          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
-          completedAt: new Date().toISOString(),
-          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
-        });
-        _patchLocalOnlineOrderMeta(onlineOrderDocId, {
-          status: 'completed',
-          posOrderId: String(historyOrder.id || posOrderId || '').trim(),
-          completedAt: new Date().toISOString(),
-          historyId: String(historyOrder.historyId || historyOrder.id || '').trim(),
-        });
-        showToast('✅ Đơn này đã được hoàn tất trong POS trước đó.', 'success');
-        renderOnlineOrdersPanel();
-        renderTables();
-        return;
-      }
-      throw new Error('Không tìm thấy đơn POS tương ứng cho đơn online này');
-    }
-    if (String(liveOrder.status || '').toLowerCase() !== 'open') {
-      throw new Error('Đơn POS không còn ở trạng thái mở');
-    }
-
-    const items = Array.isArray(liveOrder.items) ? liveOrder.items : [];
-    const itemsTotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
-    const extras = {
-      discount: Number(liveOrder.discount || 0) || 0,
-      discountType: liveOrder.discountType === 'percent' ? 'percent' : 'vnd',
-      discountNote: String(liveOrder.discountNote || '').trim(),
-      shipping: Number(liveOrder.shipping || 0) || 0,
-      note: String(liveOrder.note || '').trim(),
-    };
-    const vatAmount = Number(liveOrder.vatAmount || 0) || 0;
-    const taxRate = Number(liveOrder.taxRate || 0) || 0;
-    const subtotal = Math.max(0, itemsTotal - extras.discount + extras.shipping);
-    const total = subtotal + vatAmount;
-    const cost = _estimateOnlineOrderCost(items);
-    const billNo = _buildOnlineOrderBillNo(onlineOrder);
-    const payMethod = _mapOnlineOrderPayMethod(onlineOrder);
-
-    await window.DB.Orders.close(liveOrder.id, {
-      total,
-      cost,
-      payMethod,
-      discount: extras.discount,
-      discountNote: extras.discountNote,
-      discountType: extras.discountType,
-      shipping: extras.shipping,
-      vatAmount,
-      taxRate,
-      billNo,
-    });
-
-    await window.DB?.OnlineOrders?.syncFromPos?.(onlineOrderDocId, {
-      status: 'completed',
-      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
-      completedAt: new Date().toISOString(),
-    });
-    _patchLocalOnlineOrderMeta(onlineOrderDocId, {
-      status: 'completed',
-      posOrderId: String(liveOrder.id || posOrderId || '').trim(),
-      completedAt: new Date().toISOString(),
-    });
+    const result = await window.DB.OnlineOrders.complete(cleanId);
+    if (!result?.ok) throw new Error('Không thể hoàn tất đơn online');
+    _patchLocalOnlineOrderMeta(cleanId, { status: 'completed', historyId: result.historyId, finalTotal: result.finalTotal });
     showToast('✅ Đã hoàn tất đơn online và ghi nhận doanh số vào POS!', 'success');
     renderOnlineOrdersPanel();
     renderTables();

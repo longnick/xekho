@@ -1702,13 +1702,16 @@ const Orders = {
     const deductIds = Object.keys(deductions);
 
     await runTransaction(_db, async tx => {
-      // Đọc các inv doc trước khi write (quy tắc bắt buộc của Firestore Transaction)
+      // Đọc lại order trong cùng transaction: history phải dùng snapshot live, không dùng placeholder/cached payload.
+      const liveOrderSnap = await tx.get(orderRef);
+      if (!liveOrderSnap.exists()) throw new Error('Đơn không tồn tại: ' + orderId);
+      const liveOrder = liveOrderSnap.data() || {};
       const invSnaps = await Promise.all(deductIds.map(id => tx.get(_masterInventoryDoc(id))));
 
       // Ghi history
       const histRef = doc(_col('history'));
       tx.set(histRef, sanitize({
-        ...order,
+        ...liveOrder,
         ...payInfo,
         historyId: histRef.id,
         paidAt:    serverTimestamp(),
@@ -2483,6 +2486,7 @@ const CustomerRequests = {
 
 const _approveOnlineOrderCallable = httpsCallable(_functions, 'approveOnlineOrder');
 const _rejectOnlineOrderCallable = httpsCallable(_functions, 'rejectOnlineOrder');
+const _completeOnlineOrderCallable = httpsCallable(_functions, 'completeOnlineOrder');
 
 const OnlineOrders = {
   async approve(orderId) {
@@ -2496,6 +2500,13 @@ const OnlineOrders = {
     const cleanId = String(orderId || '').trim();
     if (!cleanId) throw new Error('Thiếu mã đơn online');
     const response = await _rejectOnlineOrderCallable({ orderId: cleanId });
+    return response?.data || { ok: false };
+  },
+
+  async complete(orderId) {
+    const cleanId = String(orderId || '').trim();
+    if (!cleanId) throw new Error('Thiếu mã đơn online');
+    const response = await _completeOnlineOrderCallable({ orderId: cleanId });
     return response?.data || { ok: false };
   },
 

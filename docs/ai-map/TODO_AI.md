@@ -1,3 +1,12 @@
+# 2026-07-31 - DONE: Online order completion money + Telegram callback reliability
+- DONE: History snapshot now reads live order inside `DB.Orders.close` transaction; prevents stale/placeholder online history lines.
+- DONE: Online approval rejects unit price `<= 0` before POS writes; callback ACK precedes online approve/reject work; edit failure logs.
+- DONE: Existing history-create completed-status sync verified; no `orders` update can run after delete.
+- DONE extension: `completeOnlineOrder` callable is manager/admin/owner authorized; transaction reads canonical `orders/{posOrderId}`, validates items/total, writes history plus terminal `online_orders`, deletes POS order, resets real table. Browser invokes callable only.
+- DONE extension: completion calculates percent/VND `discountAmount`, preserves explicit history money fields, and deducts `Inventory_Items` via `Product_Catalog.linkedInventoryId` or `Recipes_BOM` inside same transaction. Missing recipe/link/inventory/stock fails closed.
+- Next: owner review, then separate emulator/live/deploy approval.
+- Task log: `docs/ai-map/TASK_LOGS/2026-07-31-online-order-completion-fix.md`.
+
 # 2026-07-22 - DONE: Build final main integration candidate
 - DONE: Integrated reviewed packaging and rewritten `main` without production deploy or force-push.
 - DONE: Full local release gates and authenticated synthetic Emulator E2E passed.

@@ -72,12 +72,30 @@ function aggregateRequestStatusFromItems(items = []) {
 }
 
 /**
- * @param {string} orderId
- * @param {number} index
- * @param {Object} orderItem
- * @param {Object} product
- * @returns {Object}
+ * @param {any[]} items
+ * @returns {any[]}
  */
+function assertOnlineOrderPosItems(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  list.forEach(item => {
+    if (!(Number(item?.price) > 0)) {
+      throw new Error(`Đơn online có món chưa có giá hợp lệ: ${String(item?.name || item?.id || 'Món').trim() || 'Món'}`);
+    }
+  });
+  return list;
+}
+
+function calculateOnlineOrderCompletionTotals(order = {}) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const subtotal = items.reduce((sum, item) => sum + ((Number(item?.qty) || 0) * (Number(item?.price) || 0)), 0);
+  const discount = Math.max(0, Number(order.discount) || 0);
+  const discountType = String(order.discountType || 'vnd').trim().toLowerCase();
+  const discountAmount = discountType === 'percent' ? Math.round(subtotal * Math.min(discount, 100) / 100) : discount;
+  const shipping = Number(order.shipping) || 0;
+  const vatAmount = Number(order.vatAmount) || 0;
+  return { subtotal, discountAmount, finalTotal: Math.round(Math.max(0, subtotal - discountAmount + shipping + vatAmount)) };
+}
+
 function buildPosItemFromOnlineOrder(orderId, index, orderItem = {}, product = {}) {
   const itemTypeRaw = String(product.item_type || '').trim().toLowerCase();
   const itemType = itemTypeRaw === 'retail' ? 'retail_item' : 'finished_good';
@@ -118,7 +136,7 @@ function buildOnlineOrderTelegramStatusLabel(status) {
     case 'ready_to_serve':
       return 'XONG';
     case 'delivering':
-      return 'ANG GIAO';
+      return 'ĐANG GIAO';
     case 'completed':
       return 'ĐÃ GIAO';
     case 'cancelled':
@@ -252,6 +270,8 @@ module.exports = {
   formatTelegramBillItemsClean,
   buildPosItemFromRequest,
   aggregateRequestStatusFromItems,
+  assertOnlineOrderPosItems,
+  calculateOnlineOrderCompletionTotals,
   buildPosItemFromOnlineOrder,
   buildOnlineOrderTelegramStatusLabel,
   buildOnlineOrderTelegramSummary,
