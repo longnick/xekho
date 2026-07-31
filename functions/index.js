@@ -3941,7 +3941,7 @@ async function completeOnlineOrderInternal(orderId, actor = {}) {
       throw new HttpsError('failed-precondition', 'Đơn POS không còn ở trạng thái mở.');
     }
     const canonicalItems = assertCanonicalOnlineCompletionItems(canonicalOrder.items);
-    const totals = calculateOnlineOrderCompletionTotals(canonicalOrder);
+    const totals = calculateOnlineOrderCompletionTotals({ ...canonicalOrder, items: canonicalItems });
     const calculatedTotal = totals.finalTotal;
     const inventoryDeductions = await buildOnlineOrderInventoryDeductionMap(canonicalItems, tx);
     const inventoryIds = Object.keys(inventoryDeductions);

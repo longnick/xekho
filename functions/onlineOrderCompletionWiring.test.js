@@ -100,7 +100,7 @@ describe('online order completion money and Telegram reliability', () => {
     expect(completion).toContain('await db.runTransaction');
     expect(completion).toContain('const canonicalOrder = posOrderSnap.data() || {};');
     expect(completion).toContain('assertCanonicalOnlineCompletionItems(canonicalOrder.items)');
-    expect(completion).toContain('calculateOnlineOrderCompletionTotals(canonicalOrder)');
+    expect(completion).toContain('calculateOnlineOrderCompletionTotals({ ...canonicalOrder, items: canonicalItems })');
     expect(completion).toContain("billNo: `ONL-${String(onlineOrder.orderCode || '').trim() || cleanOrderId}`");
     ['cost:', 'taxRate:', 'discount:', 'discountType:', 'discountNote:', 'shipping:', 'vatAmount:', 'discountAmount:'].forEach(field => expect(completion).toContain(field));
     expect(completion).toContain('await buildOnlineOrderInventoryDeductionMap(canonicalItems, tx)');
