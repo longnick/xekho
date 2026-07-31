@@ -57,6 +57,13 @@ describe('online order completion money and Telegram reliability', () => {
     expect(onlineCallback).toContain("logger.error('Telegram online-order message edit failed'");
   });
 
+  test('index wrapper forwards canonical order instead of overwriting it', () => {
+    const source = read('functions/index.js');
+    const wrapper = between(source, 'function calculateOnlineOrderCompletionTotals', 'async function buildOnlineOrderInventoryDeductionMap');
+    expect(wrapper).toContain('calculateOnlineOrderCompletionTotals(order);');
+    expect(wrapper).not.toContain('return telegramOnlineOrders.calculateOnlineOrderCompletionTotals(order = {});');
+  });
+
   test('completion totals percent discount before shipping and VAT', () => {
     expect(onlineOrders.calculateOnlineOrderCompletionTotals({
       items: [{ qty: 2, price: 100000 }], discount: 10, discountType: 'percent', shipping: 15000, vatAmount: 5000,

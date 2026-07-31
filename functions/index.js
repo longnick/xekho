@@ -3814,7 +3814,7 @@ function assertOnlineOrderPosItems(items = []) {
 }
 
 function calculateOnlineOrderCompletionTotals(order = {}) {
-  return telegramOnlineOrders.calculateOnlineOrderCompletionTotals(order = {});
+  return telegramOnlineOrders.calculateOnlineOrderCompletionTotals(order);
 }
 
 async function buildOnlineOrderInventoryDeductionMap(items, tx) {
@@ -3943,6 +3943,15 @@ async function completeOnlineOrderInternal(orderId, actor = {}) {
     const canonicalItems = assertCanonicalOnlineCompletionItems(canonicalOrder.items);
     const totals = calculateOnlineOrderCompletionTotals({ ...canonicalOrder, items: canonicalItems });
     const calculatedTotal = totals.finalTotal;
+    logger.info('Online completion canonical totals', {
+      orderId: cleanOrderId,
+      posOrderId,
+      itemCount: canonicalItems.length,
+      itemTotals: canonicalItems.map(item => ({ id: item.id, qty: item.qty, price: item.price })),
+      subtotal: totals.subtotal,
+      discountAmount: totals.discountAmount,
+      finalTotal: calculatedTotal,
+    });
     const inventoryDeductions = await buildOnlineOrderInventoryDeductionMap(canonicalItems, tx);
     const inventoryIds = Object.keys(inventoryDeductions);
     const inventorySnaps = await Promise.all(inventoryIds.map(id => tx.get(db.collection('Inventory_Items').doc(id))));
