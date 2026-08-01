@@ -893,9 +893,10 @@ async function executeReportQuery(args = {}, options = {}) {
     const reportType = String(args.loai_bao_cao || 'tong_quan').trim().toLowerCase();
     const itemFilter = String(args.ten_mon || '').trim();
 
-    const [historySnap, inventorySnap] = await Promise.all([
+    const [historySnap, inventorySnap, publicMenuSnap] = await Promise.all([
       db.collection('history').get(),
       db.collection('Inventory_Items').get(),
+      readPublicMenuOrThrow(db),
     ]);
 
     const orders = historySnap.docs
@@ -910,7 +911,11 @@ async function executeReportQuery(args = {}, options = {}) {
       });
 
     const summary = buildSalesSummary(orders);
-    const topItems = buildTopItems(orders, limit);
+    const publicMenuByProductId = buildPublicMenuMap(publicMenuSnap.docs);
+    const topItems = enrichTopItemsWithPublicMenu(
+      buildTopItems(orders, limit, publicMenuByProductId),
+      publicMenuByProductId
+    );
     const retailStocks = inventorySnap.docs
       .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
       .filter(item => !item.hidden && normalizeVi(item.inv_type || item.itemType) === 'retail')
@@ -960,6 +965,9 @@ async function executeReportQuery(args = {}, options = {}) {
 
     return payload;
   } catch (error) {
+    if (error?.code === 'PUBLIC_MENU_UNAVAILABLE') {
+      return { ok: false, tool: 'truy_van_bao_cao', error: 'public_menu unavailable' };
+    }
     if (options.fallbackBigQuery === true || options.preferBigQuery === true) {
       const bigQueryReport = await executeBigQueryReportQuery(args, options);
       if (bigQueryReport?.ok) return bigQueryReport;
@@ -997,6 +1005,41 @@ function buildSalesSummary(orders) {
   };
 }
 
+function buildPublicMenuMap(docs = []) {
+  return new Map(docs.map(doc => {
+    const data = doc.data() || {};
+    return [String(data.productId || doc.id), {
+      hidden: data.hidden === true,
+      sellPrice: toFiniteNumber(data.sell_price),
+      updatedAt: data.updatedAt || null,
+    }];
+  }));
+}
+
+function isPublicMenuSaleable(menuItem) {
+  // ponytail: add available !== false when projection writes available consistently.
+  return Boolean(menuItem) && menuItem.hidden !== true;
+}
+
+async function readPublicMenuOrThrow(db) {
+  try {
+    return await db.collection('public_menu').get();
+  } catch (cause) {
+    const error = new Error('public_menu unavailable');
+    error.code = 'PUBLIC_MENU_UNAVAILABLE';
+    error.cause = cause;
+    throw error;
+  }
+}
+
+function enrichTopItemsWithPublicMenu(items = [], menuByProductId = new Map()) {
+  return items.flatMap(item => {
+    const menuItem = menuByProductId.get(String(item.id || ''));
+    if (!isPublicMenuSaleable(menuItem)) return [];
+    return [{ ...item, livePrice: menuItem.sellPrice }];
+  });
+}
+
 function buildTopItems(orders, limit) {
   const map = new Map();
   orders.forEach(order => {
@@ -1005,9 +1048,10 @@ function buildTopItems(orders, limit) {
       const name = String(item.name || id || 'Khong ro').trim();
       const qty = toFiniteNumber(item.qty);
       if (!id || qty <= 0) return;
-      const current = map.get(id) || { id, name, qty: 0, revenue: 0, cost: 0 };
+      const historicalPrice = toFiniteNumber(item.price);
+      const current = map.get(id) || { id, name, qty: 0, revenue: 0, cost: 0, historicalPrice };
       current.qty += qty;
-      current.revenue += toFiniteNumber(item.price) * qty;
+      current.revenue += historicalPrice * qty;
       current.cost += toFiniteNumber(item.cost) * qty;
       map.set(id, current);
     });
@@ -1538,6 +1582,10 @@ module.exports = {
   fetchValidMenuItems,
   fuzzyMatchMenuItem,
   findTopMenuCandidates,
+  buildPublicMenuMap,
+  isPublicMenuSaleable,
+  readPublicMenuOrThrow,
+  enrichTopItemsWithPublicMenu,
   normalizeVi,
   executePendingAction,
   cancelPendingAction,

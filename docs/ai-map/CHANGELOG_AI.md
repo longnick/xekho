@@ -1,3 +1,7 @@
+# 2026-08-01 - Public-menu report safety
+- Report top items now require same-run `public_menu` visibility and expose live menu price.
+- Task log: `docs/ai-map/TASK_LOGS/2026-08-01-public-menu-report-safety.md`
+
 # 2026-07-22 - Final main integration candidate
 - Merged reviewed security packaging history with rewritten `main`, preserving packaging runtime and adding only `main` Hosting redirects.
 - Re-ran clean installs, 207 Jest tests, 144 Functions security tests, 37 Rules tests, 4 deny regressions, dependency policy, Hosting/browser gates, and authenticated synthetic Functions Emulator E2E.
