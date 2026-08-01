@@ -347,7 +347,11 @@ async function getProfitReport(args = {}) {
   const range = buildVietnamPosReportRange(timeframe);
 
   try {
-    const historySnap = await db.collection('history').get();
+    const { buildPublicMenuMap, enrichTopItemsWithPublicMenu, readPublicMenuOrThrow } = getAiDeps();
+    const [historySnap, publicMenuSnap] = await Promise.all([
+      db.collection('history').get(),
+      readPublicMenuOrThrow(db),
+    ]);
     const itemMap = new Map();
     let orderCount = 0;
     let revenue = 0;
@@ -364,21 +368,24 @@ async function getProfitReport(args = {}) {
       revenue += Number(order.total || 0) || 0;
       const items = Array.isArray(order.items) ? order.items : [];
       items.forEach(item => {
+        const id = String(item?.id || item?.item_id || '').trim();
         const name = String(item?.name || '').trim();
         const qty = Number(item?.qty || 0) || 0;
         const unitPrice = Number(item?.price || item?.unitPrice || 0) || 0;
         const unitCost = Number(item?.cost || item?.unitCost || 0) || 0;
-        if (!name || !(qty > 0)) return;
-        if (!itemMap.has(name)) {
-          itemMap.set(name, {
+        if (!id || !name || !(qty > 0)) return;
+        if (!itemMap.has(id)) {
+          itemMap.set(id, {
+            id,
             name,
             qty: 0,
             revenue: 0,
             cost: 0,
             grossProfit: 0,
+            historicalPrice: unitPrice,
           });
         }
-        const row = itemMap.get(name);
+        const row = itemMap.get(id);
         const lineRevenue = unitPrice * qty;
         const lineCost = unitCost * qty;
         row.qty += qty;
@@ -389,19 +396,32 @@ async function getProfitReport(args = {}) {
       });
     });
 
-    const topItems = [...itemMap.values()]
-      .map(item => ({
-        ...item,
-        profit: item.grossProfit,
-      }))
-      .sort((a, b) => {
+    const topItems = enrichTopItemsWithPublicMenu(
+      [...itemMap.values()].map(item => ({ ...item, profit: item.grossProfit })),
+      buildPublicMenuMap(publicMenuSnap.docs)
+    ).sort((a, b) => {
         const primary = sort === 'lowest' ? a.grossProfit - b.grossProfit : b.grossProfit - a.grossProfit;
         if (primary !== 0) return primary;
         return b.revenue - a.revenue;
       })
       .slice(0, 5);
 
-    if (!topItems.length) return buildMockProfitReport({ timeframe: range.timeframe, sort }, 'empty-live-data');
+    if (!topItems.length) {
+      return {
+        bestSellerItem: null,
+        profit: 0,
+        time: range.label,
+        timeframe: range.timeframe,
+        sort,
+        orderCount,
+        revenue: Math.round(revenue),
+        cost: Math.round(cost),
+        grossProfit: Math.round(revenue - cost),
+        topItems: [],
+        range: { from: range.from.toISOString(), toExclusive: range.to.toISOString(), timezone: 'Asia/Ho_Chi_Minh' },
+        dataSource: 'firestore-history-public-menu-readonly',
+      };
+    }
 
     const best = topItems[0];
     return {
@@ -415,8 +435,11 @@ async function getProfitReport(args = {}) {
       cost: Math.round(cost),
       grossProfit: Math.round(revenue - cost),
       topItems: topItems.map(item => ({
+        id: item.id,
         name: item.name,
         qty: item.qty,
+        historicalPrice: item.historicalPrice,
+        livePrice: item.livePrice,
         revenue: Math.round(item.revenue),
         cost: Math.round(item.cost),
         grossProfit: Math.round(item.grossProfit),
@@ -426,14 +449,15 @@ async function getProfitReport(args = {}) {
         toExclusive: range.to.toISOString(),
         timezone: 'Asia/Ho_Chi_Minh',
       },
-      dataSource: 'firestore-history-readonly',
+      dataSource: 'firestore-history-public-menu-readonly',
     };
   } catch (error) {
-    logger.warn('getProfitReport Firestore read failed; falling back to mock report', {
+    logger.warn('getProfitReport Firestore read failed', {
       error: error?.message || String(error),
       timeframe,
       sort,
     });
+    if (error?.code === 'PUBLIC_MENU_UNAVAILABLE') throw error;
     return buildMockProfitReport({ timeframe, sort }, 'firestore-error');
   }
 }
@@ -2376,9 +2400,11 @@ async function sendCompletedOrderTelegram(historyId, order = {}) {
 }
 
 async function buildDailyReportTelegramData(range) {
-  const [historySnap, inventorySnap] = await Promise.all([
+  const { buildPublicMenuMap, enrichTopItemsWithPublicMenu, readPublicMenuOrThrow } = getAiDeps();
+  const [historySnap, inventorySnap, publicMenuSnap] = await Promise.all([
     db.collection('history').get(),
     db.collection('Inventory_Items').get(),
+    readPublicMenuOrThrow(db),
   ]);
 
   const rawOrders = historySnap.docs.map(doc => ({
@@ -2410,28 +2436,28 @@ async function buildDailyReportTelegramData(range) {
 
     const items = Array.isArray(order.items) ? order.items : [];
     items.forEach(item => {
+      const id = String(item.id || item.item_id || '').trim();
       const name = String(item.name || 'Khong ro').trim();
       const qty = Number(item.qty || 0);
-      const lineRevenue = (Number(item.price || 0) * qty);
-      if (!name || !(qty > 0)) return;
-      if (!topItemMap.has(name)) {
-        topItemMap.set(name, {
-          name,
-          qty: 0,
-          revenue: 0,
-        });
+      const historicalPrice = Number(item.price || 0);
+      const lineRevenue = historicalPrice * qty;
+      if (!id || !name || !(qty > 0)) return;
+      if (!topItemMap.has(id)) {
+        topItemMap.set(id, { id, name, qty: 0, revenue: 0, historicalPrice });
       }
-      const current = topItemMap.get(name);
+      const current = topItemMap.get(id);
       current.qty += qty;
       current.revenue += lineRevenue;
     });
   });
 
-  const topItem = [...topItemMap.values()]
-    .sort((a, b) => {
-      if (b.qty !== a.qty) return b.qty - a.qty;
-      return b.revenue - a.revenue;
-    })[0] || null;
+  const topItem = enrichTopItemsWithPublicMenu(
+    [...topItemMap.values()],
+    buildPublicMenuMap(publicMenuSnap.docs)
+  ).sort((a, b) => {
+    if (b.qty !== a.qty) return b.qty - a.qty;
+    return b.revenue - a.revenue;
+  })[0] || null;
 
   const retailStocks = inventoryItems
     .filter(item => {
