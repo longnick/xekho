@@ -69,6 +69,17 @@ function resolveWidgetRange(range = 'today', now = new Date()) {
   const today = getVietnamDateParts(now).dateKey;
   const [year, month] = today.split('-');
   const normalized = String(range || 'today').trim().toLowerCase();
+  if (['30d', '30days', 'last_30d', '30ngay'].includes(normalized)) {
+    const fromYmd = addDaysYmd(today, -29);
+    return {
+      key: '30d',
+      rangeLabel: '30 ngày gần nhất',
+      fromYmd,
+      toYmd: today,
+      from: utcDateFromVietnamYmd(fromYmd, false),
+      to: utcDateFromVietnamYmd(today, true),
+    };
+  }
   if (['month', 'this_month', 'thang', 'thang-nay'].includes(normalized)) {
     const fromYmd = `${year}-${month}-01`;
     return {

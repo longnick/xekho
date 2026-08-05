@@ -5,7 +5,7 @@
 const CONFIG = {
   endpoint: 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData',
   token: '***REVOKED_CREDENTIAL***', // Private owner token; rotate before sharing this script.
-  range: 'today', // today | 7d | month
+  range: '30d', // 30d | today | 7d | month
   shopName: 'XE KHÔ',
 };
 
@@ -66,7 +66,7 @@ function getSampleData() {
   return {
     ok: true,
     sample: true,
-    rangeLabel: CONFIG.range === 'month' ? 'Tháng này' : 'Hôm nay',
+    rangeLabel: CONFIG.range === 'month' ? 'Tháng này' : '30 ngày gần nhất',
     updatedAt: new Date().toISOString(),
     revenue: 4820000,
     expenses: 3390000,
@@ -116,14 +116,6 @@ function addHeader(widget, data, compact = false) {
   left.layoutVertically();
   addText(left, compact ? CONFIG.shopName : `${CONFIG.shopName} · DOANH THU`, { font: Font.boldSystemFont(compact ? 14 : 13), color: COLORS.text });
   addText(left, `${data.seriesDays || 30} ngày gần nhất · ${formatTime(data.updatedAt)}`, { size: 9, color: COLORS.muted });
-  row.addSpacer();
-  const live = row.addStack();
-  live.backgroundColor = new Color(data.sample ? COLORS.orange : COLORS.green, 0.15);
-  live.borderColor = new Color(data.sample ? COLORS.orange : COLORS.green, 0.45);
-  live.borderWidth = 0.7;
-  live.cornerRadius = 9;
-  live.setPadding(4, 7, 4, 7);
-  addText(live, data.sample ? 'MẪU' : 'LIVE', { font: Font.boldSystemFont(8), color: data.sample ? COLORS.orange : COLORS.green });
 }
 
 function addMetricCard(parent, label, value, accent, options = {}) {
@@ -251,7 +243,7 @@ function buildSmall(data) {
   widget.setPadding(13, 13, 13, 13);
   addHeader(widget, data, true);
   widget.addSpacer(10);
-  addText(widget, 'DOANH THU HÔM NAY', { font: Font.boldSystemFont(9), color: COLORS.blue });
+  addText(widget, 'DOANH THU 30 NGÀY', { font: Font.boldSystemFont(9), color: COLORS.blue });
   addText(widget, moneyShort(data.revenue), { font: Font.boldSystemFont(28), color: COLORS.text });
   widget.addSpacer(7);
   const chart = widget.addImage(drawRevenueTrendChart(data.series, 132, 58, true));
@@ -292,7 +284,7 @@ function buildLarge(data) {
   const metrics = widget.addStack();
   metrics.layoutHorizontally();
   metrics.spacing = 6;
-  addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 72, height: 72, big: true, note: data.rangeLabel || 'Hôm nay' });
+  addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 72, height: 72, big: true, note: data.rangeLabel || '30 ngày' });
   addMetricCard(metrics, 'LỢI NHUẬN', moneyShort(data.profit), Number(data.profit || 0) >= 0 ? COLORS.green : COLORS.red, { width: 72, height: 72, big: true, note: `${Number(data.marginPct || 0).toFixed(1)}% margin` });
   addMetricCard(metrics, 'CHI PHÍ', moneyShort(data.expenses), COLORS.orange, { width: 72, height: 72, big: true, note: `Giá vốn ${moneyShort(data.cogs)}` });
   addMetricCard(metrics, 'ĐƠN HÀNG', String(data.orders || 0), COLORS.purple, { width: 72, height: 72, big: true, note: `CK ${moneyShort(data.bank)}` });

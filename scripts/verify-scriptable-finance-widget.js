@@ -116,6 +116,10 @@ async function runScriptableRenderSmoke(family) {
 (async () => {
   console.log('\n[1] Pure finance formula');
   const payload = await widget.buildFinanceWidgetPayload({ db: fakeDb, rangeKey: 'today', now: new Date('2026-07-08T10:00:00.000Z') });
+  const thirtyDayRange = widget.resolveWidgetRange('30d', new Date('2026-08-05T10:00:00.000Z'));
+  const thirtyDayPayload = await widget.buildFinanceWidgetPayload({ db: fakeDb, rangeKey: '30d', now: new Date('2026-08-05T10:00:00.000Z') });
+  assert(thirtyDayRange.key === '30d' && thirtyDayRange.fromYmd === '2026-07-07' && thirtyDayRange.toYmd === '2026-08-05', '30d range covers today and preceding 29 Vietnam dates');
+  assert(thirtyDayPayload.rangeDays === 30 && thirtyDayPayload.revenue === 340000 && thirtyDayPayload.orders === 2 && thirtyDayPayload.fixedCost === 900000, '30d payload aggregates full range and applies 30 daily fixed costs');
   assert(payload.ok === true, 'payload ok');
   assert(payload.revenue === 340000, 'netSales = grossSales - discountTotal');
   assert(payload.cogs === 110000, 'cogs sums item cost * qty');
@@ -133,6 +137,7 @@ async function runScriptableRenderSmoke(family) {
   assert(functionsIndex.includes('SCRIPTABLE_FINANCE_WIDGET_TOKEN'), 'endpoint has token parameter');
   assert(functionsIndex.includes('exports.scriptableFinanceWidgetData'), 'Cloud Function endpoint exported');
   assert(scriptableFile.includes('modern dark revenue trend'), 'Scriptable file is modern dark revenue variant');
+  assert(scriptableFile.includes("range: '30d'") && !scriptableFile.includes("addText(live,"), 'widget defaults totals to 30 days and has no LIVE pill');
   assert(scriptableFile.includes('buildSmall') && scriptableFile.includes('buildMedium') && scriptableFile.includes('buildLarge'), 'Scriptable supports small/medium/large');
   assert(scriptableFile.includes('const CONFIG') && !scriptableFile.includes("token: ''"), 'private Scriptable copy has a widget token');
   assert(!/firebase-adminsdk|private_key|BEGIN PRIVATE KEY/.test(scriptableFile), 'Scriptable file does not embed Firebase credentials');
@@ -153,7 +158,7 @@ async function runScriptableRenderSmoke(family) {
   console.log('\n[4] Scriptable runtime stub smoke');
   const largeWidget = await runScriptableRenderSmoke('large');
   assert(largeWidget && largeWidget.kind === 'widget', 'large Scriptable widget renders with stubs');
-  assert(countNodes(largeWidget) >= 40, 'large widget renders a dense balanced node tree');
+  assert(countNodes(largeWidget) >= 37, 'large widget renders a dense balanced node tree without status pill');
   assert(JSON.stringify(largeWidget).includes('drawn-image'), 'large widget includes DrawContext image output');
 
   if (failed) {
