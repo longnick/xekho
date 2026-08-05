@@ -1,6 +1,6 @@
 # XE KHÔ Scriptable Finance Widget
 
-Variant approved: **Variant A — Owner glance**.
+Variant: **Modern dark revenue trend** — visual style aligned with XE KHÔ Meta Ads widget.
 
 ## Files
 
@@ -19,14 +19,15 @@ Supported range values:
 - `7d`
 - `month`
 
+The revenue chart always displays the latest **30 daily points**, independent of the summary range above.
+
 ## Install on iPhone
 
 1. Open Scriptable.
 2. Create a new script named `XE KHÔ Finance`.
 3. Paste `scripts/scriptable/xekho-finance-widget.js`.
 4. Token setup:
-   - Current private owner copy has `CONFIG.token` prefilled in `xekho-finance-widget.js` so the widget can fetch live data immediately.
-   - If rotating/removing the embedded token later, you can also pass it as widget parameter:
+   - Keep the token only in your private Scriptable copy or pass it as a widget parameter:
 
 ```text
 https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData|YOUR_TOKEN|today
@@ -60,4 +61,4 @@ profit = grossProfit - operatingExpense - fixedCost
 
 - Endpoint requires `Authorization: Bearer <token>` or `?token=<token>` / `x-widget-token`.
 - No Firebase credentials are embedded in Scriptable.
-- This repo copy intentionally embeds the widget token in `CONFIG.token` because the owner approved single-user private use. Do not share the script publicly without rotating/removing that token.
+- The committed source leaves `CONFIG.token` empty. Do not share a private Scriptable copy containing a token.

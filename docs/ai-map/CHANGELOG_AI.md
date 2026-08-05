@@ -1,3 +1,9 @@
+# 2026-08-05 07:29 UTC - Scriptable modern 30-day revenue chart
+- Rebuilt Scriptable finance widget in dark Meta-Ads-style visual system: `#071120` gradient, outlined dark metric cards, blue revenue line, grid, and date labels.
+- Endpoint now returns exactly 30 latest daily revenue points. Scriptable connects all dates in one native `DrawContext` path; medium and large display the full 30-day trend.
+- Kept endpoint read-only/token contract and finance formulas unchanged. Extended verifier for 30 data points, native `addPath()` + `strokePath()` flow, and modern layout markers.
+- Task log: `docs/ai-map/TASK_LOGS/2026-08-05-0729-scriptable-revenue-line-chart.md`
+
 # 2026-07-22 - Final main integration candidate
 - Merged reviewed security packaging history with rewritten `main`, preserving packaging runtime and adding only `main` Hosting redirects.
 - Re-ran clean installs, 207 Jest tests, 144 Functions security tests, 37 Rules tests, 4 deny regressions, dependency policy, Hosting/browser gates, and authenticated synthetic Functions Emulator E2E.

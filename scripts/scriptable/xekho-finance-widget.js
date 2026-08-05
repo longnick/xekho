@@ -1,437 +1,317 @@
-// XE KHÔ Finance Widget — Variant A Owner Glance
-// Paste into iOS Scriptable. Configure endpoint/token below or via Scriptable args.widgetParameter:
-//   https://.../scriptableFinanceWidgetData|YOUR_TOKEN|today
-// Families: small, medium, large.
+// XE KHÔ Finance Widget — modern dark revenue trend
+// Paste into iOS Scriptable. Widget parameter: endpoint|token|range
+// Families: small, medium, large. Revenue chart always shows latest 30 days.
 
 const CONFIG = {
   endpoint: 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData',
   token: '', // Set locally on device; never commit widget token.
   range: 'today', // today | 7d | month
-  shopName: 'Xe Khô Chữa Lành',
+  shopName: 'XE KHÔ',
 };
 
-const BRAND = {
-  primary: '#E10600',
-  secondary: '#FCE100',
-  accent: '#E78170',
-  dark: '#2A1608',
-  light: '#F9EAD1',
-  paper: '#FFF6DF',
-  ok: '#12805C',
-  muted: '#7A5B3B',
+const COLORS = {
+  bg: '#071120',
+  bg2: '#0B1628',
+  panel: '#101B2F',
+  pill: '#111C2F',
+  border: '#263955',
+  text: '#F8FAFC',
+  muted: '#A6B4C8',
+  subtle: '#66768E',
+  blue: '#4C94FF',
+  green: '#6EE66F',
+  orange: '#FF8A1F',
+  purple: '#8B5CF6',
+  red: '#FB7185',
 };
 
 function applyWidgetParameter() {
   const raw = (args.widgetParameter || '').trim();
   if (!raw) return;
-  const [endpoint, token, range] = raw.split('|').map(v => String(v || '').trim());
+  const [endpoint, token, range] = raw.split('|').map(value => String(value || '').trim());
   if (endpoint) CONFIG.endpoint = endpoint;
   if (token) CONFIG.token = token;
   if (range) CONFIG.range = range;
 }
 
 function moneyShort(value) {
-  const n = Number(value || 0);
-  const sign = n < 0 ? '-' : '';
-  const abs = Math.abs(n);
-  if (abs >= 1000000000) return `${sign}${(abs / 1000000000).toFixed(1)}tỷ`;
-  if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}tr`;
+  const amount = Number(value || 0);
+  const sign = amount < 0 ? '-' : '';
+  const abs = Math.abs(amount);
+  if (abs >= 1000000000) return `${sign}${(abs / 1000000000).toFixed(1).replace('.', ',')} tỷ`;
+  if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1).replace('.', ',')}tr`;
   if (abs >= 1000) return `${sign}${Math.round(abs / 1000)}k`;
   return `${sign}${Math.round(abs)}`;
 }
 
-function moneyFull(value) {
-  return `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`;
-}
-
-function pct(value) {
-  const n = Number(value || 0);
-  return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
-}
-
 function formatTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-  } catch (_) {
-    return '--:--';
-  }
+  try { return new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); }
+  catch (_) { return '--:--'; }
+}
+
+function dateLabel(value) {
+  const raw = String(value || '');
+  const match = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}` : raw.slice(0, 5);
 }
 
 function getSampleData() {
+  const base = 2850000;
+  const series = Array.from({ length: 30 }, (_, index) => {
+    const wave = [0.75, 1.14, 0.92, 1.31, 0.88, 1.46, 1.08][index % 7];
+    const revenue = Math.round(base * wave + index * 18000);
+    const expenses = Math.round(revenue * 0.61);
+    return { date: `2026-07-${String(index + 1).padStart(2, '0')}`, revenue, expenses, profit: revenue - expenses };
+  });
   return {
     ok: true,
     sample: true,
     rangeLabel: CONFIG.range === 'month' ? 'Tháng này' : 'Hôm nay',
     updatedAt: new Date().toISOString(),
     revenue: 4820000,
-    cogs: 1530000,
-    operatingExpense: 1210000,
-    fixedCost: 650000,
     expenses: 3390000,
+    cogs: 1530000,
     profit: 1430000,
     marginPct: 29.7,
     orders: 24,
     bank: 3310000,
     cash: 1510000,
-    series: [
-      { date: 'T-6', revenue: 3200000, expenses: 2350000, profit: 850000 },
-      { date: 'T-5', revenue: 4100000, expenses: 2980000, profit: 1120000 },
-      { date: 'T-4', revenue: 3600000, expenses: 2600000, profit: 1000000 },
-      { date: 'T-3', revenue: 5200000, expenses: 3500000, profit: 1700000 },
-      { date: 'T-2', revenue: 3900000, expenses: 3350000, profit: 550000 },
-      { date: 'T-1', revenue: 5600000, expenses: 3600000, profit: 2000000 },
-      { date: 'Nay', revenue: 4820000, expenses: 3390000, profit: 1430000 },
-    ],
-    expenseBreakdown: [
-      { label: 'Giá vốn', amount: 1530000 },
-      { label: 'Vận hành', amount: 1210000 },
-      { label: 'Cố định', amount: 650000 },
-      { label: 'Nhập hàng', amount: 1570000 },
-    ],
+    seriesDays: 30,
+    series,
   };
 }
 
 async function loadData() {
   applyWidgetParameter();
-  if (!CONFIG.token) return { ...getSampleData(), warning: 'Chưa cấu hình token — đang xem mẫu' };
-  const url = `${CONFIG.endpoint}?range=${encodeURIComponent(CONFIG.range)}`;
-  const req = new Request(url);
-  req.headers = { Authorization: `Bearer ${CONFIG.token}` };
-  req.timeoutInterval = 12;
-  const data = await req.loadJSON();
+  if (!CONFIG.token) return { ...getSampleData(), warning: 'Chưa cấu hình token · đang xem mẫu' };
+  const request = new Request(`${CONFIG.endpoint}?range=${encodeURIComponent(CONFIG.range)}`);
+  request.headers = { Authorization: `Bearer ${CONFIG.token}` };
+  request.timeoutInterval = 15;
+  const data = await request.loadJSON();
   if (!data || data.ok === false) throw new Error(data?.error || 'Không tải được dữ liệu widget');
   return data;
 }
 
 function setGradient(widget) {
-  const g = new LinearGradient();
-  g.colors = [new Color(BRAND.paper), new Color(BRAND.light), new Color('#F5D9B8')];
-  g.locations = [0, 0.62, 1];
-  widget.backgroundGradient = g;
+  const gradient = new LinearGradient();
+  gradient.colors = [new Color(COLORS.bg), new Color(COLORS.bg2)];
+  gradient.locations = [0, 1];
+  widget.backgroundGradient = gradient;
 }
 
 function addText(parent, text, options = {}) {
-  const t = parent.addText(String(text || ''));
-  t.textColor = new Color(options.color || BRAND.dark);
-  t.font = options.font || Font.systemFont(options.size || 12);
-  if (options.lineLimit) t.lineLimit = options.lineLimit;
-  if (options.opacity != null) t.textOpacity = options.opacity;
-  return t;
+  const item = parent.addText(String(text || ''));
+  item.font = options.font || Font.systemFont(options.size || 12);
+  item.textColor = new Color(options.color || COLORS.text);
+  item.lineLimit = options.lines || 1;
+  item.minimumScaleFactor = options.minimumScaleFactor || 0.72;
+  return item;
 }
 
-function addTopBar(widget, data, compact = false) {
+function addHeader(widget, data, compact = false) {
   const row = widget.addStack();
   row.layoutHorizontally();
   row.centerAlignContent();
   const left = row.addStack();
   left.layoutVertically();
-  addText(left, compact ? 'XE KHÔ' : CONFIG.shopName, { font: Font.blackSystemFont(compact ? 16 : 15), color: BRAND.dark, lineLimit: 1 });
-  addText(left, `${data.rangeLabel || 'Hôm nay'} · ${formatTime(data.updatedAt)}`, { font: Font.mediumSystemFont(10), color: BRAND.muted, lineLimit: 1 });
+  addText(left, compact ? CONFIG.shopName : `${CONFIG.shopName} · DOANH THU`, { font: Font.boldSystemFont(compact ? 14 : 13), color: COLORS.text });
+  addText(left, `${data.seriesDays || 30} ngày gần nhất · ${formatTime(data.updatedAt)}`, { size: 9, color: COLORS.muted });
   row.addSpacer();
-  const pill = row.addStack();
-  pill.backgroundColor = new Color(BRAND.dark);
-  pill.cornerRadius = 10;
-  pill.setPadding(4, 7, 4, 7);
-  addText(pill, data.sample ? 'MẪU' : 'LIVE', { font: Font.boldSystemFont(9), color: BRAND.secondary });
+  const live = row.addStack();
+  live.backgroundColor = new Color(data.sample ? COLORS.orange : COLORS.green, 0.15);
+  live.borderColor = new Color(data.sample ? COLORS.orange : COLORS.green, 0.45);
+  live.borderWidth = 0.7;
+  live.cornerRadius = 9;
+  live.setPadding(4, 7, 4, 7);
+  addText(live, data.sample ? 'MẪU' : 'LIVE', { font: Font.boldSystemFont(8), color: data.sample ? COLORS.orange : COLORS.green });
 }
 
-function addMetricTile(parent, label, value, options = {}) {
-  const tile = parent.addStack();
-  tile.layoutVertically();
-  tile.backgroundColor = new Color('#FFFFFF', 0.38);
-  tile.cornerRadius = 14;
-  tile.setPadding(7, 8, 7, 8);
-  addText(tile, label, { font: Font.boldSystemFont(9), color: BRAND.muted, lineLimit: 1 });
-  addText(tile, value, { font: Font.blackSystemFont(options.big ? 19 : 16), color: options.color || BRAND.dark, lineLimit: 1 });
-  return tile;
+function addMetricCard(parent, label, value, accent, options = {}) {
+  const card = parent.addStack();
+  card.layoutVertically();
+  if (options.width) card.size = new Size(options.width, options.height || 76);
+  card.backgroundColor = new Color(COLORS.panel);
+  card.borderColor = new Color(accent, 0.72);
+  card.borderWidth = 0.8;
+  card.cornerRadius = 12;
+  card.setPadding(8, 8, 8, 8);
+  addText(card, label, { font: Font.boldSystemFont(8), color: accent, lines: 1 });
+  card.addSpacer(3);
+  addText(card, value, { font: Font.boldSystemFont(options.big ? 22 : 16), color: COLORS.text, lines: 1 });
+  if (options.note) {
+    card.addSpacer(2);
+    addText(card, options.note, { size: 8, color: COLORS.muted, lines: 1 });
+  }
+  return card;
 }
 
-function addBars(parent, series = [], height = 54) {
-  const rows = Array.isArray(series) && series.length ? series.slice(-7) : getSampleData().series;
-  const max = Math.max(1, ...rows.map(r => Math.max(Number(r.revenue || 0), Number(r.expenses || 0))));
-  const stack = parent.addStack();
-  stack.layoutHorizontally();
-  stack.bottomAlignContent();
-  stack.spacing = 6;
-  rows.forEach(row => {
-    const wrap = stack.addStack();
-    wrap.layoutVertically();
-    wrap.addSpacer();
-    const revenueH = Math.max(7, Math.round((Number(row.revenue || 0) / max) * height));
-    const expenseH = Math.max(4, Math.round((Number(row.expenses || 0) / max) * height));
-    const bar = wrap.addStack();
-    bar.size = new Size(10, revenueH);
-    bar.backgroundColor = new Color(Number(row.profit || 0) >= 0 ? BRAND.primary : BRAND.accent);
-    bar.cornerRadius = 5;
-    const expense = wrap.addStack();
-    expense.size = new Size(10, expenseH);
-    expense.backgroundColor = new Color(BRAND.dark);
-    expense.cornerRadius = 5;
+// MODERN_REVENUE_30D_LINE_CHART: connected line through all real daily revenue values.
+function drawRevenueTrendChart(series, width, height, compact = false) {
+  const rows = (Array.isArray(series) && series.length ? series : getSampleData().series).slice(-30);
+  const context = new DrawContext();
+  context.size = new Size(width, height);
+  context.opaque = false;
+  context.respectScreenScale = true;
+
+  const panel = new Path();
+  panel.addRoundedRect(new Rect(0, 0, width, height), 13, 13);
+  context.setFillColor(new Color(COLORS.panel));
+  context.addPath(panel);
+  context.fillPath();
+  context.setStrokeColor(new Color(COLORS.border));
+  context.setLineWidth(0.8);
+  context.addPath(panel);
+  context.strokePath();
+
+  const left = compact ? 10 : 38;
+  const right = width - 10;
+  const top = compact ? 10 : 34;
+  const bottom = height - (compact ? 16 : 25);
+  const chartWidth = Math.max(1, right - left);
+  const chartHeight = Math.max(1, bottom - top);
+  const values = rows.map(row => Math.max(0, Number(row.revenue || 0)));
+  const max = Math.max(1, ...values);
+
+  if (!compact) {
+    context.setFont(Font.boldSystemFont(11));
+    context.setTextColor(new Color(COLORS.text));
+    context.drawTextInRect('Xu hướng doanh thu', new Rect(10, 10, 170, 15));
+    context.setFont(Font.systemFont(9));
+    context.setTextColor(new Color(COLORS.blue));
+    context.drawTextInRect('●', new Rect(width - 69, 11, 9, 12));
+    context.setTextColor(new Color(COLORS.muted));
+    context.drawTextInRect('Doanh thu', new Rect(width - 58, 11, 54, 12));
+  }
+
+  for (let index = 0; index < 5; index += 1) {
+    const y = top + (chartHeight / 4) * index;
+    const grid = new Path();
+    grid.move(new Point(left, y));
+    grid.addLine(new Point(right, y));
+    context.setStrokeColor(new Color(COLORS.border, 0.72));
+    context.setLineWidth(0.55);
+    context.addPath(grid);
+    context.strokePath();
+    if (!compact) {
+      context.setFont(Font.systemFont(7));
+      context.setTextColor(new Color(COLORS.subtle));
+      context.drawTextInRect(moneyShort(max * (1 - index / 4)), new Rect(3, y - 5, 32, 11));
+    }
+  }
+
+  const pointFor = (value, index) => new Point(
+    left + (values.length <= 1 ? chartWidth / 2 : (index / (values.length - 1)) * chartWidth),
+    bottom - (value / max) * chartHeight,
+  );
+  const line = new Path();
+  values.forEach((value, index) => {
+    const point = pointFor(value, index);
+    if (index === 0) line.move(point);
+    else line.addLine(point);
   });
+  context.setStrokeColor(new Color(COLORS.blue));
+  context.setLineWidth(compact ? 2 : 2.6);
+  context.addPath(line);
+  context.strokePath();
+
+  values.forEach((value, index) => {
+    if (values.length > 12 && index % 3 !== 0 && index !== values.length - 1) return;
+    const point = pointFor(value, index);
+    const dot = new Path();
+    dot.addEllipse(new Rect(point.x - 2.6, point.y - 2.6, 5.2, 5.2));
+    context.setFillColor(new Color(COLORS.panel));
+    context.addPath(dot);
+    context.fillPath();
+    context.setStrokeColor(new Color(COLORS.blue));
+    context.setLineWidth(1.8);
+    context.addPath(dot);
+    context.strokePath();
+  });
+
+  const labelIndexes = compact ? [0, values.length - 1] : [0, 7, 14, 21, values.length - 1];
+  context.setFont(Font.systemFont(7));
+  context.setTextColor(new Color(COLORS.muted));
+  [...new Set(labelIndexes)].forEach(index => {
+    if (!rows[index]) return;
+    const point = pointFor(values[index], index);
+    context.drawTextInRect(dateLabel(rows[index].date), new Rect(point.x - 11, bottom + 7, 24, 10));
+  });
+  return context.getImage();
 }
 
 function addWarning(widget, data) {
   if (!data.warning) return;
   widget.addSpacer(4);
-  addText(widget, data.warning, { font: Font.mediumSystemFont(9), color: BRAND.primary, lineLimit: 2 });
+  addText(widget, data.warning, { size: 8, color: COLORS.orange, lines: 1 });
 }
 
-// ─── Sparkline chart via DrawContext ────────────────────────────────────────
-// Returns an Image drawn directly, no external libs.
-// BALANCED_LAYOUT_SPARKLINE_DRAWCONTEXT — marker for layout assertions
-function drawSparkline(series, w, h) {
-  const rows = Array.isArray(series) && series.length ? series.slice(-7) : getSampleData().series;
-  const revenues = rows.map(r => Number(r.revenue || 0));
-  const expenses = rows.map(r => Number(r.expenses || 0));
-  const maxVal = Math.max(1, ...revenues, ...expenses);
-
-  const ctx = new DrawContext();
-  ctx.size = new Size(w, h);
-  ctx.opaque = false;
-  ctx.respectScreenScale = true;
-
-  const barW = Math.floor((w - (rows.length - 1) * 3) / rows.length);
-  const barSlot = barW + 3;
-
-  rows.forEach((row, i) => {
-    const x = i * barSlot;
-    const revH = Math.max(4, Math.round((revenues[i] / maxVal) * (h - 14)));
-    const expH = Math.max(3, Math.round((expenses[i] / maxVal) * (h - 14)));
-    const isProfit = Number(row.profit || 0) >= 0;
-
-    // Revenue bar (back, slightly transparent)
-    const revColor = new Color(isProfit ? BRAND.primary : BRAND.accent, 0.45);
-    const revRect = new Rect(x, h - 14 - revH, barW, revH);
-    ctx.setFillColor(revColor);
-    const revPath = new Path();
-    revPath.addRoundedRect(revRect, 3, 3);
-    ctx.addPath(revPath);
-    ctx.fillPath();
-
-    // Expense bar (front, solid dark)
-    const expColor = new Color(BRAND.dark, 0.80);
-    const expRect = new Rect(x + Math.floor(barW * 0.28), h - 14 - expH, Math.ceil(barW * 0.44), expH);
-    ctx.setFillColor(expColor);
-    const expPath = new Path();
-    expPath.addRoundedRect(expRect, 2, 2);
-    ctx.addPath(expPath);
-    ctx.fillPath();
-
-    // Date label
-    ctx.setFont(Font.systemFont(8));
-    ctx.setTextColor(new Color(BRAND.muted));
-    const labelRect = new Rect(x, h - 13, barW, 13);
-    ctx.drawTextInRect(String(row.date || '').slice(0, 3), labelRect);
-  });
-
-  return ctx.getImage();
-}
-
-// ─── KPI ledger row helper (right column) ────────────────────────────────────
-// Creates a single label+value row that fills its container width.
-function addLedgerRow(parent, label, value, options = {}) {
-  const row = parent.addStack();
-  row.layoutHorizontally();
-  row.centerAlignContent();
-  if (options.topPad) row.setPadding(options.topPad, 0, 0, 0);
-  addText(row, label, { font: Font.mediumSystemFont(10), color: options.labelColor || BRAND.muted, lineLimit: 1 });
-  row.addSpacer();
-  addText(row, value, { font: Font.boldSystemFont(10), color: options.valueColor || BRAND.dark, lineLimit: 1 });
-}
-
-// ─── Divider helper ───────────────────────────────────────────────────────────
-function addDivider(parent, opacity) {
-  const div = parent.addStack();
-  div.size = new Size(0, 1);
-  div.backgroundColor = new Color(BRAND.muted, opacity != null ? opacity : 0.25);
-}
-
-// ─── Small ───────────────────────────────────────────────────────────────────
 function buildSmall(data) {
   const widget = new ListWidget();
   setGradient(widget);
-  widget.setPadding(14, 14, 14, 14);
-  addTopBar(widget, data, true);
-  widget.addSpacer(12);
-  addText(widget, 'Lợi nhuận', { font: Font.boldSystemFont(11), color: BRAND.muted });
-  addText(widget, moneyShort(data.profit), { font: Font.blackSystemFont(31), color: Number(data.profit || 0) >= 0 ? BRAND.ok : BRAND.primary, lineLimit: 1 });
+  widget.setPadding(13, 13, 13, 13);
+  addHeader(widget, data, true);
+  widget.addSpacer(10);
+  addText(widget, 'DOANH THU HÔM NAY', { font: Font.boldSystemFont(9), color: COLORS.blue });
+  addText(widget, moneyShort(data.revenue), { font: Font.boldSystemFont(28), color: COLORS.text });
+  widget.addSpacer(7);
+  const chart = widget.addImage(drawRevenueTrendChart(data.series, 132, 58, true));
+  chart.imageSize = new Size(132, 58);
   widget.addSpacer();
-  const row = widget.addStack();
-  row.layoutHorizontally();
-  row.spacing = 8;
-  addMetricTile(row, 'Doanh thu', moneyShort(data.revenue));
-  addMetricTile(row, 'Chi phí', moneyShort(data.expenses));
+  addText(widget, `${data.orders || 0} đơn · LN ${moneyShort(data.profit)}`, { size: 9, color: COLORS.muted });
   addWarning(widget, data);
   return widget;
 }
 
-// ─── Medium ──────────────────────────────────────────────────────────────────
 function buildMedium(data) {
   const widget = new ListWidget();
   setGradient(widget);
-  widget.setPadding(15, 16, 13, 16);
-  addTopBar(widget, data, false);
-  widget.addSpacer(10);
-  const row = widget.addStack();
-  row.layoutHorizontally();
-  row.spacing = 10;
-  addMetricTile(row, 'Doanh thu thuần', moneyShort(data.revenue), { big: true });
-  addMetricTile(row, 'Lợi nhuận ròng', moneyShort(data.profit), { big: true, color: Number(data.profit || 0) >= 0 ? BRAND.ok : BRAND.primary });
-  widget.addSpacer(9);
-  addBars(widget, data.series, 48);
-  widget.addSpacer(4);
-  addText(widget, `${data.orders || 0} đơn · Margin ${pct(data.marginPct)} · CK/TM ${moneyShort(data.bank)} / ${moneyShort(data.cash)}`, { font: Font.mediumSystemFont(10), color: BRAND.muted, lineLimit: 1 });
+  widget.setPadding(11, 12, 10, 12);
+  addHeader(widget, data);
+  widget.addSpacer(8);
+  const metrics = widget.addStack();
+  metrics.layoutHorizontally();
+  metrics.spacing = 7;
+  addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 94, height: 62, big: true });
+  addMetricCard(metrics, 'LỢI NHUẬN', moneyShort(data.profit), Number(data.profit || 0) >= 0 ? COLORS.green : COLORS.red, { width: 94, height: 62, big: true });
+  addMetricCard(metrics, 'ĐƠN HÀNG', String(data.orders || 0), COLORS.purple, { width: 94, height: 62, big: true });
+  widget.addSpacer(8);
+  const chart = widget.addImage(drawRevenueTrendChart(data.series, 296, 118));
+  chart.imageSize = new Size(296, 118);
   addWarning(widget, data);
   return widget;
 }
 
-// ─── Large — BALANCED_LAYOUT_TWO_COLUMN ──────────────────────────────────────
-// Layout: horizontal split, left ≈ 52 % / right ≈ 48 %
-//   Left  : brand header + profit hero + margin badge + sparkline chart
-//   Right : KPI ledger (revenue, expenses, COGS, orders, cash/bank) + expense breakdown
-// This avoids empty right-side space and disconnected bar sticks.
 function buildLarge(data) {
   const widget = new ListWidget();
   setGradient(widget);
-  widget.setPadding(14, 14, 14, 14);
+  widget.setPadding(10, 10, 10, 10);
+  addHeader(widget, data);
+  widget.addSpacer(8);
 
-  // ── Top bar (full-width) ──────────────────────────────────────────────────
-  addTopBar(widget, data, false);
-  widget.addSpacer(10);
+  // MODERN_DARK_FOUR_METRIC_LAYOUT
+  const metrics = widget.addStack();
+  metrics.layoutHorizontally();
+  metrics.spacing = 6;
+  addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 72, height: 72, big: true, note: data.rangeLabel || 'Hôm nay' });
+  addMetricCard(metrics, 'LỢI NHUẬN', moneyShort(data.profit), Number(data.profit || 0) >= 0 ? COLORS.green : COLORS.red, { width: 72, height: 72, big: true, note: `${Number(data.marginPct || 0).toFixed(1)}% margin` });
+  addMetricCard(metrics, 'CHI PHÍ', moneyShort(data.expenses), COLORS.orange, { width: 72, height: 72, big: true, note: `Giá vốn ${moneyShort(data.cogs)}` });
+  addMetricCard(metrics, 'ĐƠN HÀNG', String(data.orders || 0), COLORS.purple, { width: 72, height: 72, big: true, note: `CK ${moneyShort(data.bank)}` });
+  widget.addSpacer(8);
 
-  // ── Body: two columns ─────────────────────────────────────────────────────
-  const body = widget.addStack();
-  body.layoutHorizontally();
-  body.spacing = 10;
-
-  // ── LEFT COLUMN ───────────────────────────────────────────────────────────
-  // BALANCED_LAYOUT_LEFT_PROFIT_SPARKLINE
-  const leftCol = body.addStack();
-  leftCol.layoutVertically();
-  leftCol.size = new Size(148, 0); // fixed left column width; right column gets remaining space
-
-  // Profit hero section
-  const profitLabel = leftCol.addStack();
-  profitLabel.layoutHorizontally();
-  profitLabel.centerAlignContent();
-  addText(profitLabel, 'LỢI NHUẬN', { font: Font.boldSystemFont(9), color: BRAND.muted, lineLimit: 1 });
-
-  leftCol.addSpacer(3);
-  const isPositive = Number(data.profit || 0) >= 0;
-  const profitColor = isPositive ? BRAND.ok : BRAND.primary;
-  addText(leftCol, moneyShort(data.profit), {
-    font: Font.blackSystemFont(36),
-    color: profitColor,
-    lineLimit: 1,
-  });
-
-  // Margin badge row
-  leftCol.addSpacer(4);
-  const badgeRow = leftCol.addStack();
-  badgeRow.layoutHorizontally();
-  badgeRow.spacing = 5;
-  badgeRow.centerAlignContent();
-
-  const marginPill = badgeRow.addStack();
-  marginPill.backgroundColor = new Color(isPositive ? BRAND.ok : BRAND.primary, 0.15);
-  marginPill.cornerRadius = 8;
-  marginPill.setPadding(3, 7, 3, 7);
-  addText(marginPill, `${pct(data.marginPct)} margin`, {
-    font: Font.boldSystemFont(9),
-    color: isPositive ? BRAND.ok : BRAND.primary,
-    lineLimit: 1,
-  });
-
-  const orderPill = badgeRow.addStack();
-  orderPill.backgroundColor = new Color(BRAND.dark, 0.10);
-  orderPill.cornerRadius = 8;
-  orderPill.setPadding(3, 7, 3, 7);
-  addText(orderPill, `${data.orders || 0} đơn`, {
-    font: Font.boldSystemFont(9),
-    color: BRAND.dark,
-    lineLimit: 1,
-  });
-
-  leftCol.addSpacer(10);
-
-  // Sparkline chart — BALANCED_LAYOUT_SPARKLINE_DRAWCONTEXT
-  const chartImg = drawSparkline(data.series, 148, 70);
-  const chartView = leftCol.addImage(chartImg);
-  chartView.imageSize = new Size(148, 70);
-  chartView.cornerRadius = 8;
-
-  leftCol.addSpacer(); // push everything up
-
-  // ── RIGHT COLUMN ──────────────────────────────────────────────────────────
-  // BALANCED_LAYOUT_RIGHT_KPI_BREAKDOWN
-  const rightCol = body.addStack();
-  rightCol.layoutVertically();
-
-  // KPI card (revenue, expenses, COGS)
-  const kpiCard = rightCol.addStack();
-  kpiCard.layoutVertically();
-  kpiCard.backgroundColor = new Color('#FFFFFF', 0.38);
-  kpiCard.cornerRadius = 12;
-  kpiCard.setPadding(9, 10, 9, 10);
-
-  addText(kpiCard, 'CHỈ SỐ CHÍNH', { font: Font.boldSystemFont(8), color: BRAND.muted, lineLimit: 1 });
-  kpiCard.addSpacer(6);
-
-  addLedgerRow(kpiCard, 'Doanh thu thuần', moneyShort(data.revenue), { valueColor: BRAND.dark });
-  kpiCard.addSpacer(5);
-  addLedgerRow(kpiCard, 'Tổng chi phí', moneyShort(data.expenses), { valueColor: BRAND.primary });
-  kpiCard.addSpacer(5);
-  addLedgerRow(kpiCard, 'Giá vốn', moneyShort(data.cogs), { valueColor: BRAND.muted });
-  kpiCard.addSpacer(5);
-  addLedgerRow(kpiCard, 'Tiền CK / TM', `${moneyShort(data.bank)} / ${moneyShort(data.cash)}`, { valueColor: BRAND.dark });
-
-  rightCol.addSpacer(8);
-
-  // Expense breakdown card — BALANCED_LAYOUT_EXPENSE_BREAKDOWN
-  const breakdownCard = rightCol.addStack();
-  breakdownCard.layoutVertically();
-  breakdownCard.backgroundColor = new Color('#FFFFFF', 0.28);
-  breakdownCard.cornerRadius = 12;
-  breakdownCard.setPadding(9, 10, 9, 10);
-
-  addText(breakdownCard, 'CƠ CẤU CHI PHÍ', { font: Font.boldSystemFont(8), color: BRAND.muted, lineLimit: 1 });
-  breakdownCard.addSpacer(6);
-
-  const breakdown = (data.expenseBreakdown || []).slice(0, 4);
-  const bMax = Math.max(1, ...breakdown.map(r => Number(r.amount || 0)));
-  breakdown.forEach((row, idx) => {
-    if (idx > 0) breakdownCard.addSpacer(4);
-    addLedgerRow(breakdownCard, row.label, moneyShort(row.amount));
-
-    // Mini proportion bar
-    const barTrack = breakdownCard.addStack();
-    barTrack.layoutHorizontally();
-    const barFill = barTrack.addStack();
-    const fillPct = Math.max(0.08, Number(row.amount || 0) / bMax);
-    const fillWidth = Math.round(88 * fillPct);
-    barFill.size = new Size(fillWidth, 3);
-    barFill.backgroundColor = new Color(BRAND.accent, 0.7);
-    barFill.cornerRadius = 2;
-    const barEmpty = barTrack.addStack();
-    barEmpty.size = new Size(Math.max(1, 88 - fillWidth), 3);
-    barEmpty.backgroundColor = new Color(BRAND.dark, 0.08);
-    barEmpty.cornerRadius = 2;
-  });
-
-  rightCol.addSpacer(); // push cards to top
-
-  // ── Warning (full-width, below columns) ──────────────────────────────────
+  const chart = widget.addImage(drawRevenueTrendChart(data.series, 308, 176));
+  chart.imageSize = new Size(308, 176);
+  widget.addSpacer(5);
+  addText(widget, `30 ngày · Tiền mặt ${moneyShort(data.cash)} · Chạm widget để mở dashboard`, { size: 9, color: COLORS.muted });
   addWarning(widget, data);
-
   return widget;
 }
 
 async function main() {
-  const data = await loadData().catch(err => ({ ...getSampleData(), warning: `Lỗi tải dữ liệu: ${err.message}` }));
+  const data = await loadData().catch(error => ({ ...getSampleData(), warning: `Lỗi tải: ${error.message}` }));
   const family = config.widgetFamily || 'medium';
   const widget = family === 'small' ? buildSmall(data) : family === 'large' ? buildLarge(data) : buildMedium(data);
   Script.setWidget(widget);
-  if (!config.runsInWidget) await widget.presentMedium();
+  if (!config.runsInWidget) await widget.presentLarge();
   Script.complete();
 }
 

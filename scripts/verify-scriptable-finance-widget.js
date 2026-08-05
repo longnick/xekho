@@ -58,14 +58,21 @@ async function runScriptableRenderSmoke(family) {
     static blackSystemFont(size) { return { kind: 'black', size }; }
   }
   class MockSize { constructor(width, height) { this.width = width; this.height = height; } }
+  class MockPoint { constructor(x, y) { this.x = x; this.y = y; } }
   class MockRect { constructor(x, y, width, height) { Object.assign(this, { x, y, width, height }); } }
-  class MockPath { addRoundedRect() {} }
+  class MockPath { addRoundedRect() {} addEllipse() {} move() {} addLine() {} }
   class MockDrawContext {
     setFillColor() {}
+    setStrokeColor() {}
+    setLineWidth() {}
     setFont() {}
     setTextColor() {}
     addPath() {}
     fillPath() {}
+    fillRect() {}
+    fillEllipse() {}
+    strokeEllipse() {}
+    strokePath() {}
     drawTextInRect() {}
     getImage() { return { kind: 'drawn-image' }; }
   }
@@ -91,6 +98,7 @@ async function runScriptableRenderSmoke(family) {
     Color: MockColor,
     Font: MockFont,
     Size: MockSize,
+    Point: MockPoint,
     Rect: MockRect,
     Path: MockPath,
     DrawContext: MockDrawContext,
@@ -117,43 +125,29 @@ async function runScriptableRenderSmoke(family) {
   assert(payload.fixedCost === 30000, 'fixedCost applies daily fixed cost');
   assert(payload.profit === 160000, 'profit = grossProfit - operatingExpense - fixedCost');
   assert(payload.bank === 200000 && payload.cash === 150000, 'cash/bank split from paid totals');
-  assert(payload.series.length === 7, 'series has 7 days');
+  assert(payload.seriesDays === 30 && payload.series.length === 30, 'payload has 30 daily revenue points');
 
   console.log('\n[2] Source guards and Scriptable file');
   const functionsIndex = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
   const scriptableFile = fs.readFileSync(path.join(__dirname, 'scriptable', 'xekho-finance-widget.js'), 'utf8');
   assert(functionsIndex.includes('SCRIPTABLE_FINANCE_WIDGET_TOKEN'), 'endpoint has token parameter');
   assert(functionsIndex.includes('exports.scriptableFinanceWidgetData'), 'Cloud Function endpoint exported');
-  assert(scriptableFile.includes('Variant A Owner Glance'), 'Scriptable file is Variant A');
+  assert(scriptableFile.includes('modern dark revenue trend'), 'Scriptable file is modern dark revenue variant');
   assert(scriptableFile.includes('buildSmall') && scriptableFile.includes('buildMedium') && scriptableFile.includes('buildLarge'), 'Scriptable supports small/medium/large');
   assert(/token: ['"]['"], \/\/ Set locally on device; never commit widget token\./.test(scriptableFile), 'Scriptable CONFIG.token is empty in source');
   assert(!/firebase-adminsdk|private_key|BEGIN PRIVATE KEY/.test(scriptableFile), 'Scriptable file does not embed Firebase credentials');
 
-  console.log('\n[3] Large widget balanced layout assertions');
-  // Must contain the two-column balanced layout marker
-  assert(scriptableFile.includes('BALANCED_LAYOUT_TWO_COLUMN'), 'large widget has balanced two-column layout marker');
+  console.log('\n[3] Modern 30-day revenue chart assertions');
+  assert(scriptableFile.includes('MODERN_REVENUE_30D_LINE_CHART'), 'widget has modern 30-day revenue chart marker');
+  assert(scriptableFile.includes('slice(-30)') && scriptableFile.includes('seriesDays || 30') && scriptableFile.includes('ngày gần nhất'), 'widget renders latest 30 days');
+  assert(scriptableFile.includes('drawRevenueTrendChart') && scriptableFile.includes('context.addPath(line);') && scriptableFile.includes('context.strokePath();'), 'widget draws connected revenue line with native Scriptable path API');
+  assert(scriptableFile.includes('addEllipse') && scriptableFile.includes('MODERN_DARK_FOUR_METRIC_LAYOUT'), 'widget uses modern dark cards and visible line points');
 
-  // Must include all four full-width/balanced section markers
-  assert(scriptableFile.includes('BALANCED_LAYOUT_LEFT_PROFIT_SPARKLINE'), 'large widget has left profit+sparkline section');
-  assert(scriptableFile.includes('BALANCED_LAYOUT_SPARKLINE_DRAWCONTEXT'), 'large widget uses DrawContext sparkline (not disconnected bar stacks)');
-  assert(scriptableFile.includes('BALANCED_LAYOUT_RIGHT_KPI_BREAKDOWN'), 'large widget has right KPI+breakdown section');
-  assert(scriptableFile.includes('BALANCED_LAYOUT_EXPENSE_BREAKDOWN'), 'large widget has expense breakdown card');
-
-  // Sparkline must use DrawContext, not raw Size stacks
-  assert(scriptableFile.includes('DrawContext') && scriptableFile.includes('getImage'), 'large widget chart uses DrawContext.getImage()');
-
-  // Must NOT use the old disconnected-bar-stick pattern:
-  // old pattern = two separate metric-row stacks then bars then far-right breakdown with no container
-  const hasTwoColumnBody = scriptableFile.includes('layoutHorizontally') && scriptableFile.includes('leftCol') && scriptableFile.includes('rightCol');
-  assert(hasTwoColumnBody, 'large widget uses leftCol/rightCol two-column body stack');
-
-  // Old forbidden pattern: simple addMetricTile rows + addBars at widget level + addSpacer() far-right breakdown
-  // Detect by checking that addBars is NOT called with `widget` as parent inside buildLarge
+  // Old bar renderer must not be called by a production family.
   const buildLargeBody = scriptableFile.slice(scriptableFile.indexOf('function buildLarge'));
   const nextFnIdx = buildLargeBody.indexOf('\nfunction ', 1);
   const largeFnSrc = nextFnIdx > 0 ? buildLargeBody.slice(0, nextFnIdx) : buildLargeBody;
-  assert(!largeFnSrc.includes('addBars(widget,'), 'large widget does NOT call addBars(widget, ...) — bars are rendered via DrawContext');
-  assert(!largeFnSrc.includes('addMetricTile(grid1,') && !largeFnSrc.includes('addMetricTile(grid2,'), 'large widget does NOT use old grid1/grid2 disconnected metric rows');
+  assert(!scriptableFile.includes('function addBars') && !largeFnSrc.includes('addBars('), 'widget does not retain disconnected bar chart renderer');
 
 
   console.log('\n[4] Scriptable runtime stub smoke');

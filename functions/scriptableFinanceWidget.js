@@ -192,10 +192,11 @@ function filterRowsForRange(rows, range, datePicker) {
   });
 }
 
-function buildSeries({ historyRows = [], expenseRows = [], fixedProfile = {}, now = new Date() }) {
+function buildSeries({ historyRows = [], expenseRows = [], fixedProfile = {}, now = new Date(), days = 30 }) {
   const today = getVietnamDateParts(now).dateKey;
-  const days = Array.from({ length: 7 }, (_, idx) => addDaysYmd(today, idx - 6));
-  return days.map(ymd => {
+  const dayCount = Math.max(1, Math.min(90, Number(days) || 30));
+  const dateKeys = Array.from({ length: dayCount }, (_, idx) => addDaysYmd(today, idx - (dayCount - 1)));
+  return dateKeys.map(ymd => {
     const range = resolveWidgetRange('today', utcDateFromVietnamYmd(ymd, true));
     range.fromYmd = ymd;
     range.toYmd = ymd;
@@ -244,7 +245,8 @@ async function buildFinanceWidgetPayload({ db, rangeKey = 'today', now = new Dat
     timezone: VN_TIME_ZONE,
     updatedAt: now.toISOString(),
     ...summary,
-    series: buildSeries({ historyRows, expenseRows, fixedProfile, now }),
+    seriesDays: 30,
+    series: buildSeries({ historyRows, expenseRows, fixedProfile, now, days: 30 }),
   };
 }
 
