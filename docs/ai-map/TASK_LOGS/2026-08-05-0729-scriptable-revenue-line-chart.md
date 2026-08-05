@@ -37,3 +37,18 @@ git diff --check                                                                
 ## Native iPhone gate
 
 Node verifies source, API surface, and Scriptable render tree. Paste the delivered script into Scriptable, retain/configure only the private widget token on-device, then refresh a medium or large iOS widget for final visual confirmation.
+
+## Production deploy and live smoke
+
+Approved scope: only `xekho:scriptableFinanceWidgetData` in Firebase project `pos-v2-909ff`.
+
+```text
+npx firebase-tools deploy --only functions:xekho:scriptableFinanceWidgetData --project pos-v2-909ff --non-interactive  PASS
+GET without token                                                                             401
+GET with private widget token                                                                  200
+source                                                                                        firestore-readonly
+seriesDays                                                                                    30
+seriesCount                                                                                   30
+```
+
+The live response at 2026-08-05T09:07:44.600Z reported revenue `0` and orders `0` for the current Vietnam day. This is real read-only Firestore output, not sample data. Temporary deployment env file was removed after deploy; no token value was printed.

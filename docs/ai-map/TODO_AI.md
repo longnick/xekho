@@ -1,7 +1,8 @@
 # 2026-08-05 - DONE: Scriptable modern 30-day revenue chart
 - DONE: Rebuilt finance widget in dark Meta-Ads-style cards and connected 30-day revenue line chart across medium/large families.
 - DONE: Endpoint now emits 30 daily points; Node syntax checks, 24-assertion Scriptable verifier, app check, and whitespace gate passed.
-- PENDING OWNER: Paste script into Scriptable on iPhone and refresh widget for native visual confirmation.
+- DONE: Deployed only `xekho:scriptableFinanceWidgetData`; live read-only smoke confirmed 30 data points.
+- PENDING OWNER: Paste/replace script in Scriptable on iPhone, retain private token, refresh widget for native visual confirmation.
 - Task log: `docs/ai-map/TASK_LOGS/2026-08-05-0729-scriptable-revenue-line-chart.md`.
 
 # 2026-07-22 - DONE: Build final main integration candidate
