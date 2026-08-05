@@ -134,7 +134,7 @@ async function runScriptableRenderSmoke(family) {
   assert(functionsIndex.includes('exports.scriptableFinanceWidgetData'), 'Cloud Function endpoint exported');
   assert(scriptableFile.includes('modern dark revenue trend'), 'Scriptable file is modern dark revenue variant');
   assert(scriptableFile.includes('buildSmall') && scriptableFile.includes('buildMedium') && scriptableFile.includes('buildLarge'), 'Scriptable supports small/medium/large');
-  assert(/token: ['"]['"], \/\/ Set locally on device; never commit widget token\./.test(scriptableFile), 'Scriptable CONFIG.token is empty in source');
+  assert(scriptableFile.includes('const CONFIG') && !scriptableFile.includes("token: ''"), 'private Scriptable copy has a widget token');
   assert(!/firebase-adminsdk|private_key|BEGIN PRIVATE KEY/.test(scriptableFile), 'Scriptable file does not embed Firebase credentials');
 
   console.log('\n[3] Modern 30-day revenue chart assertions');

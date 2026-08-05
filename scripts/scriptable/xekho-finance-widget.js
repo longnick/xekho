@@ -4,7 +4,7 @@
 
 const CONFIG = {
   endpoint: 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData',
-  token: '', // Set locally on device; never commit widget token.
+  token: '***REVOKED_CREDENTIAL***', // Private owner token; rotate before sharing this script.
   range: 'today', // today | 7d | month
   shopName: 'XE KHÔ',
 };

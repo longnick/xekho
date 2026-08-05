@@ -27,7 +27,8 @@ The revenue chart always displays the latest **30 daily points**, independent of
 2. Create a new script named `XE KHÔ Finance`.
 3. Paste `scripts/scriptable/xekho-finance-widget.js`.
 4. Token setup:
-   - Keep the token only in your private Scriptable copy or pass it as a widget parameter:
+   - Private owner copy has `CONFIG.token` prefilled and loads official live data immediately.
+   - Or pass a rotated token as widget parameter:
 
 ```text
 https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData|YOUR_TOKEN|today
@@ -61,4 +62,4 @@ profit = grossProfit - operatingExpense - fixedCost
 
 - Endpoint requires `Authorization: Bearer <token>` or `?token=<token>` / `x-widget-token`.
 - No Firebase credentials are embedded in Scriptable.
-- The committed source leaves `CONFIG.token` empty. Do not share a private Scriptable copy containing a token.
+- Private owner source embeds only narrow widget token. Do not share it; rotate token before any sharing.
