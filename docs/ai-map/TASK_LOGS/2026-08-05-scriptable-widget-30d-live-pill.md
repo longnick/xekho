@@ -28,4 +28,24 @@ npx firebase-tools deploy --only functions:xekho:scriptableFinanceWidgetData --p
 
 Firebase CLI stopped before deploy because this checkout has no production dotenv file and its environment contains none of required Functions parameters. No Firebase code was deployed and the live endpoint still uses the prior range behavior. Do not create dummy values: they could overwrite unrelated production configuration.
 
-Run the scoped deploy from the approved production checkout with its existing deploy-parameter source, then smoke `?range=30d` using the existing widget token. Do not print secrets.
+## Deployment and live smoke
+
+Scoped deploy completed with the existing production parameter source copied only to a mode-600 temporary dotenv file, then deleted:
+
+```text
+functions:xekho:scriptableFinanceWidgetData (asia-southeast1): updated
+```
+
+Live endpoint smoke with owner token:
+
+```text
+GET ?range=30d: 200
+ok: true
+source: firestore-readonly
+range: 30 ngày gần nhất
+rangeDays: 30
+seriesDays / series points: 30 / 30
+sample: false
+```
+
+Unauthenticated request returns `401`. Temporary dotenv is absent after deploy.
