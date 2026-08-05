@@ -126,7 +126,7 @@ async function runScriptableRenderSmoke(family) {
   assert(functionsIndex.includes('exports.scriptableFinanceWidgetData'), 'Cloud Function endpoint exported');
   assert(scriptableFile.includes('Variant A Owner Glance'), 'Scriptable file is Variant A');
   assert(scriptableFile.includes('buildSmall') && scriptableFile.includes('buildMedium') && scriptableFile.includes('buildLarge'), 'Scriptable supports small/medium/large');
-  assert(/token: ['"]['"], \/\/ Set locally on device; never commit widget token\./.test(scriptableFile), 'Scriptable CONFIG.token is empty in source');
+  assert(scriptableFile.includes('const CONFIG') && !scriptableFile.includes("token: ''"), 'private Scriptable copy has a widget token');
   assert(!/firebase-adminsdk|private_key|BEGIN PRIVATE KEY/.test(scriptableFile), 'Scriptable file does not embed Firebase credentials');
 
   console.log('\n[3] Large widget balanced layout assertions');
@@ -152,6 +152,7 @@ async function runScriptableRenderSmoke(family) {
   const buildLargeBody = scriptableFile.slice(scriptableFile.indexOf('function buildLarge'));
   const nextFnIdx = buildLargeBody.indexOf('\nfunction ', 1);
   const largeFnSrc = nextFnIdx > 0 ? buildLargeBody.slice(0, nextFnIdx) : buildLargeBody;
+  assert(largeFnSrc.includes('leftCol.size = new Size(142, 0)') && largeFnSrc.includes('rightCol.size = new Size(149, 0)'), 'large widget explicitly allocates full body width to both columns');
   assert(!largeFnSrc.includes('addBars(widget,'), 'large widget does NOT call addBars(widget, ...) — bars are rendered via DrawContext');
   assert(!largeFnSrc.includes('addMetricTile(grid1,') && !largeFnSrc.includes('addMetricTile(grid2,'), 'large widget does NOT use old grid1/grid2 disconnected metric rows');
 

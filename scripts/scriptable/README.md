@@ -25,7 +25,7 @@ Supported range values:
 2. Create a new script named `XE KHÔ Finance`.
 3. Paste `scripts/scriptable/xekho-finance-widget.js`.
 4. Token setup:
-   - Current private owner copy has `CONFIG.token` prefilled in `xekho-finance-widget.js` so the widget can fetch live data immediately.
+   - Current private owner copy has `CONFIG.token` prefilled in `xekho-finance-widget.js` so widget fetches official live data immediately.
    - If rotating/removing the embedded token later, you can also pass it as widget parameter:
 
 ```text

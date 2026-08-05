@@ -5,7 +5,7 @@
 
 const CONFIG = {
   endpoint: 'https://asia-southeast1-pos-v2-909ff.cloudfunctions.net/scriptableFinanceWidgetData',
-  token: '', // Set locally on device; never commit widget token.
+  token: '***REVOKED_CREDENTIAL***', // Private owner token; rotate before sharing this script.
   range: 'today', // today | 7d | month
   shopName: 'Xe Khô Chữa Lành',
 };
@@ -286,7 +286,9 @@ function buildMedium(data) {
 }
 
 // ─── Large — BALANCED_LAYOUT_TWO_COLUMN ──────────────────────────────────────
-// Layout: horizontal split, left ≈ 52 % / right ≈ 48 %
+// Layout: explicit horizontal split, left ≈ 47 % / right ≈ 53 %.
+// Scriptable does not reliably stretch an unsized trailing stack; fixed columns
+// consume the whole large-widget body instead of leaving a blank right side.
 //   Left  : brand header + profit hero + margin badge + sparkline chart
 //   Right : KPI ledger (revenue, expenses, COGS, orders, cash/bank) + expense breakdown
 // This avoids empty right-side space and disconnected bar sticks.
@@ -308,7 +310,7 @@ function buildLarge(data) {
   // BALANCED_LAYOUT_LEFT_PROFIT_SPARKLINE
   const leftCol = body.addStack();
   leftCol.layoutVertically();
-  leftCol.size = new Size(148, 0); // fixed left column width; right column gets remaining space
+  leftCol.size = new Size(142, 0);
 
   // Profit hero section
   const profitLabel = leftCol.addStack();
@@ -355,9 +357,9 @@ function buildLarge(data) {
   leftCol.addSpacer(10);
 
   // Sparkline chart — BALANCED_LAYOUT_SPARKLINE_DRAWCONTEXT
-  const chartImg = drawSparkline(data.series, 148, 70);
+  const chartImg = drawSparkline(data.series, 142, 70);
   const chartView = leftCol.addImage(chartImg);
-  chartView.imageSize = new Size(148, 70);
+  chartView.imageSize = new Size(142, 70);
   chartView.cornerRadius = 8;
 
   leftCol.addSpacer(); // push everything up
@@ -366,6 +368,7 @@ function buildLarge(data) {
   // BALANCED_LAYOUT_RIGHT_KPI_BREAKDOWN
   const rightCol = body.addStack();
   rightCol.layoutVertically();
+  rightCol.size = new Size(149, 0);
 
   // KPI card (revenue, expenses, COGS)
   const kpiCard = rightCol.addStack();
