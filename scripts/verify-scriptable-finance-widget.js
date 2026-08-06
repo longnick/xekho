@@ -147,6 +147,7 @@ async function runScriptableRenderSmoke(family) {
   assert(scriptableFile.includes('slice(-30)') && scriptableFile.includes('seriesDays || 30') && scriptableFile.includes('ngày gần nhất'), 'widget renders latest 30 days');
   assert(scriptableFile.includes('drawRevenueTrendChart') && scriptableFile.includes('context.addPath(line);') && scriptableFile.includes('context.strokePath();'), 'widget draws connected revenue line with native Scriptable path API');
   assert(scriptableFile.includes('addEllipse') && scriptableFile.includes('MODERN_DARK_FOUR_METRIC_LAYOUT'), 'widget uses modern dark cards and visible line points');
+  assert(scriptableFile.includes('CENTERED_FIXED_WIDTH_LAYOUT') && scriptableFile.includes('CENTERED_MEDIUM_METRICS') && scriptableFile.includes('CENTERED_LARGE_METRICS'), 'fixed-width header, cards, chart, and footer are centered with symmetric spacers');
 
   // Old bar renderer must not be called by a production family.
   const buildLargeBody = scriptableFile.slice(scriptableFile.indexOf('function buildLarge'));

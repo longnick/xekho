@@ -108,14 +108,28 @@ function addText(parent, text, options = {}) {
   return item;
 }
 
-function addHeader(widget, data, compact = false) {
-  const row = widget.addStack();
+// CENTERED_FIXED_WIDTH_LAYOUT: Scriptable fixed-width stacks otherwise pin left.
+function addCenteredStack(parent) {
+  const row = parent.addStack();
   row.layoutHorizontally();
-  row.centerAlignContent();
-  const left = row.addStack();
-  left.layoutVertically();
-  addText(left, compact ? CONFIG.shopName : `${CONFIG.shopName} · DOANH THU`, { font: Font.boldSystemFont(compact ? 14 : 13), color: COLORS.text });
-  addText(left, `${data.seriesDays || 30} ngày gần nhất · ${formatTime(data.updatedAt)}`, { size: 9, color: COLORS.muted });
+  row.addSpacer();
+  const content = row.addStack();
+  row.addSpacer();
+  return content;
+}
+
+function addCenteredImage(parent, image, size) {
+  const row = addCenteredStack(parent);
+  const view = row.addImage(image);
+  view.imageSize = size;
+  return view;
+}
+
+function addHeader(widget, data, compact = false) {
+  const title = addCenteredStack(widget);
+  title.layoutVertically();
+  addText(title, compact ? CONFIG.shopName : `${CONFIG.shopName} · DOANH THU`, { font: Font.boldSystemFont(compact ? 14 : 13), color: COLORS.text });
+  addText(title, `${data.seriesDays || 30} ngày gần nhất · ${formatTime(data.updatedAt)}`, { size: 9, color: COLORS.muted });
 }
 
 function addMetricCard(parent, label, value, accent, options = {}) {
@@ -246,8 +260,7 @@ function buildSmall(data) {
   addText(widget, 'DOANH THU 30 NGÀY', { font: Font.boldSystemFont(9), color: COLORS.blue });
   addText(widget, moneyShort(data.revenue), { font: Font.boldSystemFont(28), color: COLORS.text });
   widget.addSpacer(7);
-  const chart = widget.addImage(drawRevenueTrendChart(data.series, 132, 58, true));
-  chart.imageSize = new Size(132, 58);
+  addCenteredImage(widget, drawRevenueTrendChart(data.series, 132, 58, true), new Size(132, 58));
   widget.addSpacer();
   addText(widget, `${data.orders || 0} đơn · LN ${moneyShort(data.profit)}`, { size: 9, color: COLORS.muted });
   addWarning(widget, data);
@@ -260,15 +273,15 @@ function buildMedium(data) {
   widget.setPadding(11, 12, 10, 12);
   addHeader(widget, data);
   widget.addSpacer(8);
-  const metrics = widget.addStack();
+  // CENTERED_MEDIUM_METRICS
+  const metrics = addCenteredStack(widget);
   metrics.layoutHorizontally();
   metrics.spacing = 7;
   addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 94, height: 62, big: true });
   addMetricCard(metrics, 'LỢI NHUẬN', moneyShort(data.profit), Number(data.profit || 0) >= 0 ? COLORS.green : COLORS.red, { width: 94, height: 62, big: true });
   addMetricCard(metrics, 'ĐƠN HÀNG', String(data.orders || 0), COLORS.purple, { width: 94, height: 62, big: true });
   widget.addSpacer(8);
-  const chart = widget.addImage(drawRevenueTrendChart(data.series, 296, 118));
-  chart.imageSize = new Size(296, 118);
+  addCenteredImage(widget, drawRevenueTrendChart(data.series, 296, 118), new Size(296, 118));
   addWarning(widget, data);
   return widget;
 }
@@ -280,8 +293,8 @@ function buildLarge(data) {
   addHeader(widget, data);
   widget.addSpacer(8);
 
-  // MODERN_DARK_FOUR_METRIC_LAYOUT
-  const metrics = widget.addStack();
+  // MODERN_DARK_FOUR_METRIC_LAYOUT · CENTERED_LARGE_METRICS
+  const metrics = addCenteredStack(widget);
   metrics.layoutHorizontally();
   metrics.spacing = 6;
   addMetricCard(metrics, 'DOANH THU', moneyShort(data.revenue), COLORS.blue, { width: 72, height: 72, big: true, note: data.rangeLabel || '30 ngày' });
@@ -290,10 +303,10 @@ function buildLarge(data) {
   addMetricCard(metrics, 'ĐƠN HÀNG', String(data.orders || 0), COLORS.purple, { width: 72, height: 72, big: true, note: `CK ${moneyShort(data.bank)}` });
   widget.addSpacer(8);
 
-  const chart = widget.addImage(drawRevenueTrendChart(data.series, 308, 176));
-  chart.imageSize = new Size(308, 176);
+  addCenteredImage(widget, drawRevenueTrendChart(data.series, 308, 176), new Size(308, 176));
   widget.addSpacer(5);
-  addText(widget, `30 ngày · Tiền mặt ${moneyShort(data.cash)} · Chạm widget để mở dashboard`, { size: 9, color: COLORS.muted });
+  const footer = addCenteredStack(widget);
+  addText(footer, `30 ngày · Tiền mặt ${moneyShort(data.cash)} · Chạm widget để mở dashboard`, { size: 9, color: COLORS.muted });
   addWarning(widget, data);
   return widget;
 }

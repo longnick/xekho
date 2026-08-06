@@ -49,3 +49,10 @@ sample: false
 ```
 
 Unauthenticated request returns `401`. Temporary dotenv is absent after deploy.
+
+## Follow-up visual alignment
+
+- Centered header, fixed-width metric cards, chart, and footer with symmetric Scriptable spacers.
+- This removes remaining left pinning when an iPhone widget body is wider than fixed card/chart widths.
+- `node scripts/verify-scriptable-finance-widget.js`: 28 assertions pass.
+- Script-only update; no backend deploy needed.
